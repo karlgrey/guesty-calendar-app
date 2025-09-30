@@ -1,0 +1,69 @@
+{
+  "listingId": "farmhouse-prasser-001",
+  "checkIn": "2025-07-25",
+  "checkOut": "2025-07-30",
+  "guests": 4,
+  "currency": "EUR",
+  "nights": 5,
+  "basePrice": 280,
+  "weekendBasePrice": 320,
+  "note": "Peak summer season with increased base rates and higher minimum stay",
+  "nightlyBreakdown": [
+    { "date": "2025-07-25", "basePrice": 280, "adjustedPrice": 280, "note": "Peak season Friday" },
+    { "date": "2025-07-26", "basePrice": 320, "adjustedPrice": 320, "note": "Peak season Saturday" },
+    { "date": "2025-07-27", "basePrice": 280, "adjustedPrice": 280, "note": "Peak season Sunday" },
+    { "date": "2025-07-28", "basePrice": 280, "adjustedPrice": 280, "note": "Peak season Monday" },
+    { "date": "2025-07-29", "basePrice": 280, "adjustedPrice": 280, "note": "Peak season Tuesday" }
+  ],
+  "accommodationFare": 1440,
+  "accommodationFareNote": "5 nights in peak season, no discount (< 7 nights)",
+  "fees": {
+    "cleaningFee": 75,
+    "extraGuestFee": 0,
+    "extraGuestFeeNote": "4 guests included in base price"
+  },
+  "subtotal": 1515,
+  "taxes": [
+    {
+      "type": "LOCAL_TAX",
+      "description": "10% on accommodation fare per night",
+      "amount": 144,
+      "calculation": "€1440 × 10% = €144"
+    },
+    {
+      "type": "CITY_TAX",
+      "description": "€2.50 per guest per night",
+      "amount": 50,
+      "calculation": "4 guests × 5 nights × €2.50 = €50"
+    }
+  ],
+  "totalTaxes": 194,
+  "totalPrice": 1709,
+  "breakdown": {
+    "accommodationFare": 1440,
+    "cleaningFee": 75,
+    "extraGuestFee": 0,
+    "subtotal": 1515,
+    "localTax": 144,
+    "cityTax": 50,
+    "total": 1709
+  },
+  "discounts": {
+    "weeklyDiscount": {
+      "applied": false,
+      "reason": "Stay is less than 7 nights"
+    }
+  },
+  "validation": {
+    "minNightsValid": true,
+    "minNightsRequired": 5,
+    "minNightsNote": "Increased minimum stay during peak season",
+    "guestsValid": true,
+    "maxGuests": 8
+  },
+  "calendarContext": {
+    "minNights": 5,
+    "isBaseMinNights": false,
+    "note": "Peak season dates often have higher minimum stay requirements"
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "listingId": "farmhouse-prasser-001",
+  "checkIn": "2025-05-10",
+  "checkOut": "2025-05-13",
+  "guests": 10,
+  "currency": "EUR",
+  "nights": 3,
+  "error": {
+    "code": "GUESTS_EXCEED_CAPACITY",
+    "message": "Number of guests exceeds property capacity",
+    "details": {
+      "requestedGuests": 10,
+      "maxAccommodates": 8,
+      "exceeded": 2
+    }
+  },
+  "validation": {
+    "minNightsValid": true,
+    "minNightsRequired": 2,
+    "guestsValid": false,
+    "maxGuests": 8
+  },
+  "note": "This fixture demonstrates the error response when guests exceed capacity. The booking request should be rejected client-side before reaching the API."
+}

@@ -1,0 +1,66 @@
+{
+  "listingId": "farmhouse-prasser-001",
+  "checkIn": "2025-04-15",
+  "checkOut": "2025-04-22",
+  "guests": 6,
+  "currency": "EUR",
+  "nights": 7,
+  "basePrice": 200,
+  "weekendBasePrice": 250,
+  "nightlyBreakdown": [
+    { "date": "2025-04-15", "basePrice": 200, "adjustedPrice": 180, "note": "Weekly discount applied" },
+    { "date": "2025-04-16", "basePrice": 200, "adjustedPrice": 180, "note": "Weekly discount applied" },
+    { "date": "2025-04-17", "basePrice": 200, "adjustedPrice": 180, "note": "Weekly discount applied" },
+    { "date": "2025-04-18", "basePrice": 250, "adjustedPrice": 225, "note": "Weekend + weekly discount" },
+    { "date": "2025-04-19", "basePrice": 250, "adjustedPrice": 225, "note": "Weekend + weekly discount" },
+    { "date": "2025-04-20", "basePrice": 200, "adjustedPrice": 180, "note": "Weekly discount applied" },
+    { "date": "2025-04-21", "basePrice": 200, "adjustedPrice": 180, "note": "Weekly discount applied" }
+  ],
+  "accommodationFare": 1350,
+  "accommodationFareNote": "7 nights × avg €192.86/night with 10% weekly discount",
+  "fees": {
+    "cleaningFee": 75,
+    "extraGuestFee": 50,
+    "extraGuestFeeNote": "2 extra guests beyond 4 included: 2 × €25 = €50"
+  },
+  "subtotal": 1475,
+  "taxes": [
+    {
+      "type": "LOCAL_TAX",
+      "description": "10% on accommodation fare per night",
+      "amount": 135,
+      "calculation": "€1350 × 10% = €135"
+    },
+    {
+      "type": "CITY_TAX",
+      "description": "€2.50 per guest per night",
+      "amount": 105,
+      "calculation": "6 guests × 7 nights × €2.50 = €105"
+    }
+  ],
+  "totalTaxes": 240,
+  "totalPrice": 1715,
+  "breakdown": {
+    "accommodationFare": 1350,
+    "cleaningFee": 75,
+    "extraGuestFee": 50,
+    "subtotal": 1475,
+    "localTax": 135,
+    "cityTax": 105,
+    "total": 1715
+  },
+  "discounts": {
+    "weeklyDiscount": {
+      "applied": true,
+      "factor": 0.90,
+      "savings": 150,
+      "note": "10% off for 7+ night stays"
+    }
+  },
+  "validation": {
+    "minNightsValid": true,
+    "minNightsRequired": 2,
+    "guestsValid": true,
+    "maxGuests": 8
+  }
+}

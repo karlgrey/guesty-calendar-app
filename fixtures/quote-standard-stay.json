@@ -1,0 +1,61 @@
+{
+  "listingId": "farmhouse-prasser-001",
+  "checkIn": "2025-04-15",
+  "checkOut": "2025-04-18",
+  "guests": 4,
+  "currency": "EUR",
+  "nights": 3,
+  "basePrice": 200,
+  "weekendBasePrice": 250,
+  "nightlyBreakdown": [
+    { "date": "2025-04-15", "basePrice": 200, "adjustedPrice": 200, "note": "Weekday rate" },
+    { "date": "2025-04-16", "basePrice": 200, "adjustedPrice": 200, "note": "Weekday rate" },
+    { "date": "2025-04-17", "basePrice": 200, "adjustedPrice": 200, "note": "Weekday rate" }
+  ],
+  "accommodationFare": 600,
+  "accommodationFareNote": "3 nights × €200/night",
+  "fees": {
+    "cleaningFee": 75,
+    "extraGuestFee": 0,
+    "extraGuestFeeNote": "4 guests included in base price"
+  },
+  "subtotal": 675,
+  "taxes": [
+    {
+      "type": "LOCAL_TAX",
+      "description": "10% on accommodation fare per night",
+      "amount": 60,
+      "calculation": "€600 × 10% = €60"
+    },
+    {
+      "type": "CITY_TAX",
+      "description": "€2.50 per guest per night",
+      "amount": 30,
+      "calculation": "4 guests × 3 nights × €2.50 = €30"
+    }
+  ],
+  "totalTaxes": 90,
+  "totalPrice": 765,
+  "breakdown": {
+    "accommodationFare": 600,
+    "cleaningFee": 75,
+    "extraGuestFee": 0,
+    "subtotal": 675,
+    "localTax": 60,
+    "cityTax": 30,
+    "total": 765
+  },
+  "discounts": {
+    "weeklyDiscount": {
+      "applied": false,
+      "reason": "Stay is less than 7 nights"
+    }
+  },
+  "validation": {
+    "minNightsValid": true,
+    "minNightsRequired": 2,
+    "guestsValid": true,
+    "maxGuests": 8
+  },
+  "note": "Standard 3-night weekday stay with 4 guests (exactly at the included guest threshold)"
+}

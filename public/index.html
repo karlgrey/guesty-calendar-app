@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Booking Calendar - Farmhouse Prasser</title>
+  <link rel="stylesheet" href="calendar.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="calendar-header">
+      <h1 class="calendar-title">Select Your Dates</h1>
+      <div class="calendar-nav">
+        <button id="prev-month">← Previous</button>
+        <button id="next-month">Next →</button>
+      </div>
+    </header>
+
+    <!-- Legend -->
+    <div class="calendar-legend">
+      <div class="legend-item">
+        <div class="legend-box available"></div>
+        <span>Available</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-box selected"></div>
+        <span>Selected</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-box unavailable"></div>
+        <span>Unavailable</span>
+      </div>
+    </div>
+
+    <!-- Guest Selector -->
+    <div class="guest-selector-wrapper">
+      <div class="guest-selector">
+        <label for="guest-count" class="guest-label">
+          <span class="guest-icon">👥</span>
+          Number of Guests
+        </label>
+        <div class="guest-controls">
+          <button id="guest-decrement" class="guest-btn" aria-label="Decrease guests">−</button>
+          <input
+            type="number"
+            id="guest-count"
+            class="guest-input"
+            value="2"
+            min="1"
+            readonly
+            aria-label="Number of guests"
+          />
+          <button id="guest-increment" class="guest-btn" aria-label="Increase guests">+</button>
+        </div>
+        <div id="guest-helper" class="guest-helper"></div>
+      </div>
+    </div>
+
+    <!-- Error Message -->
+    <div id="error-message" class="error-message" style="display: none;"></div>
+
+    <!-- Calendar Grid -->
+    <div id="calendar-wrapper" class="calendar-wrapper">
+      <div class="loading">
+        <div class="spinner"></div>
+        <p>Loading availability...</p>
+      </div>
+    </div>
+
+    <!-- Selection Info -->
+    <div id="selection-info" class="selection-info">
+      <p style="text-align: center; color: #6b7280;">Select your check-in date to get started</p>
+      <button class="cta-button" disabled>Request to Book</button>
+    </div>
+
+    <!-- Instructions -->
+    <div style="margin-top: 2rem; padding: 1.5rem; background: #f9fafb; border-radius: 8px; font-size: 0.875rem; color: #6b7280;">
+      <h4 style="margin: 0 0 0.5rem 0; color: #111827;">How to book:</h4>
+      <ol style="margin: 0; padding-left: 1.5rem;">
+        <li>Choose number of guests</li>
+        <li>Select your check-in date</li>
+        <li>Select your check-out date (minimum stay applies)</li>
+        <li>Review the price and click "Request to Book"</li>
+        <li>An email will be pre-filled with your booking details</li>
+      </ol>
+    </div>
+  </div>
+
+  <script src="calendar.js"></script>
+</body>
+</html>

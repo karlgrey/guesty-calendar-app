@@ -1,0 +1,79 @@
+{
+  "_id": "farmhouse-prasser-001",
+  "title": "Farmhouse Prasser - Peaceful Countryside Retreat",
+  "publicDescription": {
+    "summary": "A beautiful renovated farmhouse in the German countryside, perfect for families and groups seeking tranquility.",
+    "space": "Spacious 180m² property with modern amenities and rustic charm."
+  },
+  "accommodates": 8,
+  "bedrooms": 4,
+  "bathrooms": 2,
+  "propertyType": "House",
+  "roomType": "Entire home/apt",
+  "address": {
+    "full": "Farmhouse Prasser, Bavaria, Germany",
+    "city": "Bavaria",
+    "country": "Germany",
+    "lat": 48.7758,
+    "lng": 11.4214
+  },
+  "timezone": "Europe/Berlin",
+  "prices": {
+    "basePrice": 200,
+    "currency": "EUR",
+    "cleaningFee": 75,
+    "extraPersonFee": 25,
+    "guestsIncludedInRegularFee": 4,
+    "weeklyPriceFactor": 0.90,
+    "monthlyPriceFactor": 0.85,
+    "weekendBasePrice": 250
+  },
+  "taxes": [
+    {
+      "_id": "tax-local-bavaria",
+      "type": "LOCAL_TAX",
+      "amount": 10,
+      "units": "PERCENTAGE",
+      "quantifier": "PER_NIGHT",
+      "appliedToAllFees": false,
+      "appliedOnFees": ["AF"],
+      "isAppliedByDefault": true,
+      "appliedByDefaultOnChannels": []
+    },
+    {
+      "_id": "tax-city-tourist",
+      "type": "CITY_TAX",
+      "amount": 2.50,
+      "units": "FIXED",
+      "quantifier": "PER_GUEST_PER_NIGHT",
+      "appliedToAllFees": false,
+      "appliedOnFees": [],
+      "isAppliedByDefault": true,
+      "appliedByDefaultOnChannels": []
+    }
+  ],
+  "terms": {
+    "minNights": 2,
+    "maxNights": 28,
+    "checkInTime": "16:00",
+    "checkOutTime": "11:00"
+  },
+  "amenities": [
+    "WiFi",
+    "Kitchen",
+    "Free parking",
+    "Garden",
+    "BBQ grill",
+    "Family/kid friendly",
+    "Heating"
+  ],
+  "pictures": [
+    {
+      "_id": "pic1",
+      "thumbnail": "https://example.com/pics/farmhouse-1-thumb.jpg",
+      "regular": "https://example.com/pics/farmhouse-1.jpg"
+    }
+  ],
+  "active": true,
+  "listed": true
+}

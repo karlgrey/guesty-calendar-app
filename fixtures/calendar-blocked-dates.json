@@ -1,0 +1,63 @@
+[
+  {
+    "date": "2025-05-20",
+    "listingId": "farmhouse-prasser-001",
+    "currency": "EUR",
+    "price": 0,
+    "isBasePrice": false,
+    "minNights": 1,
+    "isBaseMinNights": true,
+    "status": "unavailable",
+    "blocks": {
+      "reservation": {
+        "id": "res-12345",
+        "checkIn": "2025-05-18",
+        "checkOut": "2025-05-22"
+      }
+    },
+    "blockRefs": ["res-12345"],
+    "cta": true,
+    "ctd": true,
+    "note": "Blocked by existing reservation"
+  },
+  {
+    "date": "2025-06-10",
+    "listingId": "farmhouse-prasser-001",
+    "currency": "EUR",
+    "price": 0,
+    "isBasePrice": false,
+    "minNights": 1,
+    "isBaseMinNights": true,
+    "status": "unavailable",
+    "blocks": {
+      "owner": {
+        "id": "block-owner-001",
+        "reason": "Owner stay"
+      }
+    },
+    "blockRefs": ["block-owner-001"],
+    "cta": true,
+    "ctd": true,
+    "note": "Blocked by owner"
+  },
+  {
+    "date": "2025-07-15",
+    "listingId": "farmhouse-prasser-001",
+    "currency": "EUR",
+    "price": 0,
+    "isBasePrice": false,
+    "minNights": 1,
+    "isBaseMinNights": true,
+    "status": "unavailable",
+    "blocks": {
+      "manual": {
+        "id": "block-manual-002",
+        "reason": "Maintenance"
+      }
+    },
+    "blockRefs": ["block-manual-002"],
+    "cta": true,
+    "ctd": true,
+    "note": "Blocked for maintenance"
+  }
+]
