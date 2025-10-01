@@ -1000,6 +1000,9 @@ class BookingCalendar {
     const breakdownEl = document.getElementById('pricing-breakdown');
     if (!overlay || !breakdownEl) return;
 
+    // Store currently focused element to restore later
+    this.previouslyFocusedElementPricing = document.activeElement;
+
     // Empty state if no quote
     if (!this.currentQuote) {
       breakdownEl.innerHTML = `
@@ -1010,6 +1013,17 @@ class BookingCalendar {
       overlay.style.display = 'flex';
       document.body.style.overflow = 'hidden';
       this.addPricingOverlayEscapeHandler();
+
+      // Set focus to close button
+      setTimeout(() => {
+        const closeButton = document.getElementById('pricing-close-btn');
+        if (closeButton) {
+          closeButton.focus();
+        }
+      }, 50);
+
+      // Add focus trap
+      this.trapFocusPricing(overlay);
       return;
     }
 
@@ -1088,6 +1102,17 @@ class BookingCalendar {
     overlay.style.display = 'flex';
     document.body.style.overflow = 'hidden';
     this.addPricingOverlayEscapeHandler();
+
+    // Set focus to close button
+    setTimeout(() => {
+      const closeButton = document.getElementById('pricing-close-btn');
+      if (closeButton) {
+        closeButton.focus();
+      }
+    }, 50);
+
+    // Add focus trap
+    this.trapFocusPricing(overlay);
   }
 
   /**
@@ -1119,11 +1144,23 @@ class BookingCalendar {
         document.removeEventListener('keydown', this.pricingEscapeHandler);
         this.pricingEscapeHandler = null;
       }
+
+      // Remove focus trap handler
+      if (this.focusTrapHandlerPricing) {
+        overlay.removeEventListener('keydown', this.focusTrapHandlerPricing);
+        this.focusTrapHandlerPricing = null;
+      }
+
+      // Restore focus to previously focused element
+      if (this.previouslyFocusedElementPricing) {
+        this.previouslyFocusedElementPricing.focus();
+        this.previouslyFocusedElementPricing = null;
+      }
     }
   }
 
   /**
-   * Open datepicker overlay
+   * Open datepicker overlay with focus trap
    */
   openDatepicker() {
     // Set overlay month to current selected check-in or current month
@@ -1137,6 +1174,9 @@ class BookingCalendar {
     this.tempCheckIn = this.selectedCheckIn;
     this.tempCheckOut = this.selectedCheckOut;
 
+    // Store currently focused element to restore later
+    this.previouslyFocusedElement = document.activeElement;
+
     // Render calendar in overlay
     this.renderOverlayCalendar();
 
@@ -1146,8 +1186,20 @@ class BookingCalendar {
       overlay.style.display = 'flex';
       document.body.style.overflow = 'hidden';
 
-      // Add keyboard listener for ESC
+      // Add keyboard listeners for ESC and arrow keys
       document.addEventListener('keydown', this.handleEscapeKey);
+      document.addEventListener('keydown', this.handleCalendarKeyboard);
+
+      // Set focus to close button for accessibility
+      setTimeout(() => {
+        const closeButton = document.getElementById('calendar-close-btn');
+        if (closeButton) {
+          closeButton.focus();
+        }
+      }, 50);
+
+      // Add focus trap
+      this.trapFocus(overlay);
     }
   }
 
@@ -1160,8 +1212,21 @@ class BookingCalendar {
       overlay.style.display = 'none';
       document.body.style.overflow = '';
 
-      // Remove keyboard listener
+      // Remove keyboard listeners
       document.removeEventListener('keydown', this.handleEscapeKey);
+      document.removeEventListener('keydown', this.handleCalendarKeyboard);
+
+      // Remove focus trap handler
+      if (this.focusTrapHandler) {
+        overlay.removeEventListener('keydown', this.focusTrapHandler);
+        this.focusTrapHandler = null;
+      }
+
+      // Restore focus to previously focused element
+      if (this.previouslyFocusedElement) {
+        this.previouslyFocusedElement.focus();
+        this.previouslyFocusedElement = null;
+      }
 
       // Apply temp selection
       if (this.tempCheckIn && this.tempCheckOut) {
@@ -1187,6 +1252,152 @@ class BookingCalendar {
   handleEscapeKey = (event) => {
     if (event.key === 'Escape') {
       this.closeDatepicker();
+    }
+  }
+
+  /**
+   * Trap focus within overlay for accessibility
+   */
+  trapFocus(container) {
+    const focusableElements = container.querySelectorAll(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+    const firstFocusable = focusableElements[0];
+    const lastFocusable = focusableElements[focusableElements.length - 1];
+
+    this.focusTrapHandler = (e) => {
+      if (e.key !== 'Tab') return;
+
+      if (e.shiftKey) {
+        // Shift+Tab: if on first element, wrap to last
+        if (document.activeElement === firstFocusable) {
+          lastFocusable.focus();
+          e.preventDefault();
+        }
+      } else {
+        // Tab: if on last element, wrap to first
+        if (document.activeElement === lastFocusable) {
+          firstFocusable.focus();
+          e.preventDefault();
+        }
+      }
+    };
+
+    container.addEventListener('keydown', this.focusTrapHandler);
+  }
+
+  /**
+   * Trap focus within pricing overlay for accessibility
+   */
+  trapFocusPricing(container) {
+    const focusableElements = container.querySelectorAll(
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    );
+    const firstFocusable = focusableElements[0];
+    const lastFocusable = focusableElements[focusableElements.length - 1];
+
+    this.focusTrapHandlerPricing = (e) => {
+      if (e.key !== 'Tab') return;
+
+      if (e.shiftKey) {
+        // Shift+Tab: if on first element, wrap to last
+        if (document.activeElement === firstFocusable) {
+          lastFocusable.focus();
+          e.preventDefault();
+        }
+      } else {
+        // Tab: if on last element, wrap to first
+        if (document.activeElement === lastFocusable) {
+          firstFocusable.focus();
+          e.preventDefault();
+        }
+      }
+    };
+
+    container.addEventListener('keydown', this.focusTrapHandlerPricing);
+  }
+
+  /**
+   * Handle keyboard navigation in calendar
+   */
+  handleCalendarKeyboard = (event) => {
+    // Only handle arrow keys, Enter, and Space
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Enter', ' '].includes(event.key)) {
+      return;
+    }
+
+    // Find currently focused day element
+    const focusedDay = document.activeElement;
+    if (!focusedDay || !focusedDay.classList.contains('calendar-day-overlay')) {
+      return;
+    }
+
+    event.preventDefault();
+
+    const currentDateStr = focusedDay.getAttribute('data-date');
+    if (!currentDateStr) return;
+
+    // Handle Enter/Space to select date
+    if (event.key === 'Enter' || event.key === ' ') {
+      if (!focusedDay.hasAttribute('data-disabled')) {
+        this.handleDayClickOverlay(currentDateStr);
+      }
+      return;
+    }
+
+    // Handle arrow key navigation
+    const currentDate = new Date(currentDateStr + 'T00:00:00');
+    let newDate;
+
+    switch (event.key) {
+      case 'ArrowLeft':
+        newDate = new Date(currentDate);
+        newDate.setDate(newDate.getDate() - 1);
+        break;
+      case 'ArrowRight':
+        newDate = new Date(currentDate);
+        newDate.setDate(newDate.getDate() + 1);
+        break;
+      case 'ArrowUp':
+        newDate = new Date(currentDate);
+        newDate.setDate(newDate.getDate() - 7);
+        break;
+      case 'ArrowDown':
+        newDate = new Date(currentDate);
+        newDate.setDate(newDate.getDate() + 7);
+        break;
+    }
+
+    if (newDate) {
+      const newDateStr = this.formatDate(newDate);
+
+      // Check if new date is in visible months, if not, navigate months
+      const newMonth = newDate.getMonth();
+      const newYear = newDate.getFullYear();
+      const currentOverlayMonth = this.overlayCurrentMonth.getMonth();
+      const currentOverlayYear = this.overlayCurrentMonth.getFullYear();
+      const nextMonth = (currentOverlayMonth + 1) % 12;
+      const nextYear = nextMonth === 0 ? currentOverlayYear + 1 : currentOverlayYear;
+
+      const isInCurrentMonth = newMonth === currentOverlayMonth && newYear === currentOverlayYear;
+      const isInNextMonth = newMonth === nextMonth && newYear === nextYear;
+
+      if (!isInCurrentMonth && !isInNextMonth) {
+        // Navigate to the new month
+        if (newDate < this.overlayCurrentMonth) {
+          this.previousMonthOverlay();
+        } else {
+          this.nextMonthOverlay();
+        }
+      }
+
+      // Focus on the new date after a short delay to allow re-render
+      setTimeout(() => {
+        const newDayElement = document.querySelector(`.calendar-day-overlay[data-date="${newDateStr}"]`);
+        if (newDayElement) {
+          newDayElement.focus();
+        }
+      }, 50);
     }
   }
 
@@ -1361,11 +1572,13 @@ class BookingCalendar {
 
     const disabledAttr = disabled ? 'data-disabled="true"' : '';
     const dataAttr = disabled ? '' : `data-date="${dateStr}"`;
+    const tabindexAttr = disabled ? '' : 'tabindex="0"';
 
     return `
       <div class="calendar-day-overlay ${classes.join(' ')}"
            ${dataAttr}
-           ${disabledAttr}>
+           ${disabledAttr}
+           ${tabindexAttr}>
         <div class="day-number-overlay">${dayNumber}</div>
       </div>
     `;
