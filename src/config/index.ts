@@ -45,7 +45,7 @@ const configSchema = z.object({
 
   // Cache TTLs (in hours)
   cacheListingTtl: z.coerce.number().int().min(1).default(24),
-  cacheAvailabilityTtl: z.coerce.number().int().min(1).default(6),
+  cacheAvailabilityTtl: z.coerce.number().int().min(1).default(1),
   cacheQuoteTtl: z.coerce.number().int().min(1).default(1),
 
   // Database

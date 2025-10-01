@@ -28,7 +28,7 @@ const state: SchedulerState = {
 };
 
 /**
- * Execute ETL job with error handling
+ * Execute ETL job with error handling and schedule next run with jitter
  */
 async function executeScheduledJob() {
   try {
@@ -36,27 +36,66 @@ async function executeScheduledJob() {
     state.lastRun = new Date();
     state.jobCount++;
 
-    await runETLJob(false); // force=false for scheduled jobs
+    const result = await runETLJob(false); // force=false for scheduled jobs
 
-    // Calculate next run time
+    // Log job completion summary
+    logger.info(
+      {
+        jobCount: state.jobCount,
+        listingUpserted: result.listing.success && !result.listing.skipped ? 1 : 0,
+        listingSkipped: result.listing.skipped || false,
+        availabilityRowsUpserted: result.availability.daysCount || 0,
+        availabilitySkipped: result.availability.skipped || false,
+        durationMs: result.duration,
+      },
+      '✅ Scheduled ETL job completed'
+    );
+
+    // Schedule next run with jitter to prevent thundering herd
     if (state.intervalId) {
-      state.nextRun = new Date(Date.now() + getJobInterval());
-      logger.info({ nextRun: state.nextRun }, 'Next scheduled run');
+      const nextIntervalMs = getJobInterval(true); // Add jitter for next run
+      state.nextRun = new Date(Date.now() + nextIntervalMs);
+
+      logger.info(
+        {
+          nextRun: state.nextRun,
+          intervalMs: nextIntervalMs,
+          jitterApplied: true,
+        },
+        '⏱️  Next scheduled run'
+      );
     }
   } catch (error) {
-    logger.error({ error }, 'Scheduled job execution failed');
+    logger.error({ error, jobCount: state.jobCount }, '❌ Scheduled job execution failed');
+
+    // Still schedule next run even on error
+    if (state.intervalId) {
+      const nextIntervalMs = getJobInterval(true);
+      state.nextRun = new Date(Date.now() + nextIntervalMs);
+    }
   }
 }
 
 /**
- * Get job interval in milliseconds
+ * Get job interval in milliseconds with optional jitter
  * Uses availability TTL as the primary scheduling interval
+ *
+ * @param withJitter - If true, adds ±5% random jitter to prevent thundering herd
  */
-function getJobInterval(): number {
+function getJobInterval(withJitter: boolean = false): number {
   // Use availability TTL (in hours) as the interval
   // This ensures we refresh before cache goes stale
   const hours = config.cacheAvailabilityTtl;
-  return hours * 60 * 60 * 1000; // Convert to milliseconds
+  let intervalMs = hours * 60 * 60 * 1000; // Convert to milliseconds
+
+  if (withJitter) {
+    // Add ±5% jitter to prevent all instances from syncing at exactly the same time
+    const jitterPercent = 0.05;
+    const jitter = intervalMs * jitterPercent * (Math.random() * 2 - 1); // Random between -5% and +5%
+    intervalMs = Math.floor(intervalMs + jitter);
+  }
+
+  return intervalMs;
 }
 
 /**

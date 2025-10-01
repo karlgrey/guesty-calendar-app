@@ -68,9 +68,10 @@ export async function runETLJob(force: boolean = false): Promise<ETLJobResult> {
       logger.info(
         {
           duration,
-          listingSkipped: listingResult.skipped,
-          availabilitySkipped: availabilityResult.skipped,
-          daysCount: availabilityResult.daysCount,
+          listingUpserted: listingResult.skipped ? 0 : 1,
+          listingSkipped: listingResult.skipped || false,
+          availabilityRowsUpserted: availabilityResult.daysCount || 0,
+          availabilitySkipped: availabilityResult.skipped || false,
         },
         '✅ ETL job completed successfully'
       );
@@ -78,6 +79,8 @@ export async function runETLJob(force: boolean = false): Promise<ETLJobResult> {
       logger.warn(
         {
           duration,
+          listingUpserted: listingResult.success && !listingResult.skipped ? 1 : 0,
+          availabilityRowsUpserted: availabilityResult.daysCount || 0,
           listingError: listingResult.error,
           availabilityError: availabilityResult.error,
         },
