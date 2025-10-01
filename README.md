@@ -1,15 +1,25 @@
 # Guesty Calendar App
 
-A lightweight booking interface for a single property, powered by the Guesty API. This service provides fast, cached access to availability and pricing data for your vacation rental property.
+An Airbnb-style booking interface for a single property, powered by the Guesty API. This service provides a fast, localized, and accessible calendar with overlay datepicker and intelligent caching.
 
 ## Features
 
-- **Calendar Display**: Show available and blocked dates up to 12 months ahead
-- **Guest Validation**: Validate number of travelers against property capacity
-- **Price Calculation**: Compute complete quotes locally with all fees, taxes, and discounts
-- **Request to Book**: Generate mailto links with booking details
-- **SQLite Cache**: Fast responses with intelligent caching
+### Frontend (Airbnb-style UI)
+- **Compact Booking Header**: Always-visible price, dates, guests, and CTA
+- **Overlay Datepicker**: Two-month view (desktop) or fullscreen (mobile)
+- **Full Localization**: German default, English auto-detect (dates, currency, plurals)
+- **Pricing Details Overlay**: Complete breakdown with discounts, fees, and taxes
+- **Keyboard Navigation**: Full arrow key support with focus trap
+- **Accessibility**: WCAG 2.1 AA compliant with screen reader support
+- **Auto-selection**: First available date + minNights on load
+- **Request to Book**: Localized mailto links with complete details
+
+### Backend
+- **SQLite Cache**: Fast responses with hourly ETL refresh
+- **Quote Engine**: Local calculation with all fees, taxes, and discounts
+- **Scheduled Sync**: Automatic hourly updates with jitter
 - **Type-Safe**: Written in TypeScript with full type definitions
+- **Observable**: Comprehensive logging for monitoring
 
 ## Architecture
 
@@ -85,7 +95,7 @@ A lightweight booking interface for a single property, powered by the Guesty API
    http://localhost:3000
    ```
 
-The ETL job runs automatically every 6 hours to keep data fresh.
+The ETL job runs automatically every hour (with jitter) to keep data fresh.
 
 ## Configuration
 
@@ -115,8 +125,9 @@ PROPERTY_CURRENCY=EUR
 PROPERTY_TIMEZONE=Europe/Berlin
 
 # Cache TTLs (hours)
+# CACHE_AVAILABILITY_TTL also controls ETL scheduler interval
 CACHE_LISTING_TTL=24
-CACHE_AVAILABILITY_TTL=6
+CACHE_AVAILABILITY_TTL=1  # Hourly refresh with jitter
 CACHE_QUOTE_TTL=1
 
 # Database
@@ -179,11 +190,17 @@ guesty-calendar-app/
 │   ├── utils/           # Utility functions (logger, errors)
 │   ├── app.ts           # Express app setup
 │   └── index.ts         # Application entry point
+├── public/              # Frontend assets
+│   ├── index.html       # Booking header + overlays
+│   ├── calendar.js      # Calendar component (localized)
+│   └── calendar.css     # Styles (mobile-first)
 ├── docs/                # Documentation
-│   ├── GUESTY_API_ANALYSIS.md
-│   ├── DATA_MODEL.md
-│   ├── FIELD_MAPPING.md
-│   └── ETL_JOBS.md
+│   ├── CALENDAR_UI.md   # Frontend documentation
+│   ├── ETL_JOBS.md      # Scheduling and sync
+│   ├── API_ENDPOINTS.md # API reference
+│   ├── DATA_MODEL.md    # Database schema
+│   ├── FIELD_MAPPING.md # Guesty → Internal mapping
+│   └── GUESTY_API_ANALYSIS.md
 ├── fixtures/            # Sample API responses
 ├── schema.sql           # Database schema
 ├── package.json

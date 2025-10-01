@@ -107,7 +107,7 @@ Execute the ETL process:
 
 **Purpose:** Fetch and cache 12 months of daily availability
 
-**Frequency:** Every 6 hours (configurable via `CACHE_AVAILABILITY_TTL`)
+**Frequency:** Every 1 hour with jitter (configurable via `CACHE_AVAILABILITY_TTL`)
 
 **Data (per day):**
 - Date, status (available/blocked/booked)
@@ -150,14 +150,20 @@ Execute the ETL process:
 ### Automatic Scheduling
 
 The scheduler starts automatically when the server starts:
-- Uses `CACHE_AVAILABILITY_TTL` as the interval (default: 6 hours)
+- Uses `CACHE_AVAILABILITY_TTL` as the interval (default: 1 hour)
+- Adds ±5% random jitter to prevent thundering herd
 - Runs immediately on startup
-- Then runs on interval
+- Then runs on interval with jitter
 
 **Configuration:**
 ```env
-CACHE_AVAILABILITY_TTL=6  # Run every 6 hours
+CACHE_AVAILABILITY_TTL=1  # Run every 1 hour (with jitter)
 ```
+
+**Jitter:**
+- Random ±5% variance added to each scheduled run
+- Prevents multiple instances from syncing simultaneously
+- Example: 1h interval becomes 57-63 minutes
 
 **Lifecycle:**
 - Starts: When server starts
@@ -210,8 +216,8 @@ GET /sync/status
 - **Logic:** Check `last_synced_at`, skip if fresh
 
 ### Availability Table
-- **TTL:** 6 hours (configurable)
-- **Trigger:** Scheduled job or manual sync
+- **TTL:** 1 hour (configurable)
+- **Trigger:** Scheduled job with jitter or manual sync
 - **Logic:** Check date range coverage + freshness
 - **Cleanup:** Deletes past dates on each sync
 
@@ -258,15 +264,29 @@ The ETL system handles failures gracefully:
 All operations are logged with:
 - Start/end timestamps
 - Duration
-- Record counts
+- Record counts (listing upserted, availability rows upserted)
 - Success/error status
+- Skipped/errors/retries per run
+- Jitter applied to next scheduled run
 - Detailed error messages
 
 **Log Levels:**
-- `info` - Normal operations
+- `info` - Normal operations (includes hourly completion logs)
 - `warn` - Non-critical issues (e.g., skipped sync)
 - `error` - Failures
 - `debug` - Detailed execution info
+
+**Example Log Output:**
+```
+⏰ Scheduled ETL job triggered
+🚀 Starting ETL job (propertyId: xxx, force: false)
+Step 1/2: Syncing listing data...
+Listing cache is fresh, skipping sync
+Step 2/2: Syncing availability data...
+Availability cache is fresh, skipping sync
+✅ Scheduled ETL job completed (jobCount: 5, listingSkipped: true, availabilitySkipped: true, durationMs: 2)
+⏱️  Next scheduled run (nextRun: 2025-10-02T01:15:23.456Z, intervalMs: 3654000, jitterApplied: true)
+```
 
 ### Metrics (from logs)
 
