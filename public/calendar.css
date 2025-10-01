@@ -37,6 +37,527 @@ body {
   padding: var(--spacing);
 }
 
+/* Compact Booking Header */
+.booking-header {
+  background: white;
+  border-radius: var(--border-radius);
+  padding: 1.5rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  margin-bottom: 2rem;
+}
+
+.header-price {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 1.5rem;
+  cursor: pointer;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 4px;
+  transition: color 0.2s;
+}
+
+.header-price:hover {
+  color: var(--primary-color);
+}
+
+.booking-inputs {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+@media (min-width: 768px) {
+  .booking-inputs {
+    grid-template-columns: 1fr 1fr 1fr;
+  }
+}
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.input-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.date-input {
+  padding: 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  font-size: 1rem;
+  cursor: pointer;
+  background: white;
+  transition: border-color 0.2s;
+}
+
+.date-input:hover,
+.date-input:focus {
+  border-color: var(--primary-color);
+  outline: none;
+}
+
+.guest-selector-inline {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  padding: 0.5rem;
+  background: white;
+}
+
+.guest-btn-inline {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--primary-color);
+  background: white;
+  color: var(--primary-color);
+  font-size: 1.125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.guest-btn-inline:hover:not(:disabled) {
+  background: var(--primary-color);
+  color: white;
+}
+
+.guest-btn-inline:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  border-color: var(--border-color);
+  color: var(--text-secondary);
+}
+
+.guest-input-inline {
+  flex: 1;
+  text-align: center;
+  font-size: 1rem;
+  font-weight: 600;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  min-width: 40px;
+}
+
+.guest-input-inline:focus {
+  outline: none;
+}
+
+.header-cta {
+  width: 100%;
+  padding: 1rem;
+  background: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: var(--border-radius);
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 0.5rem;
+  transition: background 0.2s;
+}
+
+.header-cta:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+
+.header-cta:disabled {
+  background: var(--border-color);
+  cursor: not-allowed;
+}
+
+.header-helper {
+  text-align: center;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  margin-top: 0.5rem;
+}
+
+/* Overlay Styles */
+.overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  overflow-y: auto;
+}
+
+.overlay-content {
+  background: white;
+  border-radius: var(--border-radius);
+  max-width: 600px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  position: relative;
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.overlay-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.overlay-header h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.overlay-close {
+  background: none;
+  border: none;
+  font-size: 2rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  line-height: 1;
+  padding: 0;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s;
+}
+
+.overlay-close:hover {
+  color: var(--text-primary);
+}
+
+/* Pricing Content */
+.pricing-content {
+  max-width: 500px;
+}
+
+.pricing-breakdown-detail {
+  padding: 1.5rem;
+}
+
+.breakdown-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 0;
+  font-size: 1rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.breakdown-row:last-child {
+  border-bottom: none;
+}
+
+.breakdown-row.total {
+  margin-top: 0.5rem;
+  padding-top: 1.5rem;
+  border-top: 2px solid var(--text-primary);
+  font-size: 1.125rem;
+  font-weight: 700;
+}
+
+.breakdown-label {
+  color: var(--text-secondary);
+}
+
+.breakdown-value {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.breakdown-row.discount .breakdown-label,
+.breakdown-row.discount .breakdown-value {
+  color: var(--success-color);
+}
+
+.breakdown-row.total .breakdown-label,
+.breakdown-row.total .breakdown-value {
+  color: var(--text-primary);
+}
+
+/* Total at top (prominent) */
+.breakdown-row.total-top {
+  padding: 1.5rem 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  border-bottom: none;
+}
+
+.breakdown-row.total-top .breakdown-label,
+.breakdown-row.total-top .breakdown-value {
+  color: var(--text-primary);
+}
+
+.breakdown-divider {
+  height: 2px;
+  background: var(--border-color);
+  margin: 0.5rem 0 1rem 0;
+}
+
+/* Empty state */
+.pricing-empty-state {
+  padding: 3rem 2rem;
+  text-align: center;
+}
+
+.pricing-empty-state p {
+  color: var(--text-secondary);
+  font-size: 1rem;
+  margin: 0;
+}
+
+/* Calendar Overlay (Mobile fullscreen, Desktop centered) */
+.calendar-content {
+  max-width: 900px;
+  position: relative;
+}
+
+.calendar-nav-overlay {
+  display: flex;
+  justify-content: space-between;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.nav-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--border-color);
+  background: white;
+  color: var(--text-primary);
+  font-size: 1.25rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nav-btn:hover:not(:disabled) {
+  background: var(--primary-color);
+  color: white;
+  border-color: var(--primary-color);
+}
+
+.nav-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.calendar-months-overlay {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 2rem;
+  padding: 1.5rem;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+@media (min-width: 768px) {
+  .calendar-months-overlay {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.calendar-month-overlay {
+  display: flex;
+  flex-direction: column;
+}
+
+.month-title-overlay {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0 0 1rem 0;
+  text-align: center;
+}
+
+.calendar-grid-overlay {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+
+.calendar-day-header-overlay {
+  text-align: center;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding: 0.5rem 0;
+  text-transform: uppercase;
+}
+
+.calendar-day-overlay {
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+  background: white;
+  position: relative;
+  font-size: 0.875rem;
+}
+
+.calendar-day-overlay:hover:not([data-disabled]):not(.empty) {
+  border-color: var(--primary-color);
+  transform: scale(1.05);
+  z-index: 1;
+}
+
+.calendar-day-overlay.empty {
+  border: none;
+  background: transparent;
+  cursor: default;
+}
+
+.calendar-day-overlay[data-disabled] {
+  background: var(--bg-disabled);
+  color: var(--text-secondary);
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.calendar-day-overlay.past {
+  background: var(--bg-disabled);
+  color: var(--text-secondary);
+  cursor: not-allowed;
+}
+
+.calendar-day-overlay.booked,
+.calendar-day-overlay.blocked {
+  background: var(--bg-booked);
+  color: var(--text-secondary);
+  cursor: not-allowed;
+  text-decoration: line-through;
+}
+
+.calendar-day-overlay.selected {
+  background: var(--primary-color);
+  color: white;
+  border-color: var(--primary-color);
+  font-weight: 700;
+}
+
+.calendar-day-overlay.in-range {
+  background: var(--bg-selected);
+  border-color: var(--primary-color);
+}
+
+.calendar-day-overlay.hover-range {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+.calendar-day-overlay.hover-end {
+  background: #dbeafe;
+  border-color: var(--primary-color);
+  border-width: 2px;
+}
+
+.day-number-overlay {
+  font-weight: 500;
+}
+
+.calendar-actions {
+  display: flex;
+  gap: 1rem;
+  padding: 1.5rem;
+  border-top: 1px solid var(--border-color);
+  justify-content: flex-end;
+}
+
+.action-btn {
+  padding: 0.75rem 1.5rem;
+  border-radius: var(--border-radius);
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
+}
+
+.action-btn.primary {
+  background: var(--primary-color);
+  color: white;
+}
+
+.action-btn.primary:hover {
+  background: var(--primary-hover);
+}
+
+.action-btn.secondary {
+  background: white;
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+
+.action-btn.secondary:hover {
+  background: var(--bg-disabled);
+}
+
+@media (max-width: 767px) {
+  .overlay {
+    padding: 0;
+  }
+
+  .calendar-content {
+    max-width: 100%;
+    width: 100%;
+    height: 100%;
+    max-height: 100vh;
+    border-radius: 0;
+  }
+
+  .calendar-months-overlay {
+    grid-template-columns: 1fr;
+    max-height: calc(100vh - 250px);
+  }
+
+  .calendar-actions {
+    flex-direction: column-reverse;
+  }
+
+  .action-btn {
+    width: 100%;
+  }
+}
+
 /* Calendar Header */
 .calendar-header {
   display: flex;

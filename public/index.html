@@ -8,83 +8,116 @@
 </head>
 <body>
   <div class="container">
-    <!-- Header -->
-    <header class="calendar-header">
-      <h1 class="calendar-title">Select Your Dates</h1>
-      <div class="calendar-nav">
-        <button id="prev-month">← Previous</button>
-        <button id="next-month">Next →</button>
+    <!-- Compact Booking Header -->
+    <div class="booking-header">
+      <!-- Price Line (clickable) -->
+      <div id="header-price" class="header-price" onclick="calendar.togglePricingOverlay()">
+        Loading...
       </div>
-    </header>
 
-    <!-- Legend -->
-    <div class="calendar-legend">
-      <div class="legend-item">
-        <div class="legend-box available"></div>
-        <span>Available</span>
-      </div>
-      <div class="legend-item">
-        <div class="legend-box selected"></div>
-        <span>Selected</span>
-      </div>
-      <div class="legend-item">
-        <div class="legend-box unavailable"></div>
-        <span>Unavailable</span>
-      </div>
-    </div>
-
-    <!-- Guest Selector -->
-    <div class="guest-selector-wrapper">
-      <div class="guest-selector">
-        <label for="guest-count" class="guest-label">
-          <span class="guest-icon">👥</span>
-          Number of Guests
-        </label>
-        <div class="guest-controls">
-          <button id="guest-decrement" class="guest-btn" aria-label="Decrease guests">−</button>
+      <!-- Inputs Row -->
+      <div class="booking-inputs">
+        <div class="input-group">
+          <label id="label-checkin" class="input-label">Check-in</label>
           <input
-            type="number"
-            id="guest-count"
-            class="guest-input"
-            value="2"
-            min="1"
+            type="text"
+            id="check-in-input"
+            class="date-input"
             readonly
-            aria-label="Number of guests"
+            onclick="calendar.openDatepicker()"
+            placeholder=""
           />
-          <button id="guest-increment" class="guest-btn" aria-label="Increase guests">+</button>
         </div>
-        <div id="guest-helper" class="guest-helper"></div>
+
+        <div class="input-group">
+          <label id="label-checkout" class="input-label">Check-out</label>
+          <input
+            type="text"
+            id="check-out-input"
+            class="date-input"
+            readonly
+            onclick="calendar.openDatepicker()"
+            placeholder=""
+          />
+        </div>
+
+        <div class="input-group">
+          <label id="label-guests" class="input-label">Guests</label>
+          <div class="guest-selector-inline">
+            <button id="guest-decrement" class="guest-btn-inline">−</button>
+            <input
+              type="number"
+              id="guest-count"
+              class="guest-input-inline"
+              value="2"
+              min="1"
+              readonly
+            />
+            <button id="guest-increment" class="guest-btn-inline">+</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- CTA -->
+      <button id="header-cta" class="header-cta" onclick="calendar.requestBooking()">
+        Request to Book
+      </button>
+      <div id="header-helper" class="header-helper">
+        You won't be charged yet.
       </div>
     </div>
 
     <!-- Error Message -->
     <div id="error-message" class="error-message" style="display: none;"></div>
 
-    <!-- Calendar Grid -->
-    <div id="calendar-wrapper" class="calendar-wrapper">
-      <div class="loading">
-        <div class="spinner"></div>
-        <p>Loading availability...</p>
+    <!-- Pricing Details Overlay (hidden by default) -->
+    <div id="pricing-overlay" class="overlay" style="display: none;" onclick="calendar.closePricingOverlay(event)">
+      <div class="overlay-content pricing-content" onclick="event.stopPropagation()">
+        <div class="overlay-header">
+          <h3 id="pricing-title">Pricing details</h3>
+          <button id="pricing-close-btn" class="overlay-close" onclick="calendar.closePricingOverlay()">&times;</button>
+        </div>
+        <div id="pricing-breakdown" class="pricing-breakdown-detail">
+          <!-- Populated by JavaScript -->
+        </div>
       </div>
     </div>
 
-    <!-- Selection Info -->
-    <div id="selection-info" class="selection-info">
-      <p style="text-align: center; color: #6b7280;">Select your check-in date to get started</p>
-      <button class="cta-button" disabled>Request to Book</button>
+    <!-- Calendar Overlay -->
+    <div id="calendar-overlay" class="overlay" style="display: none;" onclick="calendar.handleOverlayClick(event)">
+      <div class="overlay-content calendar-content" onclick="event.stopPropagation()">
+        <div class="overlay-header">
+          <h3 id="calendar-title">Select Dates</h3>
+          <button id="calendar-close-btn" class="overlay-close" onclick="calendar.closeDatepicker()">&times;</button>
+        </div>
+
+        <!-- Month Navigation -->
+        <div class="calendar-nav-overlay">
+          <button id="prev-month-overlay" class="nav-btn" onclick="calendar.previousMonthOverlay()">
+            ←
+          </button>
+          <button id="next-month-overlay" class="nav-btn" onclick="calendar.nextMonthOverlay()">
+            →
+          </button>
+        </div>
+
+        <!-- Two-month calendar grid -->
+        <div id="calendar-months-overlay" class="calendar-months-overlay">
+          <!-- Will be populated by JavaScript -->
+        </div>
+
+        <!-- Actions -->
+        <div class="calendar-actions">
+          <button id="reset-dates-btn" class="action-btn secondary" onclick="calendar.resetDates()">
+            Reset dates
+          </button>
+          <button id="close-calendar-btn" class="action-btn primary" onclick="calendar.closeDatepicker()">
+            Close
+          </button>
+        </div>
+      </div>
     </div>
 
-    <!-- Instructions -->
-    <div style="margin-top: 2rem; padding: 1.5rem; background: #f9fafb; border-radius: 8px; font-size: 0.875rem; color: #6b7280;">
-      <h4 style="margin: 0 0 0.5rem 0; color: #111827;">How to book:</h4>
-      <ol style="margin: 0; padding-left: 1.5rem;">
-        <li>Choose number of guests</li>
-        <li>Select your check-in date</li>
-        <li>Select your check-out date (minimum stay applies)</li>
-        <li>Review the price and click "Request to Book"</li>
-        <li>An email will be pre-filled with your booking details</li>
-      </ol>
-    </div>
   </div>
 
   <script src="calendar.js"></script>
