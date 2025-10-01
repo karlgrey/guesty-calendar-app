@@ -65,6 +65,7 @@ class BookingCalendar {
         monthlyDiscount: 'Monatsrabatt',
         taxes: 'Steuern',
         emptyPricing: 'Wähle Reisedaten, um den Gesamtpreis zu sehen.',
+        noAvailability: 'Aktuell keine Verfügbarkeit',
         ariaDecreaseGuests: 'Gästeanzahl verringern',
         ariaIncreaseGuests: 'Gästeanzahl erhöhen',
         ariaNumGuests: 'Anzahl der Gäste',
@@ -117,6 +118,7 @@ class BookingCalendar {
         monthlyDiscount: 'Monthly discount',
         taxes: 'Taxes',
         emptyPricing: 'Select dates to see the total price.',
+        noAvailability: 'No availability at this time',
         ariaDecreaseGuests: 'Decrease guests',
         ariaIncreaseGuests: 'Increase guests',
         ariaNumGuests: 'Number of guests',
@@ -699,7 +701,16 @@ class BookingCalendar {
    * Update header info with price and dates
    */
   async updateHeaderInfo() {
-    if (!this.selectedCheckIn || !this.selectedCheckOut) return;
+    // Handle edge case: no availability
+    if (!this.selectedCheckIn || !this.selectedCheckOut) {
+      const priceEl = document.getElementById('header-price');
+      if (priceEl) {
+        priceEl.textContent = this.t('noAvailability');
+      }
+      this.currentQuote = null;
+      this.updateCtaState();
+      return;
+    }
 
     const checkIn = this.formatDate(this.selectedCheckIn);
     const checkOut = this.formatDate(this.selectedCheckOut);
