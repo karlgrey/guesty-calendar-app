@@ -27,7 +27,7 @@ export interface SyncAvailabilityResult {
 /**
  * Check if availability cache needs refresh
  */
-function needsAvailabilityRefresh(listingId: string, ttlHours: number): boolean {
+function needsAvailabilityRefresh(listingId: string, ttlMinutes: number): boolean {
   try {
     const dateRange = getAvailabilityDateRange(listingId);
 

@@ -194,9 +194,9 @@ function calculateTaxes(
     // Build description
     let description = '';
     if (tax.units === 'PERCENTAGE') {
-      description = `${tax.amount}% on ${tax.appliedToAllFees ? 'all fees' : tax.appliedOnFees.join(', ')}`;
+      description = `${tax.type} ${tax.amount}%`;
     } else {
-      description = `${tax.amount} per ${tax.quantifier.toLowerCase().replace('_', ' ')}`;
+      description = `${tax.type} ${tax.amount} per ${tax.quantifier.toLowerCase().replace('_', ' ')}`;
     }
 
     let calculation: string | undefined;

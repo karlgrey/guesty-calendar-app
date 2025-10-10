@@ -43,10 +43,11 @@ const configSchema = z.object({
   bookingRecipientEmail: z.string().email('Invalid booking recipient email'),
   bookingSenderName: z.string().default('Farmhouse Prasser'),
 
-  // Cache TTLs (in hours)
-  cacheListingTtl: z.coerce.number().int().min(1).default(24),
-  cacheAvailabilityTtl: z.coerce.number().int().min(1).default(1),
-  cacheQuoteTtl: z.coerce.number().int().min(1).default(1),
+  // Cache TTLs (in minutes)
+  // Updated to use minutes instead of hours for more frequent refresh
+  cacheListingTtl: z.coerce.number().int().min(1).default(1440), // 24 hours
+  cacheAvailabilityTtl: z.coerce.number().int().min(1).default(30), // 30 minutes (avoids rate limiting)
+  cacheQuoteTtl: z.coerce.number().int().min(1).default(60), // 1 hour
 
   // Database
   databasePath: z.string().default('./data/calendar.db'),

@@ -41,8 +41,8 @@ async function start() {
         },
         `Server running at http://${config.host}:${config.port}`
       );
+      logger.info(`Admin dashboard: http://${config.host}:${config.port}/admin`);
       logger.info(`Health check: http://${config.host}:${config.port}/health`);
-      logger.info(`Manual sync: POST http://${config.host}:${config.port}/sync/all`);
     });
 
     // Start job scheduler

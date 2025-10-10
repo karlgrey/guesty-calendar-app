@@ -83,10 +83,10 @@ async function executeScheduledJob() {
  * @param withJitter - If true, adds ±5% random jitter to prevent thundering herd
  */
 function getJobInterval(withJitter: boolean = false): number {
-  // Use availability TTL (in hours) as the interval
+  // Use availability TTL (in minutes) as the interval
   // This ensures we refresh before cache goes stale
-  const hours = config.cacheAvailabilityTtl;
-  let intervalMs = hours * 60 * 60 * 1000; // Convert to milliseconds
+  const minutes = config.cacheAvailabilityTtl;
+  let intervalMs = minutes * 60 * 1000; // Convert to milliseconds
 
   if (withJitter) {
     // Add ±5% jitter to prevent all instances from syncing at exactly the same time
@@ -108,11 +108,11 @@ export function startScheduler() {
   }
 
   const intervalMs = getJobInterval();
-  const intervalHours = intervalMs / (60 * 60 * 1000);
+  const intervalMinutes = intervalMs / (60 * 1000);
 
   logger.info(
     {
-      intervalHours,
+      intervalMinutes,
       intervalMs,
     },
     '📅 Starting job scheduler'
@@ -160,7 +160,7 @@ export function getSchedulerStatus() {
     lastRun: state.lastRun?.toISOString() || null,
     nextRun: state.nextRun?.toISOString() || null,
     jobCount: state.jobCount,
-    intervalHours: getJobInterval() / (60 * 60 * 1000),
+    intervalMinutes: getJobInterval() / (60 * 1000),
   };
 }
 

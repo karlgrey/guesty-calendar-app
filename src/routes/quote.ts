@@ -97,7 +97,7 @@ router.get('/', (req, res, next) => {
 
     // Save to cache
     const expiresAt = new Date();
-    expiresAt.setHours(expiresAt.getHours() + config.cacheQuoteTtl);
+    expiresAt.setMinutes(expiresAt.getMinutes() + config.cacheQuoteTtl);
 
     saveQuoteToCache({
       listing_id: quote.listingId,

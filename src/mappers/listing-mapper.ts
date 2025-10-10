@@ -29,8 +29,8 @@ export function mapTax(guestyTax: GuestyTax): Tax {
 export function mapListing(guestyListing: GuestyListing): Omit<Listing, 'created_at' | 'updated_at'> {
   const now = new Date().toISOString();
 
-  // Map taxes
-  const taxes = (guestyListing.taxes || []).map(mapTax);
+  // Map taxes (use accountTaxes if available, fallback to taxes)
+  const taxes = (guestyListing.accountTaxes || guestyListing.taxes || []).map(mapTax);
 
   // Determine active status (both active AND listed must be true)
   const active = (guestyListing.active ?? true) && (guestyListing.listed ?? true);

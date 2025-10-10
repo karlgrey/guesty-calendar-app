@@ -125,7 +125,7 @@ export function getActiveListings(): Listing[] {
 /**
  * Check if listing needs refresh (last_synced_at is older than TTL)
  */
-export function needsRefresh(listingId: string, ttlHours: number = 24): boolean {
+export function needsRefresh(listingId: string, ttlMinutes: number = 1440): boolean {
   const db = getDatabase();
 
   try {
@@ -133,13 +133,13 @@ export function needsRefresh(listingId: string, ttlHours: number = 24): boolean 
       .prepare(
         `SELECT
           CASE
-            WHEN datetime(last_synced_at) < datetime('now', '-' || ? || ' hours') THEN 1
+            WHEN datetime(last_synced_at) < datetime('now', '-' || ? || ' minutes') THEN 1
             ELSE 0
           END as needs_refresh
          FROM listings
          WHERE id = ?`
       )
-      .get(ttlHours, listingId) as { needs_refresh: number } | undefined;
+      .get(ttlMinutes, listingId) as { needs_refresh: number } | undefined;
 
     // If listing doesn't exist, it needs refresh
     if (!result) {

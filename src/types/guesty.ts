@@ -36,6 +36,7 @@ export interface GuestyListing {
   };
 
   taxes?: GuestyTax[];
+  accountTaxes?: GuestyTax[];
 
   terms?: {
     minNights?: number;

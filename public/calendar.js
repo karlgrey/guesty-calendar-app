@@ -155,6 +155,23 @@ class BookingCalendar {
   }
 
   /**
+   * Translate tax description (replace tax type with localized term)
+   * Example: "VAT 7%" becomes "Steuern 7%" (DE) or "Taxes 7%" (EN)
+   */
+  translateTaxDescription(description, includePercentage = true) {
+    // Replace "VAT" or other tax types with localized "Taxes"/"Steuern"
+    const taxTerm = this.t('taxes');
+    const translated = description.replace(/^[A-Z_]+/, taxTerm);
+
+    // For overlay, remove percentage if requested
+    if (!includePercentage) {
+      return translated.replace(/\s+\d+%$/, '');
+    }
+
+    return translated;
+  }
+
+  /**
    * Get week start day (0 = Sunday, 1 = Monday)
    */
   getWeekStart() {
@@ -732,11 +749,15 @@ class BookingCalendar {
       // Store quote for email
       this.currentQuote = quote;
 
-      // Update header price
+      // Update header price (excluding cleaning fee)
       const priceEl = document.getElementById('header-price');
       if (priceEl) {
-        const totalPrice = this.formatCurrency(quote.pricing.totalPrice, quote.currency);
-        priceEl.textContent = this.t('priceFor')(totalPrice, quote.nights);
+        const priceWithoutCleaning = quote.pricing.totalPrice - quote.pricing.cleaningFee;
+        const totalPrice = this.formatCurrency(priceWithoutCleaning, quote.currency);
+        const nightsText = this.language === 'de'
+          ? `für ${quote.nights} ${quote.nights === 1 ? 'Nacht' : 'Nächte'}`
+          : `for ${quote.nights} ${quote.nights === 1 ? 'night' : 'nights'}`;
+        priceEl.innerHTML = `<span class="price-underline" onclick="calendar.togglePricingOverlay()">${totalPrice}</span> ${nightsText}`;
       }
 
       // Update date inputs
@@ -761,11 +782,13 @@ class BookingCalendar {
   }
 
   /**
-   * Format date for input display (e.g., "Mar 15")
+   * Format date for input display (e.g., "15.03.2025")
    */
   formatDateShort(date) {
-    const options = { month: 'short', day: 'numeric' };
-    return date.toLocaleDateString(this.language === 'de' ? 'de-DE' : 'en-US', options);
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    return `${day}.${month}.${year}`;
   }
 
   /**
@@ -833,15 +856,7 @@ class BookingCalendar {
         `;
       }
 
-      // Cleaning fee
-      if (quote.pricing.cleaningFee > 0) {
-        breakdownHtml += `
-          <div class="breakdown-row">
-            <span class="breakdown-label">Cleaning fee</span>
-            <span class="breakdown-value">${this.formatCurrency(quote.pricing.cleaningFee, quote.currency)}</span>
-          </div>
-        `;
-      }
+      // Cleaning fee - removed from display (kept in email only)
 
       // Extra guest fee
       if (quote.pricing.extraGuestFee > 0) {
@@ -858,7 +873,7 @@ class BookingCalendar {
         quote.breakdown.taxes.forEach(tax => {
           breakdownHtml += `
             <div class="breakdown-row">
-              <span class="breakdown-label">${tax.description}</span>
+              <span class="breakdown-label">${this.translateTaxDescription(tax.description, false)}</span>
               <span class="breakdown-value">${this.formatCurrency(tax.amount, quote.currency)}</span>
             </div>
           `;
@@ -870,11 +885,11 @@ class BookingCalendar {
         <div class="selection-details">
           <div class="selection-row">
             <span class="selection-label">Check-in</span>
-            <span class="selection-value">${new Date(checkIn).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+            <span class="selection-value">${this.formatDateShort(new Date(checkIn))}</span>
           </div>
           <div class="selection-row">
             <span class="selection-label">Check-out</span>
-            <span class="selection-value">${new Date(checkOut).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+            <span class="selection-value">${this.formatDateShort(new Date(checkOut))}</span>
           </div>
           <div class="selection-row">
             <span class="selection-label">Nights</span>
@@ -885,8 +900,8 @@ class BookingCalendar {
             <span class="selection-value">${guests}</span>
           </div>
           <div class="selection-row" style="border-top: 2px solid #e5e7eb; margin-top: 1rem; padding-top: 1rem;">
-            <span class="selection-label">Total Price (incl. cleaning)</span>
-            <span class="selection-value total-price">${this.formatCurrency(quote.pricing.totalPrice, quote.currency)}</span>
+            <span class="selection-label">Total Price</span>
+            <span class="selection-value total-price">${this.formatCurrency(quote.pricing.totalPrice - quote.pricing.cleaningFee, quote.currency)}</span>
           </div>
         </div>
 
@@ -1069,15 +1084,7 @@ class BookingCalendar {
       `;
     }
 
-    // 3. Cleaning (once per stay)
-    if (quote.pricing.cleaningFee > 0) {
-      breakdownHtml += `
-        <div class="breakdown-row">
-          <span class="breakdown-label">${this.t('cleaningFee')}</span>
-          <span class="breakdown-value">${this.formatCurrency(quote.pricing.cleaningFee, quote.currency)}</span>
-        </div>
-      `;
-    }
+    // 3. Cleaning (removed from display, kept in email only)
 
     // 4. Extra guests
     if (quote.pricing.extraGuestFee > 0) {
@@ -1094,18 +1101,19 @@ class BookingCalendar {
       quote.breakdown.taxes.forEach(tax => {
         breakdownHtml += `
           <div class="breakdown-row">
-            <span class="breakdown-label">${tax.description}</span>
+            <span class="breakdown-label">${this.translateTaxDescription(tax.description, false)}</span>
             <span class="breakdown-value">${this.formatCurrency(tax.amount, quote.currency)}</span>
           </div>
         `;
       });
     }
 
-    // 6. Total at the bottom
+    // 6. Total at the bottom (excluding cleaning fee)
+    const totalWithoutCleaning = quote.pricing.totalPrice - quote.pricing.cleaningFee;
     breakdownHtml += `
       <div class="breakdown-row total">
         <span class="breakdown-label">${this.t('total')}</span>
-        <span class="breakdown-value">${this.formatCurrency(quote.pricing.totalPrice, quote.currency)}</span>
+        <span class="breakdown-value">${this.formatCurrency(totalWithoutCleaning, quote.currency)}</span>
       </div>
     `;
 
@@ -1744,12 +1752,11 @@ class BookingCalendar {
     const checkOut = this.formatDate(this.selectedCheckOut);
     const guests = this.guestCount;
     const quote = this.currentQuote;
-    const propertyTitle = this.listingData?.title || 'Property';
+    const propertyTitle = 'Farmhouse Prasser';
 
-    // Format dates for subject (locale-specific)
-    const locale = this.language === 'de' ? 'de-DE' : 'en-US';
-    const checkInFormatted = new Date(checkIn).toLocaleDateString(locale, { month: 'short', day: 'numeric' });
-    const checkOutFormatted = new Date(checkOut).toLocaleDateString(locale, { month: 'short', day: 'numeric' });
+    // Format dates for subject (DD.MM.YYYY)
+    const checkInFormatted = this.formatDateShort(new Date(checkIn));
+    const checkOutFormatted = this.formatDateShort(new Date(checkOut));
 
     // Generate mailto link with localized subject
     const subject = encodeURIComponent(
@@ -1798,7 +1805,7 @@ class BookingCalendar {
     if (quote.breakdown.taxes && quote.breakdown.taxes.length > 0) {
       emailBody += `${this.t('emailTaxes')}:\n`;
       quote.breakdown.taxes.forEach(tax => {
-        emailBody += `  ${tax.description}: ${this.formatCurrency(tax.amount, quote.currency)}\n`;
+        emailBody += `  ${this.translateTaxDescription(tax.description)}: ${this.formatCurrency(tax.amount, quote.currency)}\n`;
       });
       emailBody += `\n${this.t('emailTotalTaxes')}: ${this.formatCurrency(quote.pricing.totalTaxes, quote.currency)}\n\n`;
     }

@@ -10,6 +10,8 @@ import syncRoutes from './routes/sync.js';
 import listingRoutes from './routes/listing.js';
 import availabilityRoutes from './routes/availability.js';
 import quoteRoutes from './routes/quote.js';
+import debugRoutes from './routes/debug.js';
+import adminRoutes from './routes/admin.js';
 
 /**
  * Create and configure Express application
@@ -36,6 +38,8 @@ export function createApp() {
   // Routes
   app.use('/health', healthRoutes);
   app.use('/sync', syncRoutes);
+  app.use('/debug', debugRoutes);
+  app.use('/admin', adminRoutes);
 
   // Public API routes
   app.use('/listing', listingRoutes);
