@@ -1,0 +1,638 @@
+/**
+ * Admin Routes
+ *
+ * Backend admin interface for database viewing, manual sync triggers, and health monitoring.
+ */
+
+import express from 'express';
+import { getDatabase } from '../db/index.js';
+import { syncConfiguredListing } from '../jobs/sync-listing.js';
+import { syncConfiguredAvailability } from '../jobs/sync-availability.js';
+import { runETLJob } from '../jobs/etl-job.js';
+import { getSchedulerStatus } from '../jobs/scheduler.js';
+import { config } from '../config/index.js';
+import logger from '../utils/logger.js';
+
+const router = express.Router();
+
+/**
+ * GET /admin
+ * Admin dashboard HTML
+ */
+router.get('/', (req, res) => {
+  res.send(`
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Guesty Calendar Admin</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: #f5f5f5;
+      padding: 20px;
+      line-height: 1.6;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      color: #333;
+      margin-bottom: 30px;
+      font-size: 32px;
+    }
+
+    h2 {
+      color: #555;
+      margin: 30px 0 15px;
+      font-size: 24px;
+      border-bottom: 2px solid #007bff;
+      padding-bottom: 10px;
+    }
+
+    .section {
+      background: white;
+      padding: 25px;
+      margin-bottom: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 15px;
+      margin-bottom: 20px;
+    }
+
+    .card {
+      background: #f8f9fa;
+      padding: 20px;
+      border-radius: 6px;
+      border-left: 4px solid #007bff;
+    }
+
+    .card h3 {
+      font-size: 14px;
+      color: #666;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .card .value {
+      font-size: 28px;
+      font-weight: bold;
+      color: #333;
+    }
+
+    .card .subvalue {
+      font-size: 14px;
+      color: #888;
+      margin-top: 5px;
+    }
+
+    button {
+      background: #007bff;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 15px;
+      font-weight: 500;
+      transition: background 0.2s;
+      margin-right: 10px;
+      margin-bottom: 10px;
+    }
+
+    button:hover {
+      background: #0056b3;
+    }
+
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+
+    button.success {
+      background: #28a745;
+    }
+
+    button.success:hover {
+      background: #218838;
+    }
+
+    button.danger {
+      background: #dc3545;
+    }
+
+    button.danger:hover {
+      background: #c82333;
+    }
+
+    .status {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .status.running {
+      background: #d4edda;
+      color: #155724;
+    }
+
+    .status.stopped {
+      background: #f8d7da;
+      color: #721c24;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 15px;
+    }
+
+    th, td {
+      padding: 12px;
+      text-align: left;
+      border-bottom: 1px solid #ddd;
+    }
+
+    th {
+      background: #f8f9fa;
+      font-weight: 600;
+      color: #555;
+    }
+
+    tr:hover {
+      background: #f8f9fa;
+    }
+
+    pre {
+      background: #f8f9fa;
+      padding: 15px;
+      border-radius: 6px;
+      overflow-x: auto;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .message {
+      padding: 12px 16px;
+      border-radius: 6px;
+      margin: 15px 0;
+      display: none;
+    }
+
+    .message.success {
+      background: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+
+    .message.error {
+      background: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+
+    .message.show {
+      display: block;
+    }
+
+    .loading {
+      display: inline-block;
+      width: 14px;
+      height: 14px;
+      border: 2px solid #f3f3f3;
+      border-top: 2px solid #007bff;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .actions {
+      margin-top: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🛠️ Guesty Calendar Admin</h1>
+
+    <div id="message" class="message"></div>
+
+    <!-- Health Status -->
+    <div class="section">
+      <h2>System Health</h2>
+      <div class="grid" id="healthGrid">
+        <div class="card">
+          <h3>Status</h3>
+          <div class="value">Loading...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Manual Sync -->
+    <div class="section">
+      <h2>Manual Data Sync</h2>
+      <p style="color: #666; margin-bottom: 20px;">Trigger immediate data refresh from Guesty API</p>
+      <div class="actions">
+        <button onclick="syncAll()">🔄 Sync All (Listing + Availability)</button>
+        <button onclick="syncListing()">📄 Sync Listing Only</button>
+        <button onclick="syncAvailability()">📅 Sync Availability Only</button>
+      </div>
+    </div>
+
+    <!-- Database Viewer -->
+    <div class="section">
+      <h2>Database</h2>
+      <div class="actions">
+        <button onclick="viewTable('listings')">View Listings</button>
+        <button onclick="viewTable('availability')">View Availability</button>
+        <button onclick="viewTable('cached_quotes')">View Cached Quotes</button>
+      </div>
+      <div id="tableView"></div>
+    </div>
+
+    <!-- Scheduler Status -->
+    <div class="section">
+      <h2>ETL Scheduler</h2>
+      <div id="schedulerStatus">Loading...</div>
+    </div>
+  </div>
+
+  <script>
+    function showMessage(text, type = 'success') {
+      const msg = document.getElementById('message');
+      msg.textContent = text;
+      msg.className = 'message show ' + type;
+      setTimeout(() => {
+        msg.className = 'message';
+      }, 5000);
+    }
+
+    async function loadHealth() {
+      try {
+        const res = await fetch('/admin/health');
+        const data = await res.json();
+
+        const grid = document.getElementById('healthGrid');
+
+        // Determine last sync status
+        let lastSyncHtml = '';
+        if (data.scheduler.lastSuccessfulRun) {
+          const successDate = new Date(data.scheduler.lastSuccessfulRun);
+          lastSyncHtml = \`
+            <div class="value" style="color: #28a745;">\${successDate.toLocaleTimeString()}</div>
+            <div class="subvalue" style="color: #28a745;">✓ Success · \${successDate.toLocaleDateString()}</div>
+          \`;
+        } else if (data.scheduler.lastFailedRun) {
+          const failDate = new Date(data.scheduler.lastFailedRun);
+          lastSyncHtml = \`
+            <div class="value" style="color: #dc3545;">\${failDate.toLocaleTimeString()}</div>
+            <div class="subvalue" style="color: #dc3545;">✗ Failed · \${failDate.toLocaleDateString()}</div>
+          \`;
+        } else {
+          lastSyncHtml = \`
+            <div class="value">Never</div>
+            <div class="subvalue">No syncs yet</div>
+          \`;
+        }
+
+        grid.innerHTML = \`
+          <div class="card">
+            <h3>Database</h3>
+            <div class="value">\${data.database}</div>
+            <div class="subvalue">Initialized: \${data.databaseInitialized ? 'Yes' : 'No'}</div>
+          </div>
+          <div class="card">
+            <h3>Scheduler</h3>
+            <div class="value">\${data.scheduler.running ? 'Running' : 'Stopped'}</div>
+            <div class="subvalue">Success: \${data.scheduler.successCount || 0} · Failed: \${data.scheduler.failureCount || 0}</div>
+          </div>
+          <div class="card">
+            <h3>Last Successful Sync</h3>
+            \${lastSyncHtml}
+          </div>
+          <div class="card">
+            <h3>Next Sync</h3>
+            <div class="value">\${data.scheduler.nextRun ? new Date(data.scheduler.nextRun).toLocaleTimeString() : 'N/A'}</div>
+            <div class="subvalue">Interval: \${data.scheduler.intervalMinutes} min</div>
+          </div>
+        \`;
+
+        // Scheduler status
+        const schedulerDiv = document.getElementById('schedulerStatus');
+        schedulerDiv.innerHTML = \`
+          <div class="grid">
+            <div class="card">
+              <h3>Status</h3>
+              <div class="value"><span class="status \${data.scheduler.running ? 'running' : 'stopped'}">\${data.scheduler.running ? 'Running' : 'Stopped'}</span></div>
+            </div>
+            <div class="card">
+              <h3>Total Jobs</h3>
+              <div class="value">\${data.scheduler.jobCount || 0}</div>
+              <div class="subvalue" style="color: #28a745;">✓ \${data.scheduler.successCount || 0} success</div>
+              <div class="subvalue" style="color: #dc3545;">✗ \${data.scheduler.failureCount || 0} failed</div>
+            </div>
+            <div class="card">
+              <h3>Refresh Interval</h3>
+              <div class="value">\${data.scheduler.intervalMinutes}</div>
+              <div class="subvalue">minutes</div>
+            </div>
+          </div>
+        \`;
+      } catch (error) {
+        showMessage('Failed to load health status: ' + error.message, 'error');
+      }
+    }
+
+    async function syncAll() {
+      const btn = event.target;
+      btn.disabled = true;
+      btn.innerHTML = '🔄 Syncing... <span class="loading"></span>';
+
+      try {
+        const res = await fetch('/admin/sync/all', { method: 'POST' });
+        const data = await res.json();
+
+        if (data.success) {
+          showMessage(\`✅ Sync completed in \${data.duration}ms\`, 'success');
+          loadHealth();
+        } else {
+          showMessage('❌ Sync failed: ' + (data.error || 'Unknown error'), 'error');
+        }
+      } catch (error) {
+        showMessage('❌ Sync failed: ' + error.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '🔄 Sync All (Listing + Availability)';
+      }
+    }
+
+    async function syncListing() {
+      const btn = event.target;
+      btn.disabled = true;
+      btn.innerHTML = '📄 Syncing... <span class="loading"></span>';
+
+      try {
+        const res = await fetch('/admin/sync/listing', { method: 'POST' });
+        const data = await res.json();
+
+        if (data.success) {
+          showMessage(\`✅ Listing synced\`, 'success');
+          loadHealth();
+        } else {
+          showMessage('❌ Sync failed: ' + (data.error || 'Unknown error'), 'error');
+        }
+      } catch (error) {
+        showMessage('❌ Sync failed: ' + error.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '📄 Sync Listing Only';
+      }
+    }
+
+    async function syncAvailability() {
+      const btn = event.target;
+      btn.disabled = true;
+      btn.innerHTML = '📅 Syncing... <span class="loading"></span>';
+
+      try {
+        const res = await fetch('/admin/sync/availability', { method: 'POST' });
+        const data = await res.json();
+
+        if (data.success) {
+          showMessage(\`✅ Availability synced (\${data.daysCount || 0} days)\`, 'success');
+          loadHealth();
+        } else {
+          showMessage('❌ Sync failed: ' + (data.error || 'Unknown error'), 'error');
+        }
+      } catch (error) {
+        showMessage('❌ Sync failed: ' + error.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '📅 Sync Availability Only';
+      }
+    }
+
+    async function viewTable(tableName) {
+      const tableView = document.getElementById('tableView');
+      tableView.innerHTML = '<p style="margin-top: 15px;">Loading...</p>';
+
+      try {
+        const res = await fetch(\`/admin/db/\${tableName}\`);
+        const data = await res.json();
+
+        if (data.rows.length === 0) {
+          tableView.innerHTML = '<p style="margin-top: 15px; color: #888;">No data found in this table.</p>';
+          return;
+        }
+
+        const columns = Object.keys(data.rows[0]);
+
+        let html = \`
+          <h3 style="margin-top: 20px; color: #555;">\${tableName} (\${data.count} rows)</h3>
+          <div style="overflow-x: auto;">
+            <table>
+              <thead>
+                <tr>\${columns.map(col => \`<th>\${col}</th>\`).join('')}</tr>
+              </thead>
+              <tbody>
+                \${data.rows.slice(0, 50).map(row => \`
+                  <tr>\${columns.map(col => {
+                    let value = row[col];
+                    if (value === null) value = '<em>null</em>';
+                    else if (typeof value === 'object') value = JSON.stringify(value);
+                    else if (typeof value === 'string' && value.length > 100) value = value.substring(0, 100) + '...';
+                    return \`<td>\${value}</td>\`;
+                  }).join('')}</tr>
+                \`).join('')}
+              </tbody>
+            </table>
+          </div>
+          \${data.count > 50 ? \`<p style="margin-top: 10px; color: #888;"><em>Showing first 50 of \${data.count} rows</em></p>\` : ''}
+        \`;
+
+        tableView.innerHTML = html;
+      } catch (error) {
+        tableView.innerHTML = \`<p style="margin-top: 15px; color: #dc3545;">Failed to load table: \${error.message}</p>\`;
+      }
+    }
+
+    // Load initial data
+    loadHealth();
+    setInterval(loadHealth, 10000); // Refresh every 10 seconds
+  </script>
+</body>
+</html>
+  `);
+});
+
+/**
+ * GET /admin/health
+ * System health status JSON
+ */
+router.get('/health', (req, res) => {
+  const db = getDatabase();
+  const schedulerStatus = getSchedulerStatus();
+
+  // Check if database is initialized
+  let databaseInitialized = false;
+  try {
+    const result = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='listings'").get();
+    databaseInitialized = !!result;
+  } catch (error) {
+    logger.error({ error }, 'Failed to check database initialization');
+  }
+
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    database: databaseInitialized ? 'Connected' : 'Not initialized',
+    databaseInitialized,
+    scheduler: schedulerStatus,
+    config: {
+      propertyId: config.guestyPropertyId,
+      cacheAvailabilityTtl: config.cacheAvailabilityTtl,
+      cacheListingTtl: config.cacheListingTtl,
+      cacheQuoteTtl: config.cacheQuoteTtl,
+    },
+  });
+});
+
+/**
+ * POST /admin/sync/all
+ * Trigger full ETL job (listing + availability)
+ */
+router.post('/sync/all', async (req, res, next) => {
+  try {
+    logger.info('Manual full sync triggered via admin');
+    const result = await runETLJob(true); // force=true
+
+    res.json({
+      success: result.success,
+      listing: result.listing,
+      availability: result.availability,
+      duration: result.duration,
+      timestamp: result.timestamp,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /admin/sync/listing
+ * Trigger listing sync only
+ */
+router.post('/sync/listing', async (req, res, next) => {
+  try {
+    logger.info('Manual listing sync triggered via admin');
+    const result = await syncConfiguredListing(true); // force=true
+
+    res.json({
+      success: result.success,
+      listingId: result.listingId,
+      title: result.title,
+      skipped: result.skipped,
+      error: result.error,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /admin/sync/availability
+ * Trigger availability sync only
+ */
+router.post('/sync/availability', async (req, res, next) => {
+  try {
+    logger.info('Manual availability sync triggered via admin');
+    const result = await syncConfiguredAvailability(true); // force=true
+
+    res.json({
+      success: result.success,
+      listingId: result.listingId,
+      daysCount: result.daysCount,
+      skipped: result.skipped,
+      error: result.error,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /admin/db/:table
+ * View database table contents
+ */
+router.get('/db/:table', (req, res, next) => {
+  const { table } = req.params;
+
+  // Whitelist allowed tables
+  const allowedTables = ['listings', 'availability', 'cached_quotes'];
+  if (!allowedTables.includes(table)) {
+    return res.status(400).json({ error: 'Invalid table name' });
+  }
+
+  try {
+    const db = getDatabase();
+
+    // Get row count
+    const countResult = db.prepare(`SELECT COUNT(*) as count FROM ${table}`).get() as { count: number };
+
+    // Get rows (limit to 100 for performance)
+    const rows = db.prepare(`SELECT * FROM ${table} LIMIT 100`).all();
+
+    // Parse JSON columns if needed
+    const parsedRows = rows.map((row: any) => {
+      if (table === 'listings' && row.taxes) {
+        try {
+          row.taxes = JSON.parse(row.taxes);
+        } catch (e) {
+          // Keep as string if parsing fails
+        }
+      }
+      if (table === 'cached_quotes' && row.breakdown) {
+        try {
+          row.breakdown = JSON.parse(row.breakdown);
+        } catch (e) {
+          // Keep as string if parsing fails
+        }
+      }
+      return row;
+    });
+
+    res.json({
+      table,
+      count: countResult.count,
+      rows: parsedRows,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+export default router;

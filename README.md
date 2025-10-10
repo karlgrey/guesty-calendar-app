@@ -18,6 +18,9 @@ An Airbnb-style booking interface for a single property, powered by the Guesty A
 - **SQLite Cache**: Fast responses with hourly ETL refresh
 - **Quote Engine**: Local calculation with all fees, taxes, and discounts
 - **Scheduled Sync**: Automatic hourly updates with jitter
+- **Rate Limiting**: Bottleneck-based request queuing with exponential backoff retry
+- **OAuth Resilience**: Automatic retry logic for OAuth token requests
+- **Property Nickname**: Supports nickname field from Guesty API
 - **Type-Safe**: Written in TypeScript with full type definitions
 - **Observable**: Comprehensive logging for monitoring
 
@@ -265,6 +268,7 @@ sqlite3 data/calendar.db
 - **Language**: TypeScript
 - **Web Framework**: Express
 - **Database**: SQLite (better-sqlite3)
+- **Rate Limiting**: Bottleneck
 - **Validation**: Zod
 - **Logging**: Pino
 - **Development**: tsx (TypeScript executor)

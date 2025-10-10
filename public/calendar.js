@@ -1752,7 +1752,7 @@ class BookingCalendar {
     const checkOut = this.formatDate(this.selectedCheckOut);
     const guests = this.guestCount;
     const quote = this.currentQuote;
-    const propertyTitle = 'Farmhouse Prasser';
+    const propertyTitle = this.listingData?.nickname || this.listingData?.title || 'Property';
 
     // Format dates for subject (DD.MM.YYYY)
     const checkInFormatted = this.formatDateShort(new Date(checkIn));

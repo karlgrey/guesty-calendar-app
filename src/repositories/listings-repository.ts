@@ -19,18 +19,19 @@ export function upsertListing(listing: Omit<Listing, 'created_at' | 'updated_at'
   try {
     const stmt = db.prepare(`
       INSERT INTO listings (
-        id, title, accommodates, bedrooms, bathrooms, property_type, timezone,
+        id, title, nickname, accommodates, bedrooms, bathrooms, property_type, timezone,
         currency, base_price, weekend_base_price, cleaning_fee, extra_person_fee,
         guests_included, weekly_price_factor, monthly_price_factor, taxes,
         min_nights, max_nights, check_in_time, check_out_time, active, last_synced_at
       ) VALUES (
-        @id, @title, @accommodates, @bedrooms, @bathrooms, @property_type, @timezone,
+        @id, @title, @nickname, @accommodates, @bedrooms, @bathrooms, @property_type, @timezone,
         @currency, @base_price, @weekend_base_price, @cleaning_fee, @extra_person_fee,
         @guests_included, @weekly_price_factor, @monthly_price_factor, @taxes,
         @min_nights, @max_nights, @check_in_time, @check_out_time, @active, @last_synced_at
       )
       ON CONFLICT(id) DO UPDATE SET
         title = excluded.title,
+        nickname = excluded.nickname,
         accommodates = excluded.accommodates,
         bedrooms = excluded.bedrooms,
         bathrooms = excluded.bathrooms,
@@ -57,6 +58,7 @@ export function upsertListing(listing: Omit<Listing, 'created_at' | 'updated_at'
     stmt.run({
       id: listing.id,
       title: listing.title,
+      nickname: listing.nickname,
       accommodates: listing.accommodates,
       bedrooms: listing.bedrooms,
       bathrooms: listing.bathrooms,

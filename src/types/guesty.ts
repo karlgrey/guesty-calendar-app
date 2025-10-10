@@ -15,6 +15,7 @@
 export interface GuestyListing {
   _id: string;
   title: string;
+  nickname?: string;
   accommodates: number;
   bedrooms?: number;
   bathrooms?: number;

@@ -28,6 +28,7 @@ export interface Tax {
 export interface Listing {
   id: string; // Guesty listing ID
   title: string;
+  nickname: string | null; // Display name (optional, falls back to title)
   accommodates: number; // Max guests
   bedrooms: number | null;
   bathrooms: number | null;
@@ -166,6 +167,7 @@ export interface QuoteCache {
 export interface ListingRow {
   id: string;
   title: string;
+  nickname: string | null;
   accommodates: number;
   bedrooms: number | null;
   bathrooms: number | null;

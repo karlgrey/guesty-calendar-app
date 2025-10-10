@@ -38,6 +38,7 @@ export function mapListing(guestyListing: GuestyListing): Omit<Listing, 'created
   return {
     id: guestyListing._id,
     title: guestyListing.title,
+    nickname: guestyListing.nickname ?? null,
     accommodates: guestyListing.accommodates,
     bedrooms: guestyListing.bedrooms ?? null,
     bathrooms: guestyListing.bathrooms ?? null,
@@ -79,6 +80,7 @@ export function listingToDbRow(listing: Omit<Listing, 'created_at' | 'updated_at
   return {
     id: listing.id,
     title: listing.title,
+    nickname: listing.nickname,
     accommodates: listing.accommodates,
     bedrooms: listing.bedrooms,
     bathrooms: listing.bathrooms,

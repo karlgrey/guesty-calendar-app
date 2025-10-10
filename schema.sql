@@ -14,6 +14,7 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS listings (
   id TEXT PRIMARY KEY,                    -- Guesty listing ID
   title TEXT NOT NULL,
+  nickname TEXT,                          -- Display name (optional, falls back to title)
   accommodates INTEGER NOT NULL,          -- Max guests
   bedrooms INTEGER,
   bathrooms REAL,

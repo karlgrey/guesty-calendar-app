@@ -15,16 +15,24 @@ interface SchedulerState {
   running: boolean;
   intervalId: NodeJS.Timeout | null;
   lastRun: Date | null;
+  lastSuccessfulRun: Date | null;
+  lastFailedRun: Date | null;
   nextRun: Date | null;
   jobCount: number;
+  successCount: number;
+  failureCount: number;
 }
 
 const state: SchedulerState = {
   running: false,
   intervalId: null,
   lastRun: null,
+  lastSuccessfulRun: null,
+  lastFailedRun: null,
   nextRun: null,
   jobCount: 0,
+  successCount: 0,
+  failureCount: 0,
 };
 
 /**
@@ -38,18 +46,36 @@ async function executeScheduledJob() {
 
     const result = await runETLJob(false); // force=false for scheduled jobs
 
-    // Log job completion summary
-    logger.info(
-      {
-        jobCount: state.jobCount,
-        listingUpserted: result.listing.success && !result.listing.skipped ? 1 : 0,
-        listingSkipped: result.listing.skipped || false,
-        availabilityRowsUpserted: result.availability.daysCount || 0,
-        availabilitySkipped: result.availability.skipped || false,
-        durationMs: result.duration,
-      },
-      '✅ Scheduled ETL job completed'
-    );
+    // Track success/failure
+    if (result.success) {
+      state.lastSuccessfulRun = new Date();
+      state.successCount++;
+
+      logger.info(
+        {
+          jobCount: state.jobCount,
+          listingUpserted: result.listing.success && !result.listing.skipped ? 1 : 0,
+          listingSkipped: result.listing.skipped || false,
+          availabilityRowsUpserted: result.availability.daysCount || 0,
+          availabilitySkipped: result.availability.skipped || false,
+          durationMs: result.duration,
+        },
+        '✅ Scheduled ETL job completed successfully'
+      );
+    } else {
+      state.lastFailedRun = new Date();
+      state.failureCount++;
+
+      logger.warn(
+        {
+          jobCount: state.jobCount,
+          listingError: result.listing.error,
+          availabilityError: result.availability.error,
+          durationMs: result.duration,
+        },
+        '⚠️  Scheduled ETL job completed with errors'
+      );
+    }
 
     // Schedule next run with jitter to prevent thundering herd
     if (state.intervalId) {
@@ -66,6 +92,9 @@ async function executeScheduledJob() {
       );
     }
   } catch (error) {
+    state.lastFailedRun = new Date();
+    state.failureCount++;
+
     logger.error({ error, jobCount: state.jobCount }, '❌ Scheduled job execution failed');
 
     // Still schedule next run even on error
@@ -158,8 +187,12 @@ export function getSchedulerStatus() {
   return {
     running: state.running,
     lastRun: state.lastRun?.toISOString() || null,
+    lastSuccessfulRun: state.lastSuccessfulRun?.toISOString() || null,
+    lastFailedRun: state.lastFailedRun?.toISOString() || null,
     nextRun: state.nextRun?.toISOString() || null,
     jobCount: state.jobCount,
+    successCount: state.successCount,
+    failureCount: state.failureCount,
     intervalMinutes: getJobInterval() / (60 * 1000),
   };
 }

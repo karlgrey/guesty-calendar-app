@@ -182,10 +182,12 @@ export async function syncAvailabilityChunked(
       });
     }
 
-    // Fetch and upsert each chunk
-    for (const chunk of chunks) {
+    // Fetch and upsert each chunk with delays to avoid rate limiting
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+
       try {
-        logger.debug({ listingId, ...chunk }, 'Fetching calendar chunk');
+        logger.debug({ listingId, ...chunk, chunkIndex: i + 1, totalChunks: chunks.length }, 'Fetching calendar chunk');
 
         const guestyCalendar = await guestyClient.getCalendar(listingId, chunk.start, chunk.end);
 
@@ -195,6 +197,13 @@ export async function syncAvailabilityChunked(
           totalDaysCount += upsertedCount;
 
           logger.debug({ listingId, chunk, daysCount: upsertedCount }, 'Calendar chunk synced');
+        }
+
+        // Add delay between chunks to avoid rate limiting (except after the last chunk)
+        if (i < chunks.length - 1) {
+          const delayMs = 1000; // 1 second delay between chunks
+          logger.debug({ delayMs }, 'Delaying before next chunk to respect rate limits');
+          await new Promise(resolve => setTimeout(resolve, delayMs));
         }
       } catch (error) {
         hasErrors = true;

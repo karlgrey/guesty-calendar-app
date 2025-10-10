@@ -44,9 +44,9 @@ const configSchema = z.object({
   bookingSenderName: z.string().default('Farmhouse Prasser'),
 
   // Cache TTLs (in minutes)
-  // Updated to use minutes instead of hours for more frequent refresh
+  // Availability TTL controls ETL scheduler interval - must balance freshness vs. rate limits
   cacheListingTtl: z.coerce.number().int().min(1).default(1440), // 24 hours
-  cacheAvailabilityTtl: z.coerce.number().int().min(1).default(30), // 30 minutes (avoids rate limiting)
+  cacheAvailabilityTtl: z.coerce.number().int().min(1).default(60), // 60 minutes (avoids rate limiting)
   cacheQuoteTtl: z.coerce.number().int().min(1).default(60), // 1 hour
 
   // Database

@@ -372,6 +372,68 @@ To compute pricing locally, you need:
 
 ---
 
+## Rate Limiting
+
+### Guesty API Rate Limits
+
+Guesty enforces the following rate limits on their Open API (as of 2025):
+
+| Interval | Limit |
+|----------|-------|
+| Per Second | 15 requests |
+| Per Minute | 120 requests |
+| Per Hour | 5,000 requests |
+| Concurrent Requests | Maximum 15 |
+
+**Important Notes:**
+- Rate limits are **shared across all API tokens** for your account
+- Exceeding 15 concurrent requests triggers instant rate limiting
+- Official partner integrations through Guesty Marketplace are not affected by these limits
+
+### Rate Limit Response Headers
+
+Guesty includes rate limit information in response headers:
+
+```
+X-ratelimit-limit-second: 15
+X-ratelimit-remaining-second: 12
+X-ratelimit-limit-minute: 120
+X-ratelimit-remaining-minute: 95
+X-ratelimit-limit-hour: 5000
+X-ratelimit-remaining-hour: 4832
+```
+
+### Handling 429 Responses
+
+When receiving `HTTP 429 Too Many Requests`:
+1. Check the `Retry-After` header (value in seconds)
+2. Wait for the specified duration before retrying
+3. Implement exponential backoff if `Retry-After` is not provided
+4. Add jitter (randomization) to prevent thundering herd
+
+### Best Practices for Rate Limiting
+
+1. **Request Queuing**: Implement a request queue with throttling (10-12 req/sec, leaving buffer)
+2. **Concurrent Request Control**: Limit concurrent requests to 10-12 (below the 15 limit)
+3. **Retry Logic**: Implement exponential backoff with jitter for 429 responses
+4. **Monitor Headers**: Track `X-ratelimit-remaining-*` headers and slow down when approaching limits
+5. **Batch Operations**: Add delays between sequential API calls (1-2 seconds recommended)
+6. **Webhooks**: Use webhooks for notifications instead of polling
+7. **Optimize Requests**: Only fetch required fields to minimize request count
+
+### This Application's Rate Limit Strategy
+
+This application implements comprehensive rate limiting protection:
+
+- **Request Queue**: Uses Bottleneck library to enforce 10 req/sec limit with 10 concurrent requests max
+- **Automatic Retry**: Retries 429 responses up to 3 times with exponential backoff and ±20% jitter
+- **Header Monitoring**: Tracks rate limit headers and logs warnings when approaching limits (< 20% remaining)
+- **Chunked Sync**: When syncing 12 months of availability, chunks are fetched with 1-second delays between requests
+- **Scheduler Interval**: ETL job runs every 60 minutes (configurable via `CACHE_AVAILABILITY_TTL`)
+- **Startup Jitter**: Scheduler adds ±5% random jitter to prevent multiple instances syncing simultaneously
+
+---
+
 ## API Quirks and Best Practices
 
 ### 1. Date Formats
@@ -442,8 +504,10 @@ To compute pricing locally, you need:
 ### 10. Caching Recommendations
 
 - **Listing data:** Cache for 24 hours (changes infrequently)
-- **Calendar data:** Cache for 1-6 hours (pricing and availability change more often)
-- **Quotes:** Do not cache (should be fresh for each user request)
+- **Calendar data:** Cache for 60-120 minutes (pricing and availability change often, but must balance with rate limits)
+- **Quotes:** Cache for 60 minutes (reduces API calls while maintaining reasonable freshness)
+
+**Important:** Caching strategy must balance data freshness with rate limit constraints. The `CACHE_AVAILABILITY_TTL` setting controls both cache duration and ETL scheduler interval. Recommended minimum: 60 minutes to stay well below rate limits.
 
 ### 11. Performance Considerations
 
