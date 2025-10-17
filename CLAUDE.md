@@ -31,7 +31,8 @@ npm test               # Run tests with Vitest
 
 ### Access Points
 - Main calendar UI: `http://localhost:3000`
-- Admin dashboard: `http://localhost:3000/admin`
+- Admin dashboard: `http://localhost:3000/admin` (requires authentication)
+- Login page: `http://localhost:3000/auth/login`
 - Health check: `http://localhost:3000/health`
 - Detailed health: `http://localhost:3000/health/detailed`
 
@@ -70,6 +71,25 @@ Custom error classes in `src/utils/errors.ts`:
 - `CacheMissError` - Cache miss (flow control, not shown to user)
 
 All errors extend `AppError` and include structured logging via Pino.
+
+### Authentication & Authorization
+The admin panel is protected with Google OAuth 2.0 authentication:
+- **Passport.js** with Google OAuth strategy (`src/config/auth.ts`)
+- **Session-based authentication** using `express-session` with secure cookies
+- **Email whitelist** system for access control (`ADMIN_ALLOWED_EMAILS` env var)
+- **Protected routes** using `requireAuth` middleware (`src/middleware/auth.ts`)
+- **Authentication routes** (`src/routes/auth.ts`):
+  - `GET /auth/login` - Login page with Google sign-in button
+  - `GET /auth/google` - Initiates OAuth flow
+  - `GET /auth/google/callback` - OAuth callback handler
+  - `GET /auth/logout` - Logout and clear session
+  - `GET /auth/unauthorized` - Unauthorized access page
+
+Session configuration:
+- Secure cookies in production (HTTPS only)
+- HttpOnly cookies (XSS protection)
+- 24-hour session lifetime
+- Session data stored in memory (consider Redis for multi-instance deployments)
 
 ## Key Patterns
 
@@ -146,10 +166,17 @@ When writing tests:
 ## Environment Variables
 
 Required:
-- `GUESTY_CLIENT_ID` - OAuth client ID
-- `GUESTY_CLIENT_SECRET` - OAuth client secret
+- `GUESTY_CLIENT_ID` - OAuth client ID for Guesty API
+- `GUESTY_CLIENT_SECRET` - OAuth client secret for Guesty API
 - `GUESTY_PROPERTY_ID` - Guesty listing ID to sync
 - `BOOKING_RECIPIENT_EMAIL` - Email for booking requests
+
+Authentication (required for admin access):
+- `BASE_URL` - Full public URL (e.g., `https://guesty.remoterepublic.com` or `http://localhost:3000`)
+- `SESSION_SECRET` - Random string (32+ chars, generate with `openssl rand -base64 32`)
+- `GOOGLE_CLIENT_ID` - Google OAuth client ID (from Google Cloud Console)
+- `GOOGLE_CLIENT_SECRET` - Google OAuth client secret
+- `ADMIN_ALLOWED_EMAILS` - Comma-separated email whitelist (e.g., `user@example.com,admin@example.com`)
 
 Common optional:
 - `PORT` - Server port (default: 3000)
@@ -167,6 +194,46 @@ See `.env.example` for full list with descriptions.
 - Date format: `YYYY-MM-DD` for date parameters
 - Nickname field (`listings.nickname`) may be null - fallback to `title`
 - Tax `appliedOnFees` array uses codes: `AF` = accommodation fare, `CF`/`CLEANING` = cleaning fee
+
+## Setting Up Google OAuth
+
+To enable admin authentication, you need to create OAuth 2.0 credentials in Google Cloud Console:
+
+### 1. Create OAuth Credentials
+1. Go to [Google Cloud Console - Credentials](https://console.cloud.google.com/apis/credentials)
+2. Create a new project or select an existing one
+3. Click **"Create Credentials"** → **"OAuth client ID"**
+4. Configure the OAuth consent screen if prompted:
+   - User type: External (for public access) or Internal (for Google Workspace)
+   - App name: "Guesty Calendar Admin"
+   - User support email: Your email
+   - Authorized domains: Add your domain (e.g., `remoterepublic.com`)
+5. Choose application type: **"Web application"**
+6. Add authorized redirect URIs:
+   - Development: `http://localhost:3000/auth/google/callback`
+   - Production: `https://yourdomain.com/auth/google/callback`
+7. Click **"Create"** and save the Client ID and Client Secret
+
+### 2. Update Environment Variables
+Add the credentials to your `.env` file:
+```bash
+BASE_URL=https://yourdomain.com
+SESSION_SECRET=$(openssl rand -base64 32)
+GOOGLE_CLIENT_ID=your_client_id_here
+GOOGLE_CLIENT_SECRET=your_client_secret_here
+ADMIN_ALLOWED_EMAILS=micha@remoterepublic.com
+```
+
+### 3. Test Authentication
+1. Restart the server: `npm run dev` or `pm2 restart guesty-calendar`
+2. Visit `/auth/login` to test the login flow
+3. Unauthorized emails will see an access denied message
+
+### Security Notes
+- Keep `SESSION_SECRET` and `GOOGLE_CLIENT_SECRET` confidential
+- Use HTTPS in production (cookies are secure-only)
+- Regularly review authorized emails in `ADMIN_ALLOWED_EMAILS`
+- Consider using Google Workspace for internal-only access
 
 ## Production Deployment
 
