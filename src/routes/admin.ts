@@ -19,7 +19,7 @@ const router = express.Router();
  * GET /admin
  * Admin dashboard HTML
  */
-router.get('/', (req, res) => {
+router.get('/', (_req, res) => {
   res.send(`
 <!DOCTYPE html>
 <html lang="en">
@@ -493,7 +493,7 @@ router.get('/', (req, res) => {
  * GET /admin/health
  * System health status JSON
  */
-router.get('/health', (req, res) => {
+router.get('/health', (_req, res) => {
   const db = getDatabase();
   const schedulerStatus = getSchedulerStatus();
 
@@ -525,7 +525,7 @@ router.get('/health', (req, res) => {
  * POST /admin/sync/all
  * Trigger full ETL job (listing + availability)
  */
-router.post('/sync/all', async (req, res, next) => {
+router.post('/sync/all', async (_req, res, next) => {
   try {
     logger.info('Manual full sync triggered via admin');
     const result = await runETLJob(true); // force=true
@@ -546,7 +546,7 @@ router.post('/sync/all', async (req, res, next) => {
  * POST /admin/sync/listing
  * Trigger listing sync only
  */
-router.post('/sync/listing', async (req, res, next) => {
+router.post('/sync/listing', async (_req, res, next) => {
   try {
     logger.info('Manual listing sync triggered via admin');
     const result = await syncConfiguredListing(true); // force=true
@@ -567,7 +567,7 @@ router.post('/sync/listing', async (req, res, next) => {
  * POST /admin/sync/availability
  * Trigger availability sync only
  */
-router.post('/sync/availability', async (req, res, next) => {
+router.post('/sync/availability', async (_req, res, next) => {
   try {
     logger.info('Manual availability sync triggered via admin');
     const result = await syncConfiguredAvailability(true); // force=true
@@ -625,13 +625,13 @@ router.get('/db/:table', (req, res, next) => {
       return row;
     });
 
-    res.json({
+    return res.json({
       table,
       count: countResult.count,
       rows: parsedRows,
     });
   } catch (error) {
-    next(error);
+    return next(error);
   }
 });
 

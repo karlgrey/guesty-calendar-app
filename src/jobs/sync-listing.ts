@@ -9,7 +9,6 @@ import { upsertListing, needsRefresh } from '../repositories/listings-repository
 import { mapListing } from '../mappers/listing-mapper.js';
 import { config } from '../config/index.js';
 import logger from '../utils/logger.js';
-import { ExternalApiError } from '../utils/errors.js';
 
 export interface SyncListingResult {
   success: boolean;
@@ -74,9 +73,6 @@ export async function syncListing(listingId: string, force: boolean = false): Pr
       },
       'Failed to sync listing'
     );
-
-    // Determine if error is recoverable
-    const isRecoverable = error instanceof ExternalApiError && error.statusCode >= 500;
 
     return {
       success: false,

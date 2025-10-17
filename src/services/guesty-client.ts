@@ -110,8 +110,6 @@ export class GuestyClient {
     let lastError: Error | ExternalApiError | null = null;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      const startTime = Date.now();
-
       try {
         const params = new URLSearchParams({
           grant_type: 'client_credentials',
@@ -128,8 +126,6 @@ export class GuestyClient {
           },
           body: params.toString(),
         });
-
-        const duration = Date.now() - startTime;
 
         // Handle 429 Rate Limit with retry
         if (response.status === 429) {

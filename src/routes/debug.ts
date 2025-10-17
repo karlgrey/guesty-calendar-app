@@ -16,7 +16,7 @@ const router = Router();
  * GET /debug/raw-listing
  * Return raw listing JSON from Guesty API
  */
-router.get('/raw-listing', async (req, res) => {
+router.get('/raw-listing', async (_req, res) => {
   try {
     logger.info('Fetching raw listing from Guesty API');
     const listing = await guestyClient.getListing(config.guestyPropertyId);
@@ -33,7 +33,7 @@ router.get('/raw-listing', async (req, res) => {
  * GET /debug
  * Display all Guesty API data in human-readable format
  */
-router.get('/', async (req, res) => {
+router.get('/', async (_req, res) => {
   try {
     const propertyId = config.guestyPropertyId;
 
@@ -55,45 +55,6 @@ router.get('/', async (req, res) => {
     if (listingData.taxes && typeof listingData.taxes === 'string') {
       listingData.taxes = JSON.parse(listingData.taxes);
     }
-
-    // Build a mock API response format for display
-    const listingApiFormat = {
-      _id: listingData.id,
-      title: listingData.title,
-      nickname: listingData.nickname,
-      propertyType: listingData.property_type,
-      accommodates: listingData.accommodates,
-      bedrooms: listingData.bedrooms,
-      bathrooms: listingData.bathrooms,
-      beds: null, // Not stored in cache
-      timezone: listingData.timezone,
-      active: Boolean(listingData.active),
-      prices: {
-        currency: listingData.currency,
-        basePrice: listingData.base_price,
-        weekendBasePrice: listingData.weekend_base_price,
-        cleaningFee: listingData.cleaning_fee,
-        extraPersonFee: listingData.extra_person_fee,
-        guestsIncludedInRegularFee: listingData.guests_included,
-        weeklyPriceFactor: listingData.weekly_price_factor,
-        monthlyPriceFactor: listingData.monthly_price_factor,
-      },
-      accountTaxes: listingData.taxes,
-      terms: {
-        minNights: listingData.min_nights,
-        maxNights: listingData.max_nights,
-        checkInTime: listingData.check_in_time,
-        checkOutTime: listingData.check_out_time,
-      },
-      address: {
-        full: null, // Not stored in cache
-        city: null,
-        country: null,
-      },
-      publicDescription: {
-        summary: null, // Not stored in cache
-      },
-    };
 
     const calendarData = cachedAvailability.map((day: any) => ({
       date: day.date,

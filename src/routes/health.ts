@@ -85,11 +85,11 @@ router.get('/ready', (_req, res) => {
       });
     }
 
-    res.json({
+    return res.json({
       status: 'ready',
     });
   } catch (error) {
-    res.status(503).json({
+    return res.status(503).json({
       status: 'not_ready',
       message: error instanceof Error ? error.message : 'Unknown error',
     });

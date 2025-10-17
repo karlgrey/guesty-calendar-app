@@ -13,7 +13,6 @@ import {
 import { mapAvailabilityBatch } from '../mappers/availability-mapper.js';
 import { config } from '../config/index.js';
 import logger from '../utils/logger.js';
-import { ExternalApiError } from '../utils/errors.js';
 
 export interface SyncAvailabilityResult {
   success: boolean;
@@ -27,7 +26,7 @@ export interface SyncAvailabilityResult {
 /**
  * Check if availability cache needs refresh
  */
-function needsAvailabilityRefresh(listingId: string, ttlMinutes: number): boolean {
+function needsAvailabilityRefresh(listingId: string): boolean {
   try {
     const dateRange = getAvailabilityDateRange(listingId);
 
@@ -70,7 +69,7 @@ export async function syncAvailability(listingId: string, force: boolean = false
     logger.info({ listingId, force }, 'Starting availability sync');
 
     // Check if refresh is needed (unless forced)
-    if (!force && !needsAvailabilityRefresh(listingId, config.cacheAvailabilityTtl)) {
+    if (!force && !needsAvailabilityRefresh(listingId)) {
       logger.info({ listingId }, 'Availability cache is fresh, skipping sync');
       return {
         success: true,

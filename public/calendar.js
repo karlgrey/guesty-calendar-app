@@ -4,7 +4,7 @@
  */
 
 class BookingCalendar {
-  constructor(apiBaseUrl = 'http://localhost:3000') {
+  constructor(apiBaseUrl = '') {
     this.apiBaseUrl = apiBaseUrl;
     this.currentDate = new Date();
     this.selectedCheckIn = null;

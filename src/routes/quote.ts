@@ -149,8 +149,9 @@ router.get('/', (req, res, next) => {
         breakdown: quote.breakdown,
       },
     });
+    return;
   } catch (error) {
-    next(error);
+    return next(error);
   }
 });
 
