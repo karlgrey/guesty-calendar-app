@@ -20,6 +20,7 @@ npm start               # Run production build from dist/
 npm run sync            # Sync data from Guesty API (respects cache freshness)
 npm run sync:force      # Force sync (ignore cache, refresh all data)
 npm run db:init         # Initialize database (creates schema from schema.sql)
+npm run db:migrate      # Run pending database migrations
 npm run db:reset        # Drop and recreate database (WARNING: deletes all data)
 ```
 
@@ -145,11 +146,38 @@ When writing tests:
 5. Register route in `src/app.ts`
 
 ### Modifying Database Schema
-1. Update `schema.sql` with new columns/tables
-2. Update type definitions in `src/types/models.ts`
-3. Update mappers if Guesty API fields are involved
-4. Update repositories with new query logic
-5. Run `npm run db:reset` (dev only) or write migration script
+1. Create a new migration file in `src/db/migrations/` with format `NNN_description.sql` (e.g., `002_add_bookings_table.sql`)
+2. Write SQL statements in the migration file (CREATE TABLE, ALTER TABLE, etc.)
+3. Update type definitions in `src/types/models.ts`
+4. Update mappers if Guesty API fields are involved
+5. Update repositories with new query logic
+6. Run `npm run db:migrate` to apply migrations manually, or restart the app (migrations run automatically on startup)
+
+**Migration System:**
+- Migrations are stored in `src/db/migrations/` as `.sql` files
+- Migrations run automatically on application startup
+- Applied migrations are tracked in the `migrations` table
+- Migrations are applied in alphabetical order (use numeric prefix like `001_`, `002_`)
+- Each migration runs in a transaction (atomic)
+- To manually run migrations: `npm run db:migrate`
+
+**Creating a Migration:**
+```bash
+# Create a new migration file
+cat > src/db/migrations/002_add_feature.sql << 'EOF'
+-- Migration: Add new feature
+-- Created: 2025-10-17
+-- Description: Add support for...
+
+CREATE TABLE IF NOT EXISTS new_table (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  ...
+);
+EOF
+
+# Migrations will run automatically on next app start
+npm run dev
+```
 
 ### Debugging Rate Limits
 - Check `getRateLimitInfo()` on GuestyClient instance

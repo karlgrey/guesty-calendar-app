@@ -143,3 +143,84 @@ export function cleanupExpiredQuotes(): number {
 
   return result.changes;
 }
+
+/**
+ * Create migrations table to track applied migrations
+ */
+function createMigrationsTable(): void {
+  const db = getDatabase();
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS migrations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      filename TEXT NOT NULL UNIQUE,
+      applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+}
+
+/**
+ * Get list of applied migrations
+ */
+function getAppliedMigrations(): Set<string> {
+  const db = getDatabase();
+
+  const rows = db.prepare('SELECT filename FROM migrations').all() as Array<{ filename: string }>;
+
+  return new Set(rows.map((row) => row.filename));
+}
+
+/**
+ * Run pending migrations
+ */
+export function runMigrations(): number {
+  const db = getDatabase();
+
+  // Create migrations table if it doesn't exist
+  createMigrationsTable();
+
+  // Get migrations directory
+  const migrationsDir = path.resolve(__dirname, './migrations');
+
+  if (!fs.existsSync(migrationsDir)) {
+    return 0; // No migrations directory, nothing to do
+  }
+
+  // Get all migration files (sorted alphabetically)
+  const migrationFiles = fs
+    .readdirSync(migrationsDir)
+    .filter((file) => file.endsWith('.sql'))
+    .sort();
+
+  if (migrationFiles.length === 0) {
+    return 0; // No migration files
+  }
+
+  // Get already applied migrations
+  const appliedMigrations = getAppliedMigrations();
+
+  // Find pending migrations
+  const pendingMigrations = migrationFiles.filter((file) => !appliedMigrations.has(file));
+
+  if (pendingMigrations.length === 0) {
+    return 0; // No pending migrations
+  }
+
+  // Run each pending migration in a transaction
+  for (const migrationFile of pendingMigrations) {
+    const migrationPath = path.join(migrationsDir, migrationFile);
+    const migrationSql = fs.readFileSync(migrationPath, 'utf-8');
+
+    const runMigration = db.transaction(() => {
+      // Execute migration SQL
+      db.exec(migrationSql);
+
+      // Record migration as applied
+      db.prepare('INSERT INTO migrations (filename) VALUES (?)').run(migrationFile);
+    });
+
+    runMigration();
+  }
+
+  return pendingMigrations.length;
+}

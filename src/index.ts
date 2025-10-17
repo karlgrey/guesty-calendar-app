@@ -4,7 +4,7 @@
 
 import { createApp } from './app.js';
 import { config } from './config/index.js';
-import { initDatabase, executeSchema, isDatabaseInitialized, closeDatabase } from './db/index.js';
+import { initDatabase, executeSchema, isDatabaseInitialized, closeDatabase, runMigrations } from './db/index.js';
 import { startScheduler, stopScheduler } from './jobs/scheduler.js';
 import logger from './utils/logger.js';
 
@@ -26,6 +26,12 @@ async function start() {
       logger.info('Database schema applied successfully');
     } else {
       logger.info('Database already initialized');
+    }
+
+    // Run pending migrations
+    const migrationsApplied = runMigrations();
+    if (migrationsApplied > 0) {
+      logger.info(`Applied ${migrationsApplied} database migration(s)`);
     }
 
     // Create Express app
