@@ -3,8 +3,13 @@
  */
 
 import express from 'express';
+import session from 'express-session';
+import passport from 'passport';
+import { config } from './config/index.js';
+import { configureAuth } from './config/auth.js';
 import { requestLogger } from './middleware/request-logger.js';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
+import { requireAuth } from './middleware/auth.js';
 import healthRoutes from './routes/health.js';
 import syncRoutes from './routes/sync.js';
 import listingRoutes from './routes/listing.js';
@@ -12,6 +17,7 @@ import availabilityRoutes from './routes/availability.js';
 import quoteRoutes from './routes/quote.js';
 import debugRoutes from './routes/debug.js';
 import adminRoutes from './routes/admin.js';
+import authRoutes from './routes/auth.js';
 
 /**
  * Create and configure Express application
@@ -19,10 +25,31 @@ import adminRoutes from './routes/admin.js';
 export function createApp() {
   const app = express();
 
+  // Configure authentication
+  configureAuth();
+
   // Middleware
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
   app.use(requestLogger);
+
+  // Session middleware (required for Passport)
+  app.use(
+    session({
+      secret: config.sessionSecret,
+      resave: false,
+      saveUninitialized: false,
+      cookie: {
+        secure: config.nodeEnv === 'production', // HTTPS only in production
+        httpOnly: true,
+        maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      },
+    })
+  );
+
+  // Initialize Passport
+  app.use(passport.initialize());
+  app.use(passport.session());
 
   // Serve static files (calendar UI)
   app.use(express.static('public'));
@@ -35,11 +62,16 @@ export function createApp() {
     next();
   });
 
+  // Authentication routes (public)
+  app.use('/auth', authRoutes);
+
   // Routes
   app.use('/health', healthRoutes);
   app.use('/sync', syncRoutes);
   app.use('/debug', debugRoutes);
-  app.use('/admin', adminRoutes);
+
+  // Protected admin routes (require authentication)
+  app.use('/admin', requireAuth, adminRoutes);
 
   // Public API routes
   app.use('/listing', listingRoutes);

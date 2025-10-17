@@ -55,6 +55,15 @@ const configSchema = z.object({
   // Logging
   logLevel: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace']).default('info'),
   logPretty: z.coerce.boolean().default(true),
+
+  // Authentication
+  baseUrl: z.string().url('BASE_URL must be a valid URL'),
+  sessionSecret: z.string().min(32, 'SESSION_SECRET must be at least 32 characters'),
+  googleClientId: z.string().min(1, 'GOOGLE_CLIENT_ID is required'),
+  googleClientSecret: z.string().min(1, 'GOOGLE_CLIENT_SECRET is required'),
+  adminAllowedEmails: z.string().min(1, 'ADMIN_ALLOWED_EMAILS is required').transform((val) =>
+    val.split(',').map(email => email.trim().toLowerCase())
+  ),
 });
 
 /**
@@ -80,6 +89,11 @@ function parseConfig() {
     databasePath: process.env.DATABASE_PATH,
     logLevel: process.env.LOG_LEVEL,
     logPretty: process.env.LOG_PRETTY,
+    baseUrl: process.env.BASE_URL,
+    sessionSecret: process.env.SESSION_SECRET,
+    googleClientId: process.env.GOOGLE_CLIENT_ID,
+    googleClientSecret: process.env.GOOGLE_CLIENT_SECRET,
+    adminAllowedEmails: process.env.ADMIN_ALLOWED_EMAILS,
   };
 
   try {
