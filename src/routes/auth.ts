@@ -1,7 +1,7 @@
 /**
  * Authentication Routes
  *
- * Handles Google OAuth login, logout, and callbacks
+ * Handles local username/password login and logout
  */
 
 import express from 'express';
@@ -15,7 +15,10 @@ const router = express.Router();
  * GET /auth/login
  * Display login page or redirect if already authenticated
  */
-router.get('/login', redirectIfAuthenticated, (_req, res) => {
+router.get('/login', redirectIfAuthenticated, (req, res) => {
+  const error = req.query.error;
+  const errorMessage = error === 'invalid' ? 'Invalid email or password' : error === 'session' ? 'Session error. Please try again.' : '';
+
   res.send(`
 <!DOCTYPE html>
 <html lang="en">
@@ -47,26 +50,50 @@ router.get('/login', redirectIfAuthenticated, (_req, res) => {
       box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
       max-width: 400px;
       width: 100%;
-      text-align: center;
     }
 
     h1 {
       color: #333;
       font-size: 28px;
       margin-bottom: 10px;
+      text-align: center;
     }
 
-    p {
+    .subtitle {
       color: #666;
       margin-bottom: 30px;
       line-height: 1.6;
+      text-align: center;
     }
 
-    .google-btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      background: #4285f4;
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    label {
+      display: block;
+      color: #333;
+      font-weight: 500;
+      margin-bottom: 8px;
+    }
+
+    input {
+      width: 100%;
+      padding: 12px;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 16px;
+      transition: border-color 0.2s;
+    }
+
+    input:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    .login-btn {
+      width: 100%;
+      background: #667eea;
       color: white;
       border: none;
       padding: 14px 24px;
@@ -74,33 +101,33 @@ router.get('/login', redirectIfAuthenticated, (_req, res) => {
       font-size: 16px;
       font-weight: 500;
       cursor: pointer;
-      text-decoration: none;
       transition: background 0.2s;
-      width: 100%;
     }
 
-    .google-btn:hover {
-      background: #357ae8;
-    }
-
-    .google-icon {
-      width: 20px;
-      height: 20px;
-      margin-right: 12px;
-      background: white;
-      border-radius: 2px;
-      padding: 2px;
+    .login-btn:hover {
+      background: #5568d3;
     }
 
     .icon {
       font-size: 48px;
       margin-bottom: 20px;
+      text-align: center;
+    }
+
+    .error {
+      background: #fee;
+      color: #c33;
+      padding: 12px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      text-align: center;
     }
 
     .footer {
       margin-top: 30px;
       font-size: 13px;
       color: #999;
+      text-align: center;
     }
   </style>
 </head>
@@ -108,17 +135,23 @@ router.get('/login', redirectIfAuthenticated, (_req, res) => {
   <div class="login-container">
     <div class="icon">🛠️</div>
     <h1>Admin Login</h1>
-    <p>Sign in with your authorized Google account to access the Guesty Calendar admin panel.</p>
+    <p class="subtitle">Sign in to access the Guesty Calendar admin panel.</p>
 
-    <a href="/auth/google" class="google-btn">
-      <svg class="google-icon" viewBox="0 0 24 24">
-        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-      </svg>
-      Sign in with Google
-    </a>
+    ${errorMessage ? `<div class="error">${errorMessage}</div>` : ''}
+
+    <form method="POST" action="/auth/login">
+      <div class="form-group">
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" required autofocus>
+      </div>
+
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" required>
+      </div>
+
+      <button type="submit" class="login-btn">Sign In</button>
+    </form>
 
     <div class="footer">
       Authorized access only
@@ -130,23 +163,12 @@ router.get('/login', redirectIfAuthenticated, (_req, res) => {
 });
 
 /**
- * GET /auth/google
- * Initiate Google OAuth flow
+ * POST /auth/login
+ * Handle login form submission
  */
-router.get('/google', passport.authenticate('google', {
-  scope: ['profile', 'email'],
-  prompt: 'select_account', // Always show account selection
-}));
-
-/**
- * GET /auth/google/callback
- * Handle Google OAuth callback
- */
-router.get(
-  '/google/callback',
-  passport.authenticate('google', {
-    failureRedirect: '/auth/login?error=unauthorized',
-    successReturnToOrRedirect: '/admin',
+router.post('/login',
+  passport.authenticate('local', {
+    failureRedirect: '/auth/login?error=invalid',
   }),
   (req, res) => {
     // This function will only be called if authentication succeeds
@@ -156,7 +178,14 @@ router.get(
     const returnTo = req.session.returnTo || '/admin';
     delete req.session.returnTo;
 
-    res.redirect(returnTo);
+    // IMPORTANT: Save session before redirecting to ensure authentication persists
+    req.session.save((err) => {
+      if (err) {
+        logger.error({ err }, 'Error saving session after authentication');
+        return res.redirect('/auth/login?error=session');
+      }
+      res.redirect(returnTo);
+    });
   }
 );
 

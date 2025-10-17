@@ -1,34 +1,25 @@
 /**
  * Authentication Configuration
  *
- * Sets up Passport.js with Google OAuth 2.0 strategy
+ * Sets up Passport.js with local username/password strategy
  */
 
 import passport from 'passport';
-import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
-import { config } from './index.js';
+import { Strategy as LocalStrategy } from 'passport-local';
+import { verifyPassword } from '../repositories/admin-users-repository.js';
 import logger from '../utils/logger.js';
 
 /**
  * User profile stored in session
  */
 export interface UserProfile {
-  id: string;
+  id: number;
   email: string;
   name: string;
-  picture?: string;
 }
 
 /**
- * Check if email is allowed to access admin
- */
-export function isEmailAllowed(email: string): boolean {
-  const normalizedEmail = email.toLowerCase().trim();
-  return config.adminAllowedEmails.includes(normalizedEmail);
-}
-
-/**
- * Configure Passport.js with Google OAuth strategy
+ * Configure Passport.js with local username/password strategy
  */
 export function configureAuth() {
   // Serialize user to session
@@ -41,43 +32,39 @@ export function configureAuth() {
     done(null, user);
   });
 
-  // Google OAuth Strategy
+  // Local Strategy
   passport.use(
-    new GoogleStrategy(
+    new LocalStrategy(
       {
-        clientID: config.googleClientId,
-        clientSecret: config.googleClientSecret,
-        callbackURL: `${config.baseUrl}/auth/google/callback`,
-        scope: ['profile', 'email'],
+        usernameField: 'email',
+        passwordField: 'password',
       },
-      (_accessToken, _refreshToken, profile, done) => {
-        // Extract user info from Google profile
-        const email = profile.emails?.[0]?.value;
+      async (email, password, done) => {
+        try {
+          // Verify password and get user
+          const user = await verifyPassword(email, password);
 
-        if (!email) {
-          logger.warn({ profile }, 'Google profile missing email');
-          return done(new Error('No email found in Google profile'));
+          if (!user) {
+            logger.warn({ email }, 'Failed login attempt');
+            return done(null, false, { message: 'Invalid email or password' });
+          }
+
+          const userProfile: UserProfile = {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+          };
+
+          logger.info({ email, name: user.name }, 'User authenticated successfully');
+
+          return done(null, userProfile);
+        } catch (error) {
+          logger.error({ error, email }, 'Error during authentication');
+          return done(error);
         }
-
-        // Check if email is whitelisted
-        if (!isEmailAllowed(email)) {
-          logger.warn({ email }, 'Unauthorized email attempted to access admin');
-          return done(new Error('Email not authorized'));
-        }
-
-        const user: UserProfile = {
-          id: profile.id,
-          email: email,
-          name: profile.displayName || 'Unknown User',
-          picture: profile.photos?.[0]?.value,
-        };
-
-        logger.info({ email, name: user.name }, 'User authenticated successfully');
-
-        return done(null, user);
       }
     )
   );
 
-  logger.info('Authentication configured with Google OAuth');
+  logger.info('Authentication configured with local strategy');
 }

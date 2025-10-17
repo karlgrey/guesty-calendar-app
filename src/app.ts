@@ -18,12 +18,16 @@ import quoteRoutes from './routes/quote.js';
 import debugRoutes from './routes/debug.js';
 import adminRoutes from './routes/admin.js';
 import authRoutes from './routes/auth.js';
+import adminUsersRoutes from './routes/admin-users.js';
 
 /**
  * Create and configure Express application
  */
 export function createApp() {
   const app = express();
+
+  // Trust proxy - required for secure cookies behind reverse proxy (Caddy/nginx)
+  app.set('trust proxy', 1);
 
   // Configure authentication
   configureAuth();
@@ -43,7 +47,9 @@ export function createApp() {
         secure: config.nodeEnv === 'production', // HTTPS only in production
         httpOnly: true,
         maxAge: 24 * 60 * 60 * 1000, // 24 hours
+        sameSite: 'lax', // Required for OAuth redirects
       },
+      proxy: true, // Trust proxy for secure cookies
     })
   );
 
@@ -72,6 +78,7 @@ export function createApp() {
 
   // Protected admin routes (require authentication)
   app.use('/admin', requireAuth, adminRoutes);
+  app.use('/api/admin-users', adminUsersRoutes); // requireAuth is applied within the router
 
   // Public API routes
   app.use('/listing', listingRoutes);

@@ -233,11 +233,29 @@ router.get('/', (_req, res) => {
     .actions {
       margin-top: 20px;
     }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 30px;
+    }
+
+    button.secondary {
+      background: #6c757d;
+    }
+
+    button.secondary:hover {
+      background: #5a6268;
+    }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>🛠️ Guesty Calendar Admin</h1>
+    <div class="header">
+      <h1>🛠️ Guesty Calendar Admin</h1>
+      <a href="/auth/logout"><button class="secondary">Logout</button></a>
+    </div>
 
     <div id="message" class="message"></div>
 
@@ -249,6 +267,15 @@ router.get('/', (_req, res) => {
           <h3>Status</h3>
           <div class="value">Loading...</div>
         </div>
+      </div>
+    </div>
+
+    <!-- User Management -->
+    <div class="section">
+      <h2>User Management</h2>
+      <p style="color: #666; margin-bottom: 20px;">Manage admin users who can access this panel</p>
+      <div class="actions">
+        <button onclick="window.location.href='/admin/users'">👥 Manage Users</button>
       </div>
     </div>
 
@@ -633,6 +660,477 @@ router.get('/db/:table', (req, res, next) => {
   } catch (error) {
     return next(error);
   }
+});
+
+/**
+ * GET /admin/users
+ * User management page
+ */
+router.get('/users', (_req, res) => {
+  res.send(`
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>User Management - Guesty Calendar Admin</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: #f5f5f5;
+      padding: 20px;
+      line-height: 1.6;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      color: #333;
+      margin-bottom: 10px;
+      font-size: 32px;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 30px;
+    }
+
+    .section {
+      background: white;
+      padding: 25px;
+      margin-bottom: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+
+    button {
+      background: #007bff;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 15px;
+      font-weight: 500;
+      transition: background 0.2s;
+      margin-right: 10px;
+      margin-bottom: 10px;
+    }
+
+    button:hover {
+      background: #0056b3;
+    }
+
+    button.success {
+      background: #28a745;
+    }
+
+    button.success:hover {
+      background: #218838;
+    }
+
+    button.danger {
+      background: #dc3545;
+    }
+
+    button.danger:hover {
+      background: #c82333;
+    }
+
+    button.secondary {
+      background: #6c757d;
+    }
+
+    button.secondary:hover {
+      background: #5a6268;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 15px;
+    }
+
+    th, td {
+      padding: 12px;
+      text-align: left;
+      border-bottom: 1px solid #ddd;
+    }
+
+    th {
+      background: #f8f9fa;
+      font-weight: 600;
+      color: #555;
+    }
+
+    tr:hover {
+      background: #f8f9fa;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .badge.active {
+      background: #d4edda;
+      color: #155724;
+    }
+
+    .badge.inactive {
+      background: #f8d7da;
+      color: #721c24;
+    }
+
+    .modal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.5);
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+
+    .modal.show {
+      display: flex;
+    }
+
+    .modal-content {
+      background: white;
+      padding: 30px;
+      border-radius: 8px;
+      max-width: 500px;
+      width: 90%;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+
+    .modal-header {
+      margin-bottom: 20px;
+    }
+
+    .modal-header h2 {
+      color: #333;
+      font-size: 24px;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    label {
+      display: block;
+      color: #333;
+      font-weight: 500;
+      margin-bottom: 8px;
+    }
+
+    input, select {
+      width: 100%;
+      padding: 12px;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      font-size: 16px;
+      transition: border-color 0.2s;
+    }
+
+    input:focus, select:focus {
+      outline: none;
+      border-color: #007bff;
+    }
+
+    .checkbox-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .checkbox-group input[type="checkbox"] {
+      width: auto;
+    }
+
+    .message {
+      padding: 12px 16px;
+      border-radius: 6px;
+      margin: 15px 0;
+      display: none;
+    }
+
+    .message.success {
+      background: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+
+    .message.error {
+      background: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+
+    .message.show {
+      display: block;
+    }
+
+    .back-link {
+      color: #007bff;
+      text-decoration: none;
+      font-size: 14px;
+    }
+
+    .back-link:hover {
+      text-decoration: underline;
+    }
+
+    .actions-cell {
+      white-space: nowrap;
+    }
+
+    .actions-cell button {
+      padding: 6px 12px;
+      font-size: 13px;
+      margin-right: 5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div>
+        <h1>👥 User Management</h1>
+        <a href="/admin" class="back-link">← Back to Dashboard</a>
+      </div>
+      <div>
+        <button class="success" onclick="showAddUserModal()">+ Add New User</button>
+        <a href="/auth/logout"><button class="secondary">Logout</button></a>
+      </div>
+    </div>
+
+    <div id="message" class="message"></div>
+
+    <div class="section">
+      <div id="usersTable">Loading users...</div>
+    </div>
+  </div>
+
+  <!-- Add/Edit User Modal -->
+  <div id="userModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="modalTitle">Add User</h2>
+      </div>
+      <form id="userForm" onsubmit="saveUser(event)">
+        <input type="hidden" id="userId">
+
+        <div class="form-group">
+          <label for="email">Email *</label>
+          <input type="email" id="email" required>
+        </div>
+
+        <div class="form-group">
+          <label for="name">Name *</label>
+          <input type="text" id="name" required>
+        </div>
+
+        <div class="form-group">
+          <label for="password">Password <span id="passwordHint">(min 8 characters) *</span></label>
+          <input type="password" id="password" minlength="8">
+        </div>
+
+        <div class="form-group">
+          <div class="checkbox-group">
+            <input type="checkbox" id="isActive" checked>
+            <label for="isActive" style="margin: 0;">Active</label>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 10px; margin-top: 30px;">
+          <button type="submit" class="success">Save</button>
+          <button type="button" class="secondary" onclick="closeModal()">Cancel</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    let users = [];
+
+    function showMessage(text, type = 'success') {
+      const msg = document.getElementById('message');
+      msg.textContent = text;
+      msg.className = 'message show ' + type;
+      setTimeout(() => {
+        msg.className = 'message';
+      }, 5000);
+    }
+
+    async function loadUsers() {
+      try {
+        const res = await fetch('/api/admin-users');
+        users = await res.json();
+
+        const table = document.getElementById('usersTable');
+
+        if (users.length === 0) {
+          table.innerHTML = '<p style="color: #888;">No users found. Click "Add New User" to create one.</p>';
+          return;
+        }
+
+        table.innerHTML = \`
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Email</th>
+                <th>Name</th>
+                <th>Status</th>
+                <th>Created</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              \${users.map(user => \`
+                <tr>
+                  <td>\${user.id}</td>
+                  <td>\${user.email}</td>
+                  <td>\${user.name}</td>
+                  <td><span class="badge \${user.is_active ? 'active' : 'inactive'}">\${user.is_active ? 'Active' : 'Inactive'}</span></td>
+                  <td>\${new Date(user.created_at).toLocaleDateString()}</td>
+                  <td class="actions-cell">
+                    <button onclick="editUser(\${user.id})">Edit</button>
+                    <button class="danger" onclick="deleteUser(\${user.id}, '\${user.email}')">Delete</button>
+                  </td>
+                </tr>
+              \`).join('')}
+            </tbody>
+          </table>
+        \`;
+      } catch (error) {
+        document.getElementById('usersTable').innerHTML = \`<p style="color: #dc3545;">Failed to load users: \${error.message}</p>\`;
+      }
+    }
+
+    function showAddUserModal() {
+      document.getElementById('modalTitle').textContent = 'Add User';
+      document.getElementById('userId').value = '';
+      document.getElementById('email').value = '';
+      document.getElementById('name').value = '';
+      document.getElementById('password').value = '';
+      document.getElementById('password').required = true;
+      document.getElementById('passwordHint').textContent = '(min 8 characters) *';
+      document.getElementById('isActive').checked = true;
+      document.getElementById('userModal').classList.add('show');
+    }
+
+    function editUser(id) {
+      const user = users.find(u => u.id === id);
+      if (!user) return;
+
+      document.getElementById('modalTitle').textContent = 'Edit User';
+      document.getElementById('userId').value = user.id;
+      document.getElementById('email').value = user.email;
+      document.getElementById('name').value = user.name;
+      document.getElementById('password').value = '';
+      document.getElementById('password').required = false;
+      document.getElementById('passwordHint').textContent = '(leave blank to keep current)';
+      document.getElementById('isActive').checked = user.is_active;
+      document.getElementById('userModal').classList.add('show');
+    }
+
+    function closeModal() {
+      document.getElementById('userModal').classList.remove('show');
+    }
+
+    async function saveUser(event) {
+      event.preventDefault();
+
+      const userId = document.getElementById('userId').value;
+      const email = document.getElementById('email').value;
+      const name = document.getElementById('name').value;
+      const password = document.getElementById('password').value;
+      const isActive = document.getElementById('isActive').checked;
+
+      try {
+        let res;
+        if (userId) {
+          // Update existing user
+          const data = { email, name, is_active: isActive };
+          if (password) {
+            data.password = password;
+          }
+          res = await fetch(\`/api/admin-users/\${userId}\`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+          });
+        } else {
+          // Create new user
+          res = await fetch('/api/admin-users', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, name, password, is_active: isActive }),
+          });
+        }
+
+        if (res.ok) {
+          showMessage(\`User \${userId ? 'updated' : 'created'} successfully!\`, 'success');
+          closeModal();
+          loadUsers();
+        } else {
+          const error = await res.json();
+          showMessage(\`Error: \${error.error || 'Unknown error'}\`, 'error');
+        }
+      } catch (error) {
+        showMessage(\`Error: \${error.message}\`, 'error');
+      }
+    }
+
+    async function deleteUser(id, email) {
+      if (!confirm(\`Are you sure you want to delete user "\${email}"?\`)) {
+        return;
+      }
+
+      try {
+        const res = await fetch(\`/api/admin-users/\${id}\`, {
+          method: 'DELETE',
+        });
+
+        if (res.ok) {
+          showMessage('User deleted successfully!', 'success');
+          loadUsers();
+        } else {
+          const error = await res.json();
+          showMessage(\`Error: \${error.error || 'Unknown error'}\`, 'error');
+        }
+      } catch (error) {
+        showMessage(\`Error: \${error.message}\`, 'error');
+      }
+    }
+
+    // Load users on page load
+    loadUsers();
+  </script>
+</body>
+</html>
+  `);
 });
 
 export default router;

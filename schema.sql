@@ -166,3 +166,28 @@ CREATE VIEW IF NOT EXISTS valid_quotes AS
 SELECT *
 FROM quotes_cache
 WHERE datetime(expires_at) > datetime('now');
+
+-- ============================================================================
+-- ADMIN_USERS TABLE
+-- Stores admin users for authentication
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS admin_users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  email TEXT NOT NULL UNIQUE,             -- Email address (used as username)
+  name TEXT NOT NULL,                     -- Display name
+  password_hash TEXT NOT NULL,            -- Bcrypt hashed password
+  is_active INTEGER NOT NULL DEFAULT 1,   -- Boolean: 1=active, 0=disabled
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_admin_users_email ON admin_users(email);
+CREATE INDEX IF NOT EXISTS idx_admin_users_active ON admin_users(is_active);
+
+-- Trigger to update updated_at timestamp
+CREATE TRIGGER IF NOT EXISTS update_admin_users_timestamp
+AFTER UPDATE ON admin_users
+BEGIN
+  UPDATE admin_users SET updated_at = datetime('now') WHERE id = NEW.id;
+END;

@@ -157,6 +157,19 @@ export interface QuoteCache {
   created_at: string;
 }
 
+/**
+ * Admin user for authentication
+ */
+export interface AdminUser {
+  id: number;
+  email: string;
+  name: string;
+  password_hash: string;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 // ============================================================================
 // DATABASE ROW TYPES (as returned from SQLite)
 // ============================================================================
@@ -236,6 +249,19 @@ export interface QuoteCacheRow {
   created_at: string;
 }
 
+/**
+ * Raw admin user row from database
+ */
+export interface AdminUserRow {
+  id: number;
+  email: string;
+  name: string;
+  password_hash: string;
+  is_active: number; // SQLite boolean (0 or 1)
+  created_at: string;
+  updated_at: string;
+}
+
 // ============================================================================
 // HELPER TYPE GUARDS
 // ============================================================================
@@ -287,5 +313,15 @@ export function rowToQuoteCache(row: QuoteCacheRow): QuoteCache {
   return {
     ...row,
     breakdown: JSON.parse(row.breakdown) as PriceBreakdown,
+  };
+}
+
+/**
+ * Convert raw AdminUserRow from SQLite to AdminUser model
+ */
+export function rowToAdminUser(row: AdminUserRow): AdminUser {
+  return {
+    ...row,
+    is_active: row.is_active === 1,
   };
 }
