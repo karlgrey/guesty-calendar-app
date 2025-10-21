@@ -123,7 +123,44 @@ export interface GuestyCalendarDay {
     endDate: string;
     type: string;
     reservationId?: string;
-    reservation?: any;
+    reservation?: {
+      _id: string;
+      listingId: string;
+      accountId?: string;
+      checkIn: string;
+      checkOut: string;
+      checkInDateLocalized?: string;
+      checkOutDateLocalized?: string;
+      status: string;
+      confirmationCode?: string;
+      source?: string;
+      guestId?: string;
+      guest?: {
+        _id: string;
+        fullName?: string;
+      };
+      money?: {
+        balanceDue?: number;
+        currency?: string;
+        hostPayout?: number;
+        totalPaid?: number;
+        fareAccommodationAdjusted?: number;
+      };
+      nightsCount?: number;
+      plannedArrival?: string;
+      plannedDeparture?: string;
+      guestsCount?: number;
+      integration?: {
+        platform?: string;
+      };
+      numberOfGuests?: {
+        numberOfAdults?: number;
+        numberOfChildren?: number;
+        numberOfInfants?: number;
+      };
+      createdAt?: string;
+      reservedAt?: string;
+    };
   }>;
 }
 

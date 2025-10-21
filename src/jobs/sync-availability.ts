@@ -10,7 +10,12 @@ import {
   deleteOldAvailability,
   getAvailabilityDateRange,
 } from '../repositories/availability-repository.js';
+import {
+  upsertReservationBatch,
+  deleteOldReservations,
+} from '../repositories/reservation-repository.js';
 import { mapAvailabilityBatch } from '../mappers/availability-mapper.js';
+import { extractReservationsFromCalendar } from '../mappers/reservation-mapper.js';
 import { config } from '../config/index.js';
 import logger from '../utils/logger.js';
 
@@ -18,6 +23,7 @@ export interface SyncAvailabilityResult {
   success: boolean;
   listingId: string;
   daysCount?: number;
+  reservationsCount?: number;
   skipped?: boolean;
   error?: string;
   partialSuccess?: boolean;
@@ -93,16 +99,25 @@ export async function syncAvailability(listingId: string, force: boolean = false
     // Map to internal model
     const availabilities = mapAvailabilityBatch(guestyCalendar);
 
+    // Extract reservation data from calendar
+    const lastSyncedAt = new Date().toISOString();
+    const reservations = extractReservationsFromCalendar(guestyCalendar, lastSyncedAt);
+
     // Delete old availability data (past dates)
     const today = new Date().toISOString().split('T')[0];
-    const deletedCount = deleteOldAvailability(listingId, today);
+    const deletedAvailabilityCount = deleteOldAvailability(listingId, today);
+    const deletedReservationsCount = deleteOldReservations(listingId, today);
 
-    if (deletedCount > 0) {
-      logger.debug({ listingId, deletedCount }, 'Deleted old availability records');
+    if (deletedAvailabilityCount > 0 || deletedReservationsCount > 0) {
+      logger.debug(
+        { listingId, deletedAvailabilityCount, deletedReservationsCount },
+        'Deleted old records'
+      );
     }
 
     // Batch upsert to database (uses transaction for performance)
     const upsertedCount = upsertAvailabilityBatch(availabilities);
+    const upsertedReservationsCount = reservations.length > 0 ? upsertReservationBatch(reservations) : 0;
 
     const duration = Date.now() - startTime;
 
@@ -110,16 +125,19 @@ export async function syncAvailability(listingId: string, force: boolean = false
       {
         listingId,
         daysCount: upsertedCount,
-        deletedCount,
+        reservationsCount: upsertedReservationsCount,
+        deletedAvailabilityCount,
+        deletedReservationsCount,
         duration,
       },
-      'Availability synced successfully'
+      'Availability and reservations synced successfully'
     );
 
     return {
       success: true,
       listingId,
       daysCount: upsertedCount,
+      reservationsCount: upsertedReservationsCount,
     };
   } catch (error) {
     const duration = Date.now() - startTime;
@@ -158,8 +176,10 @@ export async function syncAvailabilityChunked(
 ): Promise<SyncAvailabilityResult> {
   const startTime = Date.now();
   let totalDaysCount = 0;
+  let totalReservationsCount = 0;
   let hasErrors = false;
   const errors: string[] = [];
+  const lastSyncedAt = new Date().toISOString();
 
   try {
     logger.info({ listingId, chunkMonths }, 'Starting chunked availability sync');
@@ -192,10 +212,18 @@ export async function syncAvailabilityChunked(
 
         if (guestyCalendar && guestyCalendar.length > 0) {
           const availabilities = mapAvailabilityBatch(guestyCalendar);
-          const upsertedCount = upsertAvailabilityBatch(availabilities);
-          totalDaysCount += upsertedCount;
+          const reservations = extractReservationsFromCalendar(guestyCalendar, lastSyncedAt);
 
-          logger.debug({ listingId, chunk, daysCount: upsertedCount }, 'Calendar chunk synced');
+          const upsertedCount = upsertAvailabilityBatch(availabilities);
+          const upsertedReservationsCount = reservations.length > 0 ? upsertReservationBatch(reservations) : 0;
+
+          totalDaysCount += upsertedCount;
+          totalReservationsCount += upsertedReservationsCount;
+
+          logger.debug(
+            { listingId, chunk, daysCount: upsertedCount, reservationsCount: upsertedReservationsCount },
+            'Calendar chunk synced'
+          );
         }
 
         // Add delay between chunks to avoid rate limiting (except after the last chunk)
@@ -214,9 +242,10 @@ export async function syncAvailabilityChunked(
       }
     }
 
-    // Delete old availability data
+    // Delete old availability data and reservations
     const today_str = today.toISOString().split('T')[0];
-    const deletedCount = deleteOldAvailability(listingId, today_str);
+    const deletedAvailabilityCount = deleteOldAvailability(listingId, today_str);
+    const deletedReservationsCount = deleteOldReservations(listingId, today_str);
 
     const duration = Date.now() - startTime;
 
@@ -225,7 +254,9 @@ export async function syncAvailabilityChunked(
         {
           listingId,
           daysCount: totalDaysCount,
-          deletedCount,
+          reservationsCount: totalReservationsCount,
+          deletedAvailabilityCount,
+          deletedReservationsCount,
           errorCount: errors.length,
           duration,
         },
@@ -236,6 +267,7 @@ export async function syncAvailabilityChunked(
         success: false,
         listingId,
         daysCount: totalDaysCount,
+        reservationsCount: totalReservationsCount,
         partialSuccess: totalDaysCount > 0,
         error: errors.join('; '),
       };
@@ -245,16 +277,19 @@ export async function syncAvailabilityChunked(
       {
         listingId,
         daysCount: totalDaysCount,
-        deletedCount,
+        reservationsCount: totalReservationsCount,
+        deletedAvailabilityCount,
+        deletedReservationsCount,
         duration,
       },
-      'Chunked availability synced successfully'
+      'Chunked availability and reservations synced successfully'
     );
 
     return {
       success: true,
       listingId,
       daysCount: totalDaysCount,
+      reservationsCount: totalReservationsCount,
     };
   } catch (error) {
     const duration = Date.now() - startTime;
@@ -272,6 +307,7 @@ export async function syncAvailabilityChunked(
       success: false,
       listingId,
       daysCount: totalDaysCount,
+      reservationsCount: totalReservationsCount,
       partialSuccess: totalDaysCount > 0,
       error: error instanceof Error ? error.message : 'Unknown error',
     };

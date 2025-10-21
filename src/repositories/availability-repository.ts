@@ -255,3 +255,133 @@ export function getAvailabilityDateRange(listingId: string): { minDate: string; 
     );
   }
 }
+
+/**
+ * Booking/Reservation summary
+ */
+export interface BookingSummary {
+  reservationId: string;
+  checkIn: string;
+  checkOut: string;
+  nights: number;
+  totalPrice: number;
+  status: 'booked' | 'blocked';
+  blockType?: string;
+}
+
+/**
+ * Get all current and future bookings grouped by reservation
+ */
+export function getUpcomingBookings(listingId: string): BookingSummary[] {
+  const db = getDatabase();
+
+  try {
+    const rows = db
+      .prepare(
+        `SELECT
+          block_ref as reservation_id,
+          MIN(date) as check_in,
+          MAX(date) as check_out,
+          COUNT(*) as nights,
+          SUM(price) as total_price,
+          status,
+          block_type
+        FROM availability
+        WHERE listing_id = ?
+        AND (status = 'booked' OR status = 'blocked')
+        AND block_ref IS NOT NULL
+        AND date >= date('now')
+        GROUP BY block_ref
+        ORDER BY check_in ASC`
+      )
+      .all(listingId) as Array<{
+        reservation_id: string;
+        check_in: string;
+        check_out: string;
+        nights: number;
+        total_price: number;
+        status: 'booked' | 'blocked';
+        block_type: string | null;
+      }>;
+
+    return rows.map((row) => ({
+      reservationId: row.reservation_id,
+      checkIn: row.check_in,
+      checkOut: row.check_out,
+      nights: row.nights,
+      totalPrice: row.total_price,
+      status: row.status,
+      blockType: row.block_type || undefined,
+    }));
+  } catch (error) {
+    logger.error({ error, listingId }, 'Failed to get upcoming bookings');
+    throw new DatabaseError(
+      `Failed to get upcoming bookings: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
+  }
+}
+
+/**
+ * Dashboard statistics
+ */
+export interface DashboardStats {
+  totalBookings: number;
+  totalRevenue: number;
+  availableDays: number;
+  bookedDays: number;
+  blockedDays: number;
+  occupancyRate: number;
+}
+
+/**
+ * Get dashboard statistics for the next N days
+ */
+export function getDashboardStats(listingId: string, daysAhead: number = 365): DashboardStats {
+  const db = getDatabase();
+
+  try {
+    const endDate = new Date();
+    endDate.setDate(endDate.getDate() + daysAhead);
+    const endDateStr = endDate.toISOString().split('T')[0];
+
+    // Get overall stats
+    const stats = db
+      .prepare(
+        `SELECT
+          COUNT(DISTINCT CASE WHEN status = 'booked' AND block_ref IS NOT NULL THEN block_ref END) as total_bookings,
+          SUM(CASE WHEN status = 'booked' THEN price ELSE 0 END) as total_revenue,
+          SUM(CASE WHEN status = 'available' THEN 1 ELSE 0 END) as available_days,
+          SUM(CASE WHEN status = 'booked' THEN 1 ELSE 0 END) as booked_days,
+          SUM(CASE WHEN status = 'blocked' THEN 1 ELSE 0 END) as blocked_days,
+          COUNT(*) as total_days
+        FROM availability
+        WHERE listing_id = ?
+        AND date >= date('now')
+        AND date <= ?`
+      )
+      .get(listingId, endDateStr) as {
+        total_bookings: number;
+        total_revenue: number;
+        available_days: number;
+        booked_days: number;
+        blocked_days: number;
+        total_days: number;
+      };
+
+    const occupancyRate = stats.total_days > 0 ? (stats.booked_days / stats.total_days) * 100 : 0;
+
+    return {
+      totalBookings: stats.total_bookings,
+      totalRevenue: stats.total_revenue || 0,
+      availableDays: stats.available_days,
+      bookedDays: stats.booked_days,
+      blockedDays: stats.blocked_days,
+      occupancyRate: Math.round(occupancyRate * 10) / 10, // Round to 1 decimal
+    };
+  } catch (error) {
+    logger.error({ error, listingId, daysAhead }, 'Failed to get dashboard stats');
+    throw new DatabaseError(
+      `Failed to get dashboard stats: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
+  }
+}

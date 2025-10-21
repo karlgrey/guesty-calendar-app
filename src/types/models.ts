@@ -158,6 +158,54 @@ export interface QuoteCache {
 }
 
 /**
+ * Reservation/booking details
+ */
+export interface Reservation {
+  id: number;
+  reservation_id: string;
+  listing_id: string;
+
+  // Dates
+  check_in: string; // ISO 8601 date
+  check_out: string; // ISO 8601 date
+  check_in_localized: string | null; // Localized date string
+  check_out_localized: string | null;
+  nights_count: number;
+
+  // Guest information
+  guest_id: string | null;
+  guest_name: string | null;
+  guests_count: number | null;
+  adults_count: number | null;
+  children_count: number | null;
+  infants_count: number | null;
+
+  // Booking details
+  status: string; // confirmed, inquiry, canceled, etc.
+  confirmation_code: string | null;
+  source: string | null;  // airbnb2, booking, direct, etc.
+  platform: string | null;
+
+  // Times
+  planned_arrival: string | null;
+  planned_departure: string | null;
+
+  // Financial
+  currency: string | null;
+  total_price: number | null;
+  host_payout: number | null;
+  balance_due: number | null;
+  total_paid: number | null;
+
+  // Metadata
+  created_at_guesty: string | null;
+  reserved_at: string | null;
+  last_synced_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
  * Admin user for authentication
  */
 export interface AdminUser {
@@ -250,6 +298,42 @@ export interface QuoteCacheRow {
 }
 
 /**
+ * Raw reservation row from database
+ */
+export interface ReservationRow {
+  id: number;
+  reservation_id: string;
+  listing_id: string;
+  check_in: string;
+  check_out: string;
+  check_in_localized: string | null;
+  check_out_localized: string | null;
+  nights_count: number;
+  guest_id: string | null;
+  guest_name: string | null;
+  guests_count: number | null;
+  adults_count: number | null;
+  children_count: number | null;
+  infants_count: number | null;
+  status: string;
+  confirmation_code: string | null;
+  source: string | null;
+  platform: string | null;
+  planned_arrival: string | null;
+  planned_departure: string | null;
+  currency: string | null;
+  total_price: number | null;
+  host_payout: number | null;
+  balance_due: number | null;
+  total_paid: number | null;
+  created_at_guesty: string | null;
+  reserved_at: string | null;
+  last_synced_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
  * Raw admin user row from database
  */
 export interface AdminUserRow {
@@ -313,6 +397,15 @@ export function rowToQuoteCache(row: QuoteCacheRow): QuoteCache {
   return {
     ...row,
     breakdown: JSON.parse(row.breakdown) as PriceBreakdown,
+  };
+}
+
+/**
+ * Convert raw ReservationRow from SQLite to Reservation model
+ */
+export function rowToReservation(row: ReservationRow): Reservation {
+  return {
+    ...row,
   };
 }
 

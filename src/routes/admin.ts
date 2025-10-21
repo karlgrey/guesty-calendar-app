@@ -12,6 +12,9 @@ import { runETLJob } from '../jobs/etl-job.js';
 import { getSchedulerStatus } from '../jobs/scheduler.js';
 import { config } from '../config/index.js';
 import logger from '../utils/logger.js';
+import { getDashboardStats } from '../repositories/availability-repository.js';
+import { getListingById } from '../repositories/listings-repository.js';
+import { getUpcomingReservations } from '../repositories/reservation-repository.js';
 
 const router = express.Router();
 
@@ -258,6 +261,23 @@ router.get('/', (_req, res) => {
     </div>
 
     <div id="message" class="message"></div>
+
+    <!-- Dashboard Stats -->
+    <div class="section">
+      <h2>📊 Dashboard Overview</h2>
+      <div class="grid" id="statsGrid">
+        <div class="card">
+          <h3>Loading...</h3>
+          <div class="value">...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Upcoming Bookings -->
+    <div class="section">
+      <h2>📅 Upcoming Bookings</h2>
+      <div id="bookingsTable">Loading bookings...</div>
+    </div>
 
     <!-- Health Status -->
     <div class="section">
@@ -507,9 +527,96 @@ router.get('/', (_req, res) => {
       }
     }
 
+    async function loadDashboard() {
+      try {
+        const res = await fetch('/admin/dashboard-data');
+        const data = await res.json();
+
+        // Update stats cards
+        const statsGrid = document.getElementById('statsGrid');
+        statsGrid.innerHTML = \`
+          <div class="card" style="border-left-color: #28a745;">
+            <h3>Total Bookings</h3>
+            <div class="value">\${data.stats.totalBookings}</div>
+            <div class="subvalue">Next 12 months</div>
+          </div>
+          <div class="card" style="border-left-color: #17a2b8;">
+            <h3>Total Revenue</h3>
+            <div class="value">\${data.listing.currency} \${data.stats.totalRevenue.toLocaleString()}</div>
+            <div class="subvalue">Expected revenue</div>
+          </div>
+          <div class="card" style="border-left-color: #ffc107;">
+            <h3>Occupancy Rate</h3>
+            <div class="value">\${data.stats.occupancyRate}%</div>
+            <div class="subvalue">\${data.stats.bookedDays} of \${data.stats.bookedDays + data.stats.availableDays} days</div>
+          </div>
+          <div class="card" style="border-left-color: #6c757d;">
+            <h3>Availability</h3>
+            <div class="value">\${data.stats.availableDays}</div>
+            <div class="subvalue">Available days · \${data.stats.blockedDays} blocked</div>
+          </div>
+        \`;
+
+        // Update bookings table
+        const bookingsTable = document.getElementById('bookingsTable');
+
+        if (data.bookings.length === 0) {
+          bookingsTable.innerHTML = '<p style="color: #888;">No upcoming bookings found.</p>';
+          return;
+        }
+
+        bookingsTable.innerHTML = \`
+          <table>
+            <thead>
+              <tr>
+                <th>Confirmation</th>
+                <th>Guest Name</th>
+                <th>Check-In</th>
+                <th>Check-Out</th>
+                <th>Nights</th>
+                <th>Guests</th>
+                <th>Status</th>
+                <th>Source</th>
+                <th>Total Price</th>
+              </tr>
+            </thead>
+            <tbody>
+              \${data.bookings.map(booking => {
+                const checkIn = new Date(booking.checkIn);
+                const checkOut = new Date(booking.checkOut);
+
+                const statusClass = booking.status === 'confirmed' ? 'running' : 'stopped';
+                const statusText = booking.status || 'Unknown';
+
+                return \`
+                  <tr>
+                    <td style="font-family: monospace; font-size: 12px;">\${booking.confirmationCode || booking.reservationId.substring(0, 8)}</td>
+                    <td>\${booking.guestName}</td>
+                    <td>\${checkIn.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
+                    <td>\${checkOut.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
+                    <td>\${booking.nights}</td>
+                    <td>\${booking.guestsCount}</td>
+                    <td><span class="status \${statusClass}">\${statusText}</span></td>
+                    <td>\${booking.source}</td>
+                    <td style="font-weight: 600;">\${data.listing.currency} \${Math.round(booking.totalPrice).toLocaleString()}</td>
+                  </tr>
+                \`;
+              }).join('')}
+            </tbody>
+          </table>
+        \`;
+      } catch (error) {
+        console.error('Failed to load dashboard data:', error);
+        document.getElementById('statsGrid').innerHTML = '<p style="color: #dc3545;">Failed to load stats</p>';
+        document.getElementById('bookingsTable').innerHTML = '<p style="color: #dc3545;">Failed to load bookings</p>';
+      }
+    }
+
     // Load initial data
     loadHealth();
+    loadDashboard();
     setInterval(loadHealth, 10000); // Refresh every 10 seconds
+    setInterval(loadDashboard, 30000); // Refresh dashboard every 30 seconds
   </script>
 </body>
 </html>
@@ -659,6 +766,52 @@ router.get('/db/:table', (req, res, next) => {
     });
   } catch (error) {
     return next(error);
+  }
+});
+
+/**
+ * GET /admin/dashboard-data
+ * Get dashboard statistics and upcoming bookings
+ */
+router.get('/dashboard-data', async (_req, res, next) => {
+  try {
+    const propertyId = config.guestyPropertyId;
+
+    // Get listing info
+    const listing = getListingById(propertyId);
+
+    // Get stats from availability
+    const stats = getDashboardStats(propertyId, 365);
+
+    // Get detailed reservations
+    const reservations = getUpcomingReservations(propertyId);
+
+    // Transform reservations for frontend
+    const bookings = reservations.map(r => ({
+      reservationId: r.reservation_id,
+      checkIn: r.check_in,
+      checkOut: r.check_out,
+      nights: r.nights_count,
+      guestName: r.guest_name || 'Unknown Guest',
+      guestsCount: r.guests_count || 0,
+      status: r.status,
+      confirmationCode: r.confirmation_code,
+      source: r.source || r.platform || 'Unknown',
+      totalPrice: r.total_price || r.host_payout || 0,
+      plannedArrival: r.planned_arrival,
+      plannedDeparture: r.planned_departure,
+    }));
+
+    res.json({
+      listing: {
+        title: listing?.nickname || listing?.title || 'Unknown Property',
+        currency: listing?.currency || 'EUR',
+      },
+      stats,
+      bookings,
+    });
+  } catch (error) {
+    next(error);
   }
 });
 
