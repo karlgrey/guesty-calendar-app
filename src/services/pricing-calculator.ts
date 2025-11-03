@@ -136,11 +136,11 @@ function calculateAccommodationFare(
 }
 
 /**
- * Calculate extra guest fee
+ * Calculate extra guest fee (per night)
  */
-function calculateExtraGuestFee(guests: number, listing: Listing): number {
+function calculateExtraGuestFee(guests: number, nights: number, listing: Listing): number {
   const extraGuests = Math.max(0, guests - listing.guests_included);
-  return extraGuests * listing.extra_person_fee;
+  return extraGuests * listing.extra_person_fee * nights;
 }
 
 /**
@@ -268,7 +268,7 @@ export function calculateQuote(request: QuoteRequest): QuoteResult {
 
   // Calculate fees
   const cleaningFee = listing.cleaning_fee;
-  const extraGuestFee = calculateExtraGuestFee(guests, listing);
+  const extraGuestFee = calculateExtraGuestFee(guests, nights, listing);
 
   // Calculate subtotal
   const subtotal = accommodationFare + cleaningFee + extraGuestFee;
