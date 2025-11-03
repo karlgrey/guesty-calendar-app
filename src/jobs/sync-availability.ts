@@ -84,8 +84,19 @@ export async function syncAvailability(listingId: string, force: boolean = false
       };
     }
 
-    // Fetch 12 months of calendar data from Guesty API
-    const guestyCalendar = await guestyClient.get12MonthsCalendar(listingId);
+    // Fetch 24 months of calendar data: 12 months back + 12 months forward
+    const today = new Date();
+    const startDate = new Date(today);
+    startDate.setMonth(startDate.getMonth() - 12); // 12 months ago
+    const endDate = new Date(today);
+    endDate.setMonth(endDate.getMonth() + 12); // 12 months ahead
+
+    const startDateStr = startDate.toISOString().split('T')[0];
+    const endDateStr = endDate.toISOString().split('T')[0];
+
+    logger.info({ listingId, startDate: startDateStr, endDate: endDateStr }, 'Fetching 24 months of calendar data (past 12 + future 12)');
+
+    const guestyCalendar = await guestyClient.getCalendar(listingId, startDateStr, endDateStr);
 
     if (!guestyCalendar || guestyCalendar.length === 0) {
       logger.warn({ listingId }, 'No calendar data returned from Guesty API');
@@ -103,10 +114,12 @@ export async function syncAvailability(listingId: string, force: boolean = false
     const lastSyncedAt = new Date().toISOString();
     const reservations = extractReservationsFromCalendar(guestyCalendar, lastSyncedAt);
 
-    // Delete old availability data (past dates)
-    const today = new Date().toISOString().split('T')[0];
-    const deletedAvailabilityCount = deleteOldAvailability(listingId, today);
-    const deletedReservationsCount = deleteOldReservations(listingId, today);
+    // Delete very old availability data (older than 13 months to keep some buffer)
+    const oldDataCutoff = new Date(today);
+    oldDataCutoff.setMonth(oldDataCutoff.getMonth() - 13);
+    const oldDataCutoffStr = oldDataCutoff.toISOString().split('T')[0];
+    const deletedAvailabilityCount = deleteOldAvailability(listingId, oldDataCutoffStr);
+    const deletedReservationsCount = deleteOldReservations(listingId, oldDataCutoffStr);
 
     if (deletedAvailabilityCount > 0 || deletedReservationsCount > 0) {
       logger.debug(
