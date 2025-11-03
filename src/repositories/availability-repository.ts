@@ -336,13 +336,30 @@ export interface DashboardStats {
 /**
  * Get dashboard statistics for the next N days
  */
-export function getDashboardStats(listingId: string, daysAhead: number = 365): DashboardStats {
+export function getDashboardStats(
+  listingId: string,
+  days: number = 365,
+  period: 'past' | 'future' = 'future'
+): DashboardStats {
   const db = getDatabase();
 
   try {
-    const endDate = new Date();
-    endDate.setDate(endDate.getDate() + daysAhead);
-    const endDateStr = endDate.toISOString().split('T')[0];
+    let startDateStr: string;
+    let endDateStr: string;
+
+    if (period === 'past') {
+      // Last N days
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
+      startDateStr = startDate.toISOString().split('T')[0];
+      endDateStr = new Date().toISOString().split('T')[0];
+    } else {
+      // Next N days (future)
+      startDateStr = new Date().toISOString().split('T')[0];
+      const endDate = new Date();
+      endDate.setDate(endDate.getDate() + days);
+      endDateStr = endDate.toISOString().split('T')[0];
+    }
 
     // Get overall stats
     const stats = db
@@ -356,10 +373,10 @@ export function getDashboardStats(listingId: string, daysAhead: number = 365): D
           COUNT(*) as total_days
         FROM availability
         WHERE listing_id = ?
-        AND date >= date('now')
+        AND date >= ?
         AND date <= ?`
       )
-      .get(listingId, endDateStr) as {
+      .get(listingId, startDateStr, endDateStr) as {
         total_bookings: number;
         total_revenue: number;
         available_days: number;
@@ -379,7 +396,7 @@ export function getDashboardStats(listingId: string, daysAhead: number = 365): D
       occupancyRate: Math.round(occupancyRate * 10) / 10, // Round to 1 decimal
     };
   } catch (error) {
-    logger.error({ error, listingId, daysAhead }, 'Failed to get dashboard stats');
+    logger.error({ error, listingId, days, period }, 'Failed to get dashboard stats');
     throw new DatabaseError(
       `Failed to get dashboard stats: ${error instanceof Error ? error.message : 'Unknown error'}`
     );

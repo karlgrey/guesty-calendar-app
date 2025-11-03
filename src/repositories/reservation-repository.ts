@@ -198,6 +198,52 @@ export function getUpcomingReservations(listingId: string): Reservation[] {
 }
 
 /**
+ * Get reservations by period (past or future)
+ */
+export function getReservationsByPeriod(
+  listingId: string,
+  days: number = 365,
+  period: 'past' | 'future' = 'future'
+): Reservation[] {
+  const db = getDatabase();
+
+  try {
+    let query: string;
+    let params: any[];
+
+    if (period === 'past') {
+      // Past reservations (check-out date in the past)
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
+      const startDateStr = startDate.toISOString().split('T')[0];
+
+      query = `SELECT * FROM reservations
+               WHERE listing_id = ?
+               AND check_out >= ?
+               AND check_out < date('now')
+               ORDER BY check_out DESC`;
+      params = [listingId, startDateStr];
+    } else {
+      // Future reservations (check-in date in the future)
+      query = `SELECT * FROM reservations
+               WHERE listing_id = ?
+               AND check_in >= date('now')
+               ORDER BY check_in ASC`;
+      params = [listingId];
+    }
+
+    const rows = db.prepare(query).all(...params) as ReservationRow[];
+
+    return rows.map(rowToReservation);
+  } catch (error) {
+    logger.error({ error, listingId, days, period }, 'Failed to get reservations by period');
+    throw new DatabaseError(
+      `Failed to get reservations by period: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
+  }
+}
+
+/**
  * Get reservations in a date range
  */
 export function getReservationsInRange(

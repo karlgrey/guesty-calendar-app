@@ -14,7 +14,7 @@ import { config } from '../config/index.js';
 import logger from '../utils/logger.js';
 import { getDashboardStats } from '../repositories/availability-repository.js';
 import { getListingById } from '../repositories/listings-repository.js';
-import { getUpcomingReservations } from '../repositories/reservation-repository.js';
+import { getReservationsByPeriod } from '../repositories/reservation-repository.js';
 
 const router = express.Router();
 
@@ -264,7 +264,13 @@ router.get('/', (_req, res) => {
 
     <!-- Dashboard Stats -->
     <div class="section">
-      <h2>📊 Dashboard Overview</h2>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h2 style="margin: 0;">📊 Dashboard Overview</h2>
+        <div style="display: flex; gap: 10px;">
+          <button id="btnFuture" class="success" onclick="switchPeriod('future')">Next 12 Months</button>
+          <button id="btnPast" onclick="switchPeriod('past')">Last 12 Months</button>
+        </div>
+      </div>
       <div class="grid" id="statsGrid">
         <div class="card">
           <h3>Loading...</h3>
@@ -273,9 +279,9 @@ router.get('/', (_req, res) => {
       </div>
     </div>
 
-    <!-- Upcoming Bookings -->
+    <!-- Bookings -->
     <div class="section">
-      <h2>📅 Upcoming Bookings</h2>
+      <h2 id="bookingsTitle">📅 Upcoming Bookings</h2>
       <div id="bookingsTable">Loading bookings...</div>
     </div>
 
@@ -329,6 +335,8 @@ router.get('/', (_req, res) => {
   </div>
 
   <script>
+    let currentPeriod = 'future'; // Track current period
+
     function showMessage(text, type = 'success') {
       const msg = document.getElementById('message');
       msg.textContent = text;
@@ -336,6 +344,29 @@ router.get('/', (_req, res) => {
       setTimeout(() => {
         msg.className = 'message';
       }, 5000);
+    }
+
+    function switchPeriod(period) {
+      currentPeriod = period;
+
+      // Update button styles
+      const btnFuture = document.getElementById('btnFuture');
+      const btnPast = document.getElementById('btnPast');
+
+      if (period === 'future') {
+        btnFuture.classList.add('success');
+        btnPast.classList.remove('success');
+      } else {
+        btnPast.classList.add('success');
+        btnFuture.classList.remove('success');
+      }
+
+      // Update bookings title
+      const bookingsTitle = document.getElementById('bookingsTitle');
+      bookingsTitle.textContent = period === 'future' ? '📅 Upcoming Bookings' : '📅 Past Bookings';
+
+      // Reload dashboard data
+      loadDashboard();
     }
 
     async function loadHealth() {
@@ -529,21 +560,24 @@ router.get('/', (_req, res) => {
 
     async function loadDashboard() {
       try {
-        const res = await fetch('/admin/dashboard-data');
+        const res = await fetch(\`/admin/dashboard-data?period=\${currentPeriod}\`);
         const data = await res.json();
 
         // Update stats cards
         const statsGrid = document.getElementById('statsGrid');
+        const periodLabel = currentPeriod === 'future' ? 'Next 12 months' : 'Last 12 months';
+        const revenueLabel = currentPeriod === 'future' ? 'Expected revenue' : 'Total revenue';
+
         statsGrid.innerHTML = \`
           <div class="card" style="border-left-color: #28a745;">
             <h3>Total Bookings</h3>
             <div class="value">\${data.stats.totalBookings}</div>
-            <div class="subvalue">Next 12 months</div>
+            <div class="subvalue">\${periodLabel}</div>
           </div>
           <div class="card" style="border-left-color: #17a2b8;">
-            <h3>Total Revenue</h3>
+            <h3>\${currentPeriod === 'future' ? 'Expected' : 'Total'} Revenue</h3>
             <div class="value">\${data.listing.currency} \${data.stats.totalRevenue.toLocaleString()}</div>
-            <div class="subvalue">Expected revenue</div>
+            <div class="subvalue">\${revenueLabel}</div>
           </div>
           <div class="card" style="border-left-color: #ffc107;">
             <h3>Occupancy Rate</h3>
@@ -551,7 +585,7 @@ router.get('/', (_req, res) => {
             <div class="subvalue">\${data.stats.bookedDays} of \${data.stats.bookedDays + data.stats.availableDays} days</div>
           </div>
           <div class="card" style="border-left-color: #6c757d;">
-            <h3>Availability</h3>
+            <h3>\${currentPeriod === 'future' ? 'Availability' : 'Available Days'}</h3>
             <div class="value">\${data.stats.availableDays}</div>
             <div class="subvalue">Available days · \${data.stats.blockedDays} blocked</div>
           </div>
@@ -616,7 +650,13 @@ router.get('/', (_req, res) => {
     loadHealth();
     loadDashboard();
     setInterval(loadHealth, 10000); // Refresh every 10 seconds
-    setInterval(loadDashboard, 30000); // Refresh dashboard every 30 seconds
+
+    // Only auto-refresh dashboard for future data (not past)
+    setInterval(() => {
+      if (currentPeriod === 'future') {
+        loadDashboard();
+      }
+    }, 30000); // Refresh dashboard every 30 seconds if showing future
   </script>
 </body>
 </html>
@@ -771,20 +811,22 @@ router.get('/db/:table', (req, res, next) => {
 
 /**
  * GET /admin/dashboard-data
- * Get dashboard statistics and upcoming bookings
+ * Get dashboard statistics and bookings
+ * Query params: period=past|future (default: future)
  */
-router.get('/dashboard-data', async (_req, res, next) => {
+router.get('/dashboard-data', async (req, res, next) => {
   try {
     const propertyId = config.guestyPropertyId;
+    const period = (req.query.period as 'past' | 'future') || 'future';
 
     // Get listing info
     const listing = getListingById(propertyId);
 
     // Get stats from availability
-    const stats = getDashboardStats(propertyId, 365);
+    const stats = getDashboardStats(propertyId, 365, period);
 
     // Get detailed reservations
-    const reservations = getUpcomingReservations(propertyId);
+    const reservations = getReservationsByPeriod(propertyId, 365, period);
 
     // Transform reservations for frontend
     const bookings = reservations.map(r => ({
@@ -809,6 +851,7 @@ router.get('/dashboard-data', async (_req, res, next) => {
       },
       stats,
       bookings,
+      period, // Include period in response so UI knows what's displayed
     });
   } catch (error) {
     next(error);
