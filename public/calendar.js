@@ -344,7 +344,8 @@ class BookingCalendar {
    */
   async fetchAvailability() {
     const startDate = new Date(this.currentDate.getFullYear(), this.currentDate.getMonth(), 1);
-    const endDate = new Date(this.currentDate.getFullYear(), this.currentDate.getMonth() + 3, 0);
+    // Fetch 12 months of data to ensure we have enough coverage
+    const endDate = new Date(this.currentDate.getFullYear(), this.currentDate.getMonth() + 12, 0);
 
     const from = this.formatDate(startDate);
     const to = this.formatDate(endDate);

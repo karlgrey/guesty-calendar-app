@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS reservations (
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now')),
 
-  FOREIGN KEY (listing_id) REFERENCES listings(listing_id) ON DELETE CASCADE
+  FOREIGN KEY (listing_id) REFERENCES listings(id) ON DELETE CASCADE
 );
 
 -- Indexes for efficient queries
