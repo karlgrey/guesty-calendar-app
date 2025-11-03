@@ -13,7 +13,7 @@
     --bg-available: #ffffff;
     --bg-selected: #dbeafe;
     --bg-disabled: #f3f4f6;
-    --bg-booked: #fee2e2;
+    --bg-booked: #f3f4f6;
     --border-radius: 8px;
     --spacing: 1rem;
 }
@@ -350,30 +350,28 @@ body {
 
 /* Calendar Overlay (Mobile fullscreen, Desktop centered) */
 .calendar-content {
-    max-width: 900px;
+    max-width: 810px;
     position: relative;
 }
 
 .calendar-nav-overlay {
-    display: flex;
-    justify-content: space-between;
-    padding: 1rem 1.5rem;
-    border-bottom: 1px solid var(--border-color);
+    display: none;
 }
 
 .nav-btn {
-    width: 40px;
-    height: 40px;
+    width: 32px;
+    height: 32px;
     border-radius: 50%;
     border: 1px solid var(--border-color);
     background: white;
     color: var(--text-primary);
-    font-size: 1.25rem;
+    font-size: 1.125rem;
     cursor: pointer;
     transition: all 0.2s;
     display: flex;
     align-items: center;
     justify-content: center;
+    flex-shrink: 0;
 }
 
 .nav-btn:hover:not(:disabled) {
@@ -390,8 +388,8 @@ body {
 .calendar-months-overlay {
     display: grid;
     grid-template-columns: 1fr;
-    gap: 2rem;
-    padding: 1.5rem;
+    gap: 1.5rem;
+    padding: 1rem;
     max-height: 60vh;
     overflow-y: auto;
 }
@@ -410,8 +408,11 @@ body {
 .month-title-overlay {
     font-size: 1rem;
     font-weight: 600;
-    margin: 0 0 1rem 0;
+    margin: 0 0 0.75rem 0;
     text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
 }
 
 .calendar-grid-overlay {
@@ -425,7 +426,7 @@ body {
     font-size: 0.75rem;
     font-weight: 600;
     color: var(--text-secondary);
-    padding: 0.5rem 0;
+    padding: 0.25rem 0;
     text-transform: uppercase;
 }
 
@@ -434,17 +435,18 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border: none;
+    border-radius: 50%;
     cursor: pointer;
     transition: all 0.2s;
     background: white;
     position: relative;
     font-size: 0.875rem;
+    padding: 0.25rem;
 }
 
 .calendar-day-overlay:hover:not([data-disabled]):not(.empty) {
-    border-color: var(--primary-color);
+    background: #f0f9ff;
     transform: scale(1.05);
     z-index: 1;
 }
@@ -479,24 +481,21 @@ body {
 .calendar-day-overlay.selected {
     background: var(--primary-color);
     color: white;
-    border-color: var(--primary-color);
+    border: 2px solid var(--primary-color);
     font-weight: 700;
 }
 
 .calendar-day-overlay.in-range {
     background: var(--bg-selected);
-    border-color: var(--primary-color);
 }
 
 .calendar-day-overlay.hover-range {
     background: #eff6ff;
-    border-color: #bfdbfe;
 }
 
 .calendar-day-overlay.hover-end {
     background: #dbeafe;
-    border-color: var(--primary-color);
-    border-width: 2px;
+    border: 2px solid var(--primary-color);
 }
 
 .day-number-overlay {
@@ -556,6 +555,23 @@ body {
     .calendar-months-overlay {
         grid-template-columns: 1fr;
         max-height: calc(100vh - 250px);
+        padding: 0.75rem;
+    }
+
+    .calendar-day-overlay {
+        font-size: 0.75rem;
+        max-width: 42px;
+        max-height: 42px;
+    }
+
+    .nav-btn {
+        width: 28px;
+        height: 28px;
+        font-size: 1rem;
+    }
+
+    .month-title-overlay {
+        font-size: 0.9rem;
     }
 
     .calendar-actions {

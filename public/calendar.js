@@ -48,7 +48,7 @@ class BookingCalendar {
         checkIn: 'Check-in',
         checkOut: 'Check-out',
         guests: 'Gäste',
-        reserve: 'Reservieren',
+        reserve: 'Buchung anfragen',
         noCharge: 'Du musst noch nichts bezahlen.',
         pricingDetails: 'Preisdetails',
         hidePricingDetails: 'Preisdetails ausblenden',
@@ -1057,12 +1057,13 @@ class BookingCalendar {
     const quote = this.currentQuote;
     let breakdownHtml = '';
 
-    // 1. Base nights
-    const nightlyRate = quote.breakdown.nightlyRates[0]?.adjustedPrice || 0;
+    // 1. Base nights (use basePrice, not adjustedPrice, to show discount separately)
+    const baseNightlyRate = quote.breakdown.nightlyRates[0]?.basePrice || 0;
+    const baseTotal = baseNightlyRate * quote.nights;
     breakdownHtml += `
       <div class="breakdown-row">
-        <span class="breakdown-label">${this.t('baseNights')(this.formatCurrency(nightlyRate, quote.currency), quote.nights)}</span>
-        <span class="breakdown-value">${this.formatCurrency(quote.pricing.accommodationFare, quote.currency)}</span>
+        <span class="breakdown-label">${this.t('baseNights')(this.formatCurrency(baseNightlyRate, quote.currency), quote.nights)}</span>
+        <span class="breakdown-value">${this.formatCurrency(baseTotal, quote.currency)}</span>
       </div>
     `;
 
@@ -1440,10 +1441,11 @@ class BookingCalendar {
 
     let html = '';
 
-    // Render two months
-    for (let i = 0; i < 2; i++) {
+    // Render one month on mobile, two months on desktop
+    const monthsToRender = this.isMobile ? 1 : 2;
+    for (let i = 0; i < monthsToRender; i++) {
       const monthDate = new Date(this.overlayCurrentMonth.getFullYear(), this.overlayCurrentMonth.getMonth() + i, 1);
-      html += this.renderMonthOverlay(monthDate);
+      html += this.renderMonthOverlay(monthDate, i);
     }
 
     container.innerHTML = html;
@@ -1498,7 +1500,7 @@ class BookingCalendar {
   /**
    * Render single month for overlay with locale support
    */
-  renderMonthOverlay(date) {
+  renderMonthOverlay(date, monthIndex = 0) {
     const year = date.getFullYear();
     const month = date.getMonth();
     const monthName = date.toLocaleDateString(this.language === 'de' ? 'de-DE' : 'en-US', {
@@ -1520,9 +1522,24 @@ class BookingCalendar {
       startingDayOfWeek = startingDayOfWeek === 0 ? 6 : startingDayOfWeek - 1;
     }
 
+    // Navigation buttons:
+    // - Mobile (1 month): both arrows on the single month
+    // - Desktop (2 months): left arrow on first month, right arrow on second month
+    const leftNav = (this.isMobile && monthIndex === 0) || (!this.isMobile && monthIndex === 0)
+      ? `<button id="prev-month-overlay" class="nav-btn" onclick="calendar.previousMonthOverlay()">←</button>`
+      : '<span style="width: 32px;"></span>';
+
+    const rightNav = (this.isMobile && monthIndex === 0) || (!this.isMobile && monthIndex === 1)
+      ? `<button id="next-month-overlay" class="nav-btn" onclick="calendar.nextMonthOverlay()">→</button>`
+      : '<span style="width: 32px;"></span>';
+
     let html = `
       <div class="calendar-month-overlay">
-        <h3 class="month-title-overlay">${monthName}</h3>
+        <h3 class="month-title-overlay">
+          ${leftNav}
+          <span>${monthName}</span>
+          ${rightNav}
+        </h3>
         <div class="calendar-grid-overlay">
     `;
 
