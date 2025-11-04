@@ -265,14 +265,562 @@ ADMIN_ALLOWED_EMAILS=micha@remoterepublic.com
 
 ## Production Deployment
 
-The app is designed for deployment with PM2:
+This section covers the complete server-side infrastructure setup for production deployment.
+
+### Server Requirements
+
+- **OS**: Ubuntu 20.04 LTS or newer (Debian-based recommended)
+- **Node.js**: v18+ (use nvm for version management)
+- **Memory**: Minimum 1GB RAM (2GB+ recommended)
+- **Storage**: Minimum 10GB disk space
+- **Network**: Public IP with domain pointing to server
+- **Ports**: 80 (HTTP), 443 (HTTPS) open to public
+
+### Initial Server Setup
+
+#### 1. Create Deploy User
 ```bash
-npm run build
-pm2 start dist/index.js --name guesty-calendar
+# Create non-root user for deployment
+sudo adduser deploy
+sudo usermod -aG sudo deploy
+
+# Switch to deploy user
+su - deploy
 ```
 
-Key considerations:
-- Scheduler starts automatically on boot (no separate cron needed)
-- Database is created/initialized automatically if missing
-- Graceful shutdown handles SIGTERM/SIGINT (closes DB, stops scheduler)
-- Set `LOG_PRETTY=false` for production JSON logs
+#### 2. Install Node.js via nvm
+```bash
+# Install nvm
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+source ~/.bashrc
+
+# Install Node.js LTS
+nvm install --lts
+nvm use --lts
+nvm alias default node
+
+# Verify installation
+node --version
+npm --version
+```
+
+#### 3. Install PM2 Process Manager
+```bash
+# Install PM2 globally
+npm install -g pm2
+
+# Set up PM2 to start on boot
+pm2 startup systemd
+# Run the command that PM2 outputs (with sudo)
+
+# Save PM2 process list
+pm2 save
+```
+
+#### 4. Clone and Setup Application
+```bash
+# Create application directory
+sudo mkdir -p /opt/guesty-calendar-app
+sudo chown deploy:deploy /opt/guesty-calendar-app
+
+# Clone repository
+cd /opt
+git clone <your-repo-url> guesty-calendar-app
+cd guesty-calendar-app
+
+# Install dependencies
+npm install
+
+# Create data directory
+mkdir -p data
+
+# Copy environment file
+cp .env.example .env
+nano .env  # Edit with production values
+```
+
+### PM2 Process Management
+
+#### Initial Deployment
+```bash
+# Build TypeScript
+npm run build
+
+# Start application with PM2
+pm2 start dist/index.js --name guesty-calendar
+
+# Save PM2 configuration
+pm2 save
+
+# Check status
+pm2 list
+pm2 logs guesty-calendar
+```
+
+#### Common PM2 Commands
+```bash
+# View logs
+pm2 logs guesty-calendar           # Live logs
+pm2 logs guesty-calendar --lines 100  # Last 100 lines
+
+# Process management
+pm2 restart guesty-calendar        # Restart app
+pm2 stop guesty-calendar          # Stop app
+pm2 delete guesty-calendar        # Remove from PM2
+pm2 describe guesty-calendar      # Detailed info
+
+# Monitoring
+pm2 monit                         # Real-time monitor
+pm2 status                        # Process status
+```
+
+#### Updating the Application
+```bash
+cd /opt/guesty-calendar-app
+
+# Pull latest code
+git pull origin main
+
+# Install new dependencies (if any)
+npm install
+
+# Build TypeScript
+npm run build
+
+# Restart PM2 process
+pm2 restart guesty-calendar
+
+# Check logs for errors
+pm2 logs guesty-calendar --lines 50
+```
+
+### Caddy Reverse Proxy Setup
+
+Caddy provides automatic HTTPS with Let's Encrypt and acts as a reverse proxy to your Node.js app.
+
+#### 1. Install Caddy
+```bash
+# Add Caddy repository
+sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
+
+# Install Caddy
+sudo apt update
+sudo apt install caddy
+
+# Verify installation
+caddy version
+```
+
+#### 2. Configure Caddy
+```bash
+# Create Caddyfile
+sudo nano /etc/caddy/Caddyfile
+```
+
+**Basic Configuration (Single Domain):**
+```caddyfile
+# Replace with your domain
+your-domain.com {
+    # Reverse proxy to Node.js app
+    reverse_proxy localhost:3005 {
+        # Pass original headers
+        header_up Host {host}
+        header_up X-Real-IP {remote}
+
+        # Health check
+        health_uri /health
+        health_interval 10s
+        health_timeout 5s
+    }
+
+    # Security headers
+    header {
+        # Enable HSTS
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+
+        # Prevent MIME sniffing
+        X-Content-Type-Options "nosniff"
+
+        # XSS protection
+        X-XSS-Protection "1; mode=block"
+
+        # Referrer policy
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    # Access logging
+    log {
+        output file /var/log/caddy/access.log {
+            roll_size 10MB
+            roll_keep 7
+            roll_keep_for 168h
+        }
+        format json
+    }
+
+    # Error handling
+    handle_errors {
+        @502-504 expression `{err.status_code} in [502, 503, 504]`
+        handle @502-504 {
+            respond "Service temporarily unavailable. Please try again." 503
+        }
+    }
+}
+```
+
+#### 3. Enable Iframe Embedding
+
+If you need to embed the calendar in an iframe on external websites, update the security headers:
+
+```caddyfile
+your-domain.com {
+    # ... (reverse_proxy config same as above)
+
+    # Security headers with iframe support
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+
+        # Allow iframe embedding from specific domains
+        Content-Security-Policy "frame-ancestors 'self' https://your-main-site.com https://staging.your-site.com"
+
+        X-Content-Type-Options "nosniff"
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy "strict-origin-when-cross-origin"
+    }
+
+    # ... (rest of config)
+}
+```
+
+**Important:** Replace the domains in `frame-ancestors` with your actual domains where you want to embed the calendar.
+
+#### 4. Start Caddy
+```bash
+# Validate configuration
+sudo caddy validate --config /etc/caddy/Caddyfile
+
+# Start Caddy service
+sudo systemctl enable caddy
+sudo systemctl start caddy
+
+# Check status
+sudo systemctl status caddy
+
+# View logs
+sudo journalctl -u caddy -f
+```
+
+#### 5. Reload Caddy After Config Changes
+```bash
+# After editing Caddyfile
+sudo caddy validate --config /etc/caddy/Caddyfile
+sudo systemctl reload caddy
+```
+
+### Firewall Configuration
+
+#### Using UFW (Uncomplicated Firewall)
+```bash
+# Enable UFW
+sudo ufw enable
+
+# Allow SSH (important - do this first!)
+sudo ufw allow 22/tcp
+
+# Allow HTTP and HTTPS
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+
+# Check status
+sudo ufw status verbose
+
+# Optional: Allow specific IPs only for SSH
+sudo ufw delete allow 22/tcp
+sudo ufw allow from YOUR.IP.ADDRESS to any port 22
+```
+
+### SSL/TLS Certificates
+
+Caddy automatically obtains and renews SSL certificates from Let's Encrypt. No manual configuration needed!
+
+**Requirements:**
+- Domain must point to your server's IP address (A record)
+- Ports 80 and 443 must be accessible from the internet
+- Valid email in environment variable (Caddy uses it for Let's Encrypt)
+
+**Verify SSL:**
+```bash
+# Check certificate
+openssl s_client -connect your-domain.com:443 -servername your-domain.com < /dev/null 2>/dev/null | openssl x509 -noout -dates
+
+# Test HTTPS
+curl -I https://your-domain.com
+```
+
+### Domain Configuration
+
+#### DNS Records
+Point your domain to the server by creating an A record:
+
+```
+Type: A
+Name: @ (or subdomain like "calendar")
+Value: YOUR.SERVER.IP.ADDRESS
+TTL: 3600 (or auto)
+```
+
+For subdomains (e.g., `guesty.example.com`):
+```
+Type: A
+Name: guesty
+Value: YOUR.SERVER.IP.ADDRESS
+TTL: 3600
+```
+
+**Propagation:** DNS changes can take 1-48 hours to propagate globally. Check with:
+```bash
+dig your-domain.com
+nslookup your-domain.com
+```
+
+### Environment Configuration for Production
+
+Update your `.env` file with production values:
+
+```bash
+# Node Environment
+NODE_ENV=production
+
+# Server Configuration
+PORT=3005
+HOST=127.0.0.1  # Bind to localhost (Caddy proxies to this)
+BASE_URL=https://your-domain.com
+
+# Logging
+LOG_LEVEL=info
+LOG_PRETTY=false  # Use JSON logs for production
+
+# Guesty API (from Guesty dashboard)
+GUESTY_CLIENT_ID=your_client_id
+GUESTY_CLIENT_SECRET=your_client_secret
+GUESTY_PROPERTY_ID=your_property_id
+
+# Booking
+BOOKING_RECIPIENT_EMAIL=bookings@your-domain.com
+
+# Authentication
+SESSION_SECRET=$(openssl rand -base64 32)
+GOOGLE_CLIENT_ID=your_google_client_id
+GOOGLE_CLIENT_SECRET=your_google_client_secret
+ADMIN_ALLOWED_EMAILS=admin@your-domain.com
+
+# Cache Configuration (in minutes)
+CACHE_LISTING_TTL=1440  # 24 hours
+CACHE_AVAILABILITY_TTL=30  # 30 minutes
+CACHE_QUOTE_TTL=60  # 60 minutes
+
+# Database
+DATABASE_PATH=./data/calendar.db
+```
+
+### Monitoring and Logs
+
+#### Application Logs (PM2)
+```bash
+# Real-time logs
+pm2 logs guesty-calendar
+
+# Last 100 lines
+pm2 logs guesty-calendar --lines 100
+
+# Error logs only
+pm2 logs guesty-calendar --err
+
+# Log files location
+ls -lh /home/deploy/.pm2/logs/
+```
+
+#### Caddy Logs
+```bash
+# Access logs
+sudo tail -f /var/log/caddy/access.log
+
+# Error logs (systemd journal)
+sudo journalctl -u caddy -f
+
+# View specific time range
+sudo journalctl -u caddy --since "1 hour ago"
+```
+
+#### System Monitoring
+```bash
+# Check resource usage
+pm2 monit
+
+# Server resources
+htop
+df -h  # Disk usage
+free -h  # Memory usage
+
+# Check port bindings
+sudo lsof -i -P -n | grep LISTEN
+sudo ss -tulpn | grep LISTEN
+```
+
+### Health Checks
+
+The application provides health check endpoints:
+
+```bash
+# Basic health check
+curl https://your-domain.com/health
+
+# Detailed health check
+curl https://your-domain.com/health/detailed
+```
+
+Set up external monitoring (e.g., UptimeRobot, Pingdom) to monitor these endpoints.
+
+### Backup and Restore
+
+#### Database Backup
+```bash
+# Manual backup
+cp /opt/guesty-calendar-app/data/calendar.db /opt/backups/calendar-$(date +%Y%m%d).db
+
+# Automated daily backup (cron)
+crontab -e
+# Add this line:
+0 2 * * * cp /opt/guesty-calendar-app/data/calendar.db /opt/backups/calendar-$(date +\%Y\%m\%d).db
+
+# Restore from backup
+pm2 stop guesty-calendar
+cp /opt/backups/calendar-20251104.db /opt/guesty-calendar-app/data/calendar.db
+pm2 start guesty-calendar
+```
+
+#### Environment File Backup
+```bash
+# Backup .env (contains secrets!)
+cp /opt/guesty-calendar-app/.env /opt/backups/.env.backup
+chmod 600 /opt/backups/.env.backup
+```
+
+### Troubleshooting
+
+#### Application Won't Start
+```bash
+# Check PM2 logs
+pm2 logs guesty-calendar --err
+
+# Check if port is already in use
+sudo lsof -i :3005
+
+# Verify environment variables
+pm2 env 0  # Check environment of process ID 0
+
+# Test build manually
+cd /opt/guesty-calendar-app
+npm run build
+node dist/index.js  # Should show error if any
+```
+
+#### SSL Certificate Issues
+```bash
+# Check Caddy logs
+sudo journalctl -u caddy --since "10 minutes ago"
+
+# Verify domain points to server
+dig your-domain.com +short
+
+# Test Let's Encrypt connectivity
+curl -I https://acme-v02.api.letsencrypt.org/directory
+
+# Force certificate renewal
+sudo caddy reload --config /etc/caddy/Caddyfile
+```
+
+#### 502 Bad Gateway
+```bash
+# Check if Node.js app is running
+pm2 list
+
+# Check if app is listening on correct port
+sudo lsof -i :3005
+
+# Restart application
+pm2 restart guesty-calendar
+
+# Check application logs
+pm2 logs guesty-calendar --lines 50
+```
+
+#### High Memory Usage
+```bash
+# Check PM2 memory
+pm2 list
+
+# Restart app to clear memory
+pm2 restart guesty-calendar
+
+# Enable PM2 auto-restart on memory limit
+pm2 start dist/index.js --name guesty-calendar --max-memory-restart 500M
+pm2 save
+```
+
+### Security Checklist
+
+- [ ] Firewall enabled (UFW) with only necessary ports open
+- [ ] SSH key-based authentication (disable password auth)
+- [ ] Regular system updates (`sudo apt update && sudo apt upgrade`)
+- [ ] Strong `SESSION_SECRET` (32+ random characters)
+- [ ] `.env` file permissions set to 600 (`chmod 600 .env`)
+- [ ] HTTPS enabled with valid SSL certificate
+- [ ] Security headers configured in Caddy
+- [ ] Regular database backups
+- [ ] Monitor disk space (`df -h`)
+- [ ] Monitor application logs for errors
+- [ ] Keep Node.js and dependencies updated
+
+### Production Checklist
+
+Before going live, verify:
+
+- [ ] Domain DNS points to server IP
+- [ ] SSL certificate valid and auto-renewing
+- [ ] Application starts and runs without errors
+- [ ] PM2 configured to restart on boot
+- [ ] Environment variables set correctly
+- [ ] Google OAuth configured with production callback URL
+- [ ] Admin emails whitelisted
+- [ ] Health check endpoints responding
+- [ ] Guesty API credentials valid
+- [ ] Email booking recipient configured
+- [ ] Firewall rules applied
+- [ ] Log rotation configured
+- [ ] Backup strategy in place
+- [ ] Monitoring/alerting set up
+
+### Deployment Workflow Summary
+
+**Initial Setup:**
+1. Set up server (user, Node.js, PM2, Caddy)
+2. Configure firewall
+3. Point domain to server
+4. Clone repository and install dependencies
+5. Configure environment variables
+6. Build and start with PM2
+7. Configure Caddy reverse proxy
+8. Verify SSL and HTTPS working
+
+**Subsequent Updates:**
+1. SSH into server
+2. `cd /opt/guesty-calendar-app`
+3. `git pull origin main`
+4. `npm install` (if dependencies changed)
+5. `npm run build`
+6. `pm2 restart guesty-calendar`
+7. Check logs: `pm2 logs guesty-calendar --lines 50`
+8. Verify: `curl https://your-domain.com/health`
