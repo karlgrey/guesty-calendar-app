@@ -30,13 +30,13 @@ body {
     color: var(--text-primary);
     margin: 0;
     padding: 0;
-    background: #f9fafb;
+    background: transparent;
 }
 
 .container {
     max-width: 600px;
     margin: 0 auto;
-    padding: var(--spacing);
+    padding: 0;
 }
 
 /* Compact Booking Header */
