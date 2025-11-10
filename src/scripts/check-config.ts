@@ -1,0 +1,22 @@
+import { config } from '../config/index.js';
+
+console.log('Email Configuration:');
+console.log('====================');
+console.log('Resend API Key:', config.resendApiKey ? `Set (length: ${config.resendApiKey.length})` : 'Not set');
+console.log('From Email:', config.emailFromAddress);
+console.log('From Name:', config.emailFromName);
+console.log('');
+console.log('SMTP Configuration (fallback):');
+console.log('==============================');
+console.log('Host:', config.smtpHost || 'Not set');
+console.log('Port:', config.smtpPort || 'Not set');
+console.log('Secure:', config.smtpSecure);
+console.log('User:', config.smtpUser || 'Not set');
+console.log('Password set:', config.smtpPassword ? `Yes (length: ${config.smtpPassword.length})` : 'No');
+console.log('');
+console.log('Weekly Report Configuration:');
+console.log('============================');
+console.log('Enabled:', config.weeklyReportEnabled);
+console.log('Recipients:', config.weeklyReportRecipients);
+console.log('Day:', config.weeklyReportDay);
+console.log('Hour:', config.weeklyReportHour);

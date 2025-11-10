@@ -65,15 +65,26 @@ const configSchema = z.object({
     val.split(',').map(email => email.trim().toLowerCase())
   ),
 
-  // Email / SMTP
+  // Email Configuration (Resend or SMTP)
+  resendApiKey: z.string().optional(),
+  emailFromAddress: z.string().email().optional(),
+  emailFromName: z.string().default('Guesty Calendar'),
+
+  // SMTP (fallback if Resend not configured)
   smtpHost: z.string().optional(),
   smtpPort: z.coerce.number().int().min(1).max(65535).optional(),
-  smtpSecure: z.coerce.boolean().default(true),
+  smtpSecure: z.string().optional().transform((val) => {
+    if (val === undefined || val === null) return true;
+    const lower = String(val).toLowerCase();
+    return lower !== 'false' && lower !== '0' && lower !== 'no';
+  }),
   smtpUser: z.string().optional(),
   smtpPassword: z.string().optional(),
-  smtpFromEmail: z.string().email().optional(),
-  smtpFromName: z.string().default('Guesty Calendar'),
-  weeklyReportEnabled: z.coerce.boolean().default(false),
+  weeklyReportEnabled: z.string().optional().transform((val) => {
+    if (!val) return false;
+    const lower = String(val).toLowerCase();
+    return lower === 'true' || lower === '1' || lower === 'yes';
+  }),
   weeklyReportRecipients: z.string().optional().transform((val) =>
     val ? val.split(',').map(email => email.trim()) : []
   ),
@@ -109,13 +120,14 @@ function parseConfig() {
     googleClientId: process.env.GOOGLE_CLIENT_ID,
     googleClientSecret: process.env.GOOGLE_CLIENT_SECRET,
     adminAllowedEmails: process.env.ADMIN_ALLOWED_EMAILS,
+    resendApiKey: process.env.RESEND_API_KEY,
+    emailFromAddress: process.env.EMAIL_FROM_ADDRESS,
+    emailFromName: process.env.EMAIL_FROM_NAME,
     smtpHost: process.env.SMTP_HOST,
     smtpPort: process.env.SMTP_PORT,
     smtpSecure: process.env.SMTP_SECURE,
     smtpUser: process.env.SMTP_USER,
     smtpPassword: process.env.SMTP_PASSWORD,
-    smtpFromEmail: process.env.SMTP_FROM_EMAIL,
-    smtpFromName: process.env.SMTP_FROM_NAME,
     weeklyReportEnabled: process.env.WEEKLY_REPORT_ENABLED,
     weeklyReportRecipients: process.env.WEEKLY_REPORT_RECIPIENTS,
     weeklyReportDay: process.env.WEEKLY_REPORT_DAY,

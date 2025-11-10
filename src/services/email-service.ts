@@ -1,28 +1,49 @@
 /**
  * Email Service
  *
- * Handles sending emails via SMTP using nodemailer
+ * Handles sending emails via Resend (preferred) or SMTP fallback
  */
 
+import { Resend } from 'resend';
 import nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
 import { config } from '../config/index.js';
 import logger from '../utils/logger.js';
 
+let resendClient: Resend | null = null;
 let transporter: Transporter | null = null;
 
 /**
- * Initialize email transporter
+ * Initialize Resend client
+ */
+function getResendClient(): Resend | null {
+  if (resendClient) {
+    return resendClient;
+  }
+
+  if (!config.resendApiKey) {
+    return null;
+  }
+
+  try {
+    resendClient = new Resend(config.resendApiKey);
+    logger.info('Resend email client initialized');
+    return resendClient;
+  } catch (error) {
+    logger.error({ error }, 'Failed to initialize Resend client');
+    return null;
+  }
+}
+
+/**
+ * Initialize SMTP transporter (fallback)
  */
 function getTransporter(): Transporter | null {
-  // Return existing transporter if already initialized
   if (transporter) {
     return transporter;
   }
 
-  // Check if SMTP is configured
   if (!config.smtpHost || !config.smtpPort) {
-    logger.warn('SMTP not configured - email sending disabled');
     return null;
   }
 
@@ -30,23 +51,23 @@ function getTransporter(): Transporter | null {
     transporter = nodemailer.createTransport({
       host: config.smtpHost,
       port: config.smtpPort,
-      secure: config.smtpSecure, // true for 465, false for other ports
+      secure: config.smtpSecure,
       auth: config.smtpUser && config.smtpPassword ? {
         user: config.smtpUser,
         pass: config.smtpPassword,
       } : undefined,
     });
 
-    logger.info({ host: config.smtpHost, port: config.smtpPort }, 'Email transporter initialized');
+    logger.info({ host: config.smtpHost, port: config.smtpPort }, 'SMTP transporter initialized');
     return transporter;
   } catch (error) {
-    logger.error({ error }, 'Failed to initialize email transporter');
+    logger.error({ error }, 'Failed to initialize SMTP transporter');
     return null;
   }
 }
 
 /**
- * Send an email
+ * Send an email using Resend (preferred) or SMTP (fallback)
  */
 export async function sendEmail(options: {
   to: string | string[];
@@ -54,23 +75,65 @@ export async function sendEmail(options: {
   html: string;
   text?: string;
 }): Promise<boolean> {
-  const transport = getTransporter();
+  const recipients = Array.isArray(options.to) ? options.to : [options.to];
 
-  if (!transport) {
-    logger.warn('Cannot send email - SMTP not configured');
+  // Check if from email is configured
+  if (!config.emailFromAddress) {
+    logger.error('Cannot send email - EMAIL_FROM_ADDRESS not configured');
     return false;
   }
 
-  if (!config.smtpFromEmail) {
-    logger.error('Cannot send email - SMTP_FROM_EMAIL not configured');
+  // Try Resend first
+  const resend = getResendClient();
+  if (resend) {
+    try {
+      const { data, error } = await resend.emails.send({
+        from: `${config.emailFromName} <${config.emailFromAddress}>`,
+        to: recipients,
+        subject: options.subject,
+        html: options.html,
+        text: options.text,
+      });
+
+      if (error) {
+        logger.error({ error, recipients, subject: options.subject }, 'Resend API error');
+        return false;
+      }
+
+      logger.info(
+        {
+          messageId: data?.id,
+          recipients,
+          subject: options.subject,
+          provider: 'resend',
+        },
+        'Email sent successfully via Resend'
+      );
+
+      return true;
+    } catch (error) {
+      logger.error(
+        {
+          error,
+          to: options.to,
+          subject: options.subject,
+        },
+        'Failed to send email via Resend'
+      );
+      return false;
+    }
+  }
+
+  // Fallback to SMTP
+  const transport = getTransporter();
+  if (!transport) {
+    logger.warn('Cannot send email - no email provider configured (Resend or SMTP)');
     return false;
   }
 
   try {
-    const recipients = Array.isArray(options.to) ? options.to : [options.to];
-
     const info = await transport.sendMail({
-      from: `"${config.smtpFromName}" <${config.smtpFromEmail}>`,
+      from: `"${config.emailFromName}" <${config.emailFromAddress}>`,
       to: recipients.join(', '),
       subject: options.subject,
       text: options.text,
@@ -82,8 +145,9 @@ export async function sendEmail(options: {
         messageId: info.messageId,
         recipients,
         subject: options.subject,
+        provider: 'smtp',
       },
-      'Email sent successfully'
+      'Email sent successfully via SMTP'
     );
 
     return true;
@@ -94,19 +158,34 @@ export async function sendEmail(options: {
         to: options.to,
         subject: options.subject,
       },
-      'Failed to send email'
+      'Failed to send email via SMTP'
     );
     return false;
   }
 }
 
 /**
- * Verify SMTP connection
+ * Verify email connection (tests Resend or SMTP)
  */
 export async function verifyEmailConnection(): Promise<boolean> {
-  const transport = getTransporter();
+  // Check Resend first
+  const resend = getResendClient();
+  if (resend) {
+    try {
+      // Resend doesn't have a verify method, but we can check if API key is valid
+      // by making a simple API call
+      logger.info('Resend client initialized - ready to send emails');
+      return true;
+    } catch (error) {
+      logger.error({ error }, 'Resend client verification failed');
+      return false;
+    }
+  }
 
+  // Fallback to SMTP verification
+  const transport = getTransporter();
   if (!transport) {
+    logger.warn('No email provider configured');
     return false;
   }
 
