@@ -5,6 +5,7 @@
  */
 
 import { runETLJob } from './etl-job.js';
+import { sendWeeklySummaryEmail, shouldSendWeeklyEmail } from './weekly-email.js';
 import { config } from '../config/index.js';
 import logger from '../utils/logger.js';
 
@@ -21,6 +22,9 @@ interface SchedulerState {
   jobCount: number;
   successCount: number;
   failureCount: number;
+  weeklyEmailIntervalId: NodeJS.Timeout | null;
+  lastWeeklyEmailCheck: Date | null;
+  lastWeeklyEmailSent: Date | null;
 }
 
 const state: SchedulerState = {
@@ -33,6 +37,9 @@ const state: SchedulerState = {
   jobCount: 0,
   successCount: 0,
   failureCount: 0,
+  weeklyEmailIntervalId: null,
+  lastWeeklyEmailCheck: null,
+  lastWeeklyEmailSent: null,
 };
 
 /**
@@ -106,6 +113,40 @@ async function executeScheduledJob() {
 }
 
 /**
+ * Check and send weekly email if conditions are met
+ */
+async function checkAndSendWeeklyEmail() {
+  try {
+    state.lastWeeklyEmailCheck = new Date();
+
+    if (!config.weeklyReportEnabled) {
+      return;
+    }
+
+    // Check if we should send email now
+    if (shouldSendWeeklyEmail()) {
+      // Check if we already sent today (to prevent duplicate sends)
+      const today = new Date().toDateString();
+      const lastSent = state.lastWeeklyEmailSent?.toDateString();
+
+      if (lastSent === today) {
+        logger.debug('Weekly email already sent today, skipping');
+        return;
+      }
+
+      logger.info('📧 Weekly email conditions met, sending...');
+      const result = await sendWeeklySummaryEmail();
+
+      if (result.sent) {
+        state.lastWeeklyEmailSent = new Date();
+      }
+    }
+  } catch (error) {
+    logger.error({ error }, 'Error in weekly email check');
+  }
+}
+
+/**
  * Get job interval in milliseconds with optional jitter
  * Uses availability TTL as the primary scheduling interval
  *
@@ -158,6 +199,25 @@ export function startScheduler() {
   state.nextRun = new Date(Date.now() + intervalMs);
 
   logger.info({ nextRun: state.nextRun }, '✅ Scheduler started');
+
+  // Start weekly email checker (runs every hour)
+  if (config.weeklyReportEnabled) {
+    logger.info(
+      {
+        weeklyReportDay: config.weeklyReportDay,
+        weeklyReportHour: config.weeklyReportHour,
+        recipients: config.weeklyReportRecipients,
+      },
+      '📧 Starting weekly email scheduler'
+    );
+
+    // Check immediately on start
+    checkAndSendWeeklyEmail();
+
+    // Check every hour
+    const hourlyInterval = 60 * 60 * 1000; // 1 hour
+    state.weeklyEmailIntervalId = setInterval(checkAndSendWeeklyEmail, hourlyInterval);
+  }
 }
 
 /**
@@ -172,6 +232,11 @@ export function stopScheduler() {
   if (state.intervalId) {
     clearInterval(state.intervalId);
     state.intervalId = null;
+  }
+
+  if (state.weeklyEmailIntervalId) {
+    clearInterval(state.weeklyEmailIntervalId);
+    state.weeklyEmailIntervalId = null;
   }
 
   state.running = false;

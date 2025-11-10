@@ -1,0 +1,323 @@
+/**
+ * Email Templates
+ *
+ * HTML email templates for various notifications
+ */
+
+interface DashboardStats {
+  total_bookings: number;
+  total_revenue: number;
+  available_days: number;
+  booked_days: number;
+  blocked_days: number;
+  total_days: number;
+  occupancy_rate: number;
+}
+
+interface Booking {
+  reservationId: string;
+  checkIn: string;
+  checkOut: string;
+  nights: number;
+  guestName: string;
+  guestsCount: number;
+  status: string;
+  confirmationCode?: string;
+  source: string;
+  totalPrice: number;
+  plannedArrival?: string;
+  plannedDeparture?: string;
+}
+
+interface WeeklySummaryData {
+  propertyTitle: string;
+  currency: string;
+  stats: DashboardStats;
+  upcomingBookings: Booking[];
+  pastBookings: Booking[];
+  period: string;
+}
+
+/**
+ * Format currency value
+ */
+function formatCurrency(amount: number, currency: string): string {
+  return new Intl.NumberFormat('de-DE', {
+    style: 'currency',
+    currency: currency,
+  }).format(amount);
+}
+
+/**
+ * Format date
+ */
+function formatDate(dateStr: string): string {
+  const date = new Date(dateStr);
+  return new Intl.DateTimeFormat('de-DE', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  }).format(date);
+}
+
+/**
+ * Format percentage
+ */
+function formatPercent(value: number): string {
+  return `${value.toFixed(1)}%`;
+}
+
+/**
+ * Generate weekly summary email HTML
+ */
+export function generateWeeklySummaryEmail(data: WeeklySummaryData): { html: string; text: string } {
+  const { propertyTitle, currency, stats, upcomingBookings, pastBookings } = data;
+
+  const html = `
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Weekly Property Summary</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      line-height: 1.6;
+      color: #333;
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 20px;
+      background-color: #f5f5f5;
+    }
+    .container {
+      background-color: #ffffff;
+      border-radius: 8px;
+      padding: 30px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    h1 {
+      color: #2c3e50;
+      border-bottom: 3px solid #3498db;
+      padding-bottom: 10px;
+      margin-top: 0;
+    }
+    h2 {
+      color: #34495e;
+      margin-top: 30px;
+      margin-bottom: 15px;
+      font-size: 1.3em;
+    }
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 15px;
+      margin: 20px 0;
+    }
+    .stat-card {
+      background-color: #f8f9fa;
+      border-left: 4px solid #3498db;
+      padding: 15px;
+      border-radius: 4px;
+    }
+    .stat-label {
+      font-size: 0.85em;
+      color: #7f8c8d;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 5px;
+    }
+    .stat-value {
+      font-size: 1.8em;
+      font-weight: bold;
+      color: #2c3e50;
+    }
+    .stat-value.revenue {
+      color: #27ae60;
+    }
+    .stat-value.occupancy {
+      color: #e67e22;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 15px 0;
+    }
+    th {
+      background-color: #34495e;
+      color: white;
+      padding: 12px;
+      text-align: left;
+      font-weight: 600;
+    }
+    td {
+      padding: 10px 12px;
+      border-bottom: 1px solid #ecf0f1;
+    }
+    tr:hover {
+      background-color: #f8f9fa;
+    }
+    .status-badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 12px;
+      font-size: 0.85em;
+      font-weight: 500;
+    }
+    .status-confirmed {
+      background-color: #d4edda;
+      color: #155724;
+    }
+    .status-pending {
+      background-color: #fff3cd;
+      color: #856404;
+    }
+    .no-data {
+      text-align: center;
+      padding: 30px;
+      color: #95a5a6;
+      font-style: italic;
+    }
+    .footer {
+      margin-top: 40px;
+      padding-top: 20px;
+      border-top: 1px solid #ecf0f1;
+      font-size: 0.9em;
+      color: #7f8c8d;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>📊 Weekly Property Summary</h1>
+    <p><strong>${propertyTitle}</strong></p>
+    <p>Report for next 365 days</p>
+
+    <h2>📈 Statistics</h2>
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Total Bookings</div>
+        <div class="stat-value">${stats.total_bookings}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Revenue</div>
+        <div class="stat-value revenue">${formatCurrency(stats.total_revenue, currency)}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Occupancy Rate</div>
+        <div class="stat-value occupancy">${formatPercent(stats.occupancy_rate)}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Available Days</div>
+        <div class="stat-value">${stats.available_days}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Booked Days</div>
+        <div class="stat-value">${stats.booked_days}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Blocked Days</div>
+        <div class="stat-value">${stats.blocked_days}</div>
+      </div>
+    </div>
+
+    <h2>📅 Upcoming Bookings</h2>
+    ${upcomingBookings.length > 0 ? `
+    <table>
+      <thead>
+        <tr>
+          <th>Guest</th>
+          <th>Check-in</th>
+          <th>Check-out</th>
+          <th>Nights</th>
+          <th>Guests</th>
+          <th>Price</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${upcomingBookings.map(booking => `
+        <tr>
+          <td><strong>${booking.guestName}</strong><br/><small style="color: #7f8c8d;">${booking.source}</small></td>
+          <td>${formatDate(booking.checkIn)}</td>
+          <td>${formatDate(booking.checkOut)}</td>
+          <td>${booking.nights}</td>
+          <td>${booking.guestsCount}</td>
+          <td><strong>${formatCurrency(booking.totalPrice, currency)}</strong></td>
+          <td><span class="status-badge status-${booking.status}">${booking.status}</span></td>
+        </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    ` : `
+    <div class="no-data">No upcoming bookings</div>
+    `}
+
+    ${pastBookings.length > 0 ? `
+    <h2>✅ Recent Past Bookings (Last 7 days)</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>Guest</th>
+          <th>Check-in</th>
+          <th>Check-out</th>
+          <th>Nights</th>
+          <th>Price</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${pastBookings.slice(0, 5).map(booking => `
+        <tr>
+          <td><strong>${booking.guestName}</strong></td>
+          <td>${formatDate(booking.checkIn)}</td>
+          <td>${formatDate(booking.checkOut)}</td>
+          <td>${booking.nights}</td>
+          <td><strong>${formatCurrency(booking.totalPrice, currency)}</strong></td>
+        </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    ` : ''}
+
+    <div class="footer">
+      <p>This is an automated weekly summary generated by Guesty Calendar App</p>
+    </div>
+  </div>
+</body>
+</html>
+  `;
+
+  // Plain text version
+  const text = `
+Weekly Property Summary - ${propertyTitle}
+${'='.repeat(60)}
+
+STATISTICS (Next 365 days)
+- Total Bookings: ${stats.total_bookings}
+- Total Revenue: ${formatCurrency(stats.total_revenue, currency)}
+- Occupancy Rate: ${formatPercent(stats.occupancy_rate)}
+- Available Days: ${stats.available_days}
+- Booked Days: ${stats.booked_days}
+- Blocked Days: ${stats.blocked_days}
+
+UPCOMING BOOKINGS
+${upcomingBookings.length > 0
+  ? upcomingBookings.map(b =>
+    `- ${b.guestName} | ${formatDate(b.checkIn)} → ${formatDate(b.checkOut)} | ${b.nights} nights | ${formatCurrency(b.totalPrice, currency)} | ${b.status}`
+  ).join('\n')
+  : 'No upcoming bookings'}
+
+${pastBookings.length > 0 ? `
+RECENT PAST BOOKINGS
+${pastBookings.slice(0, 5).map(b =>
+    `- ${b.guestName} | ${formatDate(b.checkIn)} → ${formatDate(b.checkOut)} | ${formatCurrency(b.totalPrice, currency)}`
+  ).join('\n')}
+` : ''}
+
+---
+This is an automated weekly summary.
+  `.trim();
+
+  return { html, text };
+}

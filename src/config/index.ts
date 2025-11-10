@@ -64,6 +64,21 @@ const configSchema = z.object({
   adminAllowedEmails: z.string().min(1, 'ADMIN_ALLOWED_EMAILS is required').transform((val) =>
     val.split(',').map(email => email.trim().toLowerCase())
   ),
+
+  // Email / SMTP
+  smtpHost: z.string().optional(),
+  smtpPort: z.coerce.number().int().min(1).max(65535).optional(),
+  smtpSecure: z.coerce.boolean().default(true),
+  smtpUser: z.string().optional(),
+  smtpPassword: z.string().optional(),
+  smtpFromEmail: z.string().email().optional(),
+  smtpFromName: z.string().default('Guesty Calendar'),
+  weeklyReportEnabled: z.coerce.boolean().default(false),
+  weeklyReportRecipients: z.string().optional().transform((val) =>
+    val ? val.split(',').map(email => email.trim()) : []
+  ),
+  weeklyReportDay: z.coerce.number().int().min(0).max(6).default(1), // 0 = Sunday, 1 = Monday, etc.
+  weeklyReportHour: z.coerce.number().int().min(0).max(23).default(9), // 9 AM
 });
 
 /**
@@ -94,6 +109,17 @@ function parseConfig() {
     googleClientId: process.env.GOOGLE_CLIENT_ID,
     googleClientSecret: process.env.GOOGLE_CLIENT_SECRET,
     adminAllowedEmails: process.env.ADMIN_ALLOWED_EMAILS,
+    smtpHost: process.env.SMTP_HOST,
+    smtpPort: process.env.SMTP_PORT,
+    smtpSecure: process.env.SMTP_SECURE,
+    smtpUser: process.env.SMTP_USER,
+    smtpPassword: process.env.SMTP_PASSWORD,
+    smtpFromEmail: process.env.SMTP_FROM_EMAIL,
+    smtpFromName: process.env.SMTP_FROM_NAME,
+    weeklyReportEnabled: process.env.WEEKLY_REPORT_ENABLED,
+    weeklyReportRecipients: process.env.WEEKLY_REPORT_RECIPIENTS,
+    weeklyReportDay: process.env.WEEKLY_REPORT_DAY,
+    weeklyReportHour: process.env.WEEKLY_REPORT_HOUR,
   };
 
   try {
