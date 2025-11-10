@@ -6,25 +6,36 @@
 
 import { sendWeeklySummaryEmail } from '../jobs/weekly-email.js';
 import { verifyEmailConnection } from '../services/email-service.js';
+import { initDatabase } from '../db/index.js';
 import logger from '../utils/logger.js';
 
 async function main() {
   console.log('Testing Email Functionality');
   console.log('===========================\n');
 
-  // First verify SMTP connection
-  console.log('Step 1: Verifying SMTP connection...');
-  const connectionOk = await verifyEmailConnection();
-
-  if (!connectionOk) {
-    console.error('❌ SMTP connection failed. Please check your email settings.');
+  // Initialize database
+  console.log('Step 1: Initializing database...');
+  try {
+    initDatabase();
+    console.log('✅ Database initialized\n');
+  } catch (error) {
+    console.error('❌ Database initialization failed:', error);
     process.exit(1);
   }
 
-  console.log('✅ SMTP connection verified\n');
+  // Verify email connection
+  console.log('Step 2: Verifying email connection...');
+  const connectionOk = await verifyEmailConnection();
+
+  if (!connectionOk) {
+    console.error('❌ Email connection failed. Please check your email settings.');
+    process.exit(1);
+  }
+
+  console.log('✅ Email connection verified\n');
 
   // Send test email
-  console.log('Step 2: Sending weekly summary email...');
+  console.log('Step 3: Sending weekly summary email...');
   const result = await sendWeeklySummaryEmail();
 
   if (result.sent) {

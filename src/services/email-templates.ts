@@ -32,10 +32,10 @@ interface Booking {
 interface WeeklySummaryData {
   propertyTitle: string;
   currency: string;
-  stats: DashboardStats;
+  futureStats: DashboardStats;
+  pastStats: DashboardStats;
   upcomingBookings: Booking[];
   pastBookings: Booking[];
-  period: string;
 }
 
 /**
@@ -71,7 +71,7 @@ function formatPercent(value: number): string {
  * Generate weekly summary email HTML
  */
 export function generateWeeklySummaryEmail(data: WeeklySummaryData): { html: string; text: string } {
-  const { propertyTitle, currency, stats, upcomingBookings, pastBookings } = data;
+  const { propertyTitle, currency, futureStats, pastStats, upcomingBookings, pastBookings } = data;
 
   const html = `
 <!DOCTYPE html>
@@ -192,37 +192,35 @@ export function generateWeeklySummaryEmail(data: WeeklySummaryData): { html: str
   <div class="container">
     <h1>📊 Weekly Property Summary</h1>
     <p><strong>${propertyTitle}</strong></p>
-    <p>Report for next 365 days</p>
 
-    <h2>📈 Statistics</h2>
+    <!-- FUTURE 365 DAYS SECTION -->
+    <h2 style="margin-top: 40px; border-bottom: 2px solid #3498db; padding-bottom: 8px;">📈 Next 365 Days</h2>
+
+    <h3 style="font-size: 1.1em; color: #34495e; margin-top: 20px;">Statistics</h3>
     <div class="stats-grid">
       <div class="stat-card">
         <div class="stat-label">Total Bookings</div>
-        <div class="stat-value">${stats.total_bookings}</div>
+        <div class="stat-value">${futureStats.total_bookings}</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Total Revenue</div>
-        <div class="stat-value revenue">${formatCurrency(stats.total_revenue, currency)}</div>
+        <div class="stat-value revenue">${formatCurrency(futureStats.total_revenue, currency)}</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Occupancy Rate</div>
-        <div class="stat-value occupancy">${formatPercent(stats.occupancy_rate)}</div>
+        <div class="stat-value occupancy">${formatPercent(futureStats.occupancy_rate)}</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Available Days</div>
-        <div class="stat-value">${stats.available_days}</div>
+        <div class="stat-value">${futureStats.available_days}</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Booked Days</div>
-        <div class="stat-value">${stats.booked_days}</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Blocked Days</div>
-        <div class="stat-value">${stats.blocked_days}</div>
+        <div class="stat-value">${futureStats.booked_days}</div>
       </div>
     </div>
 
-    <h2>📅 Upcoming Bookings</h2>
+    <h3 style="font-size: 1.1em; color: #34495e; margin-top: 25px;">Upcoming Bookings</h3>
     ${upcomingBookings.length > 0 ? `
     <table>
       <thead>
@@ -254,8 +252,35 @@ export function generateWeeklySummaryEmail(data: WeeklySummaryData): { html: str
     <div class="no-data">No upcoming bookings</div>
     `}
 
+    <!-- PAST 365 DAYS SECTION -->
+    <h2 style="margin-top: 50px; border-bottom: 2px solid #27ae60; padding-bottom: 8px;">📊 Past 365 Days</h2>
+
+    <h3 style="font-size: 1.1em; color: #34495e; margin-top: 20px;">Statistics</h3>
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Total Bookings</div>
+        <div class="stat-value">${pastStats.total_bookings}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Revenue</div>
+        <div class="stat-value revenue">${formatCurrency(pastStats.total_revenue, currency)}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Occupancy Rate</div>
+        <div class="stat-value occupancy">${formatPercent(pastStats.occupancy_rate)}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Available Days</div>
+        <div class="stat-value">${pastStats.available_days}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Booked Days</div>
+        <div class="stat-value">${pastStats.booked_days}</div>
+      </div>
+    </div>
+
+    <h3 style="font-size: 1.1em; color: #34495e; margin-top: 25px;">All Bookings</h3>
     ${pastBookings.length > 0 ? `
-    <h2>✅ Recent Past Bookings (Last 7 days)</h2>
     <table>
       <thead>
         <tr>
@@ -263,22 +288,28 @@ export function generateWeeklySummaryEmail(data: WeeklySummaryData): { html: str
           <th>Check-in</th>
           <th>Check-out</th>
           <th>Nights</th>
+          <th>Guests</th>
           <th>Price</th>
+          <th>Status</th>
         </tr>
       </thead>
       <tbody>
-        ${pastBookings.slice(0, 5).map(booking => `
+        ${pastBookings.map(booking => `
         <tr>
-          <td><strong>${booking.guestName}</strong></td>
+          <td><strong>${booking.guestName}</strong><br/><small style="color: #7f8c8d;">${booking.source}</small></td>
           <td>${formatDate(booking.checkIn)}</td>
           <td>${formatDate(booking.checkOut)}</td>
           <td>${booking.nights}</td>
+          <td>${booking.guestsCount}</td>
           <td><strong>${formatCurrency(booking.totalPrice, currency)}</strong></td>
+          <td><span class="status-badge status-${booking.status}">${booking.status}</span></td>
         </tr>
         `).join('')}
       </tbody>
     </table>
-    ` : ''}
+    ` : `
+    <div class="no-data">No past bookings</div>
+    `}
 
     <div class="footer">
       <p>This is an automated weekly summary generated by Guesty Calendar App</p>
@@ -293,27 +324,39 @@ export function generateWeeklySummaryEmail(data: WeeklySummaryData): { html: str
 Weekly Property Summary - ${propertyTitle}
 ${'='.repeat(60)}
 
-STATISTICS (Next 365 days)
-- Total Bookings: ${stats.total_bookings}
-- Total Revenue: ${formatCurrency(stats.total_revenue, currency)}
-- Occupancy Rate: ${formatPercent(stats.occupancy_rate)}
-- Available Days: ${stats.available_days}
-- Booked Days: ${stats.booked_days}
-- Blocked Days: ${stats.blocked_days}
+NEXT 365 DAYS
+${'='.repeat(60)}
 
-UPCOMING BOOKINGS
+Statistics:
+- Total Bookings: ${futureStats.total_bookings}
+- Total Revenue: ${formatCurrency(futureStats.total_revenue, currency)}
+- Occupancy Rate: ${formatPercent(futureStats.occupancy_rate)}
+- Available Days: ${futureStats.available_days}
+- Booked Days: ${futureStats.booked_days}
+
+Upcoming Bookings:
 ${upcomingBookings.length > 0
   ? upcomingBookings.map(b =>
     `- ${b.guestName} | ${formatDate(b.checkIn)} → ${formatDate(b.checkOut)} | ${b.nights} nights | ${formatCurrency(b.totalPrice, currency)} | ${b.status}`
   ).join('\n')
   : 'No upcoming bookings'}
 
-${pastBookings.length > 0 ? `
-RECENT PAST BOOKINGS
-${pastBookings.slice(0, 5).map(b =>
-    `- ${b.guestName} | ${formatDate(b.checkIn)} → ${formatDate(b.checkOut)} | ${formatCurrency(b.totalPrice, currency)}`
-  ).join('\n')}
-` : ''}
+PAST 365 DAYS
+${'='.repeat(60)}
+
+Statistics:
+- Total Bookings: ${pastStats.total_bookings}
+- Total Revenue: ${formatCurrency(pastStats.total_revenue, currency)}
+- Occupancy Rate: ${formatPercent(pastStats.occupancy_rate)}
+- Available Days: ${pastStats.available_days}
+- Booked Days: ${pastStats.booked_days}
+
+All Past Bookings:
+${pastBookings.length > 0
+  ? pastBookings.map(b =>
+    `- ${b.guestName} | ${formatDate(b.checkIn)} → ${formatDate(b.checkOut)} | ${b.nights} nights | ${formatCurrency(b.totalPrice, currency)} | ${b.status}`
+  ).join('\n')
+  : 'No past bookings'}
 
 ---
 This is an automated weekly summary.

@@ -64,14 +64,17 @@ export async function sendWeeklySummaryEmail(): Promise<WeeklyEmailResult> {
     // Get upcoming bookings (next 365 days)
     const upcomingBookings = getReservationsByPeriod(propertyId, 365, 'future');
 
-    // Get recent past bookings (last 7 days)
-    const pastBookings = getReservationsByPeriod(propertyId, 7, 'past');
+    // Get past stats (last 365 days)
+    const pastStats = getDashboardStats(propertyId, 365, 'past');
+
+    // Get all past bookings (last 365 days)
+    const pastBookings = getReservationsByPeriod(propertyId, 365, 'past');
 
     // Prepare data for email template
     const emailData = {
       propertyTitle: listing.nickname || listing.title,
       currency: listing.currency || 'EUR',
-      stats: {
+      futureStats: {
         total_bookings: futureStats.totalBookings,
         total_revenue: futureStats.totalRevenue,
         available_days: futureStats.availableDays,
@@ -79,6 +82,15 @@ export async function sendWeeklySummaryEmail(): Promise<WeeklyEmailResult> {
         blocked_days: futureStats.blockedDays,
         total_days: futureStats.availableDays + futureStats.bookedDays + futureStats.blockedDays,
         occupancy_rate: futureStats.occupancyRate,
+      },
+      pastStats: {
+        total_bookings: pastStats.totalBookings,
+        total_revenue: pastStats.totalRevenue,
+        available_days: pastStats.availableDays,
+        booked_days: pastStats.bookedDays,
+        blocked_days: pastStats.blockedDays,
+        total_days: pastStats.availableDays + pastStats.bookedDays + pastStats.blockedDays,
+        occupancy_rate: pastStats.occupancyRate,
       },
       upcomingBookings: upcomingBookings.map(r => ({
         reservationId: r.reservation_id,
@@ -108,7 +120,6 @@ export async function sendWeeklySummaryEmail(): Promise<WeeklyEmailResult> {
         plannedArrival: r.planned_arrival || undefined,
         plannedDeparture: r.planned_departure || undefined,
       })),
-      period: 'future',
     };
 
     // Generate email content
@@ -128,7 +139,9 @@ export async function sendWeeklySummaryEmail(): Promise<WeeklyEmailResult> {
           recipientCount: config.weeklyReportRecipients.length,
           recipients: config.weeklyReportRecipients,
           upcomingBookings: upcomingBookings.length,
-          totalRevenue: futureStats.totalRevenue,
+          pastBookings: pastBookings.length,
+          futureRevenue: futureStats.totalRevenue,
+          pastRevenue: pastStats.totalRevenue,
         },
         '✅ Weekly summary email sent successfully'
       );
