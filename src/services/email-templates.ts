@@ -4,6 +4,14 @@
  * HTML email templates for various notifications
  */
 
+interface AllTimeStats {
+  total_bookings: number;
+  total_revenue: number;
+  total_booked_days: number;
+  start_date: string | null;
+  end_date: string | null;
+}
+
 interface DashboardStats {
   total_bookings: number;
   total_revenue: number;
@@ -12,6 +20,8 @@ interface DashboardStats {
   blocked_days: number;
   total_days: number;
   occupancy_rate: number;
+  start_date: string;
+  end_date: string;
 }
 
 interface Booking {
@@ -32,6 +42,7 @@ interface Booking {
 interface WeeklySummaryData {
   propertyTitle: string;
   currency: string;
+  allTimeStats: AllTimeStats;
   futureStats: DashboardStats;
   pastStats: DashboardStats;
   upcomingBookings: Booking[];
@@ -71,7 +82,7 @@ function formatPercent(value: number): string {
  * Generate weekly summary email HTML
  */
 export function generateWeeklySummaryEmail(data: WeeklySummaryData): { html: string; text: string } {
-  const { propertyTitle, currency, futureStats, pastStats, upcomingBookings, pastBookings } = data;
+  const { propertyTitle, currency, allTimeStats, futureStats, pastStats, upcomingBookings, pastBookings } = data;
 
   const html = `
 <!DOCTYPE html>
@@ -193,8 +204,34 @@ export function generateWeeklySummaryEmail(data: WeeklySummaryData): { html: str
     <h1>📊 Weekly Property Summary</h1>
     <p><strong>${propertyTitle}</strong></p>
 
+    <!-- ALL TIME SECTION -->
+    <h2 style="margin-top: 40px; border-bottom: 2px solid #9b59b6; padding-bottom: 8px;">🌟 All Time Summary</h2>
+    ${allTimeStats.start_date && allTimeStats.end_date ? `
+    <p style="color: #7f8c8d; margin-top: 10px; margin-bottom: 20px;">
+      <em>${formatDate(allTimeStats.start_date)} - ${formatDate(allTimeStats.end_date)}</em>
+    </p>
+    ` : ''}
+
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Total Bookings</div>
+        <div class="stat-value">${allTimeStats.total_bookings}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Revenue</div>
+        <div class="stat-value revenue">${formatCurrency(allTimeStats.total_revenue, currency)}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Total Booked Days</div>
+        <div class="stat-value">${allTimeStats.total_booked_days}</div>
+      </div>
+    </div>
+
     <!-- FUTURE 365 DAYS SECTION -->
     <h2 style="margin-top: 40px; border-bottom: 2px solid #3498db; padding-bottom: 8px;">📈 Next 365 Days</h2>
+    <p style="color: #7f8c8d; margin-top: 10px; margin-bottom: 20px;">
+      <em>${formatDate(futureStats.start_date)} - ${formatDate(futureStats.end_date)}</em>
+    </p>
 
     <h3 style="font-size: 1.1em; color: #34495e; margin-top: 20px;">Statistics</h3>
     <div class="stats-grid">
@@ -254,6 +291,9 @@ export function generateWeeklySummaryEmail(data: WeeklySummaryData): { html: str
 
     <!-- PAST 365 DAYS SECTION -->
     <h2 style="margin-top: 50px; border-bottom: 2px solid #27ae60; padding-bottom: 8px;">📊 Past 365 Days</h2>
+    <p style="color: #7f8c8d; margin-top: 10px; margin-bottom: 20px;">
+      <em>${formatDate(pastStats.start_date)} - ${formatDate(pastStats.end_date)}</em>
+    </p>
 
     <h3 style="font-size: 1.1em; color: #34495e; margin-top: 20px;">Statistics</h3>
     <div class="stats-grid">
@@ -324,8 +364,18 @@ export function generateWeeklySummaryEmail(data: WeeklySummaryData): { html: str
 Weekly Property Summary - ${propertyTitle}
 ${'='.repeat(60)}
 
+ALL TIME SUMMARY
+${'='.repeat(60)}
+${allTimeStats.start_date && allTimeStats.end_date ? `${formatDate(allTimeStats.start_date)} - ${formatDate(allTimeStats.end_date)}` : ''}
+
+Statistics:
+- Total Bookings: ${allTimeStats.total_bookings}
+- Total Revenue: ${formatCurrency(allTimeStats.total_revenue, currency)}
+- Total Booked Days: ${allTimeStats.total_booked_days}
+
 NEXT 365 DAYS
 ${'='.repeat(60)}
+${formatDate(futureStats.start_date)} - ${formatDate(futureStats.end_date)}
 
 Statistics:
 - Total Bookings: ${futureStats.total_bookings}
@@ -343,6 +393,7 @@ ${upcomingBookings.length > 0
 
 PAST 365 DAYS
 ${'='.repeat(60)}
+${formatDate(pastStats.start_date)} - ${formatDate(pastStats.end_date)}
 
 Statistics:
 - Total Bookings: ${pastStats.total_bookings}

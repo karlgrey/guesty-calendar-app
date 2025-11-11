@@ -22,6 +22,9 @@ npm run sync:force      # Force sync (ignore cache, refresh all data)
 npm run db:init         # Initialize database (creates schema from schema.sql)
 npm run db:migrate      # Run pending database migrations
 npm run db:reset        # Drop and recreate database (WARNING: deletes all data)
+
+# Manual testing
+npx tsx src/scripts/test-force-sync.ts  # Test forced sync (bypasses cache)
 ```
 
 ### Code Quality
@@ -57,10 +60,18 @@ The `GuestyClient` uses Bottleneck to enforce conservative limits:
 
 ### Cache Strategy
 - **Listings**: 24 hours TTL (infrequent changes)
-- **Availability**: Configurable via `CACHE_AVAILABILITY_TTL` (default 60 minutes)
+- **Availability**: Configurable via `CACHE_AVAILABILITY_TTL` (default 30 minutes)
 - **Quotes**: Computed on-demand from cached data, stored with 60 minute TTL
 
 The ETL scheduler interval is controlled by `CACHE_AVAILABILITY_TTL` - jobs run with ±5% jitter to prevent thundering herd.
+
+**Daily Forced Sync:**
+- Runs every day at 2 AM (server time)
+- Bypasses all cache checks and forces a complete data refresh
+- Ensures customer data changes in Guesty are picked up within 24 hours
+- Fetches 24 months of data (12 months past + 12 months future)
+- Updates both availability and reservation data
+- Scheduler checks hourly for the 2 AM trigger time
 
 ### Error Handling
 Custom error classes in `src/utils/errors.ts`:

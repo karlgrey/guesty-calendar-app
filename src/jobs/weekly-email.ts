@@ -6,7 +6,7 @@
 
 import { config } from '../config/index.js';
 import { getListingById } from '../repositories/listings-repository.js';
-import { getDashboardStats } from '../repositories/availability-repository.js';
+import { getDashboardStats, getAllTimeStats } from '../repositories/availability-repository.js';
 import { getReservationsByPeriod } from '../repositories/reservation-repository.js';
 import { sendEmail } from '../services/email-service.js';
 import { generateWeeklySummaryEmail } from '../services/email-templates.js';
@@ -58,6 +58,9 @@ export async function sendWeeklySummaryEmail(): Promise<WeeklyEmailResult> {
       };
     }
 
+    // Get all-time statistics
+    const allTimeStats = getAllTimeStats(propertyId);
+
     // Get future stats (next 365 days)
     const futureStats = getDashboardStats(propertyId, 365, 'future');
 
@@ -70,10 +73,27 @@ export async function sendWeeklySummaryEmail(): Promise<WeeklyEmailResult> {
     // Get all past bookings (last 365 days)
     const pastBookings = getReservationsByPeriod(propertyId, 365, 'past');
 
+    // Calculate date ranges for sections
+    const today = new Date().toISOString().split('T')[0];
+    const future365Date = new Date();
+    future365Date.setDate(future365Date.getDate() + 365);
+    const futureEndDate = future365Date.toISOString().split('T')[0];
+
+    const past365Date = new Date();
+    past365Date.setDate(past365Date.getDate() - 365);
+    const pastStartDate = past365Date.toISOString().split('T')[0];
+
     // Prepare data for email template
     const emailData = {
       propertyTitle: listing.nickname || listing.title,
       currency: listing.currency || 'EUR',
+      allTimeStats: {
+        total_bookings: allTimeStats.totalBookings,
+        total_revenue: allTimeStats.totalRevenue,
+        total_booked_days: allTimeStats.totalBookedDays,
+        start_date: allTimeStats.startDate,
+        end_date: allTimeStats.endDate,
+      },
       futureStats: {
         total_bookings: futureStats.totalBookings,
         total_revenue: futureStats.totalRevenue,
@@ -82,6 +102,8 @@ export async function sendWeeklySummaryEmail(): Promise<WeeklyEmailResult> {
         blocked_days: futureStats.blockedDays,
         total_days: futureStats.availableDays + futureStats.bookedDays + futureStats.blockedDays,
         occupancy_rate: futureStats.occupancyRate,
+        start_date: today,
+        end_date: futureEndDate,
       },
       pastStats: {
         total_bookings: pastStats.totalBookings,
@@ -91,6 +113,8 @@ export async function sendWeeklySummaryEmail(): Promise<WeeklyEmailResult> {
         blocked_days: pastStats.blockedDays,
         total_days: pastStats.availableDays + pastStats.bookedDays + pastStats.blockedDays,
         occupancy_rate: pastStats.occupancyRate,
+        start_date: pastStartDate,
+        end_date: today,
       },
       upcomingBookings: upcomingBookings.map(r => ({
         reservationId: r.reservation_id,
@@ -102,7 +126,7 @@ export async function sendWeeklySummaryEmail(): Promise<WeeklyEmailResult> {
         status: r.status,
         confirmationCode: r.confirmation_code || undefined,
         source: r.source || r.platform || 'Unknown',
-        totalPrice: r.total_price || r.host_payout || 0,
+        totalPrice: r.host_payout || r.total_price || 0,
         plannedArrival: r.planned_arrival || undefined,
         plannedDeparture: r.planned_departure || undefined,
       })),
@@ -116,7 +140,7 @@ export async function sendWeeklySummaryEmail(): Promise<WeeklyEmailResult> {
         status: r.status,
         confirmationCode: r.confirmation_code || undefined,
         source: r.source || r.platform || 'Unknown',
-        totalPrice: r.total_price || r.host_payout || 0,
+        totalPrice: r.host_payout || r.total_price || 0,
         plannedArrival: r.planned_arrival || undefined,
         plannedDeparture: r.planned_departure || undefined,
       })),

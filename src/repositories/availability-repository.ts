@@ -334,6 +334,17 @@ export interface DashboardStats {
 }
 
 /**
+ * All-time statistics
+ */
+export interface AllTimeStats {
+  totalBookings: number;
+  totalRevenue: number;
+  totalBookedDays: number;
+  startDate: string | null;
+  endDate: string | null;
+}
+
+/**
  * Get dashboard statistics for the next N days
  */
 export function getDashboardStats(
@@ -361,12 +372,10 @@ export function getDashboardStats(
       endDateStr = endDate.toISOString().split('T')[0];
     }
 
-    // Get overall stats
-    const stats = db
+    // Get availability stats (available, booked, blocked days)
+    const availStats = db
       .prepare(
         `SELECT
-          COUNT(DISTINCT CASE WHEN status = 'booked' AND block_ref IS NOT NULL THEN block_ref END) as total_bookings,
-          SUM(CASE WHEN status = 'booked' THEN price ELSE 0 END) as total_revenue,
           SUM(CASE WHEN status = 'available' THEN 1 ELSE 0 END) as available_days,
           SUM(CASE WHEN status = 'booked' THEN 1 ELSE 0 END) as booked_days,
           SUM(CASE WHEN status = 'blocked' THEN 1 ELSE 0 END) as blocked_days,
@@ -377,28 +386,98 @@ export function getDashboardStats(
         AND date <= ?`
       )
       .get(listingId, startDateStr, endDateStr) as {
-        total_bookings: number;
-        total_revenue: number;
         available_days: number;
         booked_days: number;
         blocked_days: number;
         total_days: number;
       };
 
-    const occupancyRate = stats.total_days > 0 ? (stats.booked_days / stats.total_days) * 100 : 0;
+    // Get revenue from reservations table using host_payout (includes fees and taxes)
+    let revenueQuery: string;
+    let revenueParams: any[];
+
+    if (period === 'past') {
+      // Past reservations: check-out date in the range
+      revenueQuery = `SELECT
+        COUNT(*) as total_bookings,
+        SUM(COALESCE(host_payout, total_price, 0)) as total_revenue
+      FROM reservations
+      WHERE listing_id = ?
+      AND check_out >= ?
+      AND check_out < date('now')`;
+      revenueParams = [listingId, startDateStr];
+    } else {
+      // Future reservations: check-in date in the range
+      revenueQuery = `SELECT
+        COUNT(*) as total_bookings,
+        SUM(COALESCE(host_payout, total_price, 0)) as total_revenue
+      FROM reservations
+      WHERE listing_id = ?
+      AND check_in >= date('now')`;
+      revenueParams = [listingId];
+    }
+
+    const revenueStats = db.prepare(revenueQuery).get(...revenueParams) as {
+      total_bookings: number;
+      total_revenue: number;
+    };
+
+    const occupancyRate = availStats.total_days > 0 ? (availStats.booked_days / availStats.total_days) * 100 : 0;
 
     return {
-      totalBookings: stats.total_bookings,
-      totalRevenue: stats.total_revenue || 0,
-      availableDays: stats.available_days,
-      bookedDays: stats.booked_days,
-      blockedDays: stats.blocked_days,
+      totalBookings: revenueStats.total_bookings || 0,
+      totalRevenue: revenueStats.total_revenue || 0,
+      availableDays: availStats.available_days,
+      bookedDays: availStats.booked_days,
+      blockedDays: availStats.blocked_days,
       occupancyRate: Math.round(occupancyRate * 10) / 10, // Round to 1 decimal
     };
   } catch (error) {
     logger.error({ error, listingId, days, period }, 'Failed to get dashboard stats');
     throw new DatabaseError(
       `Failed to get dashboard stats: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
+  }
+}
+
+/**
+ * Get all-time statistics (all reservations ever)
+ */
+export function getAllTimeStats(listingId: string): AllTimeStats {
+  const db = getDatabase();
+
+  try {
+    // Get all-time revenue stats from reservations
+    const revenueStats = db
+      .prepare(
+        `SELECT
+          COUNT(*) as total_bookings,
+          SUM(COALESCE(host_payout, total_price, 0)) as total_revenue,
+          SUM(nights_count) as total_booked_days,
+          MIN(check_in) as start_date,
+          MAX(check_out) as end_date
+        FROM reservations
+        WHERE listing_id = ?`
+      )
+      .get(listingId) as {
+        total_bookings: number;
+        total_revenue: number;
+        total_booked_days: number;
+        start_date: string | null;
+        end_date: string | null;
+      };
+
+    return {
+      totalBookings: revenueStats.total_bookings || 0,
+      totalRevenue: revenueStats.total_revenue || 0,
+      totalBookedDays: revenueStats.total_booked_days || 0,
+      startDate: revenueStats.start_date,
+      endDate: revenueStats.end_date,
+    };
+  } catch (error) {
+    logger.error({ error, listingId }, 'Failed to get all-time stats');
+    throw new DatabaseError(
+      `Failed to get all-time stats: ${error instanceof Error ? error.message : 'Unknown error'}`
     );
   }
 }

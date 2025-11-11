@@ -25,6 +25,8 @@ interface SchedulerState {
   weeklyEmailIntervalId: NodeJS.Timeout | null;
   lastWeeklyEmailCheck: Date | null;
   lastWeeklyEmailSent: Date | null;
+  dailyForceIntervalId: NodeJS.Timeout | null;
+  lastDailyForceSync: Date | null;
 }
 
 const state: SchedulerState = {
@@ -40,6 +42,8 @@ const state: SchedulerState = {
   weeklyEmailIntervalId: null,
   lastWeeklyEmailCheck: null,
   lastWeeklyEmailSent: null,
+  dailyForceIntervalId: null,
+  lastDailyForceSync: null,
 };
 
 /**
@@ -147,6 +151,65 @@ async function checkAndSendWeeklyEmail() {
 }
 
 /**
+ * Check if daily forced sync should run (at 2 AM)
+ */
+function shouldRunDailyForceSync(): boolean {
+  const now = new Date();
+  const currentHour = now.getHours();
+
+  // Run at 2 AM
+  if (currentHour !== 2) {
+    return false;
+  }
+
+  // Check if we already ran today
+  const today = now.toDateString();
+  const lastRun = state.lastDailyForceSync?.toDateString();
+
+  return lastRun !== today;
+}
+
+/**
+ * Execute daily forced sync to ensure all data is up-to-date
+ */
+async function checkAndRunDailyForceSync() {
+  try {
+    if (!shouldRunDailyForceSync()) {
+      return;
+    }
+
+    logger.info('🔄 Daily forced sync triggered - refreshing all data');
+
+    const result = await runETLJob(true); // force=true to bypass cache checks
+
+    state.lastDailyForceSync = new Date();
+
+    if (result.success) {
+      logger.info(
+        {
+          listingUpserted: result.listing.success && !result.listing.skipped ? 1 : 0,
+          availabilityRowsUpserted: result.availability.daysCount || 0,
+          durationMs: result.duration,
+          lastDailyForceSync: state.lastDailyForceSync?.toISOString(),
+        },
+        '✅ Daily forced sync completed successfully'
+      );
+    } else {
+      logger.error(
+        {
+          listingError: result.listing.error,
+          availabilityError: result.availability.error,
+          lastDailyForceSync: state.lastDailyForceSync?.toISOString(),
+        },
+        '⚠️  Daily forced sync completed with errors'
+      );
+    }
+  } catch (error) {
+    logger.error({ error }, '❌ Error in daily forced sync');
+  }
+}
+
+/**
  * Get job interval in milliseconds with optional jitter
  * Uses availability TTL as the primary scheduling interval
  *
@@ -218,6 +281,16 @@ export function startScheduler() {
     const hourlyInterval = 60 * 60 * 1000; // 1 hour
     state.weeklyEmailIntervalId = setInterval(checkAndSendWeeklyEmail, hourlyInterval);
   }
+
+  // Start daily forced sync checker (runs every hour, executes at 2 AM)
+  logger.info('🔄 Starting daily forced sync scheduler (runs at 2 AM)');
+
+  // Check immediately on start
+  checkAndRunDailyForceSync();
+
+  // Check every hour
+  const hourlyInterval = 60 * 60 * 1000; // 1 hour
+  state.dailyForceIntervalId = setInterval(checkAndRunDailyForceSync, hourlyInterval);
 }
 
 /**
@@ -237,6 +310,11 @@ export function stopScheduler() {
   if (state.weeklyEmailIntervalId) {
     clearInterval(state.weeklyEmailIntervalId);
     state.weeklyEmailIntervalId = null;
+  }
+
+  if (state.dailyForceIntervalId) {
+    clearInterval(state.dailyForceIntervalId);
+    state.dailyForceIntervalId = null;
   }
 
   state.running = false;
@@ -259,6 +337,7 @@ export function getSchedulerStatus() {
     successCount: state.successCount,
     failureCount: state.failureCount,
     intervalMinutes: getJobInterval() / (60 * 1000),
+    lastDailyForceSync: state.lastDailyForceSync?.toISOString() || null,
   };
 }
 
