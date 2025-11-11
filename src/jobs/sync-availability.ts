@@ -13,6 +13,7 @@ import {
 import {
   upsertReservationBatch,
   deleteOldReservations,
+  deleteStaleReservationsInRange,
 } from '../repositories/reservation-repository.js';
 import { mapAvailabilityBatch } from '../mappers/availability-mapper.js';
 import { extractReservationsFromCalendar } from '../mappers/reservation-mapper.js';
@@ -132,6 +133,16 @@ export async function syncAvailability(listingId: string, force: boolean = false
     const upsertedCount = upsertAvailabilityBatch(availabilities);
     const upsertedReservationsCount = reservations.length > 0 ? upsertReservationBatch(reservations) : 0;
 
+    // Delete stale/cancelled reservations that are no longer in the API response
+    // This ensures cancelled reservations are removed from the database
+    const reservationIds = reservations.map(r => r.reservation_id);
+    const deletedStaleCount = deleteStaleReservationsInRange(
+      listingId,
+      startDateStr,
+      endDateStr,
+      reservationIds
+    );
+
     const duration = Date.now() - startTime;
 
     logger.info(
@@ -141,6 +152,7 @@ export async function syncAvailability(listingId: string, force: boolean = false
         reservationsCount: upsertedReservationsCount,
         deletedAvailabilityCount,
         deletedReservationsCount,
+        deletedStaleReservationsCount: deletedStaleCount,
         duration,
       },
       'Availability and reservations synced successfully'
@@ -193,6 +205,7 @@ export async function syncAvailabilityChunked(
   let hasErrors = false;
   const errors: string[] = [];
   const lastSyncedAt = new Date().toISOString();
+  const allReservationIds = new Set<string>();
 
   try {
     logger.info({ listingId, chunkMonths }, 'Starting chunked availability sync');
@@ -230,6 +243,11 @@ export async function syncAvailabilityChunked(
           const upsertedCount = upsertAvailabilityBatch(availabilities);
           const upsertedReservationsCount = reservations.length > 0 ? upsertReservationBatch(reservations) : 0;
 
+          // Track reservation IDs from all chunks
+          for (const reservation of reservations) {
+            allReservationIds.add(reservation.reservation_id);
+          }
+
           totalDaysCount += upsertedCount;
           totalReservationsCount += upsertedReservationsCount;
 
@@ -260,6 +278,16 @@ export async function syncAvailabilityChunked(
     const deletedAvailabilityCount = deleteOldAvailability(listingId, today_str);
     const deletedReservationsCount = deleteOldReservations(listingId, today_str);
 
+    // Delete stale/cancelled reservations across the entire synced range
+    const firstChunk = chunks[0];
+    const lastChunk = chunks[chunks.length - 1];
+    const deletedStaleCount = deleteStaleReservationsInRange(
+      listingId,
+      firstChunk.start,
+      lastChunk.end,
+      Array.from(allReservationIds)
+    );
+
     const duration = Date.now() - startTime;
 
     if (hasErrors) {
@@ -270,6 +298,7 @@ export async function syncAvailabilityChunked(
           reservationsCount: totalReservationsCount,
           deletedAvailabilityCount,
           deletedReservationsCount,
+          deletedStaleReservationsCount: deletedStaleCount,
           errorCount: errors.length,
           duration,
         },
@@ -293,6 +322,7 @@ export async function syncAvailabilityChunked(
         reservationsCount: totalReservationsCount,
         deletedAvailabilityCount,
         deletedReservationsCount,
+        deletedStaleReservationsCount: deletedStaleCount,
         duration,
       },
       'Chunked availability and reservations synced successfully'

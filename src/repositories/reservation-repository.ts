@@ -298,3 +298,61 @@ export function deleteOldReservations(listingId: string, beforeDate: string): nu
     );
   }
 }
+
+/**
+ * Delete reservations that are no longer in the API response (cancelled/removed)
+ * Removes reservations in the given date range that are not in the keepReservationIds list
+ */
+export function deleteStaleReservationsInRange(
+  listingId: string,
+  startDate: string,
+  endDate: string,
+  keepReservationIds: string[]
+): number {
+  const db = getDatabase();
+
+  try {
+    let query: string;
+    let params: any[];
+
+    if (keepReservationIds.length === 0) {
+      // Delete all reservations in range if no IDs to keep
+      query = `DELETE FROM reservations
+               WHERE listing_id = ?
+               AND check_in <= ?
+               AND check_out >= ?`;
+      params = [listingId, endDate, startDate];
+    } else {
+      // Delete reservations not in the keep list
+      const placeholders = keepReservationIds.map(() => '?').join(',');
+      query = `DELETE FROM reservations
+               WHERE listing_id = ?
+               AND check_in <= ?
+               AND check_out >= ?
+               AND reservation_id NOT IN (${placeholders})`;
+      params = [listingId, endDate, startDate, ...keepReservationIds];
+    }
+
+    const result = db.prepare(query).run(...params);
+
+    if (result.changes > 0) {
+      logger.info(
+        {
+          listingId,
+          startDate,
+          endDate,
+          deletedCount: result.changes,
+          keptCount: keepReservationIds.length,
+        },
+        'Deleted stale/cancelled reservations from range'
+      );
+    }
+
+    return result.changes;
+  } catch (error) {
+    logger.error({ error, listingId, startDate, endDate }, 'Failed to delete stale reservations');
+    throw new DatabaseError(
+      `Failed to delete stale reservations: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
+  }
+}
