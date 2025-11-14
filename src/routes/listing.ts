@@ -28,6 +28,7 @@ router.get('/', (_req, res, next) => {
     const response = {
       id: listing.id,
       title: listing.title,
+      nickname: listing.nickname,
       accommodates: listing.accommodates,
       bedrooms: listing.bedrooms,
       bathrooms: listing.bathrooms,

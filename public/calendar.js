@@ -79,21 +79,29 @@ class BookingCalendar {
         guestsIncluded: (count) => `${count} ${count === 1 ? 'Gast' : 'Gäste'} im Grundpreis enthalten`,
         extraGuestFee: (count, fee) => `${count} zusätzliche${count === 1 ? 'r Gast' : ' Gäste'} (${fee}/Gast)`,
         // Email translations
-        emailSubject: (property, checkIn, checkOut, guests) => `[Buchungsanfrage] ${property} – ${checkIn} → ${checkOut}, ${guests} ${guests === 1 ? 'Gast' : 'Gäste'}`,
-        emailIntro: (property) => `Ich möchte eine Buchung anfragen für ${property}:\n\n`,
+        emailSubject: (property, checkIn, checkOut, guests) => `Buchungsanfrage für das ${property} – ${checkIn} → ${checkOut}, ${guests} ${guests === 1 ? 'Gast' : 'Gäste'}`,
+        emailIntro: (property) => `Hallo,\n\nich möchte gern das ${property} für folgenden Zeitraum anfragen:`,
         emailBookingDetails: 'BUCHUNGSDETAILS',
         emailPriceBreakdown: 'PREISAUFSCHLÜSSELUNG',
+        emailPriceOverview: 'Preisübersicht',
         emailCheckIn: 'Check-in',
         emailCheckOut: 'Check-out',
+        emailStay: 'Aufenthalt',
+        emailPersons: 'Personen',
         emailNights: (nights) => `${nights} ${nights === 1 ? 'Nacht' : 'Nächte'}`,
         emailGuests: (guests) => `${guests} ${guests === 1 ? 'Gast' : 'Gäste'}`,
         emailAccommodation: 'Unterkunft',
+        emailCleaning: 'Endreinigung',
+        emailExtraGuests: 'Zusätzliche Gäste',
         emailSubtotal: 'Zwischensumme',
         emailTaxes: 'Steuern',
         emailTotalTaxes: 'Steuern gesamt',
-        emailTotalPrice: 'GESAMTPREIS',
+        emailTotalPrice: 'Gesamtpreis',
         emailProperty: 'Unterkunft',
-        emailConfirmRequest: 'Bitte bestätigen Sie die Verfügbarkeit und senden Sie die Buchungsdetails.\n\nVielen Dank!',
+        emailPropertyLink: 'Unterkunfts-Link',
+        emailConfirmRequest: 'Könnt ihr mir bitte die Verfügbarkeit bestätigen und die Buchung vorbereiten?',
+        emailThankYou: 'Vielen Dank!',
+        nightsLowercase: (nights) => `${nights === 1 ? 'Nacht' : 'Nächte'}`,
         nights: (nights) => `${nights} ${nights === 1 ? 'Nacht' : 'Nächte'}`
       },
       en: {
@@ -132,21 +140,29 @@ class BookingCalendar {
         guestsIncluded: (count) => `${count} ${count === 1 ? 'guest' : 'guests'} included in base price`,
         extraGuestFee: (count, fee) => `${count} extra ${count === 1 ? 'guest' : 'guests'} (${fee}/guest)`,
         // Email translations
-        emailSubject: (property, checkIn, checkOut, guests) => `[Booking Request] ${property} – ${checkIn} → ${checkOut}, ${guests} ${guests === 1 ? 'guest' : 'guests'}`,
-        emailIntro: (property) => `I would like to request a booking for ${property}:\n\n`,
+        emailSubject: (property, checkIn, checkOut, guests) => `Booking request for ${property} – ${checkIn} → ${checkOut}, ${guests} ${guests === 1 ? 'guest' : 'guests'}`,
+        emailIntro: (property) => `Hello,\n\nI would like to request the ${property} for the following period:`,
         emailBookingDetails: 'BOOKING DETAILS',
         emailPriceBreakdown: 'PRICE BREAKDOWN',
+        emailPriceOverview: 'Price overview',
         emailCheckIn: 'Check-in',
         emailCheckOut: 'Check-out',
+        emailStay: 'Stay',
+        emailPersons: 'Persons',
         emailNights: (nights) => `${nights} ${nights === 1 ? 'night' : 'nights'}`,
         emailGuests: (guests) => `${guests} ${guests === 1 ? 'guest' : 'guests'}`,
         emailAccommodation: 'Accommodation',
+        emailCleaning: 'Cleaning',
+        emailExtraGuests: 'Extra guests',
         emailSubtotal: 'Subtotal',
         emailTaxes: 'Taxes',
         emailTotalTaxes: 'Total Taxes',
-        emailTotalPrice: 'TOTAL PRICE',
+        emailTotalPrice: 'Total price',
         emailProperty: 'Property',
-        emailConfirmRequest: 'Please confirm availability and send booking details.\n\nThank you!',
+        emailPropertyLink: 'Property link',
+        emailConfirmRequest: 'Could you please confirm availability and prepare the booking?',
+        emailThankYou: 'Thank you!',
+        nightsLowercase: (nights) => `${nights === 1 ? 'night' : 'nights'}`,
         nights: (nights) => `${nights} ${nights === 1 ? 'night' : 'nights'}`
       }
     };
@@ -1783,57 +1799,53 @@ class BookingCalendar {
 
     // Build detailed email body (localized)
     let emailBody = this.t('emailIntro')(propertyTitle);
-    emailBody += `═══════════════════════════════\n`;
-    emailBody += `${this.t('emailBookingDetails')}\n`;
-    emailBody += `═══════════════════════════════\n\n`;
-    emailBody += `${this.t('emailCheckIn')}: ${checkIn}\n`;
-    emailBody += `${this.t('emailCheckOut')}: ${checkOut}\n`;
-    emailBody += `${this.t('emailNights')(quote.nights)}\n`;
-    emailBody += `${this.t('emailGuests')(guests)}\n\n`;
+    emailBody += `\n\n`;
+    emailBody += `${this.t('emailCheckIn')}: ${checkInFormatted}\n`;
+    emailBody += `${this.t('emailCheckOut')}: ${checkOutFormatted}\n`;
+    emailBody += `${this.t('emailStay')}: ${this.t('emailNights')(quote.nights)}\n`;
+    emailBody += `${this.t('emailPersons')}: ${this.t('emailGuests')(guests)}\n\n`;
 
-    emailBody += `═══════════════════════════════\n`;
-    emailBody += `${this.t('emailPriceBreakdown')}\n`;
-    emailBody += `═══════════════════════════════\n\n`;
+    emailBody += `${this.t('emailPriceOverview')}:\n`;
 
     // Accommodation fare
     const nightlyRate = quote.breakdown.nightlyRates[0]?.adjustedPrice || 0;
-    emailBody += `${this.t('emailAccommodation')}: ${this.formatCurrency(nightlyRate, quote.currency)} × ${this.t('nights')(quote.nights)} = ${this.formatCurrency(quote.pricing.accommodationFare, quote.currency)}\n`;
+    emailBody += ` •  ${this.t('emailAccommodation')}: ${this.formatCurrency(nightlyRate, quote.currency)} × ${quote.nights} ${this.t('nightsLowercase')(quote.nights)} = ${this.formatCurrency(quote.pricing.accommodationFare, quote.currency)}\n`;
 
     // Discount
     if (quote.discount) {
       const discountLabel = quote.discount.type === 'weekly'
         ? this.t('weeklyDiscount')
         : this.t('monthlyDiscount');
-      emailBody += `${discountLabel}: -${this.formatCurrency(quote.discount.savings, quote.currency)}\n`;
+      emailBody += ` •  ${discountLabel}: –${this.formatCurrency(quote.discount.savings, quote.currency)}\n`;
     }
 
     // Cleaning fee
     if (quote.pricing.cleaningFee > 0) {
-      emailBody += `${this.t('cleaningFee')}: ${this.formatCurrency(quote.pricing.cleaningFee, quote.currency)}\n`;
+      emailBody += ` •  ${this.t('emailCleaning')}: ${this.formatCurrency(quote.pricing.cleaningFee, quote.currency)}\n`;
     }
 
     // Extra guest fee
     if (quote.pricing.extraGuestFee > 0) {
-      emailBody += `${this.t('extraGuests')}: ${this.formatCurrency(quote.pricing.extraGuestFee, quote.currency)}\n`;
+      emailBody += ` •  ${this.t('emailExtraGuests')}: ${this.formatCurrency(quote.pricing.extraGuestFee, quote.currency)}\n`;
     }
 
     emailBody += `\n${this.t('emailSubtotal')}: ${this.formatCurrency(quote.pricing.subtotal, quote.currency)}\n\n`;
 
     // Taxes
     if (quote.breakdown.taxes && quote.breakdown.taxes.length > 0) {
-      emailBody += `${this.t('emailTaxes')}:\n`;
-      quote.breakdown.taxes.forEach(tax => {
-        emailBody += `  ${this.translateTaxDescription(tax.description)}: ${this.formatCurrency(tax.amount, quote.currency)}\n`;
-      });
-      emailBody += `\n${this.t('emailTotalTaxes')}: ${this.formatCurrency(quote.pricing.totalTaxes, quote.currency)}\n\n`;
+      const totalTaxRate = quote.breakdown.taxes.reduce((sum, tax) => {
+        // Extract percentage from description if available (e.g., "7% Tax")
+        const match = tax.description.match(/(\d+)%/);
+        return sum + (match ? parseInt(match[1]) : 0);
+      }, 0);
+      emailBody += `${this.t('emailTaxes')} (${totalTaxRate}%): ${this.formatCurrency(quote.pricing.totalTaxes, quote.currency)}\n\n`;
     }
 
-    emailBody += `═══════════════════════════════\n`;
-    emailBody += `${this.t('emailTotalPrice')}: ${this.formatCurrency(quote.pricing.totalPrice, quote.currency)}\n`;
-    emailBody += `═══════════════════════════════\n\n`;
+    emailBody += `${this.t('emailTotalPrice')}: ${this.formatCurrency(quote.pricing.totalPrice, quote.currency)}\n\n`;
 
-    emailBody += `${this.t('emailProperty')}: ${window.location.origin}\n\n`;
-    emailBody += `${this.t('emailConfirmRequest')}\n`;
+    emailBody += `${this.t('emailPropertyLink')}: ${window.location.origin}\n\n`;
+    emailBody += `${this.t('emailConfirmRequest')}\n\n`;
+    emailBody += `${this.t('emailThankYou')}\n`;
 
     const body = encodeURIComponent(emailBody);
     const recipient = 'booking@farmhouse-prasser.de';

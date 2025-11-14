@@ -839,7 +839,7 @@ router.get('/dashboard-data', async (req, res, next) => {
       status: r.status,
       confirmationCode: r.confirmation_code,
       source: r.source || r.platform || 'Unknown',
-      totalPrice: r.total_price || r.host_payout || 0,
+      totalPrice: r.host_payout || r.total_price || 0, // Use host_payout (includes fees & taxes)
       plannedArrival: r.planned_arrival,
       plannedDeparture: r.planned_departure,
     }));

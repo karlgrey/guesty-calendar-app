@@ -18,6 +18,7 @@ import {
 import { mapAvailabilityBatch } from '../mappers/availability-mapper.js';
 import { extractReservationsFromCalendar } from '../mappers/reservation-mapper.js';
 import { config } from '../config/index.js';
+import { getDatabase } from '../db/index.js';
 import logger from '../utils/logger.js';
 
 export interface SyncAvailabilityResult {
@@ -39,6 +40,7 @@ function needsAvailabilityRefresh(listingId: string): boolean {
 
     // If no data exists, needs refresh
     if (!dateRange) {
+      logger.debug({ listingId }, 'No availability data exists, needs refresh');
       return true;
     }
 
@@ -56,12 +58,55 @@ function needsAvailabilityRefresh(listingId: string): boolean {
       return true;
     }
 
-    // Check if data is stale (based on TTL)
-    // For simplicity, we'll consider data stale if it was last updated more than TTL hours ago
-    // This is a heuristic since we don't track per-row sync times for availability
-    return false; // If we have good coverage, assume it's fresh enough
+    // Check if data is stale based on TTL
+    // Get the most recent sync timestamp from availability data
+    const db = getDatabase();
+    const result = db
+      .prepare('SELECT MAX(last_synced_at) as last_sync FROM availability WHERE listing_id = ?')
+      .get(listingId) as { last_sync: string | null };
+
+    if (!result.last_sync) {
+      logger.debug({ listingId }, 'No last_synced_at timestamp found, needs refresh');
+      return true;
+    }
+
+    const lastSyncTime = new Date(result.last_sync);
+    const now = new Date();
+    const minutesSinceSync = (now.getTime() - lastSyncTime.getTime()) / (1000 * 60);
+    const ttlMinutes = config.cacheAvailabilityTtl;
+
+    if (minutesSinceSync > ttlMinutes) {
+      logger.debug(
+        {
+          listingId,
+          minutesSinceSync: Math.round(minutesSinceSync),
+          ttlMinutes,
+          lastSyncTime: result.last_sync
+        },
+        'Availability cache is stale based on TTL'
+      );
+      return true;
+    }
+
+    logger.debug(
+      {
+        listingId,
+        minutesSinceSync: Math.round(minutesSinceSync),
+        ttlMinutes,
+        monthsCoverage: monthsDiff.toFixed(1)
+      },
+      'Availability cache is fresh'
+    );
+    return false;
   } catch (error) {
-    logger.error({ error, listingId }, 'Failed to check availability refresh status');
+    logger.error(
+      {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        listingId
+      },
+      'Failed to check availability refresh status'
+    );
     return true; // If error, assume refresh is needed
   }
 }
