@@ -6,7 +6,7 @@
 
 import { config } from '../config/index.js';
 import { getListingById } from '../repositories/listings-repository.js';
-import { getDashboardStats, getAllTimeStats } from '../repositories/availability-repository.js';
+import { getAllTimeStats } from '../repositories/availability-repository.js';
 import { getReservationsByPeriod } from '../repositories/reservation-repository.js';
 import { sendEmail } from '../services/email-service.js';
 import { generateWeeklySummaryEmail } from '../services/email-templates.js';
@@ -61,27 +61,9 @@ export async function sendWeeklySummaryEmail(): Promise<WeeklyEmailResult> {
     // Get all-time statistics
     const allTimeStats = getAllTimeStats(propertyId);
 
-    // Get future stats (next 365 days)
-    const futureStats = getDashboardStats(propertyId, 365, 'future');
-
-    // Get upcoming bookings (next 365 days)
-    const upcomingBookings = getReservationsByPeriod(propertyId, 365, 'future');
-
-    // Get past stats (last 365 days)
-    const pastStats = getDashboardStats(propertyId, 365, 'past');
-
-    // Get all past bookings (last 365 days)
-    const pastBookings = getReservationsByPeriod(propertyId, 365, 'past');
-
-    // Calculate date ranges for sections
-    const today = new Date().toISOString().split('T')[0];
-    const future365Date = new Date();
-    future365Date.setDate(future365Date.getDate() + 365);
-    const futureEndDate = future365Date.toISOString().split('T')[0];
-
-    const past365Date = new Date();
-    past365Date.setDate(past365Date.getDate() - 365);
-    const pastStartDate = past365Date.toISOString().split('T')[0];
+    // Get next 5 upcoming bookings
+    const allUpcomingBookings = getReservationsByPeriod(propertyId, 365, 'future');
+    const upcomingBookings = allUpcomingBookings.slice(0, 5);
 
     // Prepare data for email template
     const emailData = {
@@ -94,43 +76,7 @@ export async function sendWeeklySummaryEmail(): Promise<WeeklyEmailResult> {
         start_date: allTimeStats.startDate,
         end_date: allTimeStats.endDate,
       },
-      futureStats: {
-        total_bookings: futureStats.totalBookings,
-        total_revenue: futureStats.totalRevenue,
-        available_days: futureStats.availableDays,
-        booked_days: futureStats.bookedDays,
-        blocked_days: futureStats.blockedDays,
-        total_days: futureStats.availableDays + futureStats.bookedDays + futureStats.blockedDays,
-        occupancy_rate: futureStats.occupancyRate,
-        start_date: today,
-        end_date: futureEndDate,
-      },
-      pastStats: {
-        total_bookings: pastStats.totalBookings,
-        total_revenue: pastStats.totalRevenue,
-        available_days: pastStats.availableDays,
-        booked_days: pastStats.bookedDays,
-        blocked_days: pastStats.blockedDays,
-        total_days: pastStats.availableDays + pastStats.bookedDays + pastStats.blockedDays,
-        occupancy_rate: pastStats.occupancyRate,
-        start_date: pastStartDate,
-        end_date: today,
-      },
       upcomingBookings: upcomingBookings.map(r => ({
-        reservationId: r.reservation_id,
-        checkIn: r.check_in,
-        checkOut: r.check_out,
-        nights: r.nights_count,
-        guestName: r.guest_name || 'Unknown Guest',
-        guestsCount: r.guests_count || 0,
-        status: r.status,
-        confirmationCode: r.confirmation_code || undefined,
-        source: r.source || r.platform || 'Unknown',
-        totalPrice: r.host_payout || r.total_price || 0,
-        plannedArrival: r.planned_arrival || undefined,
-        plannedDeparture: r.planned_departure || undefined,
-      })),
-      pastBookings: pastBookings.map(r => ({
         reservationId: r.reservation_id,
         checkIn: r.check_in,
         checkOut: r.check_out,
@@ -163,9 +109,7 @@ export async function sendWeeklySummaryEmail(): Promise<WeeklyEmailResult> {
           recipientCount: config.weeklyReportRecipients.length,
           recipients: config.weeklyReportRecipients,
           upcomingBookings: upcomingBookings.length,
-          pastBookings: pastBookings.length,
-          futureRevenue: futureStats.totalRevenue,
-          pastRevenue: pastStats.totalRevenue,
+          allTimeRevenue: allTimeStats.totalRevenue,
         },
         '✅ Weekly summary email sent successfully'
       );
