@@ -268,6 +268,359 @@ npm run dev
 - `calendar.css` is mobile-first responsive design
 - API calls use Fetch API (see `fetchListing`, `fetchAvailability`, `fetchQuote`)
 
+## Git Workflow
+
+### Repository Structure
+```
+main (default branch)
+├── .env (ignored, never commit)
+├── .env.example (template, commit this)
+├── src/ (TypeScript source)
+├── dist/ (compiled output, ignored)
+├── public/ (static frontend files)
+├── data/ (SQLite database, ignored)
+└── CLAUDE.md (project documentation)
+```
+
+### Branch Strategy
+- **main**: Production-ready code, deployed to production server
+- Feature branches: Create for new features or bug fixes (optional for small changes)
+- Direct commits to main are acceptable for small changes and fixes
+- Use descriptive branch names: `feature/weekly-emails`, `fix/timezone-bug`, `docs/update-readme`
+
+### Commit Message Conventions
+Follow conventional commits format for clear history:
+
+```bash
+# Format: <type>: <description>
+#
+# Types:
+#   feat: New feature
+#   fix: Bug fix
+#   docs: Documentation changes
+#   refactor: Code refactoring (no functionality change)
+#   test: Adding or updating tests
+#   chore: Maintenance tasks, dependency updates
+#   style: Code style changes (formatting, semicolons, etc.)
+#   perf: Performance improvements
+
+# Examples:
+git commit -m "feat: Add timezone-aware scheduling for weekly emails"
+git commit -m "fix: Resolve database connection timeout issue"
+git commit -m "docs: Update deployment instructions"
+git commit -m "refactor: Extract email template generation logic"
+git commit -m "chore: Update dependencies to latest versions"
+```
+
+**Multi-line commits** (recommended for significant changes):
+```bash
+git commit -m "$(cat <<'EOF'
+feat: Add weekly email reports feature
+
+- Implement email scheduling with timezone support
+- Add Resend email service integration
+- Create HTML email templates for weekly summaries
+- Add test scripts for email and timezone verification
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+EOF
+)"
+```
+
+### Development Workflow
+
+#### 1. Check Current Status
+```bash
+# See what branch you're on and what's changed
+git status
+
+# View recent commits
+git log --oneline -10
+
+# See your changes
+git diff                    # Unstaged changes
+git diff --staged          # Staged changes
+git diff main              # All changes vs main
+```
+
+#### 2. Making Changes
+```bash
+# Create a feature branch (optional)
+git checkout -b feature/my-feature
+
+# Make your changes, then check what changed
+git status
+git diff
+
+# Stage specific files
+git add src/jobs/weekly-email.ts
+git add package.json
+
+# Or stage all changes
+git add .
+
+# Or stage by pattern
+git add src/**/*.ts
+```
+
+#### 3. Committing Changes
+```bash
+# Commit with message
+git commit -m "feat: Add new feature"
+
+# Commit with multi-line message
+git commit -m "$(cat <<'EOF'
+feat: Add new feature
+
+- Detail 1
+- Detail 2
+
+🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+Co-Authored-By: Claude <noreply@anthropic.com>
+EOF
+)"
+
+# Amend last commit (if you forgot something)
+git add forgotten-file.ts
+git commit --amend --no-edit
+```
+
+#### 4. Pushing Changes
+```bash
+# Push to main branch
+git push origin main
+
+# Push feature branch (first time)
+git push -u origin feature/my-feature
+
+# Push feature branch (subsequent times)
+git push
+
+# Force push (use with caution!)
+git push --force origin main    # Only if absolutely necessary
+```
+
+#### 5. Pulling Latest Changes
+```bash
+# Before starting work, get latest changes
+git pull origin main
+
+# If you have local changes, stash them first
+git stash
+git pull origin main
+git stash pop
+
+# Or use rebase to keep history clean
+git pull --rebase origin main
+```
+
+### Common Git Operations
+
+#### Viewing History
+```bash
+# View commit history
+git log --oneline -20          # Last 20 commits
+git log --oneline --graph      # With branch graph
+git log --since="2 weeks ago"  # Recent commits
+git log --author="username"    # By author
+
+# View specific commit
+git show <commit-hash>
+git show HEAD                  # Latest commit
+git show HEAD~1               # Previous commit
+
+# Search commit messages
+git log --grep="email"
+```
+
+#### Undoing Changes
+```bash
+# Discard unstaged changes in file
+git restore src/file.ts
+git checkout -- src/file.ts    # Old syntax
+
+# Unstage staged file
+git restore --staged src/file.ts
+git reset HEAD src/file.ts     # Old syntax
+
+# Discard all unstaged changes
+git restore .
+git checkout -- .              # Old syntax
+
+# Undo last commit (keep changes)
+git reset --soft HEAD~1
+
+# Undo last commit (discard changes)
+git reset --hard HEAD~1        # DANGEROUS!
+
+# Revert a commit (creates new commit)
+git revert <commit-hash>
+```
+
+#### Branch Management
+```bash
+# List branches
+git branch                     # Local branches
+git branch -r                  # Remote branches
+git branch -a                  # All branches
+
+# Create and switch to branch
+git checkout -b feature/new-feature
+git switch -c feature/new-feature  # Modern syntax
+
+# Switch branches
+git checkout main
+git switch main                # Modern syntax
+
+# Delete branch
+git branch -d feature/old-feature    # Safe delete
+git branch -D feature/old-feature    # Force delete
+
+# Delete remote branch
+git push origin --delete feature/old-feature
+```
+
+#### Stashing Changes
+```bash
+# Stash current changes
+git stash
+git stash save "work in progress on feature X"
+
+# List stashes
+git stash list
+
+# Apply stash
+git stash pop                  # Apply and remove
+git stash apply               # Apply and keep
+git stash apply stash@{1}     # Apply specific stash
+
+# Drop stash
+git stash drop stash@{0}
+git stash clear               # Remove all stashes
+```
+
+#### Checking Out Files from Other Branches
+```bash
+# Get file from another branch
+git checkout main -- src/config/index.ts
+
+# Get file from specific commit
+git checkout <commit-hash> -- src/file.ts
+```
+
+### Working with .env Files
+
+**IMPORTANT**: Never commit `.env` files with secrets!
+
+```bash
+# .env is in .gitignore (never commit)
+# .env.example is committed (template without secrets)
+
+# Check if .env is ignored
+git check-ignore .env          # Should show: .env
+
+# If .env was accidentally committed
+git rm --cached .env           # Remove from git, keep file
+git commit -m "fix: Remove .env from repository"
+git push origin main
+
+# Update .env.example when adding new variables
+# (remove secret values, use placeholders)
+```
+
+### Deployment Workflow
+
+#### Standard Deployment
+```bash
+# 1. Make changes locally
+git add .
+git commit -m "feat: Add new feature"
+git push origin main
+
+# 2. SSH to production server
+ssh deploy@your-server.com
+
+# 3. Navigate to app directory
+cd /opt/guesty-calendar-app
+
+# 4. Pull latest changes
+git pull origin main
+
+# 5. Install dependencies (if package.json changed)
+npm install
+
+# 6. Build TypeScript
+npm run build
+
+# 7. Restart application
+pm2 restart guesty-calendar
+
+# 8. Verify deployment
+pm2 logs guesty-calendar --lines 50
+curl https://your-domain.com/health
+```
+
+#### Rollback to Previous Version
+```bash
+# On production server
+cd /opt/guesty-calendar-app
+
+# View recent commits
+git log --oneline -10
+
+# Rollback to specific commit
+git reset --hard <commit-hash>
+
+# Rebuild and restart
+npm run build
+pm2 restart guesty-calendar
+
+# Verify
+pm2 logs guesty-calendar --lines 50
+```
+
+### Git Best Practices
+
+1. **Commit Often**: Make small, focused commits rather than large ones
+2. **Write Clear Messages**: Use conventional commit format
+3. **Pull Before Push**: Always pull latest changes before pushing
+4. **Review Before Commit**: Use `git diff` to review changes
+5. **Don't Commit Secrets**: Never commit `.env`, API keys, or passwords
+6. **Use .gitignore**: Keep generated files, dependencies, and data out of repo
+7. **Test Before Push**: Run `npm run build` and test locally first
+8. **Keep History Clean**: Use meaningful commit messages for future reference
+
+### Ignored Files (.gitignore)
+
+The following are ignored and should never be committed:
+```
+.env                          # Environment variables with secrets
+node_modules/                 # Dependencies (from npm install)
+dist/                         # Compiled TypeScript output
+data/                         # SQLite database files
+*.db                          # Database files
+*.db-journal                  # SQLite journal files
+.DS_Store                     # macOS system files
+*.log                         # Log files
+.pm2/                         # PM2 process manager files
+```
+
+Always commit:
+```
+.env.example                  # Template for environment variables
+src/                          # Source code
+public/                       # Static frontend files
+package.json                  # Dependencies list
+package-lock.json             # Locked dependency versions
+tsconfig.json                 # TypeScript configuration
+schema.sql                    # Database schema
+CLAUDE.md                     # Project documentation
+README.md                     # Project readme
+```
+
 ## Environment Variables
 
 Required:
