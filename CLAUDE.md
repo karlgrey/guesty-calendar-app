@@ -25,6 +25,8 @@ npm run db:reset        # Drop and recreate database (WARNING: deletes all data)
 
 # Manual testing
 npx tsx src/scripts/test-force-sync.ts  # Test forced sync (bypasses cache)
+npx tsx src/scripts/test-email.ts       # Send test weekly email immediately
+npx tsx src/scripts/test-timezone.ts    # Verify timezone conversion for scheduling
 ```
 
 ### Code Quality
@@ -102,6 +104,70 @@ Session configuration:
 - HttpOnly cookies (XSS protection)
 - 24-hour session lifetime
 - Session data stored in memory (consider Redis for multi-instance deployments)
+
+### Weekly Email Reports
+The application sends automated weekly summary emails with property statistics and upcoming bookings.
+
+**Features:**
+- All-time statistics (total bookings, revenue, booked days)
+- Next 5 upcoming bookings with guest details
+- HTML and plain text email formats
+- Timezone-aware scheduling
+- Sent via Resend email service
+
+**Configuration (`.env`):**
+```bash
+# Email Service
+RESEND_API_KEY=your_resend_api_key
+EMAIL_FROM_ADDRESS=calendar@updates.yourdomain.com
+EMAIL_FROM_NAME=Property Calendar
+
+# Weekly Report Settings
+WEEKLY_REPORT_ENABLED=TRUE
+WEEKLY_REPORT_RECIPIENTS=email1@example.com,email2@example.com,email3@example.com
+WEEKLY_REPORT_DAY=1        # 0=Sunday, 1=Monday, 2=Tuesday, etc.
+WEEKLY_REPORT_HOUR=6       # Hour in property timezone (0-23)
+
+# Property Configuration
+PROPERTY_TIMEZONE=Europe/Berlin  # IANA timezone for scheduling
+```
+
+**How It Works:**
+1. **Scheduler** (`src/jobs/scheduler.ts`) checks hourly if it's time to send the email
+2. **Timezone Conversion**: Server time (UTC) is converted to property timezone using `date-fns-tz`
+3. **Scheduling Logic** (`src/jobs/weekly-email.ts`):
+   - Gets current UTC time
+   - Converts to property timezone (e.g., Europe/Berlin)
+   - Checks if current day matches `WEEKLY_REPORT_DAY`
+   - Checks if current hour matches `WEEKLY_REPORT_HOUR`
+4. **Email Generation**:
+   - Fetches all-time statistics from database
+   - Retrieves next 5 upcoming bookings
+   - Generates HTML email with styled template
+   - Sends via Resend API to all configured recipients
+
+**Testing:**
+```bash
+# Test timezone conversion
+npx tsx src/scripts/test-timezone.ts
+
+# Send test email immediately (bypasses schedule check)
+npx tsx src/scripts/test-email.ts
+```
+
+**Files:**
+- `src/jobs/weekly-email.ts` - Email job logic and scheduling
+- `src/services/email-templates.ts` - HTML and text email generation
+- `src/services/email-service.ts` - Resend API integration
+- `src/scripts/test-email.ts` - Manual email testing
+- `src/scripts/test-timezone.ts` - Timezone conversion verification
+
+**Important Notes:**
+- Emails are sent at the configured hour in the **property's timezone**, not server timezone
+- Server can run in any timezone (typically UTC) - conversion is automatic
+- Handles daylight saving time (DST) changes automatically
+- Schedule check runs every hour (controlled by ETL scheduler)
+- Requires verified domain in Resend for multiple recipients
 
 ## Key Patterns
 
@@ -217,11 +283,21 @@ Authentication (required for admin access):
 - `GOOGLE_CLIENT_SECRET` - Google OAuth client secret
 - `ADMIN_ALLOWED_EMAILS` - Comma-separated email whitelist (e.g., `user@example.com,admin@example.com`)
 
+Email service (required for weekly reports):
+- `RESEND_API_KEY` - API key from Resend (https://resend.com)
+- `EMAIL_FROM_ADDRESS` - Sender email (must be from verified domain)
+- `EMAIL_FROM_NAME` - Display name for sender
+- `WEEKLY_REPORT_ENABLED` - Enable/disable weekly emails (TRUE/FALSE)
+- `WEEKLY_REPORT_RECIPIENTS` - Comma-separated email list
+- `WEEKLY_REPORT_DAY` - Day of week (0=Sunday, 1=Monday, etc.)
+- `WEEKLY_REPORT_HOUR` - Hour in property timezone (0-23)
+
 Common optional:
 - `PORT` - Server port (default: 3000)
 - `CACHE_AVAILABILITY_TTL` - Minutes between ETL runs (default: 60)
 - `LOG_LEVEL` - Pino log level (default: info)
 - `DATABASE_PATH` - SQLite file path (default: ./data/calendar.db)
+- `PROPERTY_TIMEZONE` - IANA timezone (default: Europe/Berlin)
 
 See `.env.example` for full list with descriptions.
 
