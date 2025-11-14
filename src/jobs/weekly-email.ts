@@ -11,6 +11,8 @@ import { getReservationsByPeriod } from '../repositories/reservation-repository.
 import { sendEmail } from '../services/email-service.js';
 import { generateWeeklySummaryEmail } from '../services/email-templates.js';
 import logger from '../utils/logger.js';
+import { toZonedTime } from 'date-fns-tz';
+import { getHours, getDay } from 'date-fns';
 
 interface WeeklyEmailResult {
   success: boolean;
@@ -140,11 +142,28 @@ export async function sendWeeklySummaryEmail(): Promise<WeeklyEmailResult> {
 /**
  * Check if weekly email should be sent today
  * Returns true if today matches the configured day and current hour matches configured hour
+ * Uses the property's timezone (Europe/Berlin) to ensure correct scheduling
  */
 export function shouldSendWeeklyEmail(): boolean {
+  // Get current time in the property's timezone
   const now = new Date();
-  const currentDay = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
-  const currentHour = now.getHours();
+  const propertyTime = toZonedTime(now, config.propertyTimezone);
+
+  const currentDay = getDay(propertyTime); // 0 = Sunday, 1 = Monday, etc.
+  const currentHour = getHours(propertyTime);
+
+  logger.debug(
+    {
+      utcTime: now.toISOString(),
+      propertyTime: propertyTime.toISOString(),
+      currentDay,
+      currentHour,
+      targetDay: config.weeklyReportDay,
+      targetHour: config.weeklyReportHour,
+      timezone: config.propertyTimezone,
+    },
+    'Checking weekly email schedule'
+  );
 
   return (
     currentDay === config.weeklyReportDay &&

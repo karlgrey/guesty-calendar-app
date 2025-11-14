@@ -28,6 +28,8 @@
     "bcrypt": "^6.0.0",
     "better-sqlite3": "^11.7.0",
     "bottleneck": "^2.19.5",
+    "date-fns": "^4.1.0",
+    "date-fns-tz": "^3.2.0",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "express-session": "^1.18.2",
