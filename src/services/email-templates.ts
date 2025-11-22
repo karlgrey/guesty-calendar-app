@@ -27,10 +27,23 @@ interface Booking {
   plannedDeparture?: string;
 }
 
+interface OccupancyRates {
+  next4Weeks: number;
+  last3Months: number;
+}
+
+interface ConversionRate {
+  inquiries: number;
+  confirmed: number;
+  rate: number;
+}
+
 interface WeeklySummaryData {
   propertyTitle: string;
   currency: string;
   allTimeStats: AllTimeStats;
+  occupancyRates: OccupancyRates;
+  conversionRate: ConversionRate;
   upcomingBookings: Booking[];
 }
 
@@ -60,7 +73,7 @@ function formatDate(dateStr: string): string {
  * Generate weekly summary email HTML
  */
 export function generateWeeklySummaryEmail(data: WeeklySummaryData): { html: string; text: string } {
-  const { propertyTitle, currency, allTimeStats, upcomingBookings } = data;
+  const { propertyTitle, currency, allTimeStats, occupancyRates, conversionRate, upcomingBookings } = data;
 
   const html = `
 <!DOCTYPE html>
@@ -205,6 +218,36 @@ export function generateWeeklySummaryEmail(data: WeeklySummaryData): { html: str
       </div>
     </div>
 
+    <!-- OCCUPANCY RATES SECTION -->
+    <h2 style="margin-top: 40px; border-bottom: 2px solid #e67e22; padding-bottom: 8px;">📈 Occupancy Rate</h2>
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Next 4 Weeks</div>
+        <div class="stat-value occupancy">${occupancyRates.next4Weeks}%</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Last 3 Months</div>
+        <div class="stat-value occupancy">${occupancyRates.last3Months}%</div>
+      </div>
+    </div>
+
+    <!-- CONVERSION RATE SECTION -->
+    <h2 style="margin-top: 40px; border-bottom: 2px solid #9b59b6; padding-bottom: 8px;">🎯 Inquiry → Booking Conversion (Last 3 Months)</h2>
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Inquiries</div>
+        <div class="stat-value">${conversionRate.inquiries}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Confirmed Bookings</div>
+        <div class="stat-value">${conversionRate.confirmed}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Conversion Rate</div>
+        <div class="stat-value" style="color: #9b59b6;">${conversionRate.rate}%</div>
+      </div>
+    </div>
+
     <!-- UPCOMING BOOKINGS SECTION -->
     <h2 style="margin-top: 40px; border-bottom: 2px solid #3498db; padding-bottom: 8px;">📅 Next 5 Upcoming Bookings</h2>
     ${upcomingBookings.length > 0 ? `
@@ -259,6 +302,19 @@ Statistics:
 - Total Bookings: ${allTimeStats.total_bookings}
 - Total Revenue: ${formatCurrency(allTimeStats.total_revenue, currency)}
 - Total Booked Days: ${allTimeStats.total_booked_days}
+
+OCCUPANCY RATE
+${'='.repeat(60)}
+
+- Next 4 Weeks: ${occupancyRates.next4Weeks}%
+- Last 3 Months: ${occupancyRates.last3Months}%
+
+INQUIRY → BOOKING CONVERSION (Last 3 Months)
+${'='.repeat(60)}
+
+- Inquiries: ${conversionRate.inquiries}
+- Confirmed Bookings: ${conversionRate.confirmed}
+- Conversion Rate: ${conversionRate.rate}%
 
 NEXT 5 UPCOMING BOOKINGS
 ${'='.repeat(60)}

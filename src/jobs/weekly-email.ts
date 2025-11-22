@@ -6,13 +6,13 @@
 
 import { config } from '../config/index.js';
 import { getListingById } from '../repositories/listings-repository.js';
-import { getAllTimeStats } from '../repositories/availability-repository.js';
+import { getAllTimeStats, getOccupancyRate, getConversionRate } from '../repositories/availability-repository.js';
 import { getReservationsByPeriod } from '../repositories/reservation-repository.js';
 import { sendEmail } from '../services/email-service.js';
 import { generateWeeklySummaryEmail } from '../services/email-templates.js';
 import logger from '../utils/logger.js';
 import { toZonedTime } from 'date-fns-tz';
-import { getHours, getDay } from 'date-fns';
+import { getHours, getDay, addDays, addMonths, format } from 'date-fns';
 
 interface WeeklyEmailResult {
   success: boolean;
@@ -63,6 +63,30 @@ export async function sendWeeklySummaryEmail(): Promise<WeeklyEmailResult> {
     // Get all-time statistics
     const allTimeStats = getAllTimeStats(propertyId);
 
+    // Calculate occupancy rates
+    const today = new Date();
+    const fourWeeksFromNow = addDays(today, 28);
+    const threeMonthsAgo = addMonths(today, -3);
+
+    const occupancyNext4Weeks = getOccupancyRate(
+      propertyId,
+      format(today, 'yyyy-MM-dd'),
+      format(fourWeeksFromNow, 'yyyy-MM-dd')
+    );
+
+    const occupancyLast3Months = getOccupancyRate(
+      propertyId,
+      format(threeMonthsAgo, 'yyyy-MM-dd'),
+      format(today, 'yyyy-MM-dd')
+    );
+
+    // Calculate conversion rate (last 3 months)
+    const conversionData = getConversionRate(
+      propertyId,
+      format(threeMonthsAgo, 'yyyy-MM-dd'),
+      format(today, 'yyyy-MM-dd')
+    );
+
     // Get next 5 upcoming bookings
     const allUpcomingBookings = getReservationsByPeriod(propertyId, 365, 'future');
     const upcomingBookings = allUpcomingBookings.slice(0, 5);
@@ -77,6 +101,15 @@ export async function sendWeeklySummaryEmail(): Promise<WeeklyEmailResult> {
         total_booked_days: allTimeStats.totalBookedDays,
         start_date: allTimeStats.startDate,
         end_date: allTimeStats.endDate,
+      },
+      occupancyRates: {
+        next4Weeks: occupancyNext4Weeks,
+        last3Months: occupancyLast3Months,
+      },
+      conversionRate: {
+        inquiries: conversionData.inquiriesCount,
+        confirmed: conversionData.confirmedCount,
+        rate: conversionData.conversionRate,
       },
       upcomingBookings: upcomingBookings.map(r => ({
         reservationId: r.reservation_id,

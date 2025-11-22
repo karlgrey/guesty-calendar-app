@@ -452,6 +452,87 @@ export class GuestyClient {
   }
 
   /**
+   * Fetch reservations with optional filters
+   * Uses Guesty's filter syntax for proper querying
+   */
+  async getReservations(params?: {
+    listingId?: string;
+    status?: string[];
+    limit?: number;
+    skip?: number;
+  }): Promise<any[]> {
+    logger.debug({ params }, 'Fetching reservations from Guesty API');
+
+    const queryParams = new URLSearchParams();
+    const filters: any[] = [];
+
+    // Add listingId filter
+    if (params?.listingId) {
+      filters.push({
+        operator: '$eq',
+        field: 'listingId',
+        value: params.listingId,
+      });
+    }
+
+    // Add status filter (use $in for multiple statuses)
+    if (params?.status && params.status.length > 0) {
+      if (params.status.length === 1) {
+        filters.push({
+          operator: '$eq',
+          field: 'status',
+          value: params.status[0],
+        });
+      } else {
+        filters.push({
+          operator: '$in',
+          field: 'status',
+          value: params.status,
+        });
+      }
+    }
+
+    // Add filters to query params (JSON stringified)
+    if (filters.length > 0) {
+      queryParams.append('filters', JSON.stringify(filters));
+    }
+
+    // Specify fields we need to reduce payload size
+    const fields = [
+      '_id',
+      'listingId',
+      'status',
+      'checkIn',
+      'checkOut',
+      'checkInDateLocalized',
+      'checkOutDateLocalized',
+      'guest',
+      'guestsCount',
+      'source',
+      'createdAt',
+      'confirmedAt',
+    ];
+    queryParams.append('fields', JSON.stringify(fields));
+
+    // Set limit
+    queryParams.append('limit', (params?.limit || 100).toString());
+
+    if (params?.skip) {
+      queryParams.append('skip', params.skip.toString());
+    }
+
+    const url = `/reservations?${queryParams.toString()}`;
+    const response = await this.request<{ results: any[] }>(url);
+
+    logger.debug(
+      { count: response.results?.length || 0 },
+      'Reservations fetched successfully'
+    );
+
+    return response.results || [];
+  }
+
+  /**
    * Fetch 12 months of availability starting from today
    */
   async get12MonthsCalendar(listingId: string): Promise<GuestyCalendarResponse> {

@@ -481,3 +481,91 @@ export function getAllTimeStats(listingId: string): AllTimeStats {
     );
   }
 }
+
+/**
+ * Calculate occupancy rate for a date range
+ * Returns percentage of booked/blocked days vs total days
+ */
+export function getOccupancyRate(listingId: string, startDate: string, endDate: string): number {
+  const db = getDatabase();
+
+  try {
+    const result = db
+      .prepare(
+        `SELECT
+          COUNT(*) as total_days,
+          SUM(CASE WHEN status IN ('booked', 'blocked') THEN 1 ELSE 0 END) as occupied_days
+        FROM availability
+        WHERE listing_id = ?
+          AND date >= ?
+          AND date < ?`
+      )
+      .get(listingId, startDate, endDate) as {
+        total_days: number;
+        occupied_days: number;
+      };
+
+    if (result.total_days === 0) {
+      return 0;
+    }
+
+    return Math.round((result.occupied_days / result.total_days) * 100);
+  } catch (error) {
+    logger.error({ error, listingId, startDate, endDate }, 'Failed to get occupancy rate');
+    throw new DatabaseError(
+      `Failed to get occupancy rate: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
+  }
+}
+
+/**
+ * Calculate inquiry to booking conversion rate for a date range
+ * Returns percentage and counts
+ */
+export function getConversionRate(listingId: string, startDate: string, endDate: string): {
+  inquiriesCount: number;
+  confirmedCount: number;
+  conversionRate: number;
+} {
+  const db = getDatabase();
+
+  try {
+    const result = db
+      .prepare(
+        `SELECT
+          SUM(CASE WHEN status = 'inquiry' THEN 1 ELSE 0 END) as inquiries_count,
+          SUM(CASE WHEN status IN ('confirmed', 'reserved') THEN 1 ELSE 0 END) as confirmed_count,
+          COUNT(*) as total_count
+        FROM inquiries
+        WHERE listing_id = ?
+          AND created_at_guesty >= ?
+          AND created_at_guesty < ?`
+      )
+      .get(listingId, startDate, endDate) as {
+        inquiries_count: number;
+        confirmed_count: number;
+        total_count: number;
+      };
+
+    const inquiriesCount = result.inquiries_count || 0;
+    const confirmedCount = result.confirmed_count || 0;
+    const total = inquiriesCount + confirmedCount;
+
+    // Calculate conversion rate: (confirmed / (inquiries + confirmed)) * 100
+    const conversionRate = total > 0 ? Math.round((confirmedCount / total) * 100) : 0;
+
+    return {
+      inquiriesCount,
+      confirmedCount,
+      conversionRate,
+    };
+  } catch (error) {
+    logger.error({ error, listingId, startDate, endDate }, 'Failed to get conversion rate');
+    // Return zeros if table doesn't exist yet
+    return {
+      inquiriesCount: 0,
+      confirmedCount: 0,
+      conversionRate: 0,
+    };
+  }
+}
