@@ -5,7 +5,6 @@
  */
 
 import { guestyClient } from '../services/guesty-client.js';
-import { config } from '../config/index.js';
 import logger from '../utils/logger.js';
 import { getDatabase } from '../db/index.js';
 
