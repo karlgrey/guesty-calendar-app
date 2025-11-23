@@ -497,7 +497,8 @@ export class GuestyClient {
       queryParams.append('filters', JSON.stringify(filters));
     }
 
-    // Specify fields we need to reduce payload size
+    // Specify fields we need (space-separated format, not JSON)
+    // Guesty API requires fields as space-separated string, not JSON array
     const fields = [
       '_id',
       'listingId',
@@ -511,8 +512,10 @@ export class GuestyClient {
       'source',
       'createdAt',
       'confirmedAt',
+      'confirmationCode',
+      'integration',
     ];
-    queryParams.append('fields', JSON.stringify(fields));
+    queryParams.append('fields', fields.join(' '));
 
     // Set limit
     queryParams.append('limit', (params?.limit || 100).toString());
