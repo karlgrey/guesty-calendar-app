@@ -157,10 +157,13 @@ npx tsx src/scripts/test-email.ts
 
 **Files:**
 - `src/jobs/weekly-email.ts` - Email job logic and scheduling
+- `src/jobs/sync-inquiries.ts` - Syncs all reservations from Guesty for conversion tracking
 - `src/services/email-templates.ts` - HTML and text email generation
 - `src/services/email-service.ts` - Resend API integration
+- `src/repositories/availability-repository.ts` - Contains `getAllTimeConversionRate()` function
 - `src/scripts/test-email.ts` - Manual email testing
 - `src/scripts/test-timezone.ts` - Timezone conversion verification
+- `src/scripts/test-alltime-conversion.ts` - Test conversion rate calculation
 
 **Important Notes:**
 - Emails are sent at the configured hour in the **property's timezone**, not server timezone
@@ -168,6 +171,14 @@ npx tsx src/scripts/test-email.ts
 - Handles daylight saving time (DST) changes automatically
 - Schedule check runs every hour (controlled by ETL scheduler)
 - Requires verified domain in Resend for multiple recipients
+
+**Conversion Rate Tracking:**
+- Tracks all reservations (not just inquiries) to calculate realistic conversion rates
+- Formula: `confirmed bookings / total reservations * 100`
+- Example: 22 confirmed / 67 total = 33% conversion rate
+- **Guesty API quirk**: `limit=100` returns all reservations (67), but `limit=1000` returns only 25
+- Inquiry sync runs automatically every 30 minutes as part of ETL job
+- Admin dashboard and weekly email both display conversion statistics
 
 ## Key Patterns
 
