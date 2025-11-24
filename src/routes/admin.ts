@@ -281,7 +281,7 @@ router.get('/', (_req, res) => {
 
     <!-- Conversion Rate Stats -->
     <div class="section">
-      <h2>🎯 Inquiry → Booking Conversion (All-Time)</h2>
+      <h2>🎯 Reservation → Confirmed Conversion (All-Time)</h2>
       <div class="grid" id="conversionGrid">
         <div class="card">
           <h3>Loading...</h3>
@@ -605,30 +605,25 @@ router.get('/', (_req, res) => {
         // Update conversion rate cards
         const conversionGrid = document.getElementById('conversionGrid');
         conversionGrid.innerHTML = \`
-          <div class="card" style="border-left-color: #9b59b6;">
-            <h3>Open Inquiries</h3>
-            <div class="value">\${data.conversion.inquiriesCount}</div>
-            <div class="subvalue">Pending bookings</div>
+          <div class="card" style="border-left-color: #007bff;">
+            <h3>Total Reservations</h3>
+            <div class="value">\${data.conversion.totalCount}</div>
+            <div class="subvalue">All-time reservations</div>
           </div>
           <div class="card" style="border-left-color: #28a745;">
             <h3>Confirmed Bookings</h3>
             <div class="value">\${data.conversion.confirmedCount}</div>
-            <div class="subvalue">All-time confirmed</div>
+            <div class="subvalue">Successfully converted</div>
           </div>
-          <div class="card" style="border-left-color: #dc3545;">
-            <h3>Declined</h3>
-            <div class="value">\${data.conversion.declinedCount}</div>
-            <div class="subvalue">Declined inquiries</div>
-          </div>
-          <div class="card" style="border-left-color: #ffc107;">
-            <h3>Canceled</h3>
-            <div class="value">\${data.conversion.canceledCount}</div>
-            <div class="subvalue">Canceled bookings</div>
+          <div class="card" style="border-left-color: #6c757d;">
+            <h3>Pending/Other</h3>
+            <div class="value">\${data.conversion.totalCount - data.conversion.confirmedCount}</div>
+            <div class="subvalue">Open, declined, canceled</div>
           </div>
           <div class="card" style="border-left-color: #9b59b6;">
             <h3>Conversion Rate</h3>
             <div class="value" style="color: #9b59b6;">\${data.conversion.conversionRate}%</div>
-            <div class="subvalue">\${data.conversion.confirmedCount} confirmed out of \${data.conversion.totalCount} total</div>
+            <div class="subvalue">\${data.conversion.confirmedCount} of \${data.conversion.totalCount} reservations</div>
           </div>
         \`;
 

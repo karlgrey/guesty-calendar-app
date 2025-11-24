@@ -233,11 +233,11 @@ export function generateWeeklySummaryEmail(data: WeeklySummaryData): { html: str
     </div>
 
     <!-- CONVERSION RATE SECTION -->
-    <h2 style="margin-top: 40px; border-bottom: 2px solid #9b59b6; padding-bottom: 8px;">🎯 Inquiry → Booking Conversion (All-Time)</h2>
+    <h2 style="margin-top: 40px; border-bottom: 2px solid #9b59b6; padding-bottom: 8px;">🎯 Reservation → Confirmed Conversion (All-Time)</h2>
     <div class="stats-grid">
       <div class="stat-card">
-        <div class="stat-label">Inquiries</div>
-        <div class="stat-value">${conversionRate.inquiries}</div>
+        <div class="stat-label">Total Reservations</div>
+        <div class="stat-value">${conversionRate.total}</div>
       </div>
       <div class="stat-card">
         <div class="stat-label">Confirmed Bookings</div>
@@ -246,7 +246,7 @@ export function generateWeeklySummaryEmail(data: WeeklySummaryData): { html: str
       <div class="stat-card">
         <div class="stat-label">Conversion Rate</div>
         <div class="stat-value" style="color: #9b59b6;">${conversionRate.rate}%</div>
-        <div class="subvalue" style="color: #7f8c8d; margin-top: 5px;">${conversionRate.confirmed} of ${conversionRate.total} total</div>
+        <div class="subvalue" style="color: #7f8c8d; margin-top: 5px;">${conversionRate.confirmed} of ${conversionRate.total} reservations</div>
       </div>
     </div>
 
@@ -311,12 +311,12 @@ ${'='.repeat(60)}
 - Next 4 Weeks: ${occupancyRates.next4Weeks}%
 - Last 3 Months: ${occupancyRates.last3Months}%
 
-INQUIRY → BOOKING CONVERSION (All-Time)
+RESERVATION → CONFIRMED CONVERSION (All-Time)
 ${'='.repeat(60)}
 
-- Open Inquiries: ${conversionRate.inquiries}
-- Confirmed Bookings: ${conversionRate.confirmed}
 - Total Reservations: ${conversionRate.total}
+- Confirmed Bookings: ${conversionRate.confirmed}
+- Pending/Other: ${conversionRate.total - conversionRate.confirmed}
 - Conversion Rate: ${conversionRate.rate}% (${conversionRate.confirmed} of ${conversionRate.total})
 
 NEXT 5 UPCOMING BOOKINGS
