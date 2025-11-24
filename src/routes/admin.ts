@@ -628,7 +628,7 @@ router.get('/', (_req, res) => {
           <div class="card" style="border-left-color: #9b59b6;">
             <h3>Conversion Rate</h3>
             <div class="value" style="color: #9b59b6;">\${data.conversion.conversionRate}%</div>
-            <div class="subvalue">\${data.conversion.confirmedCount} of \${data.conversion.confirmedCount + data.conversion.declinedCount + data.conversion.canceledCount} resolved</div>
+            <div class="subvalue">\${data.conversion.confirmedCount} confirmed out of \${data.conversion.totalCount} total</div>
           </div>
         \`;
 
@@ -899,6 +899,7 @@ router.get('/dashboard-data', async (req, res, next) => {
         confirmedCount: conversionData.confirmedCount,
         declinedCount: conversionData.declinedCount,
         canceledCount: conversionData.canceledCount,
+        totalCount: conversionData.totalCount,
         conversionRate: conversionData.conversionRate,
       },
       bookings,

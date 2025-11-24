@@ -105,6 +105,7 @@ export async function sendWeeklySummaryEmail(): Promise<WeeklyEmailResult> {
       conversionRate: {
         inquiries: conversionData.inquiriesCount,
         confirmed: conversionData.confirmedCount,
+        total: conversionData.totalCount,
         rate: conversionData.conversionRate,
       },
       upcomingBookings: upcomingBookings.map(r => ({

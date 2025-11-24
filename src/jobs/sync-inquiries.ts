@@ -28,9 +28,10 @@ export async function syncInquiries(listingId: string): Promise<SyncInquiriesRes
     logger.info({ listingId }, 'Starting inquiry sync from Guesty API');
 
     // Fetch ALL reservations from Guesty API (no status filter = all statuses)
+    // Note: Using limit=100 returns more results than limit=1000 (Guesty API quirk)
     const allReservations = await guestyClient.getReservations({
       listingId,
-      limit: 1000, // Fetch up to 1000 reservations
+      limit: 100,
     });
 
     logger.info(

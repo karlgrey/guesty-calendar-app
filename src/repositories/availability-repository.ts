@@ -579,6 +579,7 @@ export function getAllTimeConversionRate(listingId: string): {
   confirmedCount: number;
   declinedCount: number;
   canceledCount: number;
+  totalCount: number;
   conversionRate: number;
 } {
   const db = getDatabase();
@@ -607,17 +608,18 @@ export function getAllTimeConversionRate(listingId: string): {
     const confirmedCount = result.confirmed_count || 0;
     const declinedCount = result.declined_count || 0;
     const canceledCount = result.canceled_count || 0;
+    const totalCount = result.total_count || 0;
 
-    // Calculate conversion rate from total inquiries that have been resolved
-    // (confirmed + declined + canceled) vs confirmed
-    const totalResolved = confirmedCount + declinedCount + canceledCount;
-    const conversionRate = totalResolved > 0 ? Math.round((confirmedCount / totalResolved) * 100) : 0;
+    // Calculate conversion rate: confirmed bookings / total reservations
+    // This shows what % of all inquiries/bookings convert to confirmed bookings
+    const conversionRate = totalCount > 0 ? Math.round((confirmedCount / totalCount) * 100) : 0;
 
     return {
       inquiriesCount,
       confirmedCount,
       declinedCount,
       canceledCount,
+      totalCount,
       conversionRate,
     };
   } catch (error) {
@@ -628,6 +630,7 @@ export function getAllTimeConversionRate(listingId: string): {
       confirmedCount: 0,
       declinedCount: 0,
       canceledCount: 0,
+      totalCount: 0,
       conversionRate: 0,
     };
   }

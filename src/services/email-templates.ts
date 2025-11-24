@@ -35,6 +35,7 @@ interface OccupancyRates {
 interface ConversionRate {
   inquiries: number;
   confirmed: number;
+  total: number;
   rate: number;
 }
 
@@ -245,6 +246,7 @@ export function generateWeeklySummaryEmail(data: WeeklySummaryData): { html: str
       <div class="stat-card">
         <div class="stat-label">Conversion Rate</div>
         <div class="stat-value" style="color: #9b59b6;">${conversionRate.rate}%</div>
+        <div class="subvalue" style="color: #7f8c8d; margin-top: 5px;">${conversionRate.confirmed} of ${conversionRate.total} total</div>
       </div>
     </div>
 
@@ -312,9 +314,10 @@ ${'='.repeat(60)}
 INQUIRY → BOOKING CONVERSION (All-Time)
 ${'='.repeat(60)}
 
-- Inquiries: ${conversionRate.inquiries}
+- Open Inquiries: ${conversionRate.inquiries}
 - Confirmed Bookings: ${conversionRate.confirmed}
-- Conversion Rate: ${conversionRate.rate}%
+- Total Reservations: ${conversionRate.total}
+- Conversion Rate: ${conversionRate.rate}% (${conversionRate.confirmed} of ${conversionRate.total})
 
 NEXT 5 UPCOMING BOOKINGS
 ${'='.repeat(60)}
