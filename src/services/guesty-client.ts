@@ -497,25 +497,10 @@ export class GuestyClient {
       queryParams.append('filters', JSON.stringify(filters));
     }
 
-    // Specify fields we need (space-separated format, not JSON)
-    // Guesty API requires fields as space-separated string, not JSON array
-    const fields = [
-      '_id',
-      'listingId',
-      'status',
-      'checkIn',
-      'checkOut',
-      'checkInDateLocalized',
-      'checkOutDateLocalized',
-      'guest',
-      'guestsCount',
-      'source',
-      'createdAt',
-      'confirmedAt',
-      'confirmationCode',
-      'integration',
-    ];
-    queryParams.append('fields', fields.join(' '));
+    // Specify fields using space-separated format per Guesty API docs
+    // Example from docs: fields=_id confirmationCode status checkInDateLocalized...
+    const fieldsString = '_id listingId status checkIn checkOut checkInDateLocalized checkOutDateLocalized guest guestsCount source createdAt confirmedAt confirmationCode integration';
+    queryParams.append('fields', fieldsString);
 
     // Set limit
     queryParams.append('limit', (params?.limit || 100).toString());
