@@ -36,59 +36,37 @@ interface GuestyReservation {
 }
 
 /**
- * Sync all inquiries and reservations from Guesty
+ * Sync all inquiries and reservations from Guesty API
  *
- * Note: We use the reservations table data (from calendar endpoint)
- * since the /reservations API endpoint requires special permissions
+ * Fetches ALL reservation statuses (inquiry, confirmed, reserved, canceled, declined)
+ * to enable accurate conversion rate tracking
  */
 export async function syncInquiries(listingId: string): Promise<SyncInquiriesResult> {
   const startTime = Date.now();
 
   try {
-    logger.info({ listingId }, 'Starting inquiry sync');
+    logger.info({ listingId }, 'Starting inquiry sync from Guesty API');
 
-    // Get reservations from local database (already synced from calendar endpoint)
-    const db = getDatabase();
-    const allReservations = db
-      .prepare(
-        `SELECT
-          reservation_id as _id,
-          listing_id as listingId,
-          status,
-          check_in as checkIn,
-          check_out as checkOut,
-          guest_name as guestName,
-          guests_count as guestsCount,
-          source,
-          created_at as createdAt
-        FROM reservations
-        WHERE listing_id = ?`
-      )
-      .all(listingId) as Array<{
-        _id: string;
-        listingId: string;
-        status: string;
-        checkIn: string;
-        checkOut: string;
-        guestName: string;
-        guestsCount: number;
-        source: string | null;
-        createdAt: string;
-      }>;
+    // Fetch ALL reservations from Guesty API (no status filter = all statuses)
+    const allReservations = await guestyClient.getReservations({
+      listingId,
+      limit: 1000, // Fetch up to 1000 reservations
+    });
 
     logger.info(
       { count: allReservations.length, listingId },
-      'Fetched reservations from local database'
+      'Fetched reservations from Guesty API'
     );
 
     // Count by status
-    const inquiries = allReservations.filter((r) => r.status === 'inquiry');
-    const confirmed = allReservations.filter((r) =>
+    const inquiries = allReservations.filter((r: any) => r.status === 'inquiry');
+    const confirmed = allReservations.filter((r: any) =>
       r.status === 'confirmed' || r.status === 'reserved'
     );
 
     // Upsert to inquiries table
     const now = new Date().toISOString();
+    const db = getDatabase();
 
     // Upsert each reservation/inquiry
     const upsertStmt = db.prepare(`
@@ -114,7 +92,7 @@ export async function syncInquiries(listingId: string): Promise<SyncInquiriesRes
         last_synced_at = excluded.last_synced_at
     `);
 
-    const upsertMany = db.transaction((reservations: typeof allReservations) => {
+    const upsertMany = db.transaction((reservations: any[]) => {
       for (const r of reservations) {
         // Skip if missing required fields
         if (!r._id || !r.listingId || !r.status || !r.checkIn || !r.checkOut) {
@@ -122,13 +100,20 @@ export async function syncInquiries(listingId: string): Promise<SyncInquiriesRes
           continue;
         }
 
+        // Extract guest name from guest object
+        const guestName = r.guest?.fullName || r.guest?.firstName || 'Unknown';
+
+        // Use checkInDateLocalized if available, otherwise parse checkIn
+        const checkInDate = r.checkInDateLocalized || r.checkIn?.split('T')[0] || r.checkIn;
+        const checkOutDate = r.checkOutDateLocalized || r.checkOut?.split('T')[0] || r.checkOut;
+
         upsertStmt.run(
           r._id,
           r.listingId,
           r.status,
-          r.checkIn,
-          r.checkOut,
-          r.guestName || 'Unknown',
+          checkInDate,
+          checkOutDate,
+          guestName,
           r.guestsCount || 0,
           r.source || null,
           r.createdAt || now,
