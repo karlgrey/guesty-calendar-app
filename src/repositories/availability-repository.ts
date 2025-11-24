@@ -569,3 +569,66 @@ export function getConversionRate(listingId: string, startDate: string, endDate:
     };
   }
 }
+
+/**
+ * Calculate all-time inquiry to booking conversion rate
+ * Returns percentage and counts for all inquiries ever
+ */
+export function getAllTimeConversionRate(listingId: string): {
+  inquiriesCount: number;
+  confirmedCount: number;
+  declinedCount: number;
+  canceledCount: number;
+  conversionRate: number;
+} {
+  const db = getDatabase();
+
+  try {
+    const result = db
+      .prepare(
+        `SELECT
+          SUM(CASE WHEN status = 'inquiry' THEN 1 ELSE 0 END) as inquiries_count,
+          SUM(CASE WHEN status IN ('confirmed', 'reserved') THEN 1 ELSE 0 END) as confirmed_count,
+          SUM(CASE WHEN status = 'declined' THEN 1 ELSE 0 END) as declined_count,
+          SUM(CASE WHEN status = 'canceled' THEN 1 ELSE 0 END) as canceled_count,
+          COUNT(*) as total_count
+        FROM inquiries
+        WHERE listing_id = ?`
+      )
+      .get(listingId) as {
+        inquiries_count: number;
+        confirmed_count: number;
+        declined_count: number;
+        canceled_count: number;
+        total_count: number;
+      };
+
+    const inquiriesCount = result.inquiries_count || 0;
+    const confirmedCount = result.confirmed_count || 0;
+    const declinedCount = result.declined_count || 0;
+    const canceledCount = result.canceled_count || 0;
+
+    // Calculate conversion rate from total inquiries that have been resolved
+    // (confirmed + declined + canceled) vs confirmed
+    const totalResolved = confirmedCount + declinedCount + canceledCount;
+    const conversionRate = totalResolved > 0 ? Math.round((confirmedCount / totalResolved) * 100) : 0;
+
+    return {
+      inquiriesCount,
+      confirmedCount,
+      declinedCount,
+      canceledCount,
+      conversionRate,
+    };
+  } catch (error) {
+    logger.error({ error, listingId }, 'Failed to get all-time conversion rate');
+    // Return zeros if table doesn't exist yet
+    return {
+      inquiriesCount: 0,
+      confirmedCount: 0,
+      declinedCount: 0,
+      canceledCount: 0,
+      conversionRate: 0,
+    };
+  }
+}

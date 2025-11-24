@@ -232,7 +232,7 @@ export function generateWeeklySummaryEmail(data: WeeklySummaryData): { html: str
     </div>
 
     <!-- CONVERSION RATE SECTION -->
-    <h2 style="margin-top: 40px; border-bottom: 2px solid #9b59b6; padding-bottom: 8px;">🎯 Inquiry → Booking Conversion (Last 3 Months)</h2>
+    <h2 style="margin-top: 40px; border-bottom: 2px solid #9b59b6; padding-bottom: 8px;">🎯 Inquiry → Booking Conversion (All-Time)</h2>
     <div class="stats-grid">
       <div class="stat-card">
         <div class="stat-label">Inquiries</div>
@@ -309,7 +309,7 @@ ${'='.repeat(60)}
 - Next 4 Weeks: ${occupancyRates.next4Weeks}%
 - Last 3 Months: ${occupancyRates.last3Months}%
 
-INQUIRY → BOOKING CONVERSION (Last 3 Months)
+INQUIRY → BOOKING CONVERSION (All-Time)
 ${'='.repeat(60)}
 
 - Inquiries: ${conversionRate.inquiries}

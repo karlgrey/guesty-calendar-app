@@ -6,7 +6,7 @@
 
 import { config } from '../config/index.js';
 import { getListingById } from '../repositories/listings-repository.js';
-import { getAllTimeStats, getOccupancyRate, getConversionRate } from '../repositories/availability-repository.js';
+import { getAllTimeStats, getOccupancyRate, getAllTimeConversionRate } from '../repositories/availability-repository.js';
 import { getReservationsByPeriod } from '../repositories/reservation-repository.js';
 import { sendEmail } from '../services/email-service.js';
 import { generateWeeklySummaryEmail } from '../services/email-templates.js';
@@ -80,12 +80,8 @@ export async function sendWeeklySummaryEmail(): Promise<WeeklyEmailResult> {
       format(today, 'yyyy-MM-dd')
     );
 
-    // Calculate conversion rate (last 3 months)
-    const conversionData = getConversionRate(
-      propertyId,
-      format(threeMonthsAgo, 'yyyy-MM-dd'),
-      format(today, 'yyyy-MM-dd')
-    );
+    // Calculate all-time conversion rate
+    const conversionData = getAllTimeConversionRate(propertyId);
 
     // Get next 5 upcoming bookings
     const allUpcomingBookings = getReservationsByPeriod(propertyId, 365, 'future');
