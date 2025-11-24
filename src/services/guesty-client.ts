@@ -10,6 +10,8 @@ import { ExternalApiError } from '../utils/errors.js';
 import { logApiCall } from '../utils/logger.js';
 import logger from '../utils/logger.js';
 import type { GuestyListing, GuestyCalendarResponse } from '../types/guesty.js';
+import fs from 'fs';
+import path from 'path';
 
 /**
  * OAuth Token Response
@@ -19,6 +21,14 @@ interface OAuthTokenResponse {
   token_type: string;
   expires_in: number;
   scope: string;
+}
+
+/**
+ * Cached Token Data
+ */
+interface CachedToken {
+  accessToken: string;
+  expiresAt: number;
 }
 
 /**
@@ -48,6 +58,7 @@ export class GuestyClient {
   private readonly oauthUrl: string;
   private readonly clientId: string;
   private readonly clientSecret: string;
+  private readonly tokenCachePath: string;
 
   private accessToken: string | null = null;
   private tokenExpiresAt: number | null = null;
@@ -74,6 +85,12 @@ export class GuestyClient {
     this.oauthUrl = oauthUrl;
     this.clientId = clientId;
     this.clientSecret = clientSecret;
+
+    // Token cache file path (in data directory)
+    this.tokenCachePath = path.join(process.cwd(), 'data', '.guesty-token-cache.json');
+
+    // Load cached token on initialization
+    this.loadCachedToken();
 
     // Configure rate limiter
     // Conservative limits: 10 req/sec (buffer below 15), 10 concurrent (buffer below 15)
@@ -180,6 +197,9 @@ export class GuestyClient {
         this.accessToken = tokenData.access_token;
         // Token valid for 24 hours, cache until expiry
         this.tokenExpiresAt = Date.now() + (tokenData.expires_in * 1000);
+
+        // Save token to file cache
+        this.saveCachedToken();
 
         logger.info({
           expiresIn: tokenData.expires_in,
@@ -548,6 +568,78 @@ export class GuestyClient {
     } catch (error) {
       logger.error({ error }, 'Guesty API health check failed');
       return false;
+    }
+  }
+
+  /**
+   * Load cached OAuth token from file
+   */
+  private loadCachedToken(): void {
+    try {
+      if (!fs.existsSync(this.tokenCachePath)) {
+        logger.debug('No cached token file found');
+        return;
+      }
+
+      const cacheData = fs.readFileSync(this.tokenCachePath, 'utf8');
+      const cached: CachedToken = JSON.parse(cacheData);
+
+      // Check if token is still valid (with 5 minute buffer)
+      if (cached.expiresAt && Date.now() < cached.expiresAt - 5 * 60 * 1000) {
+        this.accessToken = cached.accessToken;
+        this.tokenExpiresAt = cached.expiresAt;
+
+        logger.info({
+          expiresAt: new Date(cached.expiresAt).toISOString(),
+          remainingMinutes: Math.round((cached.expiresAt - Date.now()) / 60000),
+        }, 'Loaded cached OAuth token from file');
+      } else {
+        logger.debug('Cached token expired, will fetch new one');
+        // Delete expired cache file
+        fs.unlinkSync(this.tokenCachePath);
+      }
+    } catch (error) {
+      logger.warn({ error }, 'Failed to load cached token, will fetch new one');
+      // If cache file is corrupt, delete it
+      try {
+        if (fs.existsSync(this.tokenCachePath)) {
+          fs.unlinkSync(this.tokenCachePath);
+        }
+      } catch {
+        // Ignore deletion errors
+      }
+    }
+  }
+
+  /**
+   * Save OAuth token to file cache
+   */
+  private saveCachedToken(): void {
+    if (!this.accessToken || !this.tokenExpiresAt) {
+      return;
+    }
+
+    try {
+      // Ensure data directory exists
+      const dataDir = path.dirname(this.tokenCachePath);
+      if (!fs.existsSync(dataDir)) {
+        fs.mkdirSync(dataDir, { recursive: true });
+      }
+
+      const cacheData: CachedToken = {
+        accessToken: this.accessToken,
+        expiresAt: this.tokenExpiresAt,
+      };
+
+      fs.writeFileSync(this.tokenCachePath, JSON.stringify(cacheData, null, 2));
+
+      logger.debug({
+        expiresAt: new Date(this.tokenExpiresAt).toISOString(),
+        cachePath: this.tokenCachePath,
+      }, 'Saved OAuth token to file cache');
+    } catch (error) {
+      logger.warn({ error }, 'Failed to save token to cache file');
+      // Non-fatal error, token is still cached in memory
     }
   }
 }
