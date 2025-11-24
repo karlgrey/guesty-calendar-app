@@ -4,7 +4,6 @@
  * Fetch and display the raw JSON response from Guesty API
  */
 
-import { config } from '../config/index.js';
 import { guestyClient } from '../services/guesty-client.js';
 
 async function main() {

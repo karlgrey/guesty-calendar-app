@@ -15,26 +15,6 @@ export interface SyncInquiriesResult {
   error?: string;
 }
 
-interface GuestyReservation {
-  _id: string;
-  listingId: string;
-  status: string;
-  checkIn: string;
-  checkOut: string;
-  checkInDateLocalized?: string;
-  checkOutDateLocalized?: string;
-  guest?: {
-    _id?: string;
-    fullName?: string;
-    firstName?: string;
-    lastName?: string;
-  };
-  guestsCount?: number;
-  source?: string;
-  createdAt?: string;
-  confirmedAt?: string;
-}
-
 /**
  * Sync all inquiries and reservations from Guesty API
  *

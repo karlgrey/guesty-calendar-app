@@ -12,7 +12,7 @@ import { runETLJob } from '../jobs/etl-job.js';
 import { getSchedulerStatus } from '../jobs/scheduler.js';
 import { config } from '../config/index.js';
 import logger from '../utils/logger.js';
-import { getDashboardStats } from '../repositories/availability-repository.js';
+import { getDashboardStats, getAllTimeConversionRate } from '../repositories/availability-repository.js';
 import { getListingById } from '../repositories/listings-repository.js';
 import { getReservationsByPeriod } from '../repositories/reservation-repository.js';
 
@@ -272,6 +272,17 @@ router.get('/', (_req, res) => {
         </div>
       </div>
       <div class="grid" id="statsGrid">
+        <div class="card">
+          <h3>Loading...</h3>
+          <div class="value">...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Conversion Rate Stats -->
+    <div class="section">
+      <h2>🎯 Inquiry → Booking Conversion (All-Time)</h2>
+      <div class="grid" id="conversionGrid">
         <div class="card">
           <h3>Loading...</h3>
           <div class="value">...</div>
@@ -591,6 +602,36 @@ router.get('/', (_req, res) => {
           </div>
         \`;
 
+        // Update conversion rate cards
+        const conversionGrid = document.getElementById('conversionGrid');
+        conversionGrid.innerHTML = \`
+          <div class="card" style="border-left-color: #9b59b6;">
+            <h3>Open Inquiries</h3>
+            <div class="value">\${data.conversion.inquiriesCount}</div>
+            <div class="subvalue">Pending bookings</div>
+          </div>
+          <div class="card" style="border-left-color: #28a745;">
+            <h3>Confirmed Bookings</h3>
+            <div class="value">\${data.conversion.confirmedCount}</div>
+            <div class="subvalue">All-time confirmed</div>
+          </div>
+          <div class="card" style="border-left-color: #dc3545;">
+            <h3>Declined</h3>
+            <div class="value">\${data.conversion.declinedCount}</div>
+            <div class="subvalue">Declined inquiries</div>
+          </div>
+          <div class="card" style="border-left-color: #ffc107;">
+            <h3>Canceled</h3>
+            <div class="value">\${data.conversion.canceledCount}</div>
+            <div class="subvalue">Canceled bookings</div>
+          </div>
+          <div class="card" style="border-left-color: #9b59b6;">
+            <h3>Conversion Rate</h3>
+            <div class="value" style="color: #9b59b6;">\${data.conversion.conversionRate}%</div>
+            <div class="subvalue">\${data.conversion.confirmedCount} of \${data.conversion.confirmedCount + data.conversion.declinedCount + data.conversion.canceledCount} resolved</div>
+          </div>
+        \`;
+
         // Update bookings table
         const bookingsTable = document.getElementById('bookingsTable');
 
@@ -825,6 +866,9 @@ router.get('/dashboard-data', async (req, res, next) => {
     // Get stats from availability
     const stats = getDashboardStats(propertyId, 365, period);
 
+    // Get conversion rate data
+    const conversionData = getAllTimeConversionRate(propertyId);
+
     // Get detailed reservations
     const reservations = getReservationsByPeriod(propertyId, 365, period);
 
@@ -850,6 +894,13 @@ router.get('/dashboard-data', async (req, res, next) => {
         currency: listing?.currency || 'EUR',
       },
       stats,
+      conversion: {
+        inquiriesCount: conversionData.inquiriesCount,
+        confirmedCount: conversionData.confirmedCount,
+        declinedCount: conversionData.declinedCount,
+        canceledCount: conversionData.canceledCount,
+        conversionRate: conversionData.conversionRate,
+      },
       bookings,
       period, // Include period in response so UI knows what's displayed
     });

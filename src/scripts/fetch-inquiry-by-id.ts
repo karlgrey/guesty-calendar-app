@@ -13,7 +13,7 @@ async function main() {
 
   try {
     // Fetch the specific inquiry
-    const response = await guestyClient['request'](`/reservations/${inquiryId}`);
+    const response = await guestyClient['request'](`/reservations/${inquiryId}`) as any;
 
     console.log('✅ Successfully fetched inquiry!\n');
     console.log('Full inquiry data:');
