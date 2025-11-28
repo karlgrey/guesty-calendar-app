@@ -15,6 +15,9 @@ import logger from '../utils/logger.js';
 import { getDashboardStats, getAllTimeConversionRate } from '../repositories/availability-repository.js';
 import { getListingById } from '../repositories/listings-repository.js';
 import { getReservationsByPeriod } from '../repositories/reservation-repository.js';
+import { getAnalyticsSummary, getLatestTopPages, getLastSyncTime, hasAnalyticsData } from '../repositories/analytics-repository.js';
+import { syncAnalytics } from '../jobs/sync-analytics.js';
+import { ga4Client } from '../services/ga4-client.js';
 
 const router = express.Router();
 
@@ -287,6 +290,24 @@ router.get('/', (_req, res) => {
           <h3>Loading...</h3>
           <div class="value">...</div>
         </div>
+      </div>
+    </div>
+
+    <!-- Website Analytics (GA4) -->
+    <div class="section" id="analyticsSection" style="display: none;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h2 style="margin: 0;">📈 Website Analytics (Last 30 Days)</h2>
+        <button onclick="syncAnalytics()" id="syncAnalyticsBtn">🔄 Sync Now</button>
+      </div>
+      <div class="grid" id="analyticsGrid">
+        <div class="card">
+          <h3>Loading...</h3>
+          <div class="value">...</div>
+        </div>
+      </div>
+      <div id="topPagesSection" style="margin-top: 20px;">
+        <h3 style="margin-bottom: 15px; color: #555;">Top 10 Pages</h3>
+        <div id="topPagesTable">Loading...</div>
       </div>
     </div>
 
@@ -682,9 +703,128 @@ router.get('/', (_req, res) => {
       }
     }
 
+    // Load analytics data
+    async function loadAnalytics() {
+      try {
+        const res = await fetch('/admin/analytics-data');
+        const data = await res.json();
+
+        // Show/hide analytics section based on whether GA4 is enabled
+        const analyticsSection = document.getElementById('analyticsSection');
+        if (!data.enabled) {
+          analyticsSection.style.display = 'none';
+          return;
+        }
+
+        analyticsSection.style.display = 'block';
+
+        // Update analytics cards
+        const analyticsGrid = document.getElementById('analyticsGrid');
+
+        if (!data.hasData) {
+          analyticsGrid.innerHTML = \`
+            <div class="card" style="grid-column: 1 / -1;">
+              <h3>No Analytics Data</h3>
+              <div class="value" style="font-size: 16px;">Click "Sync Now" to fetch analytics from Google Analytics 4</div>
+            </div>
+          \`;
+          document.getElementById('topPagesTable').innerHTML = '';
+          return;
+        }
+
+        // Format duration as minutes:seconds
+        const avgDuration = data.summary.avgSessionDuration;
+        const minutes = Math.floor(avgDuration / 60);
+        const seconds = Math.round(avgDuration % 60);
+        const durationFormatted = \`\${minutes}m \${seconds}s\`;
+
+        analyticsGrid.innerHTML = \`
+          <div class="card" style="border-left-color: #4285f4;">
+            <h3>Pageviews</h3>
+            <div class="value">\${data.summary.totalPageviews.toLocaleString()}</div>
+            <div class="subvalue">Last 30 days</div>
+          </div>
+          <div class="card" style="border-left-color: #34a853;">
+            <h3>Users</h3>
+            <div class="value">\${data.summary.totalUsers.toLocaleString()}</div>
+            <div class="subvalue">Unique visitors</div>
+          </div>
+          <div class="card" style="border-left-color: #fbbc05;">
+            <h3>Sessions</h3>
+            <div class="value">\${data.summary.totalSessions.toLocaleString()}</div>
+            <div class="subvalue">Total sessions</div>
+          </div>
+          <div class="card" style="border-left-color: #ea4335;">
+            <h3>Avg. Session Duration</h3>
+            <div class="value">\${durationFormatted}</div>
+            <div class="subvalue">Per session</div>
+          </div>
+        \`;
+
+        // Update top pages table
+        const topPagesTable = document.getElementById('topPagesTable');
+
+        if (data.topPages.length === 0) {
+          topPagesTable.innerHTML = '<p style="color: #888;">No page data available</p>';
+          return;
+        }
+
+        topPagesTable.innerHTML = \`
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 50px;">#</th>
+                <th>Page Path</th>
+                <th>Title</th>
+                <th style="text-align: right;">Pageviews</th>
+              </tr>
+            </thead>
+            <tbody>
+              \${data.topPages.map((page, index) => \`
+                <tr>
+                  <td>\${index + 1}</td>
+                  <td style="font-family: monospace; font-size: 13px;">\${page.page_path}</td>
+                  <td>\${page.page_title || '-'}</td>
+                  <td style="text-align: right; font-weight: 600;">\${page.pageviews.toLocaleString()}</td>
+                </tr>
+              \`).join('')}
+            </tbody>
+          </table>
+          \${data.lastSync ? \`<p style="margin-top: 10px; color: #888; font-size: 12px;">Last synced: \${new Date(data.lastSync).toLocaleString()}</p>\` : ''}
+        \`;
+      } catch (error) {
+        console.error('Failed to load analytics:', error);
+      }
+    }
+
+    // Sync analytics manually
+    async function syncAnalytics() {
+      const btn = document.getElementById('syncAnalyticsBtn');
+      btn.disabled = true;
+      btn.innerHTML = '🔄 Syncing... <span class="loading"></span>';
+
+      try {
+        const res = await fetch('/admin/sync/analytics', { method: 'POST' });
+        const data = await res.json();
+
+        if (data.success) {
+          showMessage(\`✅ Analytics synced (\${data.recordsSynced} records)\`, 'success');
+          loadAnalytics();
+        } else {
+          showMessage('❌ Sync failed: ' + (data.error || 'Unknown error'), 'error');
+        }
+      } catch (error) {
+        showMessage('❌ Sync failed: ' + error.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '🔄 Sync Now';
+      }
+    }
+
     // Load initial data
     loadHealth();
     loadDashboard();
+    loadAnalytics();
     setInterval(loadHealth, 10000); // Refresh every 10 seconds
 
     // Only auto-refresh dashboard for future data (not past)
@@ -1374,6 +1514,62 @@ router.get('/users', (_req, res) => {
 </body>
 </html>
   `);
+});
+
+/**
+ * GET /admin/analytics-data
+ * Get analytics data for the dashboard
+ */
+router.get('/analytics-data', (_req, res, next) => {
+  try {
+    const enabled = ga4Client.isEnabled();
+
+    if (!enabled) {
+      return res.json({
+        enabled: false,
+        hasData: false,
+        summary: null,
+        topPages: [],
+        lastSync: null,
+      });
+    }
+
+    const hasData = hasAnalyticsData();
+    const summary = hasData ? getAnalyticsSummary(30) : null;
+    const topPages = hasData ? getLatestTopPages() : [];
+    const lastSync = getLastSyncTime();
+
+    return res.json({
+      enabled,
+      hasData,
+      summary,
+      topPages,
+      lastSync,
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+/**
+ * POST /admin/sync/analytics
+ * Trigger manual analytics sync
+ */
+router.post('/sync/analytics', async (_req, res, next) => {
+  try {
+    logger.info('Manual analytics sync triggered via admin');
+    const result = await syncAnalytics(30);
+
+    res.json({
+      success: result.success,
+      recordsSynced: result.recordsSynced,
+      topPagesUpdated: result.topPagesUpdated,
+      durationMs: result.durationMs,
+      error: result.error,
+    });
+  } catch (error) {
+    next(error);
+  }
 });
 
 export default router;

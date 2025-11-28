@@ -8,6 +8,7 @@ import { config } from '../config/index.js';
 import { getListingById } from '../repositories/listings-repository.js';
 import { getAllTimeStats, getOccupancyRate, getAllTimeConversionRate } from '../repositories/availability-repository.js';
 import { getReservationsByPeriod } from '../repositories/reservation-repository.js';
+import { getAnalyticsSummary, hasAnalyticsData } from '../repositories/analytics-repository.js';
 import { sendEmail } from '../services/email-service.js';
 import { generateWeeklySummaryEmail } from '../services/email-templates.js';
 import logger from '../utils/logger.js';
@@ -87,6 +88,18 @@ export async function sendWeeklySummaryEmail(): Promise<WeeklyEmailResult> {
     const allUpcomingBookings = getReservationsByPeriod(propertyId, 365, 'future');
     const upcomingBookings = allUpcomingBookings.slice(0, 5);
 
+    // Get website analytics if GA4 is enabled and has data
+    let websiteAnalytics = undefined;
+    if (config.ga4Enabled && hasAnalyticsData()) {
+      const analyticsSummary = getAnalyticsSummary(30);
+      websiteAnalytics = {
+        enabled: true,
+        uniqueVisitors: analyticsSummary.totalUsers,
+        pageviews: analyticsSummary.totalPageviews,
+        sessions: analyticsSummary.totalSessions,
+      };
+    }
+
     // Prepare data for email template
     const emailData = {
       propertyTitle: listing.nickname || listing.title,
@@ -108,6 +121,7 @@ export async function sendWeeklySummaryEmail(): Promise<WeeklyEmailResult> {
         total: conversionData.totalCount,
         rate: conversionData.conversionRate,
       },
+      websiteAnalytics,
       upcomingBookings: upcomingBookings.map(r => ({
         reservationId: r.reservation_id,
         checkIn: r.check_in,

@@ -39,12 +39,20 @@ interface ConversionRate {
   rate: number;
 }
 
+interface WebsiteAnalytics {
+  enabled: boolean;
+  uniqueVisitors: number;
+  pageviews: number;
+  sessions: number;
+}
+
 interface WeeklySummaryData {
   propertyTitle: string;
   currency: string;
   allTimeStats: AllTimeStats;
   occupancyRates: OccupancyRates;
   conversionRate: ConversionRate;
+  websiteAnalytics?: WebsiteAnalytics;
   upcomingBookings: Booking[];
 }
 
@@ -74,7 +82,7 @@ function formatDate(dateStr: string): string {
  * Generate weekly summary email HTML
  */
 export function generateWeeklySummaryEmail(data: WeeklySummaryData): { html: string; text: string } {
-  const { propertyTitle, currency, allTimeStats, occupancyRates, conversionRate, upcomingBookings } = data;
+  const { propertyTitle, currency, allTimeStats, occupancyRates, conversionRate, websiteAnalytics, upcomingBookings } = data;
 
   const html = `
 <!DOCTYPE html>
@@ -250,6 +258,25 @@ export function generateWeeklySummaryEmail(data: WeeklySummaryData): { html: str
       </div>
     </div>
 
+    ${websiteAnalytics?.enabled ? `
+    <!-- WEBSITE ANALYTICS SECTION -->
+    <h2 style="margin-top: 40px; border-bottom: 2px solid #4285f4; padding-bottom: 8px;">📈 Website Analytics (Last 30 Days)</h2>
+    <div class="stats-grid">
+      <div class="stat-card" style="border-left-color: #4285f4;">
+        <div class="stat-label">Unique Visitors</div>
+        <div class="stat-value" style="color: #4285f4;">${websiteAnalytics.uniqueVisitors.toLocaleString()}</div>
+      </div>
+      <div class="stat-card" style="border-left-color: #34a853;">
+        <div class="stat-label">Page Views</div>
+        <div class="stat-value">${websiteAnalytics.pageviews.toLocaleString()}</div>
+      </div>
+      <div class="stat-card" style="border-left-color: #fbbc05;">
+        <div class="stat-label">Sessions</div>
+        <div class="stat-value">${websiteAnalytics.sessions.toLocaleString()}</div>
+      </div>
+    </div>
+    ` : ''}
+
     <!-- UPCOMING BOOKINGS SECTION -->
     <h2 style="margin-top: 40px; border-bottom: 2px solid #3498db; padding-bottom: 8px;">📅 Next 5 Upcoming Bookings</h2>
     ${upcomingBookings.length > 0 ? `
@@ -319,7 +346,14 @@ ${'='.repeat(60)}
 - Pending/Other: ${conversionRate.total - conversionRate.confirmed}
 - Conversion Rate: ${conversionRate.rate}% (${conversionRate.confirmed} of ${conversionRate.total})
 
-NEXT 5 UPCOMING BOOKINGS
+${websiteAnalytics?.enabled ? `WEBSITE ANALYTICS (Last 30 Days)
+${'='.repeat(60)}
+
+- Unique Visitors: ${websiteAnalytics.uniqueVisitors.toLocaleString()}
+- Page Views: ${websiteAnalytics.pageviews.toLocaleString()}
+- Sessions: ${websiteAnalytics.sessions.toLocaleString()}
+
+` : ''}NEXT 5 UPCOMING BOOKINGS
 ${'='.repeat(60)}
 
 ${upcomingBookings.length > 0

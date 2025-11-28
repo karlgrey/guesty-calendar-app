@@ -6,6 +6,7 @@
 
 import { runETLJob } from './etl-job.js';
 import { sendWeeklySummaryEmail, shouldSendWeeklyEmail } from './weekly-email.js';
+import { syncAnalytics, shouldSyncAnalytics } from './sync-analytics.js';
 import { config } from '../config/index.js';
 import logger from '../utils/logger.js';
 
@@ -27,6 +28,8 @@ interface SchedulerState {
   lastWeeklyEmailSent: Date | null;
   dailyForceIntervalId: NodeJS.Timeout | null;
   lastDailyForceSync: Date | null;
+  analyticsIntervalId: NodeJS.Timeout | null;
+  lastAnalyticsSync: Date | null;
 }
 
 const state: SchedulerState = {
@@ -44,6 +47,8 @@ const state: SchedulerState = {
   lastWeeklyEmailSent: null,
   dailyForceIntervalId: null,
   lastDailyForceSync: null,
+  analyticsIntervalId: null,
+  lastAnalyticsSync: null,
 };
 
 /**
@@ -147,6 +152,38 @@ async function checkAndSendWeeklyEmail() {
     }
   } catch (error) {
     logger.error({ error }, 'Error in weekly email check');
+  }
+}
+
+/**
+ * Check and sync GA4 analytics if conditions are met
+ */
+async function checkAndSyncAnalytics() {
+  try {
+    if (!config.ga4Enabled) {
+      return;
+    }
+
+    // Check if we should sync now
+    if (shouldSyncAnalytics()) {
+      // Check if we already synced today (to prevent duplicate syncs)
+      const today = new Date().toDateString();
+      const lastSync = state.lastAnalyticsSync?.toDateString();
+
+      if (lastSync === today) {
+        logger.debug('Analytics already synced today, skipping');
+        return;
+      }
+
+      logger.info('📊 Analytics sync conditions met, syncing...');
+      const result = await syncAnalytics(30); // Sync last 30 days
+
+      if (result.success) {
+        state.lastAnalyticsSync = new Date();
+      }
+    }
+  } catch (error) {
+    logger.error({ error }, 'Error in analytics sync check');
   }
 }
 
@@ -291,6 +328,23 @@ export function startScheduler() {
   // Check every hour
   const hourlyInterval = 60 * 60 * 1000; // 1 hour
   state.dailyForceIntervalId = setInterval(checkAndRunDailyForceSync, hourlyInterval);
+
+  // Start GA4 analytics sync scheduler (runs every hour, executes at configured hour)
+  if (config.ga4Enabled) {
+    logger.info(
+      {
+        ga4PropertyId: config.ga4PropertyId,
+        ga4SyncHour: config.ga4SyncHour,
+      },
+      '📊 Starting GA4 analytics sync scheduler'
+    );
+
+    // Check immediately on start
+    checkAndSyncAnalytics();
+
+    // Check every hour
+    state.analyticsIntervalId = setInterval(checkAndSyncAnalytics, hourlyInterval);
+  }
 }
 
 /**
@@ -317,6 +371,11 @@ export function stopScheduler() {
     state.dailyForceIntervalId = null;
   }
 
+  if (state.analyticsIntervalId) {
+    clearInterval(state.analyticsIntervalId);
+    state.analyticsIntervalId = null;
+  }
+
   state.running = false;
   state.nextRun = null;
 
@@ -338,6 +397,7 @@ export function getSchedulerStatus() {
     failureCount: state.failureCount,
     intervalMinutes: getJobInterval() / (60 * 1000),
     lastDailyForceSync: state.lastDailyForceSync?.toISOString() || null,
+    lastAnalyticsSync: state.lastAnalyticsSync?.toISOString() || null,
   };
 }
 

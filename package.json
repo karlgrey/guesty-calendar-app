@@ -25,6 +25,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@google-analytics/data": "^5.2.1",
     "bcrypt": "^6.0.0",
     "better-sqlite3": "^11.7.0",
     "bottleneck": "^2.19.5",

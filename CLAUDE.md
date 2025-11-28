@@ -180,6 +180,60 @@ npx tsx src/scripts/test-email.ts
 - Inquiry sync runs automatically every 30 minutes as part of ETL job
 - Admin dashboard and weekly email both display conversion statistics
 
+### Google Analytics 4 Integration
+The application integrates with Google Analytics 4 to display website analytics in the admin dashboard.
+
+**Features:**
+- Pageviews, users, sessions, and average session duration
+- Top 10 pages by pageviews
+- Daily automatic sync from GA4 API
+- Manual sync button in admin dashboard
+
+**Configuration (`.env`):**
+```bash
+# Google Analytics 4 Configuration
+GA4_ENABLED=true
+GA4_PROPERTY_ID=513788097           # Your GA4 Property ID (numeric)
+GA4_KEY_FILE_PATH=./data/ga4-service-account.json  # Path to service account key
+GA4_SYNC_HOUR=3                     # Hour to sync (0-23, in property timezone)
+```
+
+**Setup Steps:**
+1. **Create Service Account** in Google Cloud Console:
+   - Go to IAM & Admin → Service Accounts
+   - Create new service account
+   - Download JSON key file
+   - Save as `data/ga4-service-account.json`
+
+2. **Grant GA4 Access:**
+   - Go to GA4 Admin → Property Access Management
+   - Add service account email (from JSON file)
+   - Grant "Viewer" role
+
+3. **Configure Environment:**
+   - Set `GA4_ENABLED=true`
+   - Set `GA4_PROPERTY_ID` (from GA4 Admin → Property Settings)
+   - Set `GA4_KEY_FILE_PATH` to point to your JSON key file
+
+**How It Works:**
+1. **Scheduler** (`src/jobs/scheduler.ts`) checks hourly if it's time to sync
+2. **Sync Job** (`src/jobs/sync-analytics.ts`) fetches last 30 days of data from GA4
+3. **GA4 Client** (`src/services/ga4-client.ts`) uses Google Analytics Data API
+4. **Repository** (`src/repositories/analytics-repository.ts`) stores data in SQLite
+
+**Testing:**
+```bash
+# Test GA4 connection and sync
+npx tsx src/scripts/test-ga4-sync.ts
+```
+
+**Files:**
+- `src/services/ga4-client.ts` - GA4 Data API client
+- `src/jobs/sync-analytics.ts` - Sync job with scheduling
+- `src/repositories/analytics-repository.ts` - Database operations
+- `src/db/migrations/004_add_analytics_table.sql` - Database schema
+- `src/scripts/test-ga4-sync.ts` - Manual testing script
+
 ## Key Patterns
 
 ### Database Operations
@@ -655,6 +709,12 @@ Email service (required for weekly reports):
 - `WEEKLY_REPORT_RECIPIENTS` - Comma-separated email list
 - `WEEKLY_REPORT_DAY` - Day of week (0=Sunday, 1=Monday, etc.)
 - `WEEKLY_REPORT_HOUR` - Hour in property timezone (0-23)
+
+Google Analytics 4 (optional, for website analytics):
+- `GA4_ENABLED` - Enable/disable GA4 integration (TRUE/FALSE)
+- `GA4_PROPERTY_ID` - GA4 Property ID (numeric, from GA4 Admin)
+- `GA4_KEY_FILE_PATH` - Path to service account JSON key file
+- `GA4_SYNC_HOUR` - Hour to sync analytics (0-23, default: 3)
 
 Common optional:
 - `PORT` - Server port (default: 3000)

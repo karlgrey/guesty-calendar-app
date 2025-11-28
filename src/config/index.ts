@@ -90,6 +90,16 @@ const configSchema = z.object({
   ),
   weeklyReportDay: z.coerce.number().int().min(0).max(6).default(1), // 0 = Sunday, 1 = Monday, etc.
   weeklyReportHour: z.coerce.number().int().min(0).max(23).default(9), // 9 AM
+
+  // Google Analytics 4 Configuration
+  ga4PropertyId: z.string().optional(),
+  ga4KeyFilePath: z.string().optional(),
+  ga4Enabled: z.string().optional().transform((val) => {
+    if (!val) return false;
+    const lower = String(val).toLowerCase();
+    return lower === 'true' || lower === '1' || lower === 'yes';
+  }),
+  ga4SyncHour: z.coerce.number().int().min(0).max(23).default(3), // 3 AM daily sync
 });
 
 /**
@@ -132,6 +142,10 @@ function parseConfig() {
     weeklyReportRecipients: process.env.WEEKLY_REPORT_RECIPIENTS,
     weeklyReportDay: process.env.WEEKLY_REPORT_DAY,
     weeklyReportHour: process.env.WEEKLY_REPORT_HOUR,
+    ga4PropertyId: process.env.GA4_PROPERTY_ID,
+    ga4KeyFilePath: process.env.GA4_KEY_FILE_PATH,
+    ga4Enabled: process.env.GA4_ENABLED,
+    ga4SyncHour: process.env.GA4_SYNC_HOUR,
   };
 
   try {
