@@ -9,7 +9,7 @@ import { config } from '../config/index.js';
 import { ExternalApiError } from '../utils/errors.js';
 import { logApiCall } from '../utils/logger.js';
 import logger from '../utils/logger.js';
-import type { GuestyListing, GuestyCalendarResponse } from '../types/guesty.js';
+import type { GuestyListing, GuestyCalendarResponse, GuestyGuest } from '../types/guesty.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -555,6 +555,32 @@ export class GuestyClient {
     logger.info({ listingId, startDate, endDate: endDateStr }, 'Fetching 12 months of calendar data');
 
     return this.getCalendar(listingId, startDate, endDateStr);
+  }
+
+  /**
+   * Fetch guest details by ID
+   */
+  async getGuest(guestId: string): Promise<GuestyGuest> {
+    logger.debug({ guestId }, 'Fetching guest from Guesty API');
+
+    const guest = await this.request<GuestyGuest>(`/guests-crud/${guestId}`);
+
+    logger.debug({ guestId, fullName: guest.fullName }, 'Guest fetched successfully');
+
+    return guest;
+  }
+
+  /**
+   * Fetch reservation details by ID (includes money and guest data)
+   */
+  async getReservation(reservationId: string): Promise<any> {
+    logger.debug({ reservationId }, 'Fetching reservation from Guesty API');
+
+    const reservation = await this.request<any>(`/reservations/${reservationId}`);
+
+    logger.debug({ reservationId, status: reservation.status }, 'Reservation fetched successfully');
+
+    return reservation;
   }
 
   /**

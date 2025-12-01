@@ -18,6 +18,8 @@ import { getReservationsByPeriod } from '../repositories/reservation-repository.
 import { getAnalyticsSummary, getLatestTopPages, getLastSyncTime, hasAnalyticsData } from '../repositories/analytics-repository.js';
 import { syncAnalytics } from '../jobs/sync-analytics.js';
 import { ga4Client } from '../services/ga4-client.js';
+import { createOrGetDocument, refreshDocument } from '../services/document-service.js';
+import { getDocumentsByReservation, listDocuments } from '../repositories/document-repository.js';
 
 const router = express.Router();
 
@@ -163,6 +165,51 @@ router.get('/', (_req, res) => {
     .status.stopped {
       background: #f8d7da;
       color: #721c24;
+    }
+
+    /* Document buttons */
+    .doc-btn {
+      padding: 4px 8px;
+      font-size: 11px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-right: 4px;
+      transition: background 0.2s, opacity 0.2s;
+    }
+
+    .doc-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+
+    .quote-btn {
+      background: #17a2b8;
+      color: white;
+    }
+
+    .quote-btn:hover:not(:disabled) {
+      background: #138496;
+    }
+
+    .invoice-btn {
+      background: #28a745;
+      color: white;
+    }
+
+    .invoice-btn:hover:not(:disabled) {
+      background: #218838;
+    }
+
+    .refresh-btn {
+      background: #6c757d;
+      color: white;
+      font-size: 10px;
+      padding: 4px 6px;
+    }
+
+    .refresh-btn:hover:not(:disabled) {
+      background: #5a6268;
     }
 
     table {
@@ -590,6 +637,70 @@ router.get('/', (_req, res) => {
       }
     }
 
+    // Generate document (quote or invoice) - uses cached data if exists
+    async function generateDocument(reservationId, documentType) {
+      await downloadDocument('/admin/documents/generate', reservationId, documentType);
+    }
+
+    // Refresh document with fresh data from Guesty
+    async function refreshDocument(reservationId, documentType) {
+      await downloadDocument('/admin/documents/refresh', reservationId, documentType, true);
+    }
+
+    // Common download function for documents
+    async function downloadDocument(endpoint, reservationId, documentType, isRefresh = false) {
+      const btn = event.target;
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = isRefresh ? 'Aktualisiere...' : 'Wird erstellt...';
+
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ reservationId, documentType }),
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.error || 'Failed to generate document');
+        }
+
+        // Get the PDF blob and download it
+        const blob = await response.blob();
+        const documentNumber = response.headers.get('X-Document-Number') || 'document';
+        const filename = documentType === 'quote'
+          ? \`Angebot_\${documentNumber}.pdf\`
+          : \`Rechnung_\${documentNumber}.pdf\`;
+
+        // Create download link
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+
+        // Show success indicator briefly
+        btn.textContent = isRefresh ? 'Aktualisiert!' : 'Fertig!';
+        btn.style.background = '#28a745';
+        setTimeout(() => {
+          btn.textContent = originalText;
+          btn.style.background = '';
+          btn.disabled = false;
+        }, 2000);
+      } catch (error) {
+        console.error('Failed to generate document:', error);
+        alert('Fehler beim Erstellen des Dokuments: ' + error.message);
+        btn.textContent = originalText;
+        btn.disabled = false;
+      }
+    }
+
     async function loadDashboard() {
       try {
         const res = await fetch(\`/admin/dashboard-data?period=\${currentPeriod}\`);
@@ -669,6 +780,7 @@ router.get('/', (_req, res) => {
                 <th>Status</th>
                 <th>Source</th>
                 <th>Total Price</th>
+                <th>Documents</th>
               </tr>
             </thead>
             <tbody>
@@ -690,6 +802,20 @@ router.get('/', (_req, res) => {
                     <td><span class="status \${statusClass}">\${statusText}</span></td>
                     <td>\${booking.source}</td>
                     <td style="font-weight: 600;">\${data.listing.currency} \${Math.round(booking.totalPrice).toLocaleString()}</td>
+                    <td>
+                      <button class="doc-btn quote-btn" onclick="generateDocument('\${booking.reservationId}', 'quote')" title="Angebot erstellen/laden">
+                        Angebot
+                      </button>
+                      <button class="doc-btn invoice-btn" onclick="generateDocument('\${booking.reservationId}', 'invoice')" title="Rechnung erstellen/laden">
+                        Rechnung
+                      </button>
+                      <button class="doc-btn refresh-btn" onclick="refreshDocument('\${booking.reservationId}', 'quote')" title="Angebot mit aktuellen Guesty-Daten neu generieren">
+                        ↻ A
+                      </button>
+                      <button class="doc-btn refresh-btn" onclick="refreshDocument('\${booking.reservationId}', 'invoice')" title="Rechnung mit aktuellen Guesty-Daten neu generieren">
+                        ↻ R
+                      </button>
+                    </td>
                   </tr>
                 \`;
               }).join('')}
@@ -1566,6 +1692,146 @@ router.post('/sync/analytics', async (_req, res, next) => {
       topPagesUpdated: result.topPagesUpdated,
       durationMs: result.durationMs,
       error: result.error,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// ============================================================================
+// DOCUMENT GENERATION ROUTES
+// ============================================================================
+
+/**
+ * POST /admin/documents/generate
+ * Generate a quote or invoice for a reservation
+ */
+router.post('/documents/generate', async (req, res, next) => {
+  try {
+    const { reservationId, documentType } = req.body;
+
+    if (!reservationId) {
+      res.status(400).json({ error: 'reservationId is required' });
+      return;
+    }
+
+    if (!documentType || !['quote', 'invoice'].includes(documentType)) {
+      res.status(400).json({ error: 'documentType must be "quote" or "invoice"' });
+      return;
+    }
+
+    logger.info({ reservationId, documentType }, 'Document generation requested');
+
+    const result = await createOrGetDocument({
+      reservationId,
+      documentType,
+    });
+
+    // Send PDF as response
+    const filename = documentType === 'quote'
+      ? `Angebot_${result.document.documentNumber}.pdf`
+      : `Rechnung_${result.document.documentNumber}.pdf`;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('X-Document-Number', result.document.documentNumber);
+    res.setHeader('X-Document-Is-New', result.isNew ? 'true' : 'false');
+    res.send(result.pdf);
+  } catch (error) {
+    logger.error({ error }, 'Failed to generate document');
+    next(error);
+  }
+});
+
+/**
+ * POST /admin/documents/refresh
+ * Refresh document with fresh data from Guesty API (keeps document number)
+ */
+router.post('/documents/refresh', async (req, res, next) => {
+  try {
+    const { reservationId, documentType } = req.body;
+
+    if (!reservationId) {
+      res.status(400).json({ error: 'reservationId is required' });
+      return;
+    }
+
+    if (!documentType || !['quote', 'invoice'].includes(documentType)) {
+      res.status(400).json({ error: 'documentType must be "quote" or "invoice"' });
+      return;
+    }
+
+    logger.info({ reservationId, documentType }, 'Document refresh requested');
+
+    const result = await refreshDocument({
+      reservationId,
+      documentType,
+    });
+
+    // Send PDF as response
+    const filename = documentType === 'quote'
+      ? `Angebot_${result.document.documentNumber}.pdf`
+      : `Rechnung_${result.document.documentNumber}.pdf`;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('X-Document-Number', result.document.documentNumber);
+    res.setHeader('X-Document-Is-New', result.isNew ? 'true' : 'false');
+    res.send(result.pdf);
+  } catch (error) {
+    logger.error({ error }, 'Failed to refresh document');
+    next(error);
+  }
+});
+
+/**
+ * GET /admin/documents/list
+ * List all generated documents
+ */
+router.get('/documents/list', (_req, res, next) => {
+  try {
+    const documents = listDocuments(undefined, 100);
+
+    res.json({
+      success: true,
+      documents: documents.map(doc => ({
+        id: doc.id,
+        documentNumber: doc.documentNumber,
+        documentType: doc.documentType,
+        reservationId: doc.reservationId,
+        customerName: doc.customer.name,
+        customerCompany: doc.customer.company,
+        checkIn: doc.checkIn,
+        checkOut: doc.checkOut,
+        total: doc.total / 100, // Convert cents to euros
+        currency: doc.currency,
+        createdAt: doc.createdAt,
+      })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /admin/documents/reservation/:reservationId
+ * Get all documents for a specific reservation
+ */
+router.get('/documents/reservation/:reservationId', (req, res, next) => {
+  try {
+    const { reservationId } = req.params;
+    const documents = getDocumentsByReservation(reservationId);
+
+    res.json({
+      success: true,
+      documents: documents.map(doc => ({
+        id: doc.id,
+        documentNumber: doc.documentNumber,
+        documentType: doc.documentType,
+        total: doc.total / 100,
+        currency: doc.currency,
+        createdAt: doc.createdAt,
+      })),
     });
   } catch (error) {
     next(error);

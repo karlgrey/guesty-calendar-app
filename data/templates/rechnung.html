@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rechnung {{documentNumber}}</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    @page {
+      size: A4;
+      margin: 0;
+    }
+
+    body {
+      font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+      font-size: 10pt;
+      line-height: 1.4;
+      color: #333;
+      margin: 0;
+      padding: 0;
+    }
+
+    .page {
+      width: 210mm;
+      height: 297mm;
+      padding: 20mm 20mm 35mm 20mm;
+      background: white;
+      position: relative;
+      overflow: hidden;
+      page-break-after: avoid;
+      page-break-inside: avoid;
+    }
+
+    /* Header */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 12mm;
+    }
+
+    .logo {
+      width: 27mm;
+    }
+
+    .logo img {
+      max-width: 100%;
+      height: auto;
+    }
+
+    .company-info {
+      text-align: right;
+      font-size: 9pt;
+    }
+
+    .company-info .company-name {
+      font-weight: bold;
+      font-size: 11pt;
+    }
+
+    /* Sender line */
+    .sender-line {
+      font-size: 7pt;
+      color: #666;
+      border-bottom: 1px solid #666;
+      padding-bottom: 2mm;
+      margin-bottom: 4mm;
+    }
+
+    /* Recipient */
+    .recipient {
+      min-height: 30mm;
+      margin-bottom: 8mm;
+    }
+
+    .recipient .company {
+      font-weight: bold;
+    }
+
+    /* Document title */
+    .document-title {
+      font-size: 18pt;
+      font-weight: bold;
+      margin-bottom: 4mm;
+    }
+
+    /* Intro text */
+    .intro-text {
+      margin-bottom: 6mm;
+    }
+
+    /* Meta info */
+    .meta-info {
+      display: flex;
+      margin-bottom: 6mm;
+      border-bottom: 1px solid #ddd;
+      padding-bottom: 2mm;
+    }
+
+    .meta-item {
+      flex: 1;
+    }
+
+    .meta-label {
+      font-size: 8pt;
+      color: #666;
+    }
+
+    .meta-value {
+      font-weight: bold;
+    }
+
+    /* Items table */
+    .items-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 4mm;
+    }
+
+    .items-table th {
+      text-align: left;
+      padding: 2mm;
+      border-bottom: 2px solid #333;
+      font-size: 9pt;
+    }
+
+    .items-table th.number {
+      text-align: right;
+    }
+
+    .items-table td {
+      padding: 2mm;
+      border-bottom: 1px solid #ddd;
+      vertical-align: top;
+    }
+
+    .items-table td.number {
+      text-align: right;
+    }
+
+    .items-table .description {
+      font-weight: bold;
+    }
+
+    .items-table .subdescription {
+      font-weight: normal;
+      font-size: 9pt;
+      color: #666;
+    }
+
+    /* Totals */
+    .totals {
+      width: 100%;
+      margin-top: 2mm;
+    }
+
+    .totals-row {
+      display: flex;
+      justify-content: flex-end;
+      padding: 1mm 0;
+    }
+
+    .totals-label {
+      width: 60mm;
+      text-align: right;
+      padding-right: 5mm;
+    }
+
+    .totals-value {
+      width: 30mm;
+      text-align: right;
+    }
+
+    .totals-row.total {
+      font-weight: bold;
+      border-top: 2px solid #333;
+      padding-top: 2mm;
+      margin-top: 1mm;
+    }
+
+    /* Guest notes */
+    .guest-notes {
+      margin-top: 4mm;
+      padding: 3mm;
+      background: #f5f5f5;
+      font-size: 9pt;
+      font-style: italic;
+      border-left: 3px solid #ccc;
+    }
+
+    /* Payment terms */
+    .payment-terms {
+      margin-top: 6mm;
+      padding: 3mm;
+      background: #f9f9f9;
+      font-size: 9pt;
+    }
+
+    /* Closing text */
+    .closing-text {
+      margin-top: 4mm;
+    }
+
+    /* Footer - fixed at bottom with proper spacing */
+    .footer {
+      position: absolute;
+      bottom: 10mm;
+      left: 20mm;
+      right: 20mm;
+      font-size: 7pt;
+      color: #666;
+      display: flex;
+      justify-content: space-between;
+      border-top: 1px solid #ddd;
+      padding-top: 3mm;
+    }
+
+    .footer-col {
+      flex: 1;
+    }
+
+    .footer-col.center {
+      text-align: center;
+    }
+
+    .footer-col.right {
+      text-align: right;
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <!-- Header -->
+    <div class="header">
+      <div class="logo">
+        <img src="{{logoBase64}}" alt="Farmhouse Prasser">
+      </div>
+      <div class="company-info">
+        <div class="company-name">Farmhouse Prasser</div>
+        <div>Schmachtenhagener Str 3D</div>
+        <div>16151 Oranienburg</div>
+        <div>Tel.: +491603611701</div>
+        <div>booking@remoterepublic.com</div>
+        <div>https://farmhouse-prasser.de</div>
+      </div>
+    </div>
+
+    <!-- Sender line -->
+    <div class="sender-line">
+      Farmhouse Prasser, Schmachtenhagener Str 3D, 16151 Oranienburg
+    </div>
+
+    <!-- Recipient -->
+    <div class="recipient">
+      {{#if customer.company}}
+      <div class="company">{{customer.company}}</div>
+      {{/if}}
+      {{#if customer.name}}
+      <div>{{customer.name}}</div>
+      {{/if}}
+      {{#if customer.street}}
+      <div>{{customer.street}}</div>
+      {{/if}}
+      {{#if customer.city}}
+      <div>{{#if customer.zip}}{{customer.zip}} {{/if}}{{customer.city}}</div>
+      {{/if}}
+    </div>
+
+    <!-- Document title -->
+    <div class="document-title">Rechnung</div>
+
+    <!-- Intro text -->
+    <div class="intro-text">
+      Für euren Aufenthalt im Farmhouse Prasser vom {{checkInFormatted}} - {{checkOutFormatted}} stellen wir euch wie folgt in Rechnung.
+    </div>
+
+    <!-- Meta info -->
+    <div class="meta-info">
+      <div class="meta-item">
+        <div class="meta-label">Rechnungsnr.:</div>
+        <div class="meta-value">{{documentNumber}}</div>
+      </div>
+      <div class="meta-item">
+        <div class="meta-label">Kundennr.:</div>
+        <div class="meta-value">{{customerNumber}}</div>
+      </div>
+      <div class="meta-item">
+        <div class="meta-label">Datum:</div>
+        <div class="meta-value">{{dateFormatted}}</div>
+      </div>
+      <div class="meta-item">
+        <div class="meta-label">Leistungszeitraum:</div>
+        <div class="meta-value">{{servicePeriodFormatted}}</div>
+      </div>
+    </div>
+
+    <!-- Items table -->
+    <table class="items-table">
+      <thead>
+        <tr>
+          <th style="width: 8mm;">Pos.</th>
+          <th>Bezeichnung</th>
+          <th class="number" style="width: 15mm;">Menge</th>
+          <th style="width: 20mm;">Einheit</th>
+          <th class="number" style="width: 22mm;">Einzel €</th>
+          <th class="number" style="width: 22mm;">Gesamt €</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>1</td>
+          <td>
+            <div class="description">Unterkunft Farmhouse Prasser inkl. Saunanutzung</div>
+            <div class="subdescription">Inkl. {{guestsCount}} Personen</div>
+          </td>
+          <td class="number">{{nights}}</td>
+          <td>Tage</td>
+          <td class="number">{{accommodationRateFormatted}}</td>
+          <td class="number">{{accommodationTotalFormatted}}</td>
+        </tr>
+        {{#if hasExtraGuests}}
+        <tr>
+          <td>2</td>
+          <td>
+            <div class="description">Unterkunft Farmhouse Prasser zusätzliche Person</div>
+          </td>
+          <td class="number">{{extraGuestNights}}</td>
+          <td>Pers.-Tage</td>
+          <td class="number">{{extraGuestRateFormatted}}</td>
+          <td class="number">{{extraGuestTotalFormatted}}</td>
+        </tr>
+        {{/if}}
+        <tr>
+          <td>{{#if hasExtraGuests}}3{{else}}2{{/if}}</td>
+          <td>
+            <div class="description">Pauschale Endreinigung</div>
+          </td>
+          <td class="number">1</td>
+          <td>Stück</td>
+          <td class="number">{{cleaningFeeFormatted}}</td>
+          <td class="number">{{cleaningFeeFormatted}}</td>
+        </tr>
+        {{#if hasDiscount}}
+        <tr>
+          <td>{{#if hasExtraGuests}}4{{else}}3{{/if}}</td>
+          <td>
+            <div class="description">Rabatt</div>
+          </td>
+          <td class="number">1</td>
+          <td>Stück</td>
+          <td class="number">{{discountTotalFormatted}}</td>
+          <td class="number">{{discountTotalFormatted}}</td>
+        </tr>
+        {{/if}}
+      </tbody>
+    </table>
+
+    <!-- Totals -->
+    <div class="totals">
+      <div class="totals-row">
+        <div class="totals-label">Zwischensumme (netto)</div>
+        <div class="totals-value">{{subtotalFormatted}}</div>
+      </div>
+      <div class="totals-row">
+        <div class="totals-label">Umsatzsteuer {{taxRate}} %</div>
+        <div class="totals-value">{{taxAmountFormatted}}</div>
+      </div>
+      <div class="totals-row total">
+        <div class="totals-label">Gesamtbetrag</div>
+        <div class="totals-value">{{totalFormatted}}</div>
+      </div>
+    </div>
+
+    {{#if guestNotes}}
+    <!-- Guest Notes -->
+    <div class="guest-notes">
+      {{guestNotes}}
+    </div>
+    {{/if}}
+
+    <!-- Payment terms -->
+    <div class="payment-terms">
+      50 % des Gesamtbetrags sind 30 Tage vor Anreise fällig, die restlichen 50 % spätestens 7 Tage vor Anreise.
+    </div>
+
+    <!-- Closing text -->
+    <div class="closing-text">
+      Vielen Dank für eure Buchung. Wir freuen uns auf euch.
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <div class="footer-col">
+        Farmhouse Prasser<br>
+        Schmachtenhagener Str 3D<br>
+        16151 Oranienburg<br>
+        Tel.: +491603611701<br>
+        booking@remoterepublic.com<br>
+        https://farmhouse-prasser.de
+      </div>
+      <div class="footer-col center">
+        USt-IdNr.: DE368254414<br>
+        Steuernummer: 31/341/00950
+      </div>
+      <div class="footer-col right">
+        Farmhouse Prasser<br>
+        Commerzbank GF-B48<br>
+        IBAN: DE65 1004 0048 0446 6777 05<br>
+        BIC: COBADEFFXXX
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -208,6 +208,38 @@ export interface GuestyQuote {
 }
 
 /**
+ * Guesty guest address
+ */
+export interface GuestyGuestAddress {
+  full?: string;
+  street?: string;
+  city?: string;
+  state?: string;
+  zipcode?: string;
+  country?: string;
+  countryCode?: string;
+}
+
+/**
+ * Guesty guest response from /guests-crud/{guestId}
+ */
+export interface GuestyGuest {
+  _id: string;
+  firstName?: string;
+  lastName?: string;
+  fullName?: string;
+  email?: string;
+  phone?: string;
+  address?: GuestyGuestAddress;
+  company?: string;
+  hometown?: string;
+  notes?: string;
+  tags?: string[];
+  nationality?: string;
+  preferredLanguage?: string;
+}
+
+/**
  * Guesty API error response
  */
 export interface GuestyError {

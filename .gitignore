@@ -17,7 +17,9 @@ build/
 *.db
 *.db-shm
 *.db-wal
-data/
+data/*.db
+data/generated/
+data/ga4-service-account.json
 
 # Logs
 logs/
@@ -43,3 +45,6 @@ coverage/
 tmp/
 temp/
 *.tmp
+
+# Local Claude Code config (deployment secrets)
+.claude/deploy.local
