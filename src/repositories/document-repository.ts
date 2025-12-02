@@ -199,27 +199,38 @@ export function getNextDocumentNumber(type: DocumentType): string {
 }
 
 /**
- * Get document number for invoice based on existing quote
- * If a quote exists for this reservation, use its number (without A- prefix)
+ * Get document number for a reservation based on existing documents
+ * If a quote or invoice already exists, use the same base number
  * Otherwise generate a new number
  */
-export function getInvoiceNumberForReservation(reservationId: string): string {
+export function getDocumentNumberForReservation(reservationId: string, type: DocumentType): string {
   const db = getDatabase();
 
-  // Check if a quote exists for this reservation
-  const existingQuote = db
-    .prepare('SELECT document_number FROM documents WHERE reservation_id = ? AND document_type = ? ORDER BY created_at DESC LIMIT 1')
-    .get(reservationId, 'quote') as { document_number: string } | undefined;
+  // Check if any document (quote or invoice) exists for this reservation
+  const existingDoc = db
+    .prepare('SELECT document_number, document_type FROM documents WHERE reservation_id = ? ORDER BY created_at ASC LIMIT 1')
+    .get(reservationId) as { document_number: string; document_type: string } | undefined;
 
-  if (existingQuote) {
-    // Convert quote number A-2025-0001 to invoice number 2025-0001
-    const invoiceNumber = existingQuote.document_number.replace(/^A-/, '');
-    logger.debug({ reservationId, quoteNumber: existingQuote.document_number, invoiceNumber }, 'Using quote number for invoice');
-    return invoiceNumber;
+  if (existingDoc) {
+    // Extract the base number (e.g., "2025-0001" from "A-2025-0001" or "2025-0001")
+    const baseNumber = existingDoc.document_number.replace(/^A-/, '');
+
+    // Format based on requested type
+    const newNumber = type === 'quote' ? `A-${baseNumber}` : baseNumber;
+
+    logger.debug({
+      reservationId,
+      existingNumber: existingDoc.document_number,
+      existingType: existingDoc.document_type,
+      newNumber,
+      newType: type
+    }, 'Using existing document number for new document');
+
+    return newNumber;
   }
 
-  // No quote exists, generate new number
-  return getNextDocumentNumber('invoice');
+  // No document exists, generate new number
+  return getNextDocumentNumber(type);
 }
 
 // ============================================================================
@@ -298,10 +309,8 @@ export function createDocument(data: DocumentData): Document {
 
   try {
     // Generate document number
-    // For invoices: use quote number if quote exists, otherwise generate new
-    const documentNumber = data.documentType === 'invoice'
-      ? getInvoiceNumberForReservation(data.reservationId)
-      : getNextDocumentNumber(data.documentType);
+    // Uses existing number if quote or invoice already exists for this reservation
+    const documentNumber = getDocumentNumberForReservation(data.reservationId, data.documentType);
 
     const stmt = db.prepare(`
       INSERT INTO documents (
