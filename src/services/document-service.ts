@@ -151,8 +151,9 @@ function extractPricingFromReservation(reservation: any, listing: any): {
   let extraGuestRate = euroToCents(money?.settingsSnapshot?.extraPersonFee || listing?.extra_person_fee || 100);
 
   // Look for extra guest fee in invoice items
+  // Guesty uses 'EPF' as normalType for Extra Person Fee
   const extraGuestItem = money?.invoiceItems?.find((item: any) =>
-    item.normalType === 'EXTRA_PERSON_FEE' || item.type === 'EXTRA_PERSON_FEE'
+    item.normalType === 'EPF' || item.normalType === 'EXTRA_PERSON_FEE' || item.type === 'EXTRA_PERSON_FEE'
   );
   if (extraGuestItem) {
     extraGuestTotal = euroToCents(extraGuestItem.amount || 0);

@@ -217,17 +217,22 @@ export function getReservationsByPeriod(
       startDate.setDate(startDate.getDate() - days);
       const startDateStr = startDate.toISOString().split('T')[0];
 
+      // Use date() function to normalize check_out which may have timezone info
       query = `SELECT * FROM reservations
                WHERE listing_id = ?
-               AND check_out >= ?
-               AND check_out < date('now')
+               AND date(check_out) >= ?
+               AND date(check_out) < date('now')
+               AND status IN ('confirmed', 'reserved')
                ORDER BY check_out DESC`;
       params = [listingId, startDateStr];
     } else {
       // Future reservations (check-in date in the future)
+      // Only show confirmed/reserved, not canceled/declined
+      // Use date() function to normalize check_in which may have timezone info
       query = `SELECT * FROM reservations
                WHERE listing_id = ?
-               AND check_in >= date('now')
+               AND date(check_in) >= date('now')
+               AND status IN ('confirmed', 'reserved')
                ORDER BY check_in ASC`;
       params = [listingId];
     }
@@ -254,12 +259,13 @@ export function getReservationsInRange(
   const db = getDatabase();
 
   try {
+    // Use date() function to normalize check_in/check_out which may have timezone info
     const rows = db
       .prepare(
         `SELECT * FROM reservations
          WHERE listing_id = ?
-         AND check_in <= ?
-         AND check_out >= ?
+         AND date(check_in) <= ?
+         AND date(check_out) >= ?
          ORDER BY check_in ASC`
       )
       .all(listingId, endDate, startDate) as ReservationRow[];
@@ -280,11 +286,12 @@ export function deleteOldReservations(listingId: string, beforeDate: string): nu
   const db = getDatabase();
 
   try {
+    // Use date() function to normalize check_out which may have timezone info
     const result = db
       .prepare(
         `DELETE FROM reservations
          WHERE listing_id = ?
-         AND check_out < ?`
+         AND date(check_out) < ?`
       )
       .run(listingId, beforeDate);
 
@@ -317,18 +324,20 @@ export function deleteStaleReservationsInRange(
 
     if (keepReservationIds.length === 0) {
       // Delete all reservations in range if no IDs to keep
+      // Use date() function to normalize check_in/check_out which may have timezone info
       query = `DELETE FROM reservations
                WHERE listing_id = ?
-               AND check_in <= ?
-               AND check_out >= ?`;
+               AND date(check_in) <= ?
+               AND date(check_out) >= ?`;
       params = [listingId, endDate, startDate];
     } else {
       // Delete reservations not in the keep list
+      // Use date() function to normalize check_in/check_out which may have timezone info
       const placeholders = keepReservationIds.map(() => '?').join(',');
       query = `DELETE FROM reservations
                WHERE listing_id = ?
-               AND check_in <= ?
-               AND check_out >= ?
+               AND date(check_in) <= ?
+               AND date(check_out) >= ?
                AND reservation_id NOT IN (${placeholders})`;
       params = [listingId, endDate, startDate, ...keepReservationIds];
     }

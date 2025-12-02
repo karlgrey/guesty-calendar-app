@@ -315,27 +315,15 @@
           <td>1</td>
           <td>
             <div class="description">Unterkunft Farmhouse Prasser inkl. Saunanutzung</div>
-            <div class="subdescription">Inkl. {{guestsCount}} Personen</div>
+            <div class="subdescription">{{guestsCount}} Personen, {{nights}} {{#if nightsPlural}}Nächte{{else}}Nacht{{/if}}</div>
           </td>
-          <td class="number">{{nights}}</td>
-          <td>Tage</td>
-          <td class="number">{{accommodationRateFormatted}}</td>
-          <td class="number">{{accommodationTotalFormatted}}</td>
+          <td class="number">1</td>
+          <td>Pauschale</td>
+          <td class="number">{{accommodationWithExtraFormatted}}</td>
+          <td class="number">{{accommodationWithExtraFormatted}}</td>
         </tr>
-        {{#if hasExtraGuests}}
         <tr>
           <td>2</td>
-          <td>
-            <div class="description">Unterkunft Farmhouse Prasser zusätzliche Person</div>
-          </td>
-          <td class="number">{{extraGuestNights}}</td>
-          <td>Pers.-Tage</td>
-          <td class="number">{{extraGuestRateFormatted}}</td>
-          <td class="number">{{extraGuestTotalFormatted}}</td>
-        </tr>
-        {{/if}}
-        <tr>
-          <td>{{#if hasExtraGuests}}3{{else}}2{{/if}}</td>
           <td>
             <div class="description">Pauschale Endreinigung</div>
           </td>
@@ -346,7 +334,7 @@
         </tr>
         {{#if hasDiscount}}
         <tr>
-          <td>{{#if hasExtraGuests}}4{{else}}3{{/if}}</td>
+          <td>3</td>
           <td>
             <div class="description">Rabatt</div>
           </td>

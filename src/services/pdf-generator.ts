@@ -37,12 +37,14 @@ export interface DocumentTemplateData {
   checkInFormatted: string;
   checkOutFormatted: string;
   nights: number;
+  nightsPlural: boolean; // true if nights > 1
   guestsCount: number | null;
   guestsIncluded: number;
 
   // Pricing (formatted strings)
   accommodationRateFormatted: string;
   accommodationTotalFormatted: string;
+  accommodationWithExtraFormatted: string; // Accommodation + Extra Guest Fee combined
   hasExtraGuests: boolean;
   extraGuestNights: number;
   extraGuestRateFormatted: string;
@@ -119,6 +121,9 @@ export function documentToTemplateData(doc: Document): DocumentTemplateData {
   const validUntil = new Date(today);
   validUntil.setDate(validUntil.getDate() + 7); // Quote valid for 7 days
 
+  // Calculate combined accommodation + extra guest fee
+  const accommodationWithExtra = doc.accommodationTotal + doc.extraGuestTotal;
+
   return {
     documentNumber: doc.documentNumber,
     customerNumber: generateCustomerNumber(doc.reservationId),
@@ -135,11 +140,13 @@ export function documentToTemplateData(doc: Document): DocumentTemplateData {
     checkInFormatted: formatDateGerman(doc.checkIn),
     checkOutFormatted: formatDateGerman(doc.checkOut),
     nights: doc.nights,
+    nightsPlural: doc.nights > 1,
     guestsCount: doc.guestsCount,
     guestsIncluded: doc.guestsIncluded,
 
     accommodationRateFormatted: formatCurrency(doc.accommodationRate),
     accommodationTotalFormatted: formatCurrency(doc.accommodationTotal),
+    accommodationWithExtraFormatted: formatCurrency(accommodationWithExtra),
     hasExtraGuests: doc.extraGuestTotal > 0,
     extraGuestNights: doc.extraGuestNights,
     extraGuestRateFormatted: formatCurrency(doc.extraGuestRate),
