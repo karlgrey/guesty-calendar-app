@@ -309,6 +309,7 @@ export function deleteOldReservations(listingId: string, beforeDate: string): nu
 /**
  * Delete reservations that are no longer in the API response (cancelled/removed)
  * Removes reservations in the given date range that are not in the keepReservationIds list
+ * Also deletes associated documents to avoid foreign key constraint violations
  */
 export function deleteStaleReservationsInRange(
   listingId: string,
@@ -319,45 +320,70 @@ export function deleteStaleReservationsInRange(
   const db = getDatabase();
 
   try {
-    let query: string;
-    let params: any[];
+    // First, find the reservation IDs that will be deleted
+    let findQuery: string;
+    let findParams: any[];
 
     if (keepReservationIds.length === 0) {
-      // Delete all reservations in range if no IDs to keep
-      // Use date() function to normalize check_in/check_out which may have timezone info
-      query = `DELETE FROM reservations
-               WHERE listing_id = ?
-               AND date(check_in) <= ?
-               AND date(check_out) >= ?`;
-      params = [listingId, endDate, startDate];
+      findQuery = `SELECT reservation_id FROM reservations
+                   WHERE listing_id = ?
+                   AND date(check_in) <= ?
+                   AND date(check_out) >= ?`;
+      findParams = [listingId, endDate, startDate];
     } else {
-      // Delete reservations not in the keep list
-      // Use date() function to normalize check_in/check_out which may have timezone info
       const placeholders = keepReservationIds.map(() => '?').join(',');
-      query = `DELETE FROM reservations
-               WHERE listing_id = ?
-               AND date(check_in) <= ?
-               AND date(check_out) >= ?
-               AND reservation_id NOT IN (${placeholders})`;
-      params = [listingId, endDate, startDate, ...keepReservationIds];
+      findQuery = `SELECT reservation_id FROM reservations
+                   WHERE listing_id = ?
+                   AND date(check_in) <= ?
+                   AND date(check_out) >= ?
+                   AND reservation_id NOT IN (${placeholders})`;
+      findParams = [listingId, endDate, startDate, ...keepReservationIds];
     }
 
-    const result = db.prepare(query).run(...params);
+    const staleReservations = db.prepare(findQuery).all(...findParams) as { reservation_id: string }[];
 
-    if (result.changes > 0) {
+    if (staleReservations.length === 0) {
+      return 0;
+    }
+
+    const staleIds = staleReservations.map(r => r.reservation_id);
+
+    // Use a transaction to delete documents first, then reservations
+    const deleteStale = db.transaction(() => {
+      // Delete associated documents first (to avoid FK constraint)
+      const docPlaceholders = staleIds.map(() => '?').join(',');
+      const docResult = db.prepare(
+        `DELETE FROM documents WHERE reservation_id IN (${docPlaceholders})`
+      ).run(...staleIds);
+
+      if (docResult.changes > 0) {
+        logger.info({ deletedDocuments: docResult.changes }, 'Deleted documents for stale reservations');
+      }
+
+      // Now delete the reservations
+      const resResult = db.prepare(
+        `DELETE FROM reservations WHERE reservation_id IN (${docPlaceholders})`
+      ).run(...staleIds);
+
+      return resResult.changes;
+    });
+
+    const deletedCount = deleteStale();
+
+    if (deletedCount > 0) {
       logger.info(
         {
           listingId,
           startDate,
           endDate,
-          deletedCount: result.changes,
+          deletedCount,
           keptCount: keepReservationIds.length,
         },
         'Deleted stale/cancelled reservations from range'
       );
     }
 
-    return result.changes;
+    return deletedCount;
   } catch (error) {
     logger.error({ error, listingId, startDate, endDate }, 'Failed to delete stale reservations');
     throw new DatabaseError(
