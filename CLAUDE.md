@@ -27,6 +27,8 @@ npm run db:reset        # Drop and recreate database (WARNING: deletes all data)
 npx tsx src/scripts/test-force-sync.ts  # Test forced sync (bypasses cache)
 npx tsx src/scripts/test-email.ts       # Send test weekly email immediately
 npx tsx src/scripts/test-timezone.ts    # Verify timezone conversion for scheduling
+npx tsx src/scripts/test-document.ts <reservationId> <quote|invoice>  # Test document generation
+npx tsx src/scripts/set-document-sequence.ts [year] [lastNumber]      # View/set document sequence
 ```
 
 ### Code Quality
@@ -233,6 +235,61 @@ npx tsx src/scripts/test-ga4-sync.ts
 - `src/repositories/analytics-repository.ts` - Database operations
 - `src/db/migrations/004_add_analytics_table.sql` - Database schema
 - `src/scripts/test-ga4-sync.ts` - Manual testing script
+
+### Document Generation (Quotes & Invoices)
+The admin dashboard supports generating PDF quotes (Angebote) and invoices (Rechnungen) for reservations.
+
+**Features:**
+- PDF generation using Puppeteer with Handlebars templates
+- Shared document numbering sequence: `A-YYYY-NNNN` (quotes) / `YYYY-NNNN` (invoices)
+- Bidirectional number matching: quote and invoice for same reservation share base number
+- Cached document retrieval (no API call) vs. manual refresh (fresh Guesty data)
+- Guest notes displayed below totals section
+- Automatic tax calculation from Guesty reservation data
+
+**Document Number Format:**
+- Quotes: `A-2025-0001`, `A-2025-0002`, etc.
+- Invoices: `2025-0001`, `2025-0002`, etc.
+- Both share the same sequential counter per year
+- First document created sets the base number, second inherits it
+
+**How It Works:**
+1. **First Click**: Fetches data from Guesty API, creates document in DB, assigns number
+2. **Subsequent Clicks**: Returns cached document from DB (no API call)
+3. **Refresh Button**: Fetches fresh data from Guesty, updates document, keeps same number
+4. **Year Change**: Automatic - new year starts at 0001
+
+**Admin UI Buttons:**
+- `A` / `R` - Generate/view quote or invoice (uses cached data)
+- `↻ A` / `↻ R` - Refresh with fresh Guesty data (calls API)
+
+**Testing:**
+```bash
+# Test document generation for a reservation
+npx tsx src/scripts/test-document.ts <reservationId> quote
+npx tsx src/scripts/test-document.ts <reservationId> invoice
+
+# View/set document sequence (for migration)
+npx tsx src/scripts/set-document-sequence.ts              # View current status
+npx tsx src/scripts/set-document-sequence.ts 2025 47      # Set last number to 47
+```
+
+**Files:**
+- `src/services/document-service.ts` - Business logic for document creation/refresh
+- `src/services/pdf-generator.ts` - Puppeteer PDF generation with Handlebars
+- `src/repositories/document-repository.ts` - Database operations, number generation
+- `src/routes/admin.ts` - Admin endpoints for document generation
+- `data/templates/angebot.html` - Quote PDF template (German)
+- `data/templates/rechnung.html` - Invoice PDF template (German)
+- `src/db/migrations/005_add_documents_table.sql` - Database schema
+- `src/scripts/set-document-sequence.ts` - Admin script for sequence management
+
+**Important Notes:**
+- Document numbers are stable once created (never change)
+- Data can be refreshed without changing the number
+- Templates use Handlebars syntax with helpers for currency formatting
+- Prices stored in cents, displayed as Euros with comma decimal separator
+- Guest notes from Guesty appear below totals section in PDF
 
 ## Key Patterns
 
