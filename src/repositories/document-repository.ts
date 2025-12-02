@@ -468,6 +468,28 @@ export function updateDocument(id: number, data: Omit<DocumentData, 'documentTyp
 }
 
 /**
+ * Delete a document by ID
+ */
+export function deleteDocumentById(id: number): boolean {
+  const db = getDatabase();
+
+  try {
+    const result = db.prepare('DELETE FROM documents WHERE id = ?').run(id);
+
+    if (result.changes > 0) {
+      logger.info({ id }, 'Document deleted successfully');
+      return true;
+    }
+    return false;
+  } catch (error) {
+    logger.error({ error, id }, 'Failed to delete document');
+    throw new DatabaseError(
+      `Failed to delete document: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
+  }
+}
+
+/**
  * List all documents, optionally filtered by type
  */
 export function listDocuments(type?: DocumentType, limit: number = 100): Document[] {
