@@ -58,17 +58,60 @@ function calculateNights(checkIn: string, checkOut: string): number {
 }
 
 /**
- * Extract name from full name (handles "Herrn/Frau" prefix if needed)
+ * Company name suffixes that indicate a business entity
  */
-function formatGuestName(guest: GuestyGuest | null): string | null {
-  if (!guest) return null;
+const COMPANY_SUFFIXES = [
+  'gmbh', 'ag', 'ug', 'kg', 'ohg', 'gbr', 'e.v.', 'ev', 'e.v',
+  'ltd', 'ltd.', 'limited', 'inc', 'inc.', 'corp', 'corp.',
+  'co.', 'co', '& co', '& co.', 'gmbh & co', 'gmbh & co.',
+  'mbh', 'partg', 'se', 'kgaa',
+];
 
-  if (guest.fullName) return guest.fullName;
-  if (guest.firstName && guest.lastName) return `${guest.firstName} ${guest.lastName}`;
-  if (guest.firstName) return guest.firstName;
-  if (guest.lastName) return guest.lastName;
+/**
+ * Check if a name looks like a company name
+ */
+function isCompanyName(name: string | null | undefined): boolean {
+  if (!name) return false;
+  const lowerName = name.toLowerCase().trim();
+  return COMPANY_SUFFIXES.some(suffix => lowerName.endsWith(suffix));
+}
 
-  return null;
+/**
+ * Extract customer name and company from guest data
+ * If firstName contains a company suffix (GmbH, AG, etc.), treat it as company name
+ * and lastName as contact person
+ */
+function extractCustomerInfo(guest: GuestyGuest | null, fallbackName?: string): {
+  name: string | null;
+  company: string | null;
+} {
+  if (!guest) {
+    return { name: fallbackName || null, company: null };
+  }
+
+  // If Guesty has a company field, use it
+  if (guest.company) {
+    const name = guest.fullName ||
+      (guest.firstName && guest.lastName ? `${guest.firstName} ${guest.lastName}` : null) ||
+      guest.firstName || guest.lastName || fallbackName || null;
+    return { name, company: guest.company };
+  }
+
+  // Check if firstName is actually a company name
+  if (isCompanyName(guest.firstName)) {
+    // firstName = Company, lastName = Contact Person
+    return {
+      name: guest.lastName || null,       // Contact person as name
+      company: guest.firstName || null,   // Company name
+    };
+  }
+
+  // Normal case: combine first and last name
+  const name = guest.fullName ||
+    (guest.firstName && guest.lastName ? `${guest.firstName} ${guest.lastName}` : null) ||
+    guest.firstName || guest.lastName || fallbackName || null;
+
+  return { name, company: null };
 }
 
 // ============================================================================
@@ -319,12 +362,15 @@ async function fetchDocumentDataFromGuesty(reservationId: string, documentType: 
   const validUntil = new Date(today);
   validUntil.setDate(validUntil.getDate() + 7);
 
+  // Extract customer name and company (handles company names in firstName field)
+  const customerInfo = extractCustomerInfo(guest, reservation.guest?.fullName);
+
   return {
     documentType,
     reservationId,
     customer: {
-      name: formatGuestName(guest) || reservation.guest?.fullName || null,
-      company: guest?.company || null,
+      name: customerInfo.name,
+      company: customerInfo.company,
       street: guest?.address?.street || guest?.address?.full || null,
       city: guest?.address?.city || null,
       zip: (guest?.address as any)?.zipCode || guest?.address?.zipcode || null,
