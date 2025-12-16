@@ -3,6 +3,102 @@
  * Displays availability calendar and handles date selection
  */
 
+/**
+ * Utility: Detect if running in an iframe
+ */
+function isInIframe() {
+  try {
+    return window.self !== window.top;
+  } catch (e) {
+    return true; // If we can't access window.top, we're definitely in an iframe
+  }
+}
+
+/**
+ * Utility: Detect iOS devices
+ */
+function isIOS() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+}
+
+/**
+ * Utility: Detect Safari browser
+ */
+function isSafari() {
+  return /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+}
+
+/**
+ * Utility: Open mailto link with iframe/iOS handling
+ * This function handles the complexities of opening mailto links in iframes,
+ * especially on iOS Safari which has strict security restrictions.
+ */
+function openMailtoLink(mailtoUrl) {
+  const inIframe = isInIframe();
+  const isiOS = isIOS();
+  const isSafariBrowser = isSafari();
+
+  // Debug logging
+  console.log('[Mailto Debug]', {
+    inIframe,
+    isiOS,
+    isSafariBrowser,
+    userAgent: navigator.userAgent,
+    mailtoLength: mailtoUrl.length
+  });
+
+  // Strategy 1: PostMessage to parent window (best for iframes)
+  if (inIframe && window.parent) {
+    console.log('[Mailto] Attempting PostMessage to parent');
+    try {
+      window.parent.postMessage({
+        type: 'OPEN_MAILTO',
+        url: mailtoUrl
+      }, '*');
+      console.log('[Mailto] PostMessage sent successfully');
+      return;
+    } catch (e) {
+      console.warn('[Mailto] PostMessage failed:', e);
+    }
+  }
+
+  // Strategy 2: Try window.top (for iframes with same-origin)
+  if (inIframe) {
+    console.log('[Mailto] Attempting window.top.location');
+    try {
+      window.top.location.href = mailtoUrl;
+      console.log('[Mailto] window.top.location succeeded');
+      return;
+    } catch (e) {
+      console.warn('[Mailto] window.top.location failed:', e);
+    }
+  }
+
+  // Strategy 3: Create temporary <a> tag and trigger click (works best on iOS)
+  if (isiOS) {
+    console.log('[Mailto] Using <a> tag click method for iOS');
+    const a = document.createElement('a');
+    a.href = mailtoUrl;
+    a.target = '_top'; // Try to break out of iframe
+    a.style.display = 'none';
+    document.body.appendChild(a);
+
+    // Trigger click immediately (must be in user gesture context)
+    a.click();
+
+    // Clean up
+    setTimeout(() => {
+      document.body.removeChild(a);
+    }, 100);
+    console.log('[Mailto] <a> tag click triggered');
+    return;
+  }
+
+  // Strategy 4: Direct window.location (fallback for desktop)
+  console.log('[Mailto] Using direct window.location');
+  window.location.href = mailtoUrl;
+}
+
 class BookingCalendar {
   constructor(apiBaseUrl = '') {
     this.apiBaseUrl = apiBaseUrl;
@@ -1849,7 +1945,11 @@ class BookingCalendar {
 
     const body = encodeURIComponent(emailBody);
     const recipient = 'booking@farmhouse-prasser.de';
-    window.location.href = `mailto:${recipient}?subject=${subject}&body=${body}`;
+    const mailtoUrl = `mailto:${recipient}?subject=${subject}&body=${body}`;
+
+    // Use our iframe/iOS-safe mailto handler
+    console.log('[Booking] Opening mailto with booking request');
+    openMailtoLink(mailtoUrl);
   }
 }
 
