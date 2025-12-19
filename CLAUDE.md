@@ -241,27 +241,32 @@ The admin dashboard supports generating PDF quotes (Angebote) and invoices (Rech
 
 **Features:**
 - PDF generation using Puppeteer with Handlebars templates
-- Shared document numbering sequence: `A-YYYY-NNNN` (quotes) / `YYYY-NNNN` (invoices)
-- Bidirectional number matching: quote and invoice for same reservation share base number
+- Independent document numbering: `A-YYYY-NNNN` (quotes) / `YYYY-NNNN` (invoices)
+- Quotes and invoices have separate sequential numbers (not shared)
 - Cached document retrieval (no API call) vs. manual refresh (fresh Guesty data)
+- Refresh preserves document number (critical for accounting/tax compliance)
 - Guest notes displayed below totals section
 - Automatic tax calculation from Guesty reservation data
+- Automatic company name detection in guest firstName field (GmbH, AG, UG, Ltd, etc.)
 
 **Document Number Format:**
 - Quotes: `A-2025-0001`, `A-2025-0002`, etc.
 - Invoices: `2025-0001`, `2025-0002`, etc.
-- Both share the same sequential counter per year
-- First document created sets the base number, second inherits it
+- Independent sequential counters per year (quotes and invoices don't share numbers)
+- Each reservation can have both a quote AND an invoice with different numbers
+- Example: Reservation gets Quote A-2025-0016, then Invoice 2025-0017
 
 **How It Works:**
-1. **First Click**: Fetches data from Guesty API, creates document in DB, assigns number
+1. **First Click**: Fetches data from Guesty API, creates document in DB, assigns next available number
 2. **Subsequent Clicks**: Returns cached document from DB (no API call)
-3. **Refresh Button**: Fetches fresh data from Guesty, updates document, keeps same number
-4. **Year Change**: Automatic - new year starts at 0001
+3. **Refresh Button (↻)**: Fetches fresh data from Guesty, **updates existing document, keeps same number**
+   - Critical for accounting: Customer changes address → refresh invoice with same number
+   - Preserves document number for tax/legal compliance
+4. **Year Change**: Automatic - new year starts at 0001 for both quotes and invoices
 
 **Admin UI Buttons:**
-- `A` / `R` - Generate/view quote or invoice (uses cached data)
-- `↻ A` / `↻ R` - Refresh with fresh Guesty data (calls API)
+- `A` / `R` - Generate/view quote or invoice (uses cached data if exists)
+- `↻ A` / `↻ R` - Refresh with fresh Guesty data (updates document, preserves number)
 
 **Testing:**
 ```bash
@@ -285,11 +290,13 @@ npx tsx src/scripts/set-document-sequence.ts 2025 47      # Set last number to 4
 - `src/scripts/set-document-sequence.ts` - Admin script for sequence management
 
 **Important Notes:**
-- Document numbers are stable once created (never change)
-- Data can be refreshed without changing the number
+- Document numbers are **permanently stable** once created (never change, even on refresh)
+- Refresh button updates data while preserving the document number (critical for accounting)
+- Each reservation can have both a quote AND an invoice with independent numbers
 - Templates use Handlebars syntax with helpers for currency formatting
 - Prices stored in cents, displayed as Euros with comma decimal separator
 - Guest notes from Guesty appear below totals section in PDF
+- Company names (GmbH, AG, UG, Ltd, etc.) in firstName field are auto-detected and formatted correctly
 
 ## Key Patterns
 
