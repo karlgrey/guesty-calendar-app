@@ -19,7 +19,7 @@ import { getAnalyticsSummary, getLatestTopPages, getLastSyncTime, hasAnalyticsDa
 import { syncAnalytics } from '../jobs/sync-analytics.js';
 import { ga4Client } from '../services/ga4-client.js';
 import { createOrGetDocument, refreshDocument } from '../services/document-service.js';
-import { getDocumentsByReservation, listDocuments } from '../repositories/document-repository.js';
+import { getDocumentsByReservation, getDocumentByReservation, listDocuments, getDocumentSequenceInfo, setDocumentSequenceNumber } from '../repositories/document-repository.js';
 
 const router = express.Router();
 
@@ -340,6 +340,40 @@ router.get('/', (_req, res) => {
       </div>
     </div>
 
+    <!-- Document Sequence Management -->
+    <div class="section">
+      <h2>📄 Dokumenten-Verwaltung</h2>
+      <div class="grid" style="grid-template-columns: 1fr 1fr;">
+        <div class="card">
+          <h3>Letzte Rechnung</h3>
+          <div id="lastInvoiceInfo">Lädt...</div>
+        </div>
+        <div class="card">
+          <h3>Letztes Angebot</h3>
+          <div id="lastQuoteInfo">Lädt...</div>
+        </div>
+      </div>
+      <div class="card" style="margin-top: 20px;">
+        <h3>Nächste Dokumentennummer</h3>
+        <div id="nextNumberInfo" style="margin-bottom: 15px; font-size: 18px; font-weight: bold; color: #2563eb;">
+          Lädt...
+        </div>
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <label for="manualSequence" style="font-weight: 500;">Letzte Nummer manuell setzen:</label>
+          <input
+            type="number"
+            id="manualSequence"
+            placeholder="z.B. 17"
+            min="0"
+            max="99999"
+            style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; width: 120px;"
+          />
+          <button onclick="updateSequence()" class="success" id="updateSequenceBtn">💾 Speichern</button>
+        </div>
+        <div id="sequenceMessage" style="margin-top: 10px; font-size: 14px;"></div>
+      </div>
+    </div>
+
     <!-- Website Analytics (GA4) -->
     <div class="section" id="analyticsSection" style="display: none;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
@@ -423,6 +457,121 @@ router.get('/', (_req, res) => {
       setTimeout(() => {
         msg.className = 'message';
       }, 5000);
+    }
+
+    // Load document sequence information
+    async function loadDocumentSequence() {
+      console.log('[Document Sequence] Starting to load...');
+      try {
+        const response = await fetch('/admin/api/document-sequence');
+        console.log('[Document Sequence] Response received:', response.status);
+        const result = await response.json();
+        console.log('[Document Sequence] Result:', result);
+
+        if (result.success) {
+          const { lastNumber, nextNumber, lastInvoice, lastQuote } = result.data;
+
+          // Update last invoice info
+          const lastInvoiceEl = document.getElementById('lastInvoiceInfo');
+          if (lastInvoice) {
+            const customerDisplay = lastInvoice.customerCompany
+              ? \`\${lastInvoice.customerCompany}<br/><small>\${lastInvoice.customerName || 'N/A'}</small>\`
+              : lastInvoice.customerName || 'N/A';
+            lastInvoiceEl.innerHTML = \`
+              <div style="margin-bottom: 8px;"><strong>\${lastInvoice.documentNumber}</strong></div>
+              <div style="font-size: 14px; color: #666;">
+                \${customerDisplay}<br/>
+                Check-in: \${new Date(lastInvoice.checkIn).toLocaleDateString('de-DE')}<br/>
+                Gesamt: €\${lastInvoice.total.toFixed(2)}<br/>
+                <small>Erstellt: \${new Date(lastInvoice.createdAt).toLocaleString('de-DE')}</small>
+              </div>
+            \`;
+          } else {
+            lastInvoiceEl.innerHTML = '<div style="color: #999;">Keine Rechnung vorhanden</div>';
+          }
+
+          // Update last quote info
+          const lastQuoteEl = document.getElementById('lastQuoteInfo');
+          if (lastQuote) {
+            const customerDisplay = lastQuote.customerCompany
+              ? \`\${lastQuote.customerCompany}<br/><small>\${lastQuote.customerName || 'N/A'}</small>\`
+              : lastQuote.customerName || 'N/A';
+            lastQuoteEl.innerHTML = \`
+              <div style="margin-bottom: 8px;"><strong>\${lastQuote.documentNumber}</strong></div>
+              <div style="font-size: 14px; color: #666;">
+                \${customerDisplay}<br/>
+                Check-in: \${new Date(lastQuote.checkIn).toLocaleDateString('de-DE')}<br/>
+                Gesamt: €\${lastQuote.total.toFixed(2)}<br/>
+                <small>Erstellt: \${new Date(lastQuote.createdAt).toLocaleString('de-DE')}</small>
+              </div>
+            \`;
+          } else {
+            lastQuoteEl.innerHTML = '<div style="color: #999;">Kein Angebot vorhanden</div>';
+          }
+
+          // Update next number info
+          const year = new Date().getFullYear();
+          document.getElementById('nextNumberInfo').innerHTML = \`
+            Nächstes Angebot: <span style="color: #059669;">A-\${year}-\${String(nextNumber).padStart(4, '0')}</span> &nbsp;|&nbsp;
+            Nächste Rechnung: <span style="color: #2563eb;">\${year}-\${String(nextNumber).padStart(4, '0')}</span>
+            <br/><small style="color: #666; font-weight: normal;">Aktuelle letzte Nummer: \${lastNumber}</small>
+          \`;
+
+          // Set input field to current last number
+          document.getElementById('manualSequence').value = lastNumber;
+        }
+      } catch (error) {
+        console.error('[Document Sequence] Failed to load:', error);
+        const el = document.getElementById('nextNumberInfo');
+        if (el) {
+          el.innerHTML = '<span style="color: red;">Fehler beim Laden</span>';
+        } else {
+          console.error('[Document Sequence] Element nextNumberInfo not found!');
+        }
+      }
+    }
+
+    // Update document sequence
+    async function updateSequence() {
+      const input = document.getElementById('manualSequence');
+      const newNumber = parseInt(input.value);
+      const btn = document.getElementById('updateSequenceBtn');
+      const msgEl = document.getElementById('sequenceMessage');
+
+      if (isNaN(newNumber) || newNumber < 0) {
+        msgEl.innerHTML = '<span style="color: red;">Ungültige Nummer</span>';
+        return;
+      }
+
+      btn.disabled = true;
+      btn.textContent = '💾 Speichert...';
+      msgEl.innerHTML = '';
+
+      try {
+        const year = new Date().getFullYear();
+        const response = await fetch('/admin/api/document-sequence', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ year, lastNumber: newNumber })
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+          msgEl.innerHTML = \`<span style="color: green;">✓ \${result.message}</span>\`;
+          showMessage('Dokumentennummer erfolgreich aktualisiert!', 'success');
+          // Reload sequence info
+          await loadDocumentSequence();
+        } else {
+          msgEl.innerHTML = \`<span style="color: red;">✗ \${result.error}</span>\`;
+        }
+      } catch (error) {
+        console.error('Failed to update sequence:', error);
+        msgEl.innerHTML = '<span style="color: red;">✗ Fehler beim Speichern</span>';
+      } finally {
+        btn.disabled = false;
+        btn.textContent = '💾 Speichern';
+      }
     }
 
     function switchPeriod(period) {
@@ -804,10 +953,10 @@ router.get('/', (_req, res) => {
                     <td style="font-weight: 600;">\${data.listing.currency} \${Math.round(booking.totalPrice).toLocaleString()}</td>
                     <td>
                       <button class="doc-btn quote-btn" onclick="generateDocument('\${booking.reservationId}', 'quote')" title="Angebot erstellen/laden">
-                        Angebot
+                        \${booking.quoteNumber || 'A'}
                       </button>
                       <button class="doc-btn invoice-btn" onclick="generateDocument('\${booking.reservationId}', 'invoice')" title="Rechnung erstellen/laden">
-                        Rechnung
+                        \${booking.invoiceNumber || 'R'}
                       </button>
                       <button class="doc-btn refresh-btn" onclick="refreshDocument('\${booking.reservationId}', 'quote')" title="Angebot mit aktuellen Guesty-Daten neu generieren">
                         ↻ A
@@ -948,9 +1097,12 @@ router.get('/', (_req, res) => {
     }
 
     // Load initial data
+    console.log('[INIT] Loading initial data...');
     loadHealth();
     loadDashboard();
     loadAnalytics();
+    loadDocumentSequence();
+    console.log('[INIT] All load functions called');
     setInterval(loadHealth, 10000); // Refresh every 10 seconds
 
     // Only auto-refresh dashboard for future data (not past)
@@ -1133,21 +1285,28 @@ router.get('/dashboard-data', async (req, res, next) => {
     // Get detailed reservations
     const reservations = getReservationsByPeriod(propertyId, 365, period);
 
-    // Transform reservations for frontend
-    const bookings = reservations.map(r => ({
-      reservationId: r.reservation_id,
-      checkIn: r.check_in,
-      checkOut: r.check_out,
-      nights: r.nights_count,
-      guestName: r.guest_name || 'Unknown Guest',
-      guestsCount: r.guests_count || 0,
-      status: r.status,
-      confirmationCode: r.confirmation_code,
-      source: r.source || r.platform || 'Unknown',
-      totalPrice: r.host_payout || r.total_price || 0, // Use host_payout (includes fees & taxes)
-      plannedArrival: r.planned_arrival,
-      plannedDeparture: r.planned_departure,
-    }));
+    // Transform reservations for frontend (include existing document numbers)
+    const bookings = reservations.map(r => {
+      const quote = getDocumentByReservation(r.reservation_id, 'quote');
+      const invoice = getDocumentByReservation(r.reservation_id, 'invoice');
+
+      return {
+        reservationId: r.reservation_id,
+        checkIn: r.check_in,
+        checkOut: r.check_out,
+        nights: r.nights_count,
+        guestName: r.guest_name || 'Unknown Guest',
+        guestsCount: r.guests_count || 0,
+        status: r.status,
+        confirmationCode: r.confirmation_code,
+        source: r.source || r.platform || 'Unknown',
+        totalPrice: r.host_payout || r.total_price || 0, // Use host_payout (includes fees & taxes)
+        plannedArrival: r.planned_arrival,
+        plannedDeparture: r.planned_departure,
+        quoteNumber: quote?.documentNumber || null,
+        invoiceNumber: invoice?.documentNumber || null,
+      };
+    });
 
     res.json({
       listing: {
@@ -1634,7 +1793,7 @@ router.get('/users', (_req, res) => {
       }
     }
 
-    // Load users on page load
+    // Load data immediately (script is at end of body, DOM is ready)
     loadUsers();
   </script>
 </body>
@@ -1832,6 +1991,98 @@ router.get('/documents/reservation/:reservationId', (req, res, next) => {
         currency: doc.currency,
         createdAt: doc.createdAt,
       })),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /admin/api/document-sequence
+ * Get document sequence information (last number, last invoice/quote)
+ */
+router.get('/api/document-sequence', (_req, res, next) => {
+  try {
+    const currentYear = new Date().getFullYear();
+    const sequenceInfo = getDocumentSequenceInfo(currentYear);
+
+    res.json({
+      success: true,
+      data: {
+        year: sequenceInfo.year,
+        lastNumber: sequenceInfo.lastNumber,
+        nextNumber: sequenceInfo.nextNumber,
+        lastInvoice: sequenceInfo.lastInvoice ? {
+          documentNumber: sequenceInfo.lastInvoice.documentNumber,
+          reservationId: sequenceInfo.lastInvoice.reservationId,
+          customerName: sequenceInfo.lastInvoice.customer.name,
+          customerCompany: sequenceInfo.lastInvoice.customer.company,
+          checkIn: sequenceInfo.lastInvoice.checkIn,
+          total: sequenceInfo.lastInvoice.total / 100,
+          createdAt: sequenceInfo.lastInvoice.createdAt,
+        } : null,
+        lastQuote: sequenceInfo.lastQuote ? {
+          documentNumber: sequenceInfo.lastQuote.documentNumber,
+          reservationId: sequenceInfo.lastQuote.reservationId,
+          customerName: sequenceInfo.lastQuote.customer.name,
+          customerCompany: sequenceInfo.lastQuote.customer.company,
+          checkIn: sequenceInfo.lastQuote.checkIn,
+          total: sequenceInfo.lastQuote.total / 100,
+          createdAt: sequenceInfo.lastQuote.createdAt,
+        } : null,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /admin/api/document-sequence
+ * Update document sequence number (for manual correction)
+ */
+router.post('/api/document-sequence', express.json(), (req, res, next) => {
+  try {
+    const { year, lastNumber } = req.body;
+
+    if (!year || typeof lastNumber !== 'number') {
+      res.status(400).json({
+        success: false,
+        error: 'year and lastNumber are required',
+      });
+      return;
+    }
+
+    // Validate year
+    if (year < 2020 || year > 2100) {
+      res.status(400).json({
+        success: false,
+        error: 'Invalid year',
+      });
+      return;
+    }
+
+    // Validate lastNumber
+    if (lastNumber < 0 || lastNumber > 99999) {
+      res.status(400).json({
+        success: false,
+        error: 'lastNumber must be between 0 and 99999',
+      });
+      return;
+    }
+
+    setDocumentSequenceNumber(year, lastNumber);
+
+    logger.info({ year, lastNumber }, 'Document sequence manually updated via admin panel');
+
+    res.json({
+      success: true,
+      message: `Next document will be: A-${year}-${String(lastNumber + 1).padStart(4, '0')} / ${year}-${String(lastNumber + 1).padStart(4, '0')}`,
+      data: {
+        year,
+        lastNumber,
+        nextNumber: lastNumber + 1,
+      },
     });
   } catch (error) {
     next(error);

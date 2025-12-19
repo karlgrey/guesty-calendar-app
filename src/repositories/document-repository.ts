@@ -513,6 +513,86 @@ export function listDocuments(type?: DocumentType, limit: number = 100): Documen
 }
 
 /**
+ * Get document sequence information including last invoice
+ */
+export function getDocumentSequenceInfo(year: number = new Date().getFullYear()): {
+  year: number;
+  lastNumber: number;
+  nextNumber: number;
+  lastInvoice: Document | null;
+  lastQuote: Document | null;
+} {
+  const db = getDatabase();
+
+  try {
+    // Get sequence from document_sequences table
+    const sequenceRow = db
+      .prepare('SELECT last_number FROM document_sequences WHERE year = ? AND sequence_type = ?')
+      .get(year, 'shared') as { last_number: number } | undefined;
+
+    const lastNumber = sequenceRow?.last_number || 0;
+
+    // Get last invoice document
+    const lastInvoiceRow = db
+      .prepare(`
+        SELECT * FROM documents
+        WHERE document_type = 'invoice'
+        AND document_number LIKE ?
+        ORDER BY created_at DESC
+        LIMIT 1
+      `)
+      .get(`${year}-%`) as DocumentRow | undefined;
+
+    // Get last quote document
+    const lastQuoteRow = db
+      .prepare(`
+        SELECT * FROM documents
+        WHERE document_type = 'quote'
+        AND document_number LIKE ?
+        ORDER BY created_at DESC
+        LIMIT 1
+      `)
+      .get(`A-${year}-%`) as DocumentRow | undefined;
+
+    return {
+      year,
+      lastNumber,
+      nextNumber: lastNumber + 1,
+      lastInvoice: lastInvoiceRow ? rowToDocument(lastInvoiceRow) : null,
+      lastQuote: lastQuoteRow ? rowToDocument(lastQuoteRow) : null,
+    };
+  } catch (error) {
+    logger.error({ error, year }, 'Failed to get document sequence info');
+    throw new DatabaseError(
+      `Failed to get document sequence info: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
+  }
+}
+
+/**
+ * Set document sequence number for a year
+ */
+export function setDocumentSequenceNumber(year: number, newNumber: number): void {
+  const db = getDatabase();
+
+  try {
+    // Ensure sequence record exists
+    db.prepare(`
+      INSERT INTO document_sequences (sequence_type, year, last_number)
+      VALUES ('shared', ?, ?)
+      ON CONFLICT(sequence_type, year) DO UPDATE SET last_number = ?
+    `).run(year, newNumber, newNumber);
+
+    logger.info({ year, newNumber }, 'Document sequence number updated');
+  } catch (error) {
+    logger.error({ error, year, newNumber }, 'Failed to set document sequence number');
+    throw new DatabaseError(
+      `Failed to set document sequence number: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
+  }
+}
+
+/**
  * Get all documents for a reservation
  */
 export function getDocumentsByReservation(reservationId: string): Document[] {
