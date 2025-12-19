@@ -9,7 +9,7 @@ import { guestyClient } from './guesty-client.js';
 import { pdfGenerator } from './pdf-generator.js';
 import {
   createDocument,
-  deleteDocumentById,
+  updateDocument,
   getDocumentByReservation,
   getDocumentById,
   type DocumentType,
@@ -309,30 +309,49 @@ export async function createOrGetDocument(options: CreateDocumentOptions): Promi
 
 /**
  * Refresh/regenerate a document with fresh data from Guesty API
- * Deletes the old document and creates a new one with a new document number
+ * Updates the existing document with new data while keeping the same document number
+ * If no document exists, creates a new one
  */
 export async function refreshDocument(options: CreateDocumentOptions): Promise<DocumentResult> {
   const { reservationId, documentType } = options;
 
-  logger.info({ reservationId, documentType }, 'Regenerating document with fresh Guesty data');
+  logger.info({ reservationId, documentType }, 'Refreshing document with fresh Guesty data');
 
-  // Check if document exists and delete it
+  // Check if document exists
   const existingDoc = getDocumentByReservation(reservationId, documentType);
 
   if (existingDoc) {
+    // Update existing document with fresh data (keeps the same number)
     logger.info(
       { documentNumber: existingDoc.documentNumber, id: existingDoc.id },
-      'Deleting existing document to regenerate with new number'
+      'Updating existing document with fresh data (keeping same number)'
     );
-    deleteDocumentById(existingDoc.id);
+
+    // Fetch fresh data from Guesty
+    const documentData = await fetchDocumentDataFromGuesty(reservationId, documentType);
+
+    // Update the document in database (keeps document_number unchanged)
+    const updatedDoc = updateDocument(existingDoc.id, documentData);
+
+    logger.info(
+      { documentNumber: updatedDoc.documentNumber, type: documentType, reservationId },
+      'Document refreshed successfully with same number'
+    );
+
+    // Generate PDF with updated data
+    const pdf = await pdfGenerator.generatePDF(updatedDoc);
+
+    return { document: updatedDoc, pdf, isNew: false };
   }
 
-  // Create a new document with fresh data and new document number
+  // No existing document - create new one with new number
+  logger.info({ reservationId, documentType }, 'No existing document found, creating new one');
+
   const document = await fetchAndCreateDocument(reservationId, documentType);
 
   logger.info(
     { documentNumber: document.documentNumber, type: documentType, reservationId },
-    'Document regenerated with new number'
+    'New document created'
   );
 
   // Generate PDF

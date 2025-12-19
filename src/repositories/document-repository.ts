@@ -200,36 +200,30 @@ export function getNextDocumentNumber(type: DocumentType): string {
 
 /**
  * Get document number for a reservation based on existing documents
- * If a quote or invoice already exists, use the same base number
+ * If a document of the SAME type already exists, reuse its number
  * Otherwise generate a new number
+ * Note: Quotes and invoices now have independent numbering
  */
 export function getDocumentNumberForReservation(reservationId: string, type: DocumentType): string {
   const db = getDatabase();
 
-  // Check if any document (quote or invoice) exists for this reservation
+  // Check if a document of the SAME type exists for this reservation
   const existingDoc = db
-    .prepare('SELECT document_number, document_type FROM documents WHERE reservation_id = ? ORDER BY created_at ASC LIMIT 1')
-    .get(reservationId) as { document_number: string; document_type: string } | undefined;
+    .prepare('SELECT document_number FROM documents WHERE reservation_id = ? AND document_type = ? ORDER BY created_at ASC LIMIT 1')
+    .get(reservationId, type) as { document_number: string } | undefined;
 
   if (existingDoc) {
-    // Extract the base number (e.g., "2025-0001" from "A-2025-0001" or "2025-0001")
-    const baseNumber = existingDoc.document_number.replace(/^A-/, '');
-
-    // Format based on requested type
-    const newNumber = type === 'quote' ? `A-${baseNumber}` : baseNumber;
-
     logger.debug({
       reservationId,
       existingNumber: existingDoc.document_number,
-      existingType: existingDoc.document_type,
-      newNumber,
-      newType: type
-    }, 'Using existing document number for new document');
+      type
+    }, 'Reusing existing document number (same type)');
 
-    return newNumber;
+    return existingDoc.document_number;
   }
 
-  // No document exists, generate new number
+  // No document of this type exists, generate new number
+  logger.debug({ reservationId, type }, 'Generating new independent document number');
   return getNextDocumentNumber(type);
 }
 
