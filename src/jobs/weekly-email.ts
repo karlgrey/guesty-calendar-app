@@ -8,7 +8,7 @@ import { config } from '../config/index.js';
 import { getListingById } from '../repositories/listings-repository.js';
 import { getAllTimeStats, getOccupancyRate, getAllTimeConversionRate } from '../repositories/availability-repository.js';
 import { getReservationsByPeriod } from '../repositories/reservation-repository.js';
-import { getAnalyticsSummary, hasAnalyticsData } from '../repositories/analytics-repository.js';
+import { getAnalyticsSummary, hasAnalyticsData, getDailyAnalytics } from '../repositories/analytics-repository.js';
 import { sendEmail } from '../services/email-service.js';
 import { generateWeeklySummaryEmail } from '../services/email-templates.js';
 import logger from '../utils/logger.js';
@@ -92,11 +92,18 @@ export async function sendWeeklySummaryEmail(): Promise<WeeklyEmailResult> {
     let websiteAnalytics = undefined;
     if (config.ga4Enabled && hasAnalyticsData()) {
       const analyticsSummary = getAnalyticsSummary(30);
+      const dailyData = getDailyAnalytics(14); // 14 days for chart (cleaner visualization)
+
       websiteAnalytics = {
         enabled: true,
         uniqueVisitors: analyticsSummary.totalUsers,
         pageviews: analyticsSummary.totalPageviews,
         sessions: analyticsSummary.totalSessions,
+        dailyData: dailyData.map(d => ({
+          date: d.date,
+          pageviews: d.pageviews,
+          users: d.users,
+        })),
       };
     }
 

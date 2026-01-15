@@ -39,11 +39,18 @@ interface ConversionRate {
   rate: number;
 }
 
+interface DailyAnalyticsData {
+  date: string;
+  pageviews: number;
+  users: number;
+}
+
 interface WebsiteAnalytics {
   enabled: boolean;
   uniqueVisitors: number;
   pageviews: number;
   sessions: number;
+  dailyData?: DailyAnalyticsData[];
 }
 
 interface WeeklySummaryData {
@@ -76,6 +83,67 @@ function formatDate(dateStr: string): string {
     month: 'short',
     day: 'numeric',
   }).format(date);
+}
+
+/**
+ * Generate QuickChart URL for analytics trend
+ */
+function generateAnalyticsChartUrl(dailyData: DailyAnalyticsData[]): string {
+  // Sort by date ascending
+  const sorted = [...dailyData].sort((a, b) => a.date.localeCompare(b.date));
+
+  const labels = sorted.map(d => {
+    const date = new Date(d.date);
+    return `${date.getDate()}.${date.getMonth() + 1}`;
+  });
+
+  const pageviews = sorted.map(d => d.pageviews);
+  const users = sorted.map(d => d.users);
+
+  const chartConfig = {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Pageviews',
+          data: pageviews,
+          borderColor: '#4285f4',
+          backgroundColor: 'rgba(66, 133, 244, 0.1)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 2,
+        },
+        {
+          label: 'Users',
+          data: users,
+          borderColor: '#34a853',
+          backgroundColor: 'rgba(52, 168, 83, 0.1)',
+          fill: true,
+          tension: 0.3,
+          pointRadius: 2,
+        },
+      ],
+    },
+    options: {
+      plugins: {
+        legend: {
+          position: 'top',
+        },
+      },
+      scales: {
+        x: {
+          grid: { display: false },
+        },
+        y: {
+          beginAtZero: true,
+        },
+      },
+    },
+  };
+
+  const encodedConfig = encodeURIComponent(JSON.stringify(chartConfig));
+  return `https://quickchart.io/chart?c=${encodedConfig}&w=700&h=300&bkg=white`;
 }
 
 /**
@@ -275,6 +343,11 @@ export function generateWeeklySummaryEmail(data: WeeklySummaryData): { html: str
         <div class="stat-value">${websiteAnalytics.sessions.toLocaleString()}</div>
       </div>
     </div>
+    ${websiteAnalytics.dailyData && websiteAnalytics.dailyData.length > 0 ? `
+    <div style="margin-top: 20px; text-align: center;">
+      <img src="${generateAnalyticsChartUrl(websiteAnalytics.dailyData)}" alt="Traffic Trend" style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);" />
+    </div>
+    ` : ''}
     ` : ''}
 
     <!-- UPCOMING BOOKINGS SECTION -->

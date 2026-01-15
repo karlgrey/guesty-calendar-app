@@ -15,7 +15,7 @@ import logger from '../utils/logger.js';
 import { getDashboardStats, getAllTimeConversionRate } from '../repositories/availability-repository.js';
 import { getListingById } from '../repositories/listings-repository.js';
 import { getReservationsByPeriod } from '../repositories/reservation-repository.js';
-import { getAnalyticsSummary, getLatestTopPages, getLastSyncTime, hasAnalyticsData } from '../repositories/analytics-repository.js';
+import { getAnalyticsSummary, getLatestTopPages, getLastSyncTime, hasAnalyticsData, getDailyAnalytics } from '../repositories/analytics-repository.js';
 import { syncAnalytics } from '../jobs/sync-analytics.js';
 import { ga4Client } from '../services/ga4-client.js';
 import { createOrGetDocument, refreshDocument } from '../services/document-service.js';
@@ -604,7 +604,80 @@ router.get('/', (_req, res) => {
         padding: 12px;
       }
     }
+
+    /* Analytics Trend Chart */
+    .trend-chart-container {
+      background: white;
+      border-radius: var(--radius-md);
+      padding: 24px;
+      box-shadow: var(--shadow-sm);
+      margin-top: 24px;
+      margin-bottom: 24px;
+    }
+
+    .trend-chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .trend-chart-header h3 {
+      font-family: var(--font-display);
+      font-weight: 600;
+      font-size: 18px;
+      color: var(--color-charcoal);
+      margin: 0;
+    }
+
+    .period-selector {
+      display: flex;
+      gap: 8px;
+    }
+
+    .period-btn {
+      padding: 8px 16px;
+      border: 1px solid var(--color-stone);
+      background: white;
+      border-radius: var(--radius-sm);
+      font-family: var(--font-body);
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--color-warm-gray);
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .period-btn:hover {
+      border-color: var(--color-forest);
+      color: var(--color-forest);
+    }
+
+    .period-btn.active {
+      background: var(--color-forest);
+      border-color: var(--color-forest);
+      color: white;
+    }
+
+    .chart-wrapper {
+      position: relative;
+      height: 300px;
+    }
+
+    @media (max-width: 768px) {
+      .trend-chart-header {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .chart-wrapper {
+        height: 250px;
+      }
+    }
   </style>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
   <div class="container">
@@ -689,6 +762,24 @@ router.get('/', (_req, res) => {
           <div class="value">...</div>
         </div>
       </div>
+
+      <!-- Trend Chart -->
+      <div class="trend-chart-container" id="trendChartContainer" style="display: none;">
+        <div class="trend-chart-header">
+          <h3>📊 Traffic Trend</h3>
+          <div class="period-selector">
+            <button class="period-btn" data-days="7" onclick="loadAnalyticsTrend(7)">7D</button>
+            <button class="period-btn" data-days="14" onclick="loadAnalyticsTrend(14)">14D</button>
+            <button class="period-btn active" data-days="30" onclick="loadAnalyticsTrend(30)">30D</button>
+            <button class="period-btn" data-days="90" onclick="loadAnalyticsTrend(90)">3M</button>
+            <button class="period-btn" data-days="180" onclick="loadAnalyticsTrend(180)">6M</button>
+          </div>
+        </div>
+        <div class="chart-wrapper">
+          <canvas id="trendChart"></canvas>
+        </div>
+      </div>
+
       <div id="topPagesSection" style="margin-top: 20px;">
         <h3 style="margin-bottom: 15px; color: #555;">Top 10 Pages</h3>
         <div id="topPagesTable">Loading...</div>
@@ -1370,6 +1461,9 @@ router.get('/', (_req, res) => {
           </table>
           \${data.lastSync ? \`<p style="margin-top: 10px; color: #888; font-size: 12px;">Last synced: \${new Date(data.lastSync).toLocaleString()}</p>\` : ''}
         \`;
+
+        // Load trend chart with default 30 days
+        loadAnalyticsTrend(30);
       } catch (error) {
         console.error('Failed to load analytics:', error);
       }
@@ -1396,6 +1490,146 @@ router.get('/', (_req, res) => {
       } finally {
         btn.disabled = false;
         btn.innerHTML = '🔄 Sync Now';
+      }
+    }
+
+    // Analytics trend chart
+    let trendChart = null;
+
+    async function loadAnalyticsTrend(days) {
+      try {
+        const res = await fetch(\`/admin/analytics-trend-data?days=\${days}\`);
+        const data = await res.json();
+
+        const container = document.getElementById('trendChartContainer');
+
+        if (!data.enabled || data.data.length === 0) {
+          container.style.display = 'none';
+          return;
+        }
+
+        container.style.display = 'block';
+
+        // Update active button state
+        document.querySelectorAll('.period-btn').forEach(btn => {
+          btn.classList.toggle('active', parseInt(btn.dataset.days) === days);
+        });
+
+        const ctx = document.getElementById('trendChart').getContext('2d');
+
+        // Prepare chart data
+        const labels = data.data.map(d => {
+          const date = new Date(d.date);
+          return date.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit' });
+        });
+
+        const pageviews = data.data.map(d => d.pageviews);
+        const users = data.data.map(d => d.users);
+
+        // Destroy existing chart if any
+        if (trendChart) {
+          trendChart.destroy();
+        }
+
+        // Create new chart
+        trendChart = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: labels,
+            datasets: [
+              {
+                label: 'Pageviews',
+                data: pageviews,
+                borderColor: '#4285f4',
+                backgroundColor: 'rgba(66, 133, 244, 0.1)',
+                borderWidth: 2,
+                fill: true,
+                tension: 0.3,
+                pointRadius: days <= 14 ? 4 : 2,
+                pointHoverRadius: 6,
+              },
+              {
+                label: 'Users',
+                data: users,
+                borderColor: '#34a853',
+                backgroundColor: 'rgba(52, 168, 83, 0.1)',
+                borderWidth: 2,
+                fill: true,
+                tension: 0.3,
+                pointRadius: days <= 14 ? 4 : 2,
+                pointHoverRadius: 6,
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+              intersect: false,
+              mode: 'index',
+            },
+            plugins: {
+              legend: {
+                position: 'top',
+                align: 'end',
+                labels: {
+                  usePointStyle: true,
+                  padding: 20,
+                  font: {
+                    family: "'Manrope', sans-serif",
+                    size: 12,
+                  }
+                }
+              },
+              tooltip: {
+                backgroundColor: 'rgba(42, 42, 42, 0.9)',
+                titleFont: {
+                  family: "'Manrope', sans-serif",
+                  size: 13,
+                },
+                bodyFont: {
+                  family: "'Manrope', sans-serif",
+                  size: 12,
+                },
+                padding: 12,
+                cornerRadius: 8,
+              }
+            },
+            scales: {
+              x: {
+                grid: {
+                  display: false,
+                },
+                ticks: {
+                  font: {
+                    family: "'Manrope', sans-serif",
+                    size: 11,
+                  },
+                  color: '#6b6560',
+                  maxRotation: 0,
+                  maxTicksLimit: days <= 14 ? days : 10,
+                }
+              },
+              y: {
+                beginAtZero: true,
+                grid: {
+                  color: 'rgba(232, 228, 223, 0.8)',
+                },
+                ticks: {
+                  font: {
+                    family: "'Manrope', sans-serif",
+                    size: 11,
+                  },
+                  color: '#6b6560',
+                }
+              }
+            }
+          }
+        });
+
+      } catch (error) {
+        console.error('Failed to load analytics trend:', error);
+        document.getElementById('trendChartContainer').style.display = 'none';
       }
     }
 
@@ -2302,6 +2536,45 @@ router.get('/analytics-data', (_req, res, next) => {
       summary,
       topPages,
       lastSync,
+    });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+/**
+ * GET /admin/analytics-trend-data
+ * Get daily analytics data for trend charts
+ */
+router.get('/analytics-trend-data', (req, res, next) => {
+  try {
+    const enabled = ga4Client.isEnabled();
+
+    if (!enabled) {
+      return res.json({
+        enabled: false,
+        data: [],
+      });
+    }
+
+    const days = parseInt(req.query.days as string) || 30;
+    const dailyData = getDailyAnalytics(days);
+
+    // Transform and sort by date ascending for charts
+    const trendData = dailyData
+      .map(record => ({
+        date: record.date,
+        pageviews: record.pageviews,
+        users: record.users,
+        sessions: record.sessions,
+        avgSessionDuration: record.avg_session_duration,
+      }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+
+    return res.json({
+      enabled: true,
+      days,
+      data: trendData,
     });
   } catch (error) {
     return next(error);
