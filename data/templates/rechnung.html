@@ -372,7 +372,11 @@
 
     <!-- Payment terms -->
     <div class="payment-terms">
+      {{#if isAirbnb}}
+      Der Rechnungsbetrag wurde über die Buchungsplattform Airbnb beglichen.
+      {{else}}
       50 % des Gesamtbetrags sind 30 Tage vor Anreise fällig, die restlichen 50 % spätestens 7 Tage vor Anreise.
+      {{/if}}
     </div>
 
     <!-- Closing text -->

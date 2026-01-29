@@ -34,6 +34,7 @@ export interface DocumentData {
   guestsCount: number | null;
   guestsIncluded: number;
   currency: string;
+  source?: string;               // booking source (e.g., "Airbnb", "Booking.com", "Direct")
   accommodationTotal: number;    // in cents
   accommodationRate: number;     // per night in cents
   extraGuestTotal: number;       // in cents
@@ -76,6 +77,7 @@ export interface DocumentRow {
   guests_count: number | null;
   guests_included: number;
   currency: string;
+  source: string | null;
   accommodation_total: number;
   accommodation_rate: number;
   extra_guest_total: number;
@@ -120,6 +122,7 @@ function rowToDocument(row: DocumentRow): Document {
     guestsCount: row.guests_count,
     guestsIncluded: row.guests_included,
     currency: row.currency,
+    source: row.source || undefined,
     accommodationTotal: row.accommodation_total,
     accommodationRate: row.accommodation_rate,
     extraGuestTotal: row.extra_guest_total,
@@ -311,7 +314,7 @@ export function createDocument(data: DocumentData): Document {
         document_type, document_number, reservation_id,
         customer_name, customer_company, customer_street, customer_city, customer_zip, customer_country,
         check_in, check_out, nights, guests_count, guests_included,
-        currency, accommodation_total, accommodation_rate,
+        currency, source, accommodation_total, accommodation_rate,
         extra_guest_total, extra_guest_rate, extra_guest_nights,
         cleaning_fee, discount_total, discount_description,
         subtotal, tax_rate, tax_amount, total,
@@ -320,7 +323,7 @@ export function createDocument(data: DocumentData): Document {
         @documentType, @documentNumber, @reservationId,
         @customerName, @customerCompany, @customerStreet, @customerCity, @customerZip, @customerCountry,
         @checkIn, @checkOut, @nights, @guestsCount, @guestsIncluded,
-        @currency, @accommodationTotal, @accommodationRate,
+        @currency, @source, @accommodationTotal, @accommodationRate,
         @extraGuestTotal, @extraGuestRate, @extraGuestNights,
         @cleaningFee, @discountTotal, @discountDescription,
         @subtotal, @taxRate, @taxAmount, @total,
@@ -344,6 +347,7 @@ export function createDocument(data: DocumentData): Document {
       guestsCount: data.guestsCount,
       guestsIncluded: data.guestsIncluded,
       currency: data.currency,
+      source: data.source || null,
       accommodationTotal: data.accommodationTotal,
       accommodationRate: data.accommodationRate,
       extraGuestTotal: data.extraGuestTotal,
@@ -398,6 +402,7 @@ export function updateDocument(id: number, data: Omit<DocumentData, 'documentTyp
         guests_count = @guestsCount,
         guests_included = @guestsIncluded,
         currency = @currency,
+        source = @source,
         accommodation_total = @accommodationTotal,
         accommodation_rate = @accommodationRate,
         extra_guest_total = @extraGuestTotal,
@@ -432,6 +437,7 @@ export function updateDocument(id: number, data: Omit<DocumentData, 'documentTyp
       guestsCount: data.guestsCount,
       guestsIncluded: data.guestsIncluded,
       currency: data.currency,
+      source: data.source || null,
       accommodationTotal: data.accommodationTotal,
       accommodationRate: data.accommodationRate,
       extraGuestTotal: data.extraGuestTotal,

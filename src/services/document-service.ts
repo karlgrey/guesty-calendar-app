@@ -247,11 +247,30 @@ function extractPricingFromReservation(reservation: any, listing: any): {
   // Get guest notes from reservation.notes.guest
   const guestNotes = reservation.notes?.guest || undefined;
 
+  // Check if this is an Airbnb booking
+  const isAirbnb = reservation.source?.toLowerCase().includes('airbnb') ||
+                   reservation.integration?.platform?.toLowerCase().includes('airbnb');
+
   // Subtotal (net, before taxes)
-  const subtotal = euroToCents(money?.subTotalPrice || 0) || (accommodationTotal + extraGuestTotal + cleaningFee);
+  // For Airbnb: use full service value (accommodation + cleaning + extra guests + discounts)
+  // For others: use Guesty's subTotalPrice which already accounts for all fees
+  let subtotal: number;
+  if (isAirbnb) {
+    // Calculate full service value for Airbnb (before their commission deduction)
+    subtotal = accommodationTotal + extraGuestTotal + cleaningFee + discountTotal;
+  } else {
+    subtotal = euroToCents(money?.subTotalPrice || 0) || (accommodationTotal + extraGuestTotal + cleaningFee + discountTotal);
+  }
 
   // Total including taxes
-  const total = euroToCents(money?.hostPayout || money?.balanceDue || 0) || (subtotal + totalTaxes);
+  // For Airbnb: calculate from our subtotal + taxes (full service value)
+  // For others: use hostPayout which is what we actually receive
+  let total: number;
+  if (isAirbnb) {
+    total = subtotal + totalTaxes;
+  } else {
+    total = euroToCents(money?.hostPayout || money?.balanceDue || 0) || (subtotal + totalTaxes);
+  }
 
   return {
     accommodationTotal,
@@ -392,6 +411,7 @@ async function fetchDocumentDataFromGuesty(reservationId: string, documentType: 
     guestsCount: reservation.guestsCount || null,
     guestsIncluded: reservation.money?.settingsSnapshot?.guestsIncludedInRegularFee || listing?.guests_included || 5,
     currency: reservation.money?.currency || listing?.currency || 'EUR',
+    source: reservation.source || reservation.integration?.platform || undefined,
     ...pricing,
     validUntil: documentType === 'quote' ? validUntil.toISOString().split('T')[0] : undefined,
     servicePeriodStart: documentType === 'invoice' ? reservation.checkInDateLocalized || reservation.checkIn : undefined,

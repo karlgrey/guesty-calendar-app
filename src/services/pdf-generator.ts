@@ -61,6 +61,10 @@ export interface DocumentTemplateData {
   // Notes
   guestNotes: string | undefined;
 
+  // Booking source
+  source: string | undefined;
+  isAirbnb: boolean;
+
   // Logo
   logoBase64: string;
 }
@@ -161,6 +165,9 @@ export function documentToTemplateData(doc: Document): DocumentTemplateData {
     totalFormatted: formatCurrency(doc.total),
 
     guestNotes: doc.guestNotes,
+
+    source: doc.source,
+    isAirbnb: doc.source?.toLowerCase().includes('airbnb') ?? false,
 
     logoBase64: getLogoBase64(),
   };
