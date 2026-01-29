@@ -445,6 +445,7 @@ export function getDashboardStats(
  */
 export function getAllTimeStats(listingId: string): AllTimeStats {
   const db = getDatabase();
+  const today = new Date().toISOString().split('T')[0];
 
   try {
     // Get all-time revenue stats from reservations
@@ -454,8 +455,7 @@ export function getAllTimeStats(listingId: string): AllTimeStats {
           COUNT(*) as total_bookings,
           SUM(COALESCE(host_payout, total_price, 0)) as total_revenue,
           SUM(nights_count) as total_booked_days,
-          MIN(check_in) as start_date,
-          MAX(check_out) as end_date
+          MIN(check_in) as start_date
         FROM reservations
         WHERE listing_id = ?`
       )
@@ -464,7 +464,6 @@ export function getAllTimeStats(listingId: string): AllTimeStats {
         total_revenue: number;
         total_booked_days: number;
         start_date: string | null;
-        end_date: string | null;
       };
 
     return {
@@ -472,7 +471,7 @@ export function getAllTimeStats(listingId: string): AllTimeStats {
       totalRevenue: revenueStats.total_revenue || 0,
       totalBookedDays: revenueStats.total_booked_days || 0,
       startDate: revenueStats.start_date,
-      endDate: revenueStats.end_date,
+      endDate: today,
     };
   } catch (error) {
     logger.error({ error, listingId }, 'Failed to get all-time stats');
