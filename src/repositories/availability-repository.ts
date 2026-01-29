@@ -635,3 +635,161 @@ export function getAllTimeConversionRate(listingId: string): {
     };
   }
 }
+
+/**
+ * Current year revenue stats
+ */
+export interface CurrentYearStats {
+  totalBookings: number;
+  totalRevenue: number;
+  totalBookedDays: number;
+  year: number;
+}
+
+/**
+ * Get current year statistics (bookings and revenue for current calendar year)
+ */
+export function getCurrentYearStats(listingId: string): CurrentYearStats {
+  const db = getDatabase();
+  const currentYear = new Date().getFullYear();
+  const yearStart = `${currentYear}-01-01`;
+  const yearEnd = `${currentYear}-12-31`;
+
+  try {
+    const result = db
+      .prepare(
+        `SELECT
+          COUNT(*) as total_bookings,
+          SUM(COALESCE(host_payout, total_price, 0)) as total_revenue,
+          SUM(nights_count) as total_booked_days
+        FROM reservations
+        WHERE listing_id = ?
+          AND check_in >= ?
+          AND check_in <= ?`
+      )
+      .get(listingId, yearStart, yearEnd) as {
+        total_bookings: number;
+        total_revenue: number;
+        total_booked_days: number;
+      };
+
+    return {
+      totalBookings: result.total_bookings || 0,
+      totalRevenue: result.total_revenue || 0,
+      totalBookedDays: result.total_booked_days || 0,
+      year: currentYear,
+    };
+  } catch (error) {
+    logger.error({ error, listingId }, 'Failed to get current year stats');
+    throw new DatabaseError(
+      `Failed to get current year stats: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
+  }
+}
+
+/**
+ * Monthly booking comparison
+ */
+export interface MonthlyBookingComparison {
+  currentMonth: {
+    bookings: number;
+    revenue: number;
+    nights: number;
+    label: string;
+  };
+  previousMonth: {
+    bookings: number;
+    revenue: number;
+    nights: number;
+    label: string;
+  };
+  change: {
+    bookings: number;
+    revenue: number;
+    nights: number;
+  };
+}
+
+/**
+ * Get bookings comparison: last 30 days vs previous 30 days
+ */
+export function getMonthlyBookingComparison(listingId: string): MonthlyBookingComparison {
+  const db = getDatabase();
+  const today = new Date();
+
+  // Last 30 days
+  const last30End = today;
+  const last30Start = new Date(today);
+  last30Start.setDate(last30Start.getDate() - 29); // 30 days including today
+
+  // 30 days before that
+  const prev30End = new Date(last30Start);
+  prev30End.setDate(prev30End.getDate() - 1);
+  const prev30Start = new Date(prev30End);
+  prev30Start.setDate(prev30Start.getDate() - 29);
+
+  const formatDate = (d: Date) => d.toISOString().split('T')[0];
+
+  try {
+    const currentResult = db.prepare(`
+      SELECT
+        COUNT(*) as bookings,
+        SUM(COALESCE(host_payout, total_price, 0)) as revenue,
+        SUM(nights_count) as nights
+      FROM reservations
+      WHERE listing_id = ?
+        AND check_in >= ?
+        AND check_in <= ?
+    `).get(listingId, formatDate(last30Start), formatDate(last30End)) as {
+      bookings: number;
+      revenue: number;
+      nights: number;
+    };
+
+    const prevResult = db.prepare(`
+      SELECT
+        COUNT(*) as bookings,
+        SUM(COALESCE(host_payout, total_price, 0)) as revenue,
+        SUM(nights_count) as nights
+      FROM reservations
+      WHERE listing_id = ?
+        AND check_in >= ?
+        AND check_in <= ?
+    `).get(listingId, formatDate(prev30Start), formatDate(prev30End)) as {
+      bookings: number;
+      revenue: number;
+      nights: number;
+    };
+
+    // Calculate percentage change
+    const calcChange = (current: number, previous: number): number => {
+      if (previous === 0) return current > 0 ? 100 : 0;
+      return Math.round(((current - previous) / previous) * 100);
+    };
+
+    return {
+      currentMonth: {
+        bookings: currentResult.bookings || 0,
+        revenue: currentResult.revenue || 0,
+        nights: currentResult.nights || 0,
+        label: 'Last 30 Days',
+      },
+      previousMonth: {
+        bookings: prevResult.bookings || 0,
+        revenue: prevResult.revenue || 0,
+        nights: prevResult.nights || 0,
+        label: 'Previous 30 Days',
+      },
+      change: {
+        bookings: calcChange(currentResult.bookings || 0, prevResult.bookings || 0),
+        revenue: calcChange(currentResult.revenue || 0, prevResult.revenue || 0),
+        nights: calcChange(currentResult.nights || 0, prevResult.nights || 0),
+      },
+    };
+  } catch (error) {
+    logger.error({ error, listingId }, 'Failed to get monthly booking comparison');
+    throw new DatabaseError(
+      `Failed to get monthly booking comparison: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
+  }
+}

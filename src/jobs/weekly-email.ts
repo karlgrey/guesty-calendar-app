@@ -6,9 +6,9 @@
 
 import { config } from '../config/index.js';
 import { getListingById } from '../repositories/listings-repository.js';
-import { getAllTimeStats, getOccupancyRate, getAllTimeConversionRate } from '../repositories/availability-repository.js';
+import { getAllTimeStats, getOccupancyRate, getAllTimeConversionRate, getCurrentYearStats, getMonthlyBookingComparison } from '../repositories/availability-repository.js';
 import { getReservationsByPeriod } from '../repositories/reservation-repository.js';
-import { getAnalyticsSummary, hasAnalyticsData, getDailyAnalytics } from '../repositories/analytics-repository.js';
+import { getAnalyticsSummary, hasAnalyticsData, getMonthlyAnalyticsComparison, getTopRegions, getAnalyticsRange } from '../repositories/analytics-repository.js';
 import { sendEmail } from '../services/email-service.js';
 import { generateWeeklySummaryEmail } from '../services/email-templates.js';
 import logger from '../utils/logger.js';
@@ -84,6 +84,12 @@ export async function sendWeeklySummaryEmail(): Promise<WeeklyEmailResult> {
     // Calculate all-time conversion rate
     const conversionData = getAllTimeConversionRate(propertyId);
 
+    // Get current year stats
+    const currentYearStats = getCurrentYearStats(propertyId);
+
+    // Get monthly booking comparison
+    const bookingComparison = getMonthlyBookingComparison(propertyId);
+
     // Get next 5 upcoming bookings
     const allUpcomingBookings = getReservationsByPeriod(propertyId, 365, 'future');
     const upcomingBookings = allUpcomingBookings.slice(0, 5);
@@ -92,18 +98,37 @@ export async function sendWeeklySummaryEmail(): Promise<WeeklyEmailResult> {
     let websiteAnalytics = undefined;
     if (config.ga4Enabled && hasAnalyticsData()) {
       const analyticsSummary = getAnalyticsSummary(30);
-      const dailyData = getDailyAnalytics(14); // 14 days for chart (cleaner visualization)
+      const monthlyComparison = getMonthlyAnalyticsComparison();
+      const topRegions = getTopRegions(30);
+
+      // Get daily data for last 30 days vs 30 days before that
+      const formatDateStr = (d: Date) => d.toISOString().split('T')[0];
+
+      const last30End = today;
+      const last30Start = new Date(today);
+      last30Start.setDate(last30Start.getDate() - 29); // 30 days including today
+
+      const prev30End = new Date(last30Start);
+      prev30End.setDate(prev30End.getDate() - 1); // Day before last30Start
+      const prev30Start = new Date(prev30End);
+      prev30Start.setDate(prev30Start.getDate() - 29); // 30 days
+
+      const last30Data = getAnalyticsRange(formatDateStr(last30Start), formatDateStr(last30End));
+      const prev30Data = getAnalyticsRange(formatDateStr(prev30Start), formatDateStr(prev30End));
 
       websiteAnalytics = {
         enabled: true,
         uniqueVisitors: analyticsSummary.totalUsers,
         pageviews: analyticsSummary.totalPageviews,
         sessions: analyticsSummary.totalSessions,
-        dailyData: dailyData.map(d => ({
-          date: d.date,
-          pageviews: d.pageviews,
-          users: d.users,
-        })),
+        monthlyComparison,
+        topRegions,
+        trendData: {
+          currentMonth: last30Data.map(d => ({ date: d.date, users: d.users, pageviews: d.pageviews })),
+          previousMonth: prev30Data.map(d => ({ date: d.date, users: d.users, pageviews: d.pageviews })),
+          currentMonthLabel: 'Last 30 Days',
+          previousMonthLabel: 'Previous 30 Days',
+        },
       };
     }
 
@@ -117,6 +142,17 @@ export async function sendWeeklySummaryEmail(): Promise<WeeklyEmailResult> {
         total_booked_days: allTimeStats.totalBookedDays,
         start_date: allTimeStats.startDate,
         end_date: allTimeStats.endDate,
+      },
+      currentYearStats: {
+        year: currentYearStats.year,
+        total_bookings: currentYearStats.totalBookings,
+        total_revenue: currentYearStats.totalRevenue,
+        total_booked_days: currentYearStats.totalBookedDays,
+      },
+      bookingComparison: {
+        currentMonth: bookingComparison.currentMonth,
+        previousMonth: bookingComparison.previousMonth,
+        change: bookingComparison.change,
       },
       occupancyRates: {
         next4Weeks: occupancyNext4Weeks,

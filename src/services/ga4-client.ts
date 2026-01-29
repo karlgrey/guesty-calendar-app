@@ -36,6 +36,15 @@ export interface TopPage {
 }
 
 /**
+ * Region (Bundesland) data
+ */
+export interface RegionData {
+  region: string;
+  users: number;
+  sessions: number;
+}
+
+/**
  * Analytics summary for a date range
  */
 export interface AnalyticsSummary {
@@ -47,6 +56,7 @@ export interface AnalyticsSummary {
   avgSessionDuration: number;
   dailyData: DailyAnalytics[];
   topPages: TopPage[];
+  topRegions: RegionData[];
 }
 
 /**
@@ -193,6 +203,43 @@ class GA4Client {
       }
     }
 
+    // Fetch top regions (Bundesländer) - filter to Germany only
+    const [regionsResponse] = await client.runReport({
+      property: `properties/${this.propertyId}`,
+      dateRanges: [{ startDate: startDateStr, endDate: endDateStr }],
+      dimensions: [{ name: 'region' }],
+      metrics: [
+        { name: 'activeUsers' },
+        { name: 'sessions' },
+      ],
+      dimensionFilter: {
+        filter: {
+          fieldName: 'country',
+          stringFilter: {
+            value: 'Germany',
+          },
+        },
+      },
+      orderBys: [{ metric: { metricName: 'activeUsers' }, desc: true }],
+      limit: 10,
+    });
+
+    // Parse top regions
+    const topRegions: RegionData[] = [];
+    if (regionsResponse.rows) {
+      for (const row of regionsResponse.rows) {
+        const region = row.dimensionValues?.[0]?.value || '';
+        // Skip "(not set)" entries
+        if (region && region !== '(not set)') {
+          topRegions.push({
+            region,
+            users: parseInt(row.metricValues?.[0]?.value || '0', 10),
+            sessions: parseInt(row.metricValues?.[1]?.value || '0', 10),
+          });
+        }
+      }
+    }
+
     const avgSessionDuration = totalSessions > 0 ? totalDuration / totalSessions : 0;
 
     logger.info(
@@ -203,6 +250,7 @@ class GA4Client {
         avgSessionDuration: Math.round(avgSessionDuration),
         daysWithData: dailyData.length,
         topPagesCount: topPages.length,
+        topRegionsCount: topRegions.length,
       },
       'GA4 analytics data fetched successfully'
     );
@@ -216,6 +264,7 @@ class GA4Client {
       avgSessionDuration,
       dailyData,
       topPages,
+      topRegions,
     };
   }
 

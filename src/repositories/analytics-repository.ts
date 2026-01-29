@@ -5,7 +5,7 @@
  */
 
 import { getDatabase } from '../db/index.js';
-import type { DailyAnalytics, TopPage } from '../services/ga4-client.js';
+import type { DailyAnalytics, TopPage, RegionData } from '../services/ga4-client.js';
 
 /**
  * Analytics record from database
@@ -249,4 +249,158 @@ export function getAnalyticsRange(startDate: string, endDate: string): Analytics
     WHERE date BETWEEN ? AND ?
     ORDER BY date ASC
   `).all(startDate, endDate) as AnalyticsRecord[];
+}
+
+/**
+ * Monthly comparison data
+ */
+export interface MonthlyComparison {
+  currentMonth: {
+    pageviews: number;
+    users: number;
+    sessions: number;
+    label: string;
+  };
+  previousMonth: {
+    pageviews: number;
+    users: number;
+    sessions: number;
+    label: string;
+  };
+  change: {
+    pageviews: number;
+    users: number;
+    sessions: number;
+  };
+}
+
+/**
+ * Get analytics comparison: last 30 days vs 30 days before that
+ */
+export function getMonthlyAnalyticsComparison(): MonthlyComparison {
+  const db = getDatabase();
+  const today = new Date();
+
+  // Last 30 days
+  const last30End = today;
+  const last30Start = new Date(today);
+  last30Start.setDate(last30Start.getDate() - 29); // 30 days including today
+
+  // 30 days before that
+  const prev30End = new Date(last30Start);
+  prev30End.setDate(prev30End.getDate() - 1);
+  const prev30Start = new Date(prev30End);
+  prev30Start.setDate(prev30Start.getDate() - 29);
+
+  const formatDate = (d: Date) => d.toISOString().split('T')[0];
+
+  const currentResult = db.prepare(`
+    SELECT
+      COALESCE(SUM(pageviews), 0) as pageviews,
+      COALESCE(SUM(users), 0) as users,
+      COALESCE(SUM(sessions), 0) as sessions
+    FROM analytics
+    WHERE date BETWEEN ? AND ?
+  `).get(formatDate(last30Start), formatDate(last30End)) as {
+    pageviews: number;
+    users: number;
+    sessions: number;
+  };
+
+  const prevResult = db.prepare(`
+    SELECT
+      COALESCE(SUM(pageviews), 0) as pageviews,
+      COALESCE(SUM(users), 0) as users,
+      COALESCE(SUM(sessions), 0) as sessions
+    FROM analytics
+    WHERE date BETWEEN ? AND ?
+  `).get(formatDate(prev30Start), formatDate(prev30End)) as {
+    pageviews: number;
+    users: number;
+    sessions: number;
+  };
+
+  // Calculate percentage change
+  const calcChange = (current: number, previous: number): number => {
+    if (previous === 0) return current > 0 ? 100 : 0;
+    return Math.round(((current - previous) / previous) * 100);
+  };
+
+  return {
+    currentMonth: {
+      pageviews: currentResult.pageviews,
+      users: currentResult.users,
+      sessions: currentResult.sessions,
+      label: 'Last 30 Days',
+    },
+    previousMonth: {
+      pageviews: prevResult.pageviews,
+      users: prevResult.users,
+      sessions: prevResult.sessions,
+      label: 'Previous 30 Days',
+    },
+    change: {
+      pageviews: calcChange(currentResult.pageviews, prevResult.pageviews),
+      users: calcChange(currentResult.users, prevResult.users),
+      sessions: calcChange(currentResult.sessions, prevResult.sessions),
+    },
+  };
+}
+
+/**
+ * Region record from database
+ */
+export interface RegionRecord {
+  id: number;
+  date: string;
+  region: string;
+  users: number;
+  sessions: number;
+  created_at: string;
+}
+
+/**
+ * Replace regions for a specific date
+ */
+export function replaceRegions(date: string, regions: RegionData[]): void {
+  const db = getDatabase();
+
+  const deleteStmt = db.prepare('DELETE FROM analytics_regions WHERE date = ?');
+  const insertStmt = db.prepare(`
+    INSERT INTO analytics_regions (date, region, users, sessions)
+    VALUES (?, ?, ?, ?)
+  `);
+
+  const transaction = db.transaction(() => {
+    deleteStmt.run(date);
+    for (const region of regions) {
+      insertStmt.run(date, region.region, region.users, region.sessions);
+    }
+  });
+
+  transaction();
+}
+
+/**
+ * Get top regions for the last N days (aggregated)
+ */
+export function getTopRegions(days: number = 30): { region: string; users: number; sessions: number }[] {
+  const db = getDatabase();
+
+  const endDate = new Date().toISOString().split('T')[0];
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - days);
+  const startDateStr = startDate.toISOString().split('T')[0];
+
+  return db.prepare(`
+    SELECT
+      region,
+      SUM(users) as users,
+      SUM(sessions) as sessions
+    FROM analytics_regions
+    WHERE date BETWEEN ? AND ?
+    GROUP BY region
+    ORDER BY users DESC
+    LIMIT 10
+  `).all(startDateStr, endDate) as { region: string; users: number; sessions: number }[];
 }

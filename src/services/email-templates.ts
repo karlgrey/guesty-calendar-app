@@ -39,10 +39,43 @@ interface ConversionRate {
   rate: number;
 }
 
-interface DailyAnalyticsData {
-  date: string;
-  pageviews: number;
+interface MonthlyTrafficComparison {
+  currentMonth: {
+    pageviews: number;
+    users: number;
+    sessions: number;
+    label: string;
+  };
+  previousMonth: {
+    pageviews: number;
+    users: number;
+    sessions: number;
+    label: string;
+  };
+  change: {
+    pageviews: number;
+    users: number;
+    sessions: number;
+  };
+}
+
+interface RegionData {
+  region: string;
   users: number;
+  sessions: number;
+}
+
+interface DailyData {
+  date: string;
+  users: number;
+  pageviews: number;
+}
+
+interface TrendData {
+  currentMonth: DailyData[];
+  previousMonth: DailyData[];
+  currentMonthLabel: string;
+  previousMonthLabel: string;
 }
 
 interface WebsiteAnalytics {
@@ -50,13 +83,44 @@ interface WebsiteAnalytics {
   uniqueVisitors: number;
   pageviews: number;
   sessions: number;
-  dailyData?: DailyAnalyticsData[];
+  monthlyComparison?: MonthlyTrafficComparison;
+  topRegions?: RegionData[];
+  trendData?: TrendData;
+}
+
+interface CurrentYearStats {
+  year: number;
+  total_bookings: number;
+  total_revenue: number;
+  total_booked_days: number;
+}
+
+interface MonthlyBookingComparison {
+  currentMonth: {
+    bookings: number;
+    revenue: number;
+    nights: number;
+    label: string;
+  };
+  previousMonth: {
+    bookings: number;
+    revenue: number;
+    nights: number;
+    label: string;
+  };
+  change: {
+    bookings: number;
+    revenue: number;
+    nights: number;
+  };
 }
 
 interface WeeklySummaryData {
   propertyTitle: string;
   currency: string;
   allTimeStats: AllTimeStats;
+  currentYearStats?: CurrentYearStats;
+  bookingComparison?: MonthlyBookingComparison;
   occupancyRates: OccupancyRates;
   conversionRate: ConversionRate;
   websiteAnalytics?: WebsiteAnalytics;
@@ -86,19 +150,32 @@ function formatDate(dateStr: string): string {
 }
 
 /**
- * Generate QuickChart URL for analytics trend
+ * Format change percentage with color and arrow
  */
-function generateAnalyticsChartUrl(dailyData: DailyAnalyticsData[]): string {
-  // Sort by date ascending
-  const sorted = [...dailyData].sort((a, b) => a.date.localeCompare(b.date));
+function formatChange(change: number): string {
+  const arrow = change > 0 ? '↑' : change < 0 ? '↓' : '→';
+  const color = change > 0 ? '#27ae60' : change < 0 ? '#e74c3c' : '#7f8c8d';
+  const sign = change > 0 ? '+' : '';
+  return `<span style="color: ${color}; font-weight: bold;">${arrow} ${sign}${change}%</span>`;
+}
 
-  const labels = sorted.map(d => {
+/**
+ * Generate QuickChart URL for 30-day traffic trend line chart
+ */
+function generateTrendChartUrl(trendData: TrendData): string {
+  // Sort data by date
+  const prevSorted = [...trendData.previousMonth].sort((a, b) => a.date.localeCompare(b.date));
+  const currSorted = [...trendData.currentMonth].sort((a, b) => a.date.localeCompare(b.date));
+
+  // Extract users in order (already sorted by date)
+  const prevUsers = prevSorted.map(d => d.users);
+  const currUsers = currSorted.map(d => d.users);
+
+  // Use dates from current period as labels (DD.MM format)
+  const labels = currSorted.map(d => {
     const date = new Date(d.date);
     return `${date.getDate()}.${date.getMonth() + 1}`;
   });
-
-  const pageviews = sorted.map(d => d.pageviews);
-  const users = sorted.map(d => d.users);
 
   const chartConfig = {
     type: 'line',
@@ -106,22 +183,23 @@ function generateAnalyticsChartUrl(dailyData: DailyAnalyticsData[]): string {
       labels,
       datasets: [
         {
-          label: 'Pageviews',
-          data: pageviews,
+          label: `Visitors ${trendData.previousMonthLabel}`,
+          data: prevUsers,
+          borderColor: '#95a5a6',
+          backgroundColor: 'transparent',
+          fill: false,
+          tension: 0.3,
+          pointRadius: 2,
+          borderDash: [5, 5],
+        },
+        {
+          label: `Visitors ${trendData.currentMonthLabel}`,
+          data: currUsers,
           borderColor: '#4285f4',
           backgroundColor: 'rgba(66, 133, 244, 0.1)',
           fill: true,
           tension: 0.3,
-          pointRadius: 2,
-        },
-        {
-          label: 'Users',
-          data: users,
-          borderColor: '#34a853',
-          backgroundColor: 'rgba(52, 168, 83, 0.1)',
-          fill: true,
-          tension: 0.3,
-          pointRadius: 2,
+          pointRadius: 3,
         },
       ],
     },
@@ -150,7 +228,7 @@ function generateAnalyticsChartUrl(dailyData: DailyAnalyticsData[]): string {
  * Generate weekly summary email HTML
  */
 export function generateWeeklySummaryEmail(data: WeeklySummaryData): { html: string; text: string } {
-  const { propertyTitle, currency, allTimeStats, occupancyRates, conversionRate, websiteAnalytics, upcomingBookings } = data;
+  const { propertyTitle, currency, allTimeStats, currentYearStats, bookingComparison, occupancyRates, conversionRate, websiteAnalytics, upcomingBookings } = data;
 
   const html = `
 <!DOCTYPE html>
@@ -272,6 +350,47 @@ export function generateWeeklySummaryEmail(data: WeeklySummaryData): { html: str
     <h1>📊 Weekly Property Summary</h1>
     <p><strong>${propertyTitle}</strong></p>
 
+    ${currentYearStats ? `
+    <!-- CURRENT YEAR SECTION -->
+    <h2 style="margin-top: 40px; border-bottom: 2px solid #27ae60; padding-bottom: 8px;">📅 ${currentYearStats.year} Expected Revenue</h2>
+    <div class="stats-grid">
+      <div class="stat-card" style="border-left-color: #27ae60;">
+        <div class="stat-label">Bookings ${currentYearStats.year}</div>
+        <div class="stat-value">${currentYearStats.total_bookings}</div>
+      </div>
+      <div class="stat-card" style="border-left-color: #27ae60;">
+        <div class="stat-label">Expected Revenue ${currentYearStats.year}</div>
+        <div class="stat-value revenue">${formatCurrency(currentYearStats.total_revenue, currency)}</div>
+      </div>
+      <div class="stat-card" style="border-left-color: #27ae60;">
+        <div class="stat-label">Booked Days ${currentYearStats.year}</div>
+        <div class="stat-value">${currentYearStats.total_booked_days}</div>
+      </div>
+    </div>
+    ` : ''}
+
+    ${bookingComparison ? `
+    <!-- MONTHLY BOOKING COMPARISON -->
+    <h2 style="margin-top: 40px; border-bottom: 2px solid #3498db; padding-bottom: 8px;">📊 Bookings: ${bookingComparison.currentMonth.label} vs ${bookingComparison.previousMonth.label}</h2>
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Bookings</div>
+        <div class="stat-value">${bookingComparison.currentMonth.bookings}</div>
+        <div style="margin-top: 5px;">${formatChange(bookingComparison.change.bookings)} vs. ${bookingComparison.previousMonth.bookings}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Revenue</div>
+        <div class="stat-value revenue">${formatCurrency(bookingComparison.currentMonth.revenue, currency)}</div>
+        <div style="margin-top: 5px;">${formatChange(bookingComparison.change.revenue)} vs. ${formatCurrency(bookingComparison.previousMonth.revenue, currency)}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Nights</div>
+        <div class="stat-value">${bookingComparison.currentMonth.nights}</div>
+        <div style="margin-top: 5px;">${formatChange(bookingComparison.change.nights)} vs. ${bookingComparison.previousMonth.nights}</div>
+      </div>
+    </div>
+    ` : ''}
+
     <!-- ALL TIME SECTION -->
     <h2 style="margin-top: 40px; border-bottom: 2px solid #9b59b6; padding-bottom: 8px;">🌟 All Time Summary</h2>
     ${allTimeStats.start_date && allTimeStats.end_date ? `
@@ -326,27 +445,54 @@ export function generateWeeklySummaryEmail(data: WeeklySummaryData): { html: str
       </div>
     </div>
 
-    ${websiteAnalytics?.enabled ? `
+    ${websiteAnalytics?.enabled && websiteAnalytics.monthlyComparison ? `
     <!-- WEBSITE ANALYTICS SECTION -->
-    <h2 style="margin-top: 40px; border-bottom: 2px solid #4285f4; padding-bottom: 8px;">📈 Website Analytics (Last 30 Days)</h2>
+    <h2 style="margin-top: 40px; border-bottom: 2px solid #4285f4; padding-bottom: 8px;">📈 Website Traffic: ${websiteAnalytics.monthlyComparison.currentMonth.label} vs ${websiteAnalytics.monthlyComparison.previousMonth.label}</h2>
     <div class="stats-grid">
       <div class="stat-card" style="border-left-color: #4285f4;">
-        <div class="stat-label">Unique Visitors</div>
-        <div class="stat-value" style="color: #4285f4;">${websiteAnalytics.uniqueVisitors.toLocaleString()}</div>
+        <div class="stat-label">Visitors</div>
+        <div class="stat-value" style="font-size: 1.4em;">${websiteAnalytics.monthlyComparison.currentMonth.users.toLocaleString()}</div>
+        <div style="margin-top: 5px;">${formatChange(websiteAnalytics.monthlyComparison.change.users)} vs. ${websiteAnalytics.monthlyComparison.previousMonth.users.toLocaleString()}</div>
       </div>
       <div class="stat-card" style="border-left-color: #34a853;">
-        <div class="stat-label">Page Views</div>
-        <div class="stat-value">${websiteAnalytics.pageviews.toLocaleString()}</div>
+        <div class="stat-label">Pageviews</div>
+        <div class="stat-value" style="font-size: 1.4em;">${websiteAnalytics.monthlyComparison.currentMonth.pageviews.toLocaleString()}</div>
+        <div style="margin-top: 5px;">${formatChange(websiteAnalytics.monthlyComparison.change.pageviews)} vs. ${websiteAnalytics.monthlyComparison.previousMonth.pageviews.toLocaleString()}</div>
       </div>
       <div class="stat-card" style="border-left-color: #fbbc05;">
         <div class="stat-label">Sessions</div>
-        <div class="stat-value">${websiteAnalytics.sessions.toLocaleString()}</div>
+        <div class="stat-value" style="font-size: 1.4em;">${websiteAnalytics.monthlyComparison.currentMonth.sessions.toLocaleString()}</div>
+        <div style="margin-top: 5px;">${formatChange(websiteAnalytics.monthlyComparison.change.sessions)} vs. ${websiteAnalytics.monthlyComparison.previousMonth.sessions.toLocaleString()}</div>
       </div>
     </div>
-    ${websiteAnalytics.dailyData && websiteAnalytics.dailyData.length > 0 ? `
+
+    ${websiteAnalytics.trendData && websiteAnalytics.trendData.currentMonth.length > 0 ? `
     <div style="margin-top: 20px; text-align: center;">
-      <img src="${generateAnalyticsChartUrl(websiteAnalytics.dailyData)}" alt="Traffic Trend" style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);" />
+      <img src="${generateTrendChartUrl(websiteAnalytics.trendData)}" alt="Traffic Trend" style="max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);" />
     </div>
+    ` : ''}
+
+    ${websiteAnalytics.topRegions && websiteAnalytics.topRegions.length > 0 ? `
+    <!-- TOP REGIONS -->
+    <h3 style="margin-top: 25px; color: #34495e; font-size: 1.1em;">🗺️ Top Regions</h3>
+    <table style="width: 100%; margin-top: 10px;">
+      <thead>
+        <tr>
+          <th style="background-color: #4285f4; color: white; padding: 8px; text-align: left;">Region</th>
+          <th style="background-color: #4285f4; color: white; padding: 8px; text-align: right;">Visitors</th>
+          <th style="background-color: #4285f4; color: white; padding: 8px; text-align: right;">Sessions</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${websiteAnalytics.topRegions.slice(0, 5).map(region => `
+        <tr>
+          <td style="padding: 8px; border-bottom: 1px solid #ecf0f1;">${region.region}</td>
+          <td style="padding: 8px; border-bottom: 1px solid #ecf0f1; text-align: right;">${region.users.toLocaleString()}</td>
+          <td style="padding: 8px; border-bottom: 1px solid #ecf0f1; text-align: right;">${region.sessions.toLocaleString()}</td>
+        </tr>
+        `).join('')}
+      </tbody>
+    </table>
     ` : ''}
     ` : ''}
 
@@ -396,7 +542,21 @@ export function generateWeeklySummaryEmail(data: WeeklySummaryData): { html: str
 Weekly Property Summary - ${propertyTitle}
 ${'='.repeat(60)}
 
-ALL TIME SUMMARY
+${currentYearStats ? `${currentYearStats.year} EXPECTED REVENUE
+${'='.repeat(60)}
+
+- Bookings: ${currentYearStats.total_bookings}
+- Expected Revenue: ${formatCurrency(currentYearStats.total_revenue, currency)}
+- Booked Days: ${currentYearStats.total_booked_days}
+
+` : ''}${bookingComparison ? `BOOKINGS: ${bookingComparison.currentMonth.label} vs ${bookingComparison.previousMonth.label}
+${'='.repeat(60)}
+
+- Bookings: ${bookingComparison.currentMonth.bookings} (${bookingComparison.change.bookings > 0 ? '+' : ''}${bookingComparison.change.bookings}% vs. ${bookingComparison.previousMonth.bookings})
+- Revenue: ${formatCurrency(bookingComparison.currentMonth.revenue, currency)} (${bookingComparison.change.revenue > 0 ? '+' : ''}${bookingComparison.change.revenue}%)
+- Nights: ${bookingComparison.currentMonth.nights} (${bookingComparison.change.nights > 0 ? '+' : ''}${bookingComparison.change.nights}%)
+
+` : ''}ALL TIME SUMMARY
 ${'='.repeat(60)}
 ${allTimeStats.start_date && allTimeStats.end_date ? `${formatDate(allTimeStats.start_date)} - ${formatDate(allTimeStats.end_date)}` : ''}
 
@@ -419,13 +579,16 @@ ${'='.repeat(60)}
 - Pending/Other: ${conversionRate.total - conversionRate.confirmed}
 - Conversion Rate: ${conversionRate.rate}% (${conversionRate.confirmed} of ${conversionRate.total})
 
-${websiteAnalytics?.enabled ? `WEBSITE ANALYTICS (Last 30 Days)
+${websiteAnalytics?.enabled && websiteAnalytics.monthlyComparison ? `WEBSITE TRAFFIC: ${websiteAnalytics.monthlyComparison.currentMonth.label} vs ${websiteAnalytics.monthlyComparison.previousMonth.label}
 ${'='.repeat(60)}
 
-- Unique Visitors: ${websiteAnalytics.uniqueVisitors.toLocaleString()}
-- Page Views: ${websiteAnalytics.pageviews.toLocaleString()}
-- Sessions: ${websiteAnalytics.sessions.toLocaleString()}
-
+- Visitors: ${websiteAnalytics.monthlyComparison.currentMonth.users} (${websiteAnalytics.monthlyComparison.change.users > 0 ? '+' : ''}${websiteAnalytics.monthlyComparison.change.users}%)
+- Pageviews: ${websiteAnalytics.monthlyComparison.currentMonth.pageviews} (${websiteAnalytics.monthlyComparison.change.pageviews > 0 ? '+' : ''}${websiteAnalytics.monthlyComparison.change.pageviews}%)
+- Sessions: ${websiteAnalytics.monthlyComparison.currentMonth.sessions} (${websiteAnalytics.monthlyComparison.change.sessions > 0 ? '+' : ''}${websiteAnalytics.monthlyComparison.change.sessions}%)
+${websiteAnalytics.topRegions && websiteAnalytics.topRegions.length > 0 ? `
+Top Regions:
+${websiteAnalytics.topRegions.slice(0, 5).map(r => `- ${r.region}: ${r.users} visitors`).join('\n')}
+` : ''}
 ` : ''}NEXT 5 UPCOMING BOOKINGS
 ${'='.repeat(60)}
 

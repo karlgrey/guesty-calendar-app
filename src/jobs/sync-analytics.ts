@@ -9,6 +9,7 @@ import { ga4Client } from '../services/ga4-client.js';
 import {
   upsertDailyAnalyticsBatch,
   replaceTopPages,
+  replaceRegions,
   logSync,
 } from '../repositories/analytics-repository.js';
 import { config } from '../config/index.js';
@@ -56,6 +57,11 @@ export async function syncAnalytics(days: number = 30): Promise<AnalyticsSyncRes
     const today = new Date().toISOString().split('T')[0];
     replaceTopPages(today, analytics.topPages);
 
+    // Store top regions with today's date
+    if (analytics.topRegions && analytics.topRegions.length > 0) {
+      replaceRegions(today, analytics.topRegions);
+    }
+
     // Log the sync
     logSync(analytics.startDate, analytics.endDate, recordsSynced, true);
 
@@ -65,6 +71,7 @@ export async function syncAnalytics(days: number = 30): Promise<AnalyticsSyncRes
       {
         recordsSynced,
         topPagesCount: analytics.topPages.length,
+        topRegionsCount: analytics.topRegions?.length || 0,
         totalPageviews: analytics.totalPageviews,
         totalUsers: analytics.totalUsers,
         durationMs,
