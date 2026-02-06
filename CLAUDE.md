@@ -8,54 +8,36 @@ A Node.js/TypeScript service that provides Airbnb-style booking calendars for mu
 
 ## Development Commands
 
-### Running the Application
 ```bash
 npm run dev              # Development with hot reload (tsx watch)
 npm run build            # Compile TypeScript to dist/
 npm start               # Run production build from dist/
-```
-
-### Data Management
-```bash
-npm run sync            # Sync all properties from Guesty API (respects cache freshness)
-npm run sync:force      # Force sync all properties (ignore cache, refresh all data)
-npm run db:init         # Initialize database (creates schema from schema.sql)
-npm run db:migrate      # Run pending database migrations
-npm run db:reset        # Drop and recreate database (WARNING: deletes all data)
-
-# Per-property sync
-npx tsx src/scripts/sync-property.ts <slug>  # Sync a single property by slug (e.g., farmhouse, u19)
-
-# Manual testing
-npx tsx src/scripts/test-force-sync.ts  # Test forced sync (bypasses cache)
-npx tsx src/scripts/test-email.ts       # Send test weekly email immediately
-npx tsx src/scripts/test-timezone.ts    # Verify timezone conversion for scheduling
-npx tsx src/scripts/test-document.ts <reservationId> <quote|invoice>  # Test document generation
-npx tsx src/scripts/set-document-sequence.ts [year] [lastNumber]      # View/set document sequence
-npx tsx src/scripts/list-properties.ts  # List all properties from Guesty API
-```
-
-### Code Quality
-```bash
 npm run lint            # ESLint on src/**/*.ts
 npm test               # Run tests with Vitest
+
+# Data sync
+npm run sync            # Sync all properties (respects cache)
+npm run sync:force      # Force sync all properties
+npx tsx src/scripts/sync-property.ts <slug>  # Sync single property (e.g., farmhouse, u19)
+
+# Testing scripts
+npx tsx src/scripts/test-email.ts [slug]     # Send test weekly email (optional: for specific property)
+npx tsx src/scripts/test-document.ts <reservationId> <quote|invoice>
+npx tsx src/scripts/set-document-sequence.ts [year] [lastNumber]
+npx tsx src/scripts/list-properties.ts       # List all Guesty properties
 ```
 
 ### Access Points
-- Default calendar UI: `http://localhost:3000` (serves first property)
-- Property calendar UI: `http://localhost:3000/p/:slug` (e.g., `/p/farmhouse`, `/p/u19`)
-- Property API: `http://localhost:3000/p/:slug/listing`, `/p/:slug/availability`, `/p/:slug/quote`
-- Admin dashboard: `http://localhost:3000/admin` (property stats, bookings, analytics, documents)
-- Admin system: `http://localhost:3000/admin/system` (health, sync, DB viewer, ETL, user management)
-- Login page: `http://localhost:3000/auth/login`
-- Health check: `http://localhost:3000/health`
-- Detailed health: `http://localhost:3000/health/detailed`
+- Property calendar: `http://localhost:3000/p/:slug` (e.g., `/p/farmhouse`, `/p/u19`)
+- Property API: `/p/:slug/listing`, `/p/:slug/availability`, `/p/:slug/quote`
+- Admin dashboard: `/admin` (property stats, bookings, analytics, documents)
+- Admin system: `/admin/system` (health, sync, DB viewer, ETL, user management)
+- Legacy routes: `/listing`, `/availability`, `/quote` (use default property)
+- Auth: `/auth/login`, Health: `/health`, `/health/detailed`
 
-## Architecture Overview
+## Multi-Property Configuration
 
-### Multi-Property Configuration
-
-Properties are defined in `data/properties.json`:
+Properties are defined in `data/properties.json` (validated with Zod on startup):
 ```json
 {
   "properties": [
@@ -67,378 +49,97 @@ Properties are defined in `data/properties.json`:
       "currency": "EUR",
       "bookingRecipientEmail": "booking@farmhouse-prasser.de",
       "bookingSenderName": "Farmhouse Prasser",
-      "weeklyReport": {
-        "enabled": true,
-        "recipients": ["micha@remoterepublic.com"],
-        "day": 1,
-        "hour": 6
-      },
-      "ga4": {
-        "enabled": true,
-        "propertyId": "513788097",
-        "keyFilePath": "./data/ga4-service-account.json",
-        "syncHour": 3
-      }
+      "weeklyReport": { "enabled": true, "recipients": ["..."], "day": 1, "hour": 6 },
+      "ga4": { "enabled": true, "propertyId": "513788097", "keyFilePath": "...", "syncHour": 3 }
     }
   ]
 }
 ```
 
 **Key files:**
-- `data/properties.json` - Central property configuration (validated with Zod on startup)
-- `src/config/properties.ts` - Loader with `getPropertyBySlug()`, `getAllProperties()`, `getDefaultProperty()`
+- `data/properties.json` - Central property configuration
+- `src/config/properties.ts` - Loader: `getPropertyBySlug()`, `getAllProperties()`, `getDefaultProperty()`
 - `src/routes/property-routes.ts` - Property-scoped API routes (`/p/:slug/...`)
 
 **Important patterns:**
-- `config.guestyPropertyId` is now **optional** in `.env` (overridden by `properties.json`)
+- `config.guestyPropertyId` is **optional** in `.env` (overridden by `properties.json`)
 - Always use fallback: `config.guestyPropertyId || getDefaultProperty()?.guestyPropertyId`
 - `ga4` field is optional per property (defaults to `{ enabled: false }`)
-- Legacy routes (without `/p/:slug`) still work and use the default (first) property
-- `req.property` is available after `resolveProperty` middleware in property routes
+- Legacy routes (without `/p/:slug`) use the default (first) property
+- `req.property` available after `resolveProperty` middleware
+
+### Adding a New Property
+1. Find the Guesty listing ID: `npx tsx src/scripts/list-properties.ts`
+2. Add property config to `data/properties.json`
+3. Sync: `npx tsx src/scripts/sync-property.ts <slug>`
+4. Verify in admin dashboard (property selector)
+
+## Architecture Overview
 
 ### Data Flow
 1. **Properties Config** (`data/properties.json`) defines all managed properties
-2. **ETL Jobs** (`src/jobs/`) fetch data from Guesty API for each property on startup and then hourly
-3. **Guesty Client** (`src/services/guesty-client.ts`) handles OAuth authentication and rate-limited API requests using Bottleneck
-4. **Mappers** (`src/mappers/`) transform Guesty API responses into internal data models
-5. **Repositories** (`src/repositories/`) handle SQLite operations (CRUD + cache freshness checks), keyed by `listing_id`
-6. **Routes** (`src/routes/`) serve public API endpoints per property (`/p/:slug/listing`, etc.)
-7. **Pricing Calculator** (`src/services/pricing-calculator.ts`) computes quotes locally using cached data
-8. **Frontend** (`public/`) vanilla JavaScript calendar with property context injection
+2. **ETL Jobs** (`src/jobs/`) fetch data from Guesty API for each property on startup and hourly
+3. **Guesty Client** (`src/services/guesty-client.ts`) handles OAuth + rate-limited requests (Bottleneck)
+4. **Repositories** (`src/repositories/`) handle SQLite operations, keyed by `listing_id`
+5. **Routes** (`src/routes/`) serve API endpoints per property
+6. **Frontend** (`public/`) vanilla JS calendar with property context injection
 
-### Rate Limiting Strategy
-The `GuestyClient` uses Bottleneck to enforce conservative limits:
-- 10 requests/second (buffer below Guesty's 15 req/sec limit)
-- 10 concurrent requests (buffer below Guesty's 15 concurrent limit)
-- Exponential backoff with jitter for 429 responses
-- OAuth token requests have retry logic (up to 5 attempts with backoff)
-
-### Cache Strategy
-- **Listings**: 24 hours TTL (infrequent changes)
-- **Availability**: Configurable via `CACHE_AVAILABILITY_TTL` (default 30 minutes)
-- **Quotes**: Computed on-demand from cached data, stored with 60 minute TTL
-
-The ETL scheduler interval is controlled by `CACHE_AVAILABILITY_TTL` - jobs run with ±5% jitter to prevent thundering herd.
-
-**Daily Forced Sync:**
-- Runs every day at 2 AM (server time)
-- Bypasses all cache checks and forces a complete data refresh for **all properties**
-- Ensures customer data changes in Guesty are picked up within 24 hours
-- Fetches 24 months of data (12 months past + 12 months future)
-- Updates both availability and reservation data
-- Scheduler checks hourly for the 2 AM trigger time
-
-### ETL Jobs (Multi-Property)
-- `runETLJobForProperty(property, force)` - Sync a single property
+### ETL & Cache
+- `runETLJobForProperty(property, force)` - Sync single property
 - `runETLJob(force)` - Sync all properties sequentially
-- Scheduler tracks state per property: `propertyWeeklyEmailSent: Map<string, Date>`
-- Each property's data is stored with its `guestyPropertyId` as `listing_id` in the database
-- No database migrations needed for multi-property - all tables already use `listing_id` as key
+- Listings: 24h TTL | Availability: configurable via `CACHE_AVAILABILITY_TTL` (default 30min) | Quotes: 60min TTL
+- Daily forced sync at 2 AM for all properties (24 months of data)
+- Scheduler tracks per-property state: `propertyWeeklyEmailSent: Map<string, Date>`
 
-### Error Handling
-Custom error classes in `src/utils/errors.ts`:
-- `ConfigError` - Configuration issues (500)
-- `DatabaseError` - Database operations (500)
-- `ExternalApiError` - Guesty API failures (502 or API status)
-- `ValidationError` - Invalid input (400)
-- `NotFoundError` - Resource not found (404)
-- `CacheMissError` - Cache miss (flow control, not shown to user)
-
-All errors extend `AppError` and include structured logging via Pino.
-
-### Authentication & Authorization
-The admin panel is protected with Google OAuth 2.0 authentication:
-- **Passport.js** with Google OAuth strategy (`src/config/auth.ts`)
-- **Session-based authentication** using `express-session` with secure cookies
-- **Email whitelist** system for access control (`ADMIN_ALLOWED_EMAILS` env var)
-- **Protected routes** using `requireAuth` middleware (`src/middleware/auth.ts`)
-- **Authentication routes** (`src/routes/auth.ts`):
-  - `GET /auth/login` - Login page with Google sign-in button
-  - `GET /auth/google` - Initiates OAuth flow
-  - `GET /auth/google/callback` - OAuth callback handler
-  - `GET /auth/logout` - Logout and clear session
-  - `GET /auth/unauthorized` - Unauthorized access page
-
-Session configuration:
-- Secure cookies in production (HTTPS only)
-- HttpOnly cookies (XSS protection)
-- 24-hour session lifetime
-- Session data stored in memory (consider Redis for multi-instance deployments)
+### Rate Limiting
+- 10 req/sec, 10 concurrent (below Guesty's 15/15 limits)
+- Exponential backoff with jitter for 429 responses
+- OAuth retry: up to 5 attempts with backoff
 
 ### Admin Dashboard
-
-The admin interface is split into two pages:
-
-**`/admin` - Property Dashboard:**
-- Property selector (switch between properties)
-- Key statistics (bookings, revenue, occupancy, conversion rate)
-- Current year stats with monthly booking comparison
-- Website analytics (only shown if property has GA4 enabled)
-- Upcoming bookings with document generation (quotes/invoices)
-
-**`/admin/system` - System & Infrastructure:**
-- System health monitoring
-- Manual data sync (per property)
-- Database viewer
-- ETL scheduler status
-- User management
-
-Both pages share authentication and styling. The property selector is available on both pages.
+- **`/admin`** - Property Dashboard: stats, conversion rate, analytics (if GA4 enabled), bookings, documents
+- **`/admin/system`** - System: health, sync, DB viewer, ETL scheduler, user management
+- Property selector on both pages; analytics auto-hidden for properties without GA4
 
 ### Weekly Email Reports
-The application sends automated weekly summary emails with property statistics and upcoming bookings. Each property has its own weekly report configuration in `data/properties.json`.
+Per-property config in `properties.json`: `weeklyReport: { enabled, recipients, day (0-6), hour (0-23) }`
 
-**Features:**
-- Per-property configuration (enabled/disabled, recipients, schedule)
-- All-time statistics (total bookings, revenue, booked days)
-- Current year stats with 30-day booking comparison
-- Occupancy rates (next 4 weeks, last 3 months)
-- Conversion rate tracking
-- Website analytics (if GA4 enabled for the property)
-- Next 5 upcoming bookings with guest details
-- HTML and plain text email formats
-- Timezone-aware scheduling per property
+- Scheduler checks each property's schedule hourly (timezone-aware via `date-fns-tz`)
+- `sendWeeklySummaryEmailForProperty(property)` - generates and sends per-property email
+- Includes: all-time stats, current year, occupancy, conversion rate, GA4 analytics (if enabled), top 5 bookings
+- Revenue uses `host_payout` (net after platform fees)
+- Sent via Resend API; sender name configured via `EMAIL_FROM_NAME` env var
 
-**Configuration** (in `data/properties.json` per property):
-```json
-{
-  "weeklyReport": {
-    "enabled": true,
-    "recipients": ["email1@example.com", "email2@example.com"],
-    "day": 1,
-    "hour": 6
-  }
-}
-```
-
-Fields: `day` = 0-6 (Sunday-Saturday), `hour` = 0-23 (in property's timezone).
-
-**Legacy `.env` fallback** (used only when `properties.json` is absent):
-```bash
-WEEKLY_REPORT_ENABLED=TRUE
-WEEKLY_REPORT_RECIPIENTS=email1@example.com,email2@example.com
-WEEKLY_REPORT_DAY=1
-WEEKLY_REPORT_HOUR=6
-```
-
-**How It Works:**
-1. **Scheduler** (`src/jobs/scheduler.ts`) iterates all properties and checks each property's schedule
-2. **Timezone Conversion**: Server time (UTC) is converted to each property's timezone using `date-fns-tz`
-3. **Scheduling Logic** (`src/jobs/weekly-email.ts`):
-   - Gets current UTC time
-   - Converts to property's timezone (e.g., Europe/Berlin)
-   - Checks if current day matches property's `weeklyReport.day`
-   - Checks if current hour matches property's `weeklyReport.hour`
-4. **Email Generation** (`sendWeeklySummaryEmailForProperty(property)`):
-   - Fetches all-time and current year statistics from database
-   - Calculates occupancy rates and conversion data
-   - Includes website analytics if GA4 is enabled for the property
-   - Retrieves next 5 upcoming bookings
-   - Generates HTML email with styled template
-   - Sends via Resend API to property-specific recipients
-
-**Testing:**
-```bash
-# Test timezone conversion
-npx tsx src/scripts/test-timezone.ts
-
-# Send test email immediately (bypasses schedule check)
-npx tsx src/scripts/test-email.ts
-```
-
-**Files:**
-- `src/jobs/weekly-email.ts` - Email job logic with `sendWeeklySummaryEmailForProperty()`
-- `src/jobs/sync-inquiries.ts` - Syncs all reservations from Guesty for conversion tracking
-- `src/services/email-templates.ts` - HTML and text email generation
-- `src/services/email-service.ts` - Resend API integration
-- `src/repositories/availability-repository.ts` - Contains `getAllTimeConversionRate()` function
-- `src/scripts/test-email.ts` - Manual email testing
-- `src/scripts/test-timezone.ts` - Timezone conversion verification
-- `src/scripts/test-alltime-conversion.ts` - Test conversion rate calculation
-
-**Important Notes:**
-- Emails are sent at the configured hour in each **property's timezone**, not server timezone
-- Server can run in any timezone (typically UTC) - conversion is automatic
-- Handles daylight saving time (DST) changes automatically
-- Schedule check runs every hour (controlled by ETL scheduler)
-- Requires verified domain in Resend for multiple recipients
-- Scheduler tracks per-property send state to prevent duplicate sends
-
-**Conversion Rate Tracking:**
-- Tracks all reservations (not just inquiries) to calculate realistic conversion rates
-- Formula: `confirmed bookings / total reservations * 100`
-- Example: 22 confirmed / 67 total = 33% conversion rate
-- **Guesty API quirk**: `limit=100` returns all reservations (67), but `limit=1000` returns only 25
-- Inquiry sync runs automatically every 30 minutes as part of ETL job
-- Admin dashboard and weekly email both display conversion statistics
-
-### Google Analytics 4 Integration
-The application integrates with Google Analytics 4 to display website analytics in the admin dashboard. GA4 is configured **per property** and is optional - properties without GA4 configuration will not show the analytics section in the admin dashboard.
-
-**Features:**
-- Pageviews, users, sessions, and average session duration
-- Top 10 pages by pageviews
-- Monthly comparison with trend charts
-- Top regions by visitors
-- Daily automatic sync from GA4 API
-- Manual sync button in admin dashboard
-- Analytics section automatically hidden for properties without GA4
-
-**Configuration** (in `data/properties.json` per property):
-```json
-{
-  "ga4": {
-    "enabled": true,
-    "propertyId": "513788097",
-    "keyFilePath": "./data/ga4-service-account.json",
-    "syncHour": 3
-  }
-}
-```
-
-The `ga4` field is entirely optional. Properties without it default to `{ enabled: false }`.
-
-**Legacy `.env` fallback** (used only when `properties.json` is absent):
-```bash
-GA4_ENABLED=true
-GA4_PROPERTY_ID=513788097
-GA4_KEY_FILE_PATH=./data/ga4-service-account.json
-GA4_SYNC_HOUR=3
-```
-
-**Setup Steps:**
-1. **Create Service Account** in Google Cloud Console:
-   - Go to IAM & Admin → Service Accounts
-   - Create new service account
-   - Download JSON key file
-   - Save as `data/ga4-service-account.json`
-
-2. **Grant GA4 Access:**
-   - Go to GA4 Admin → Property Access Management
-   - Add service account email (from JSON file)
-   - Grant "Viewer" role
-
-3. **Configure in `properties.json`:**
-   - Add `ga4` object to the property that has GA4
-   - Set `enabled: true` and provide `propertyId` and `keyFilePath`
-
-**How It Works:**
-1. **Scheduler** (`src/jobs/scheduler.ts`) checks hourly if it's time to sync
-2. **Sync Job** (`src/jobs/sync-analytics.ts`) fetches last 30 days of data from GA4
-3. **GA4 Client** (`src/services/ga4-client.ts`) uses Google Analytics Data API
-4. **Repository** (`src/repositories/analytics-repository.ts`) stores data in SQLite
-5. **Admin Dashboard** checks `ga4Enabled` flag per property and shows/hides analytics section
-
-**Testing:**
-```bash
-# Test GA4 connection and sync
-npx tsx src/scripts/test-ga4-sync.ts
-```
-
-**Files:**
-- `src/services/ga4-client.ts` - GA4 Data API client
-- `src/jobs/sync-analytics.ts` - Sync job with scheduling
-- `src/repositories/analytics-repository.ts` - Database operations
-- `src/db/migrations/004_add_analytics_table.sql` - Database schema
-- `src/scripts/test-ga4-sync.ts` - Manual testing script
+### Google Analytics 4
+Optional per property. Configured in `properties.json` `ga4` field (or omit for disabled).
+- Syncs daily at configured hour via `src/jobs/sync-analytics.ts`
+- Admin dashboard shows/hides analytics based on `ga4Enabled` flag per property
+- Setup: Create GCP service account → grant GA4 Viewer → add JSON key to `data/ga4-service-account.json`
 
 ### Document Generation (Quotes & Invoices)
-The admin dashboard supports generating PDF quotes (Angebote) and invoices (Rechnungen) for reservations.
-
-**Features:**
-- PDF generation using Puppeteer with Handlebars templates
-- Independent document numbering: `A-YYYY-NNNN` (quotes) / `YYYY-NNNN` (invoices)
-- Quotes and invoices have separate sequential numbers (not shared)
-- Cached document retrieval (no API call) vs. manual refresh (fresh Guesty data)
-- Refresh preserves document number (critical for accounting/tax compliance)
-- Guest notes displayed below totals section
-- Automatic tax calculation from Guesty reservation data
-- Automatic company name detection in guest firstName field (GmbH, AG, UG, Ltd, etc.)
-
-**Document Number Format:**
-- Quotes: `A-2025-0001`, `A-2025-0002`, etc.
-- Invoices: `2025-0001`, `2025-0002`, etc.
-- Independent sequential counters per year (quotes and invoices don't share numbers)
-- Each reservation can have both a quote AND an invoice with different numbers
-- Example: Reservation gets Quote A-2025-0016, then Invoice 2025-0017
-
-**IMPORTANT: Document numbering is SHARED across all properties.** There is one global sequence per document type per year. A quote for Farmhouse and a quote for U19 draw from the same sequence. This is intentional for accounting compliance.
-
-**How It Works:**
-1. **First Click**: Fetches data from Guesty API, creates document in DB, assigns next available number
-2. **Subsequent Clicks**: Returns cached document from DB (no API call)
-3. **Refresh Button (↻)**: Fetches fresh data from Guesty, **updates existing document, keeps same number**
-   - Critical for accounting: Customer changes address → refresh invoice with same number
-   - Preserves document number for tax/legal compliance
-4. **Year Change**: Automatic - new year starts at 0001 for both quotes and invoices
-
-**Admin UI Buttons:**
-- `A` / `R` - Generate/view quote or invoice (uses cached data if exists)
-- `↻ A` / `↻ R` - Refresh with fresh Guesty data (updates document, preserves number)
-
-**Testing:**
-```bash
-# Test document generation for a reservation
-npx tsx src/scripts/test-document.ts <reservationId> quote
-npx tsx src/scripts/test-document.ts <reservationId> invoice
-
-# View/set document sequence (for migration)
-npx tsx src/scripts/set-document-sequence.ts              # View current status
-npx tsx src/scripts/set-document-sequence.ts 2025 47      # Set last number to 47
-```
-
-**Files:**
-- `src/services/document-service.ts` - Business logic for document creation/refresh
-- `src/services/pdf-generator.ts` - Puppeteer PDF generation with Handlebars
-- `src/repositories/document-repository.ts` - Database operations, number generation
-- `src/routes/admin.ts` - Admin endpoints for document generation
-- `data/templates/angebot.html` - Quote PDF template (German)
-- `data/templates/rechnung.html` - Invoice PDF template (German)
-- `src/db/migrations/005_add_documents_table.sql` - Database schema
-- `src/scripts/set-document-sequence.ts` - Admin script for sequence management
-
-**Important Notes:**
+- PDF generation: Puppeteer + Handlebars templates (`data/templates/angebot.html`, `rechnung.html`)
+- Quotes: `A-YYYY-NNNN`, Invoices: `YYYY-NNNN` (independent counters per year)
+- **Document numbering is SHARED across all properties** (one global sequence per type per year)
 - Document numbers are **permanently stable** once created (never change, even on refresh)
-- Refresh button updates data while preserving the document number (critical for accounting)
-- Each reservation can have both a quote AND an invoice with independent numbers
-- Templates use Handlebars syntax with helpers for currency formatting
-- Prices stored in cents, displayed as Euros with comma decimal separator
-- Guest notes from Guesty appear below totals section in PDF
-- Company names (GmbH, AG, UG, Ltd, etc.) in firstName field are auto-detected and formatted correctly
+- Refresh button (↻) fetches fresh Guesty data but preserves the document number
+- Company names (GmbH, AG, UG, Ltd, etc.) in guest firstName auto-detected
+
+### Authentication
+- Google OAuth 2.0 via Passport.js (`src/config/auth.ts`)
+- Email whitelist: `ADMIN_ALLOWED_EMAILS` env var
+- Session-based with secure cookies (24h lifetime)
+
+### Error Handling
+Custom error classes in `src/utils/errors.ts`: `ConfigError`, `DatabaseError`, `ExternalApiError`, `ValidationError`, `NotFoundError`, `CacheMissError`. All extend `AppError` with structured Pino logging.
 
 ## Key Patterns
 
-### Database Operations
-- Use `better-sqlite3` synchronous API for all queries
-- Always check cache freshness before fetching from API
-- Repositories handle cache logic (check TTL → fetch if stale → upsert)
-- Foreign keys enabled (`PRAGMA foreign_keys = ON`)
-- Triggers auto-update `updated_at` timestamps
-- All tables use `listing_id` as key - no migrations needed for multi-property support
-
-### Date Handling
-- Store dates as ISO 8601 strings (`YYYY-MM-DD` for dates, full ISO for timestamps)
-- All availability dates are in the property's timezone (configured per property in `properties.json`)
-- Always use UTC for `last_synced_at` and cache expiry fields
-
-### Logging
-- Use structured logging with Pino (`logger.info({ context }, 'message')`)
-- Development: pretty-printed logs (`LOG_PRETTY=true`)
-- Production: JSON logs for aggregation
-- Log API calls with `logApiCall(service, endpoint, status, duration)`
-- Include `propertySlug` in log context for multi-property tracing
-
-### Testing Patterns
-When writing tests:
-- Use Vitest for test runner
-- Mock database operations to avoid file I/O
-- Mock Guesty API responses using fixtures from `fixtures/` directory
-- Test error cases (validation, cache miss, API errors)
-
-### TypeScript Pattern for Optional Config
-When accessing `config.guestyPropertyId` (now optional), always use the fallback:
+- **Database**: `better-sqlite3` sync API, `listing_id` as key (multi-property ready without migrations)
+- **Dates**: ISO 8601 strings, property timezone for availability, UTC for `last_synced_at`
+- **Logging**: Pino structured logging, include `propertySlug` for multi-property tracing
+- **Testing**: Vitest, mock DB and Guesty API responses
+- **Optional config fallback**:
 ```typescript
-import { getDefaultProperty } from '../config/properties.js';
 const defaultProperty = getDefaultProperty();
 const propertyId = config.guestyPropertyId || defaultProperty?.guestyPropertyId;
 if (!propertyId) throw new NotFoundError('No property configured');
@@ -447,1123 +148,86 @@ if (!propertyId) throw new NotFoundError('No property configured');
 ## Important Files
 
 ### Configuration
-- `.env` - Environment variables (never commit, use `.env.example` as template)
-- `data/properties.json` - Multi-property configuration (slug, Guesty ID, email, weekly report, GA4)
-- `src/config/index.ts` - Config validation with Zod, exports typed `config` object
-- `src/config/properties.ts` - Property config loader with Zod validation, caching, and lookup functions
-- Schema: `schema.sql` (executed by `src/scripts/init-db.ts`)
+- `.env` / `.env.example` - Environment variables (secrets, API keys)
+- `data/properties.json` - Multi-property config (slug, Guesty ID, email, weekly report, GA4)
+- `src/config/index.ts` - Zod-validated config object
+- `src/config/properties.ts` - Property config loader with caching
 
-### Critical Services
+### Services & Jobs
 - `src/services/guesty-client.ts` - OAuth + rate-limited Guesty API client
-- `src/services/pricing-calculator.ts` - Local quote computation (no API calls)
-- `src/jobs/scheduler.ts` - ETL job scheduling with jitter, per-property state tracking
-- `src/jobs/etl-job.ts` - Orchestrates listing + availability sync (single + all properties)
+- `src/services/pricing-calculator.ts` - Local quote computation
+- `src/jobs/scheduler.ts` - ETL scheduling with jitter, per-property state
+- `src/jobs/etl-job.ts` - Listing + availability sync orchestration
+- `src/jobs/weekly-email.ts` - Per-property weekly email with `sendWeeklySummaryEmailForProperty()`
 
 ### Routes
-- `src/routes/property-routes.ts` - Property-scoped routes (`/p/:slug/listing`, `/p/:slug/availability`, `/p/:slug/quote`, `/p/:slug` frontend)
-- `src/routes/admin.ts` - Admin dashboard (`/admin`) and system page (`/admin/system`)
-- `src/routes/listing.ts` - Legacy listing route (uses default property)
-- `src/routes/availability.ts` - Legacy availability route (uses default property)
-- `src/routes/quote.ts` - Legacy quote route (uses default property)
-
-### Type Definitions
-- `src/types/guesty.ts` - Guesty API response types
-- `src/types/models.ts` - Internal data models (matches DB schema)
+- `src/routes/property-routes.ts` - `/p/:slug/*` routes with `resolveProperty` middleware
+- `src/routes/admin.ts` - `/admin` dashboard + `/admin/system`
+- `src/routes/listing.ts`, `availability.ts`, `quote.ts` - Legacy routes (default property)
 
 ### Frontend
-- `public/calendar.js` - Calendar logic with property context support
+- `public/calendar.js` - Calendar with property context (`window.__PROPERTY_SLUG__`, `__PROPERTY_NAME__`, `__BOOKING_EMAIL__`)
 - `public/calendar.css` - Mobile-first responsive design
-- Property context injected via `window.__PROPERTY_SLUG__`, `window.__PROPERTY_NAME__`, `window.__BOOKING_EMAIL__`
 
-## Common Tasks
+## Environment Variables
 
-### Adding a New Property
-1. Find the Guesty listing ID: `npx tsx src/scripts/list-properties.ts`
-2. Add property config to `data/properties.json` (slug, guestyPropertyId, name, etc.)
-3. Sync the property: `npx tsx src/scripts/sync-property.ts <slug>`
-4. Verify in admin dashboard: switch to new property in the property selector
-5. Access the calendar: `http://localhost:3000/p/<slug>`
+**Note:** Per-property settings (booking email, timezone, weekly report, GA4) are in `data/properties.json`. The `.env` variables are legacy fallbacks.
 
-### Adding a New API Endpoint
-1. Create route handler in `src/routes/` (use Express Router)
-2. Add validation for request parameters (throw `ValidationError` for invalid input)
-3. Use repositories to fetch data (they handle cache logic)
-4. Return JSON with appropriate status codes
-5. Register route in `src/app.ts`
-6. For property-scoped endpoints, add to `src/routes/property-routes.ts` with `resolveProperty` middleware
+Required:
+- `GUESTY_CLIENT_ID`, `GUESTY_CLIENT_SECRET` - Guesty OAuth credentials
+- `BASE_URL` - Public URL (e.g., `https://guesty.remoterepublic.com`)
+- `SESSION_SECRET` - Random 32+ char string for sessions
+- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` - Google OAuth for admin
+- `ADMIN_ALLOWED_EMAILS` - Comma-separated email whitelist
+- `RESEND_API_KEY` - Resend email service API key
+- `EMAIL_FROM_ADDRESS` - Sender email (verified domain)
+- `EMAIL_FROM_NAME` - Sender display name (e.g., "Remote Republic Booking")
 
-### Modifying Database Schema
-1. Create a new migration file in `src/db/migrations/` with format `NNN_description.sql` (e.g., `002_add_bookings_table.sql`)
-2. Write SQL statements in the migration file (CREATE TABLE, ALTER TABLE, etc.)
-3. Update type definitions in `src/types/models.ts`
-4. Update mappers if Guesty API fields are involved
-5. Update repositories with new query logic
-6. Run `npm run db:migrate` to apply migrations manually, or restart the app (migrations run automatically on startup)
+Optional:
+- `GUESTY_PROPERTY_ID` - Legacy single-property fallback
+- `PORT` (default: 3000), `DATABASE_PATH` (default: ./data/calendar.db)
+- `CACHE_AVAILABILITY_TTL` - Minutes between ETL runs (default: 60)
+- `LOG_LEVEL` (default: info), `LOG_PRETTY` (default: false)
 
-**Migration System:**
-- Migrations are stored in `src/db/migrations/` as `.sql` files
-- Migrations run automatically on application startup
-- Applied migrations are tracked in the `migrations` table
-- Migrations are applied in alphabetical order (use numeric prefix like `001_`, `002_`)
-- Each migration runs in a transaction (atomic)
-- To manually run migrations: `npm run db:migrate`
+## Guesty API Quirks
 
-**Creating a Migration:**
-```bash
-# Create a new migration file
-cat > src/db/migrations/002_add_feature.sql << 'EOF'
--- Migration: Add new feature
--- Created: 2025-10-17
--- Description: Add support for...
+- OAuth tokens: 24h validity, cached until 5min before expiry
+- Calendar endpoint: unwrap `data.days` from response
+- Rate limits: 15 req/sec, 120 req/min, 5000 req/hour
+- `listings.nickname` may be null → fallback to `title`
+- Tax codes: `AF` = accommodation fare, `CF`/`CLEANING` = cleaning fee
+- **Quirk**: `limit=100` returns all reservations, but `limit=1000` returns fewer
 
-CREATE TABLE IF NOT EXISTS new_table (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  ...
-);
-EOF
+## Git & Deployment
 
-# Migrations will run automatically on next app start
-npm run dev
-```
-
-### Debugging Rate Limits
-- Check `getRateLimitInfo()` on GuestyClient instance
-- Look for "Approaching rate limit threshold" warnings in logs
-- Adjust Bottleneck config in `GuestyClient` constructor if needed
-- Note: OAuth endpoint has separate retry logic (5 attempts)
-
-### Frontend Modifications
-- UI is in `public/` directory (served as static files)
-- `calendar.js` contains all calendar logic (vanilla JS, no framework)
-- `calendar.css` is mobile-first responsive design
-- API calls use Fetch API (see `fetchListing`, `fetchAvailability`, `fetchQuote`)
-- Property context: constructor accepts `{ propertySlug, propertyName, bookingEmail }` options
-- API base URL built from property slug: `/p/${propertySlug}` (or empty for legacy routes)
-- Property detection fallback: checks `window.__PROPERTY_SLUG__` then URL pattern `/p/:slug`
-
-## Git Workflow
+### Commit Conventions
+Conventional commits: `feat:`, `fix:`, `docs:`, `refactor:`, `chore:`, `test:`, `perf:`
 
 ### Repository Structure
 ```
 main (default branch)
-├── .env (ignored, never commit)
-├── .env.example (template, commit this)
-├── data/
-│   ├── properties.json (multi-property config, commit this)
-│   ├── calendar.db (SQLite database, ignored)
-│   ├── ga4-service-account.json (GA4 key, ignored)
-│   └── templates/ (PDF templates, commit these)
-├── src/ (TypeScript source)
-├── dist/ (compiled output, ignored)
-├── public/ (static frontend files)
-└── CLAUDE.md (project documentation)
+├── data/properties.json    # Multi-property config (commit this)
+├── data/templates/         # PDF templates (commit these)
+├── src/                    # TypeScript source
+├── public/                 # Static frontend
+├── .env                    # Secrets (NEVER commit)
+└── data/calendar.db        # SQLite DB (ignored)
 ```
 
-### Branch Strategy
-- **main**: Production-ready code, deployed to production server
-- Feature branches: Create for new features or bug fixes (optional for small changes)
-- Direct commits to main are acceptable for small changes and fixes
-- Use descriptive branch names: `feature/weekly-emails`, `fix/timezone-bug`, `docs/update-readme`
-
-### Commit Message Conventions
-Follow conventional commits format for clear history:
-
-```bash
-# Format: <type>: <description>
-#
-# Types:
-#   feat: New feature
-#   fix: Bug fix
-#   docs: Documentation changes
-#   refactor: Code refactoring (no functionality change)
-#   test: Adding or updating tests
-#   chore: Maintenance tasks, dependency updates
-#   style: Code style changes (formatting, semicolons, etc.)
-#   perf: Performance improvements
-
-# Examples:
-git commit -m "feat: Add timezone-aware scheduling for weekly emails"
-git commit -m "fix: Resolve database connection timeout issue"
-git commit -m "docs: Update deployment instructions"
-git commit -m "refactor: Extract email template generation logic"
-git commit -m "chore: Update dependencies to latest versions"
-```
-
-**Multi-line commits** (recommended for significant changes):
-```bash
-git commit -m "$(cat <<'EOF'
-feat: Add weekly email reports feature
-
-- Implement email scheduling with timezone support
-- Add Resend email service integration
-- Create HTML email templates for weekly summaries
-- Add test scripts for email and timezone verification
-
-Co-Authored-By: Claude <noreply@anthropic.com>
-EOF
-)"
-```
-
-### Development Workflow
-
-#### 1. Check Current Status
-```bash
-# See what branch you're on and what's changed
-git status
-
-# View recent commits
-git log --oneline -10
-
-# See your changes
-git diff                    # Unstaged changes
-git diff --staged          # Staged changes
-git diff main              # All changes vs main
-```
-
-#### 2. Making Changes
-```bash
-# Create a feature branch (optional)
-git checkout -b feature/my-feature
-
-# Make your changes, then check what changed
-git status
-git diff
-
-# Stage specific files
-git add src/jobs/weekly-email.ts
-git add package.json
-
-# Or stage all changes
-git add .
-
-# Or stage by pattern
-git add src/**/*.ts
-```
-
-#### 3. Committing Changes
-```bash
-# Commit with message
-git commit -m "feat: Add new feature"
-
-# Commit with multi-line message
-git commit -m "$(cat <<'EOF'
-feat: Add new feature
-
-- Detail 1
-- Detail 2
-
-Co-Authored-By: Claude <noreply@anthropic.com>
-EOF
-)"
-
-# Amend last commit (if you forgot something)
-git add forgotten-file.ts
-git commit --amend --no-edit
-```
-
-#### 4. Pushing Changes
-```bash
-# Push to main branch
-git push origin main
-
-# Push feature branch (first time)
-git push -u origin feature/my-feature
-
-# Push feature branch (subsequent times)
-git push
-
-# Force push (use with caution!)
-git push --force origin main    # Only if absolutely necessary
-```
-
-#### 5. Pulling Latest Changes
-```bash
-# Before starting work, get latest changes
-git pull origin main
-
-# If you have local changes, stash them first
-git stash
-git pull origin main
-git stash pop
-
-# Or use rebase to keep history clean
-git pull --rebase origin main
-```
-
-### Common Git Operations
-
-#### Viewing History
-```bash
-# View commit history
-git log --oneline -20          # Last 20 commits
-git log --oneline --graph      # With branch graph
-git log --since="2 weeks ago"  # Recent commits
-git log --author="username"    # By author
-
-# View specific commit
-git show <commit-hash>
-git show HEAD                  # Latest commit
-git show HEAD~1               # Previous commit
-
-# Search commit messages
-git log --grep="email"
-```
-
-#### Undoing Changes
-```bash
-# Discard unstaged changes in file
-git restore src/file.ts
-git checkout -- src/file.ts    # Old syntax
-
-# Unstage staged file
-git restore --staged src/file.ts
-git reset HEAD src/file.ts     # Old syntax
-
-# Discard all unstaged changes
-git restore .
-git checkout -- .              # Old syntax
-
-# Undo last commit (keep changes)
-git reset --soft HEAD~1
-
-# Undo last commit (discard changes)
-git reset --hard HEAD~1        # DANGEROUS!
-
-# Revert a commit (creates new commit)
-git revert <commit-hash>
-```
-
-#### Branch Management
-```bash
-# List branches
-git branch                     # Local branches
-git branch -r                  # Remote branches
-git branch -a                  # All branches
-
-# Create and switch to branch
-git checkout -b feature/new-feature
-git switch -c feature/new-feature  # Modern syntax
-
-# Switch branches
-git checkout main
-git switch main                # Modern syntax
-
-# Delete branch
-git branch -d feature/old-feature    # Safe delete
-git branch -D feature/old-feature    # Force delete
-
-# Delete remote branch
-git push origin --delete feature/old-feature
-```
-
-#### Stashing Changes
-```bash
-# Stash current changes
-git stash
-git stash save "work in progress on feature X"
-
-# List stashes
-git stash list
-
-# Apply stash
-git stash pop                  # Apply and remove
-git stash apply               # Apply and keep
-git stash apply stash@{1}     # Apply specific stash
-
-# Drop stash
-git stash drop stash@{0}
-git stash clear               # Remove all stashes
-```
-
-#### Checking Out Files from Other Branches
-```bash
-# Get file from another branch
-git checkout main -- src/config/index.ts
-
-# Get file from specific commit
-git checkout <commit-hash> -- src/file.ts
-```
-
-### Working with .env Files
-
-**IMPORTANT**: Never commit `.env` files with secrets!
-
-```bash
-# .env is in .gitignore (never commit)
-# .env.example is committed (template without secrets)
-
-# Check if .env is ignored
-git check-ignore .env          # Should show: .env
-
-# If .env was accidentally committed
-git rm --cached .env           # Remove from git, keep file
-git commit -m "fix: Remove .env from repository"
-git push origin main
-
-# Update .env.example when adding new variables
-# (remove secret values, use placeholders)
-```
-
-### Deployment Workflow
-
-#### Standard Deployment
-```bash
-# 1. Make changes locally
-git add .
-git commit -m "feat: Add new feature"
-git push origin main
-
-# 2. SSH to production server
-ssh deploy@your-server.com
-
-# 3. Navigate to app directory
-cd /opt/guesty-calendar-app
-
-# 4. Pull latest changes
-git pull origin main
-
-# 5. Install dependencies (if package.json changed)
-npm install
-
-# 6. Build TypeScript
-npm run build
-
-# 7. Restart application
-pm2 restart guesty-calendar
-
-# 8. Verify deployment
-pm2 logs guesty-calendar --lines 50
-curl https://your-domain.com/health
-```
-
-#### Rollback to Previous Version
-```bash
-# On production server
-cd /opt/guesty-calendar-app
-
-# View recent commits
-git log --oneline -10
-
-# Rollback to specific commit
-git reset --hard <commit-hash>
-
-# Rebuild and restart
-npm run build
-pm2 restart guesty-calendar
-
-# Verify
-pm2 logs guesty-calendar --lines 50
-```
-
-### Git Best Practices
-
-1. **Commit Often**: Make small, focused commits rather than large ones
-2. **Write Clear Messages**: Use conventional commit format
-3. **Pull Before Push**: Always pull latest changes before pushing
-4. **Review Before Commit**: Use `git diff` to review changes
-5. **Don't Commit Secrets**: Never commit `.env`, API keys, or passwords
-6. **Use .gitignore**: Keep generated files, dependencies, and data out of repo
-7. **Test Before Push**: Run `npm run build` and test locally first
-8. **Keep History Clean**: Use meaningful commit messages for future reference
-
-### Ignored Files (.gitignore)
-
-The following are ignored and should never be committed:
-```
-.env                          # Environment variables with secrets
-node_modules/                 # Dependencies (from npm install)
-dist/                         # Compiled TypeScript output
-data/*.db                     # SQLite database files
-data/*.db-journal             # SQLite journal files
-data/ga4-service-account.json # GA4 service account key
-data/.guesty-token-cache.json # OAuth token cache
-.DS_Store                     # macOS system files
-*.log                         # Log files
-.pm2/                         # PM2 process manager files
-```
-
-Always commit:
-```
-.env.example                  # Template for environment variables
-data/properties.json          # Multi-property configuration
-data/templates/               # PDF templates (Handlebars)
-src/                          # Source code
-public/                       # Static frontend files
-package.json                  # Dependencies list
-package-lock.json             # Locked dependency versions
-tsconfig.json                 # TypeScript configuration
-schema.sql                    # Database schema
-CLAUDE.md                     # Project documentation
-README.md                     # Project readme
-```
-
-## Environment Variables
-
-**Note:** Many settings that were previously configured via `.env` are now per-property in `data/properties.json`. The `.env` variables serve as legacy fallbacks when `properties.json` is absent.
-
-Required:
-- `GUESTY_CLIENT_ID` - OAuth client ID for Guesty API
-- `GUESTY_CLIENT_SECRET` - OAuth client secret for Guesty API
-
-Legacy (optional if `properties.json` exists):
-- `GUESTY_PROPERTY_ID` - Guesty listing ID (overridden by `properties.json`)
-- `BOOKING_RECIPIENT_EMAIL` - Email for booking requests (overridden by `properties.json`)
-- `PROPERTY_TIMEZONE` - IANA timezone (overridden by `properties.json`, default: Europe/Berlin)
-
-Authentication (required for admin access):
-- `BASE_URL` - Full public URL (e.g., `https://guesty.remoterepublic.com` or `http://localhost:3000`)
-- `SESSION_SECRET` - Random string (32+ chars, generate with `openssl rand -base64 32`)
-- `GOOGLE_CLIENT_ID` - Google OAuth client ID (from Google Cloud Console)
-- `GOOGLE_CLIENT_SECRET` - Google OAuth client secret
-- `ADMIN_ALLOWED_EMAILS` - Comma-separated email whitelist (e.g., `user@example.com,admin@example.com`)
-
-Email service (required for weekly reports):
-- `RESEND_API_KEY` - API key from Resend (https://resend.com)
-- `EMAIL_FROM_ADDRESS` - Sender email (must be from verified domain)
-- `EMAIL_FROM_NAME` - Display name for sender
-
-Legacy weekly report settings (overridden by `properties.json`):
-- `WEEKLY_REPORT_ENABLED` - Enable/disable weekly emails (TRUE/FALSE)
-- `WEEKLY_REPORT_RECIPIENTS` - Comma-separated email list
-- `WEEKLY_REPORT_DAY` - Day of week (0=Sunday, 1=Monday, etc.)
-- `WEEKLY_REPORT_HOUR` - Hour in property timezone (0-23)
-
-Legacy GA4 settings (overridden by `properties.json`):
-- `GA4_ENABLED` - Enable/disable GA4 integration (TRUE/FALSE)
-- `GA4_PROPERTY_ID` - GA4 Property ID (numeric, from GA4 Admin)
-- `GA4_KEY_FILE_PATH` - Path to service account JSON key file
-- `GA4_SYNC_HOUR` - Hour to sync analytics (0-23, default: 3)
-
-Common optional:
-- `PORT` - Server port (default: 3000)
-- `CACHE_AVAILABILITY_TTL` - Minutes between ETL runs (default: 60)
-- `LOG_LEVEL` - Pino log level (default: info)
-- `DATABASE_PATH` - SQLite file path (default: ./data/calendar.db)
-
-See `.env.example` for full list with descriptions.
-
-## Guesty API Quirks
-
-- OAuth tokens valid for 24 hours (cached until 5 min before expiry)
-- Calendar endpoint returns `{ status, data: { days: [...] } }` - unwrap `data.days`
-- Rate limits: 15 req/sec, 120 req/min, 5000 req/hour (tracked via response headers)
-- Date format: `YYYY-MM-DD` for date parameters
-- Nickname field (`listings.nickname`) may be null - fallback to `title`
-- Tax `appliedOnFees` array uses codes: `AF` = accommodation fare, `CF`/`CLEANING` = cleaning fee
-
-## Setting Up Google OAuth
-
-To enable admin authentication, you need to create OAuth 2.0 credentials in Google Cloud Console:
-
-### 1. Create OAuth Credentials
-1. Go to [Google Cloud Console - Credentials](https://console.cloud.google.com/apis/credentials)
-2. Create a new project or select an existing one
-3. Click **"Create Credentials"** → **"OAuth client ID"**
-4. Configure the OAuth consent screen if prompted:
-   - User type: External (for public access) or Internal (for Google Workspace)
-   - App name: "Guesty Calendar Admin"
-   - User support email: Your email
-   - Authorized domains: Add your domain (e.g., `remoterepublic.com`)
-5. Choose application type: **"Web application"**
-6. Add authorized redirect URIs:
-   - Development: `http://localhost:3000/auth/google/callback`
-   - Production: `https://yourdomain.com/auth/google/callback`
-7. Click **"Create"** and save the Client ID and Client Secret
-
-### 2. Update Environment Variables
-Add the credentials to your `.env` file:
-```bash
-BASE_URL=https://yourdomain.com
-SESSION_SECRET=$(openssl rand -base64 32)
-GOOGLE_CLIENT_ID=your_client_id_here
-GOOGLE_CLIENT_SECRET=your_client_secret_here
-ADMIN_ALLOWED_EMAILS=micha@remoterepublic.com
-```
-
-### 3. Test Authentication
-1. Restart the server: `npm run dev` or `pm2 restart guesty-calendar`
-2. Visit `/auth/login` to test the login flow
-3. Unauthorized emails will see an access denied message
-
-### Security Notes
-- Keep `SESSION_SECRET` and `GOOGLE_CLIENT_SECRET` confidential
-- Use HTTPS in production (cookies are secure-only)
-- Regularly review authorized emails in `ADMIN_ALLOWED_EMAILS`
-- Consider using Google Workspace for internal-only access
-
-## Production Deployment
-
-This section covers the complete server-side infrastructure setup for production deployment.
-
-### Server Requirements
-
-- **OS**: Ubuntu 20.04 LTS or newer (Debian-based recommended)
-- **Node.js**: v18+ (use nvm for version management)
-- **Memory**: Minimum 1GB RAM (2GB+ recommended)
-- **Storage**: Minimum 10GB disk space
-- **Network**: Public IP with domain pointing to server
-- **Ports**: 80 (HTTP), 443 (HTTPS) open to public
-
-### Initial Server Setup
-
-#### 1. Create Deploy User
-```bash
-# Create non-root user for deployment
-sudo adduser deploy
-sudo usermod -aG sudo deploy
-
-# Switch to deploy user
-su - deploy
-```
-
-#### 2. Install Node.js via nvm
-```bash
-# Install nvm
-curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
-source ~/.bashrc
-
-# Install Node.js LTS
-nvm install --lts
-nvm use --lts
-nvm alias default node
-
-# Verify installation
-node --version
-npm --version
-```
-
-#### 3. Install PM2 Process Manager
-```bash
-# Install PM2 globally
-npm install -g pm2
-
-# Set up PM2 to start on boot
-pm2 startup systemd
-# Run the command that PM2 outputs (with sudo)
-
-# Save PM2 process list
-pm2 save
-```
-
-#### 4. Clone and Setup Application
-```bash
-# Create application directory
-sudo mkdir -p /opt/guesty-calendar-app
-sudo chown deploy:deploy /opt/guesty-calendar-app
-
-# Clone repository
-cd /opt
-git clone <your-repo-url> guesty-calendar-app
-cd guesty-calendar-app
-
-# Install dependencies
-npm install
-
-# Create data directory
-mkdir -p data
-
-# Copy environment file
-cp .env.example .env
-nano .env  # Edit with production values
-
-# Verify properties.json is present and correct
-cat data/properties.json
-```
-
-### PM2 Process Management
-
-#### Initial Deployment
-```bash
-# Build TypeScript
-npm run build
-
-# Start application with PM2
-pm2 start dist/index.js --name guesty-calendar
-
-# Save PM2 configuration
-pm2 save
-
-# Check status
-pm2 list
-pm2 logs guesty-calendar
-```
-
-#### Common PM2 Commands
-```bash
-# View logs
-pm2 logs guesty-calendar           # Live logs
-pm2 logs guesty-calendar --lines 100  # Last 100 lines
-
-# Process management
-pm2 restart guesty-calendar        # Restart app
-pm2 stop guesty-calendar          # Stop app
-pm2 delete guesty-calendar        # Remove from PM2
-pm2 describe guesty-calendar      # Detailed info
-
-# Monitoring
-pm2 monit                         # Real-time monitor
-pm2 status                        # Process status
-```
-
-#### Updating the Application
-```bash
-cd /opt/guesty-calendar-app
-
-# Pull latest code
-git pull origin main
-
-# Install new dependencies (if any)
-npm install
-
-# Build TypeScript
-npm run build
-
-# Restart PM2 process
-pm2 restart guesty-calendar
-
-# Check logs for errors
-pm2 logs guesty-calendar --lines 50
-```
-
-### Caddy Reverse Proxy Setup
-
-Caddy provides automatic HTTPS with Let's Encrypt and acts as a reverse proxy to your Node.js app.
-
-#### 1. Install Caddy
-```bash
-# Add Caddy repository
-sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
-
-# Install Caddy
-sudo apt update
-sudo apt install caddy
-
-# Verify installation
-caddy version
-```
-
-#### 2. Configure Caddy
-```bash
-# Create Caddyfile
-sudo nano /etc/caddy/Caddyfile
-```
-
-**Basic Configuration (Single Domain):**
-```caddyfile
-# Replace with your domain
-your-domain.com {
-    # Reverse proxy to Node.js app
-    reverse_proxy localhost:3005 {
-        # Pass original headers
-        header_up Host {host}
-        header_up X-Real-IP {remote}
-
-        # Health check
-        health_uri /health
-        health_interval 10s
-        health_timeout 5s
-    }
-
-    # Security headers
-    header {
-        # Enable HSTS
-        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
-
-        # Prevent MIME sniffing
-        X-Content-Type-Options "nosniff"
-
-        # XSS protection
-        X-XSS-Protection "1; mode=block"
-
-        # Referrer policy
-        Referrer-Policy "strict-origin-when-cross-origin"
-    }
-
-    # Access logging
-    log {
-        output file /var/log/caddy/access.log {
-            roll_size 10MB
-            roll_keep 7
-            roll_keep_for 168h
-        }
-        format json
-    }
-
-    # Error handling
-    handle_errors {
-        @502-504 expression `{err.status_code} in [502, 503, 504]`
-        handle @502-504 {
-            respond "Service temporarily unavailable. Please try again." 503
-        }
-    }
-}
-```
-
-#### 3. Enable Iframe Embedding
-
-If you need to embed the calendar in an iframe on external websites, update the security headers:
-
-```caddyfile
-your-domain.com {
-    # ... (reverse_proxy config same as above)
-
-    # Security headers with iframe support
-    header {
-        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
-
-        # Allow iframe embedding from specific domains
-        Content-Security-Policy "frame-ancestors 'self' https://your-main-site.com https://staging.your-site.com"
-
-        X-Content-Type-Options "nosniff"
-        X-XSS-Protection "1; mode=block"
-        Referrer-Policy "strict-origin-when-cross-origin"
-    }
-
-    # ... (rest of config)
-}
-```
-
-**Important:** Replace the domains in `frame-ancestors` with your actual domains where you want to embed the calendar.
-
-#### 4. Start Caddy
-```bash
-# Validate configuration
-sudo caddy validate --config /etc/caddy/Caddyfile
-
-# Start Caddy service
-sudo systemctl enable caddy
-sudo systemctl start caddy
-
-# Check status
-sudo systemctl status caddy
-
-# View logs
-sudo journalctl -u caddy -f
-```
-
-#### 5. Reload Caddy After Config Changes
-```bash
-# After editing Caddyfile
-sudo caddy validate --config /etc/caddy/Caddyfile
-sudo systemctl reload caddy
-```
-
-### Firewall Configuration
-
-#### Using UFW (Uncomplicated Firewall)
-```bash
-# Enable UFW
-sudo ufw enable
-
-# Allow SSH (important - do this first!)
-sudo ufw allow 22/tcp
-
-# Allow HTTP and HTTPS
-sudo ufw allow 80/tcp
-sudo ufw allow 443/tcp
-
-# Check status
-sudo ufw status verbose
-
-# Optional: Allow specific IPs only for SSH
-sudo ufw delete allow 22/tcp
-sudo ufw allow from YOUR.IP.ADDRESS to any port 22
-```
-
-### SSL/TLS Certificates
-
-Caddy automatically obtains and renews SSL certificates from Let's Encrypt. No manual configuration needed!
-
-**Requirements:**
-- Domain must point to your server's IP address (A record)
-- Ports 80 and 443 must be accessible from the internet
-- Valid email in environment variable (Caddy uses it for Let's Encrypt)
-
-**Verify SSL:**
-```bash
-# Check certificate
-openssl s_client -connect your-domain.com:443 -servername your-domain.com < /dev/null 2>/dev/null | openssl x509 -noout -dates
-
-# Test HTTPS
-curl -I https://your-domain.com
-```
-
-### Domain Configuration
-
-#### DNS Records
-Point your domain to the server by creating an A record:
-
-```
-Type: A
-Name: @ (or subdomain like "calendar")
-Value: YOUR.SERVER.IP.ADDRESS
-TTL: 3600 (or auto)
-```
-
-For subdomains (e.g., `guesty.example.com`):
-```
-Type: A
-Name: guesty
-Value: YOUR.SERVER.IP.ADDRESS
-TTL: 3600
-```
-
-**Propagation:** DNS changes can take 1-48 hours to propagate globally. Check with:
-```bash
-dig your-domain.com
-nslookup your-domain.com
-```
-
-### Environment Configuration for Production
-
-Update your `.env` file with production values:
-
-```bash
-# Node Environment
-NODE_ENV=production
-
-# Server Configuration
-PORT=3005
-HOST=127.0.0.1  # Bind to localhost (Caddy proxies to this)
-BASE_URL=https://your-domain.com
-
-# Logging
-LOG_LEVEL=info
-LOG_PRETTY=false  # Use JSON logs for production
-
-# Guesty API (from Guesty dashboard)
-GUESTY_CLIENT_ID=your_client_id
-GUESTY_CLIENT_SECRET=your_client_secret
-# GUESTY_PROPERTY_ID is optional when using data/properties.json
-
-# Authentication
-SESSION_SECRET=$(openssl rand -base64 32)
-GOOGLE_CLIENT_ID=your_google_client_id
-GOOGLE_CLIENT_SECRET=your_google_client_secret
-ADMIN_ALLOWED_EMAILS=admin@your-domain.com
-
-# Email Service
-RESEND_API_KEY=your_resend_api_key
-EMAIL_FROM_ADDRESS=calendar@updates.yourdomain.com
-EMAIL_FROM_NAME=Property Calendar
-
-# Cache Configuration (in minutes)
-CACHE_LISTING_TTL=1440  # 24 hours
-CACHE_AVAILABILITY_TTL=30  # 30 minutes
-CACHE_QUOTE_TTL=60  # 60 minutes
-
-# Database
-DATABASE_PATH=./data/calendar.db
-```
-
-**Note:** Property-specific settings (booking email, timezone, currency, weekly report, GA4) are configured in `data/properties.json`, not in `.env`.
-
-### Monitoring and Logs
-
-#### Application Logs (PM2)
-```bash
-# Real-time logs
-pm2 logs guesty-calendar
-
-# Last 100 lines
-pm2 logs guesty-calendar --lines 100
-
-# Error logs only
-pm2 logs guesty-calendar --err
-
-# Log files location
-ls -lh /home/deploy/.pm2/logs/
-```
-
-#### Caddy Logs
-```bash
-# Access logs
-sudo tail -f /var/log/caddy/access.log
-
-# Error logs (systemd journal)
-sudo journalctl -u caddy -f
-
-# View specific time range
-sudo journalctl -u caddy --since "1 hour ago"
-```
-
-#### System Monitoring
-```bash
-# Check resource usage
-pm2 monit
-
-# Server resources
-htop
-df -h  # Disk usage
-free -h  # Memory usage
-
-# Check port bindings
-sudo lsof -i -P -n | grep LISTEN
-sudo ss -tulpn | grep LISTEN
-```
-
-### Health Checks
-
-The application provides health check endpoints:
-
-```bash
-# Basic health check
-curl https://your-domain.com/health
-
-# Detailed health check
-curl https://your-domain.com/health/detailed
-```
-
-Set up external monitoring (e.g., UptimeRobot, Pingdom) to monitor these endpoints.
-
-### Backup and Restore
-
-#### Database Backup
-```bash
-# Manual backup
-cp /opt/guesty-calendar-app/data/calendar.db /opt/backups/calendar-$(date +%Y%m%d).db
-
-# Automated daily backup (cron)
-crontab -e
-# Add this line:
-0 2 * * * cp /opt/guesty-calendar-app/data/calendar.db /opt/backups/calendar-$(date +\%Y\%m\%d).db
-
-# Restore from backup
-pm2 stop guesty-calendar
-cp /opt/backups/calendar-20251104.db /opt/guesty-calendar-app/data/calendar.db
-pm2 start guesty-calendar
-```
-
-#### Environment File Backup
-```bash
-# Backup .env (contains secrets!)
-cp /opt/guesty-calendar-app/.env /opt/backups/.env.backup
-chmod 600 /opt/backups/.env.backup
-```
-
-### Troubleshooting
-
-#### Application Won't Start
-```bash
-# Check PM2 logs
-pm2 logs guesty-calendar --err
-
-# Check if port is already in use
-sudo lsof -i :3005
-
-# Verify environment variables
-pm2 env 0  # Check environment of process ID 0
-
-# Verify properties.json is valid
-node -e "console.log(JSON.parse(require('fs').readFileSync('data/properties.json','utf-8')))"
-
-# Test build manually
-cd /opt/guesty-calendar-app
-npm run build
-node dist/index.js  # Should show error if any
-```
-
-#### SSL Certificate Issues
-```bash
-# Check Caddy logs
-sudo journalctl -u caddy --since "10 minutes ago"
-
-# Verify domain points to server
-dig your-domain.com +short
-
-# Test Let's Encrypt connectivity
-curl -I https://acme-v02.api.letsencrypt.org/directory
-
-# Force certificate renewal
-sudo caddy reload --config /etc/caddy/Caddyfile
-```
-
-#### 502 Bad Gateway
-```bash
-# Check if Node.js app is running
-pm2 list
-
-# Check if app is listening on correct port
-sudo lsof -i :3005
-
-# Restart application
-pm2 restart guesty-calendar
-
-# Check application logs
-pm2 logs guesty-calendar --lines 50
-```
-
-#### High Memory Usage
-```bash
-# Check PM2 memory
-pm2 list
-
-# Restart app to clear memory
-pm2 restart guesty-calendar
-
-# Enable PM2 auto-restart on memory limit
-pm2 start dist/index.js --name guesty-calendar --max-memory-restart 500M
-pm2 save
-```
-
-### Security Checklist
-
-- [ ] Firewall enabled (UFW) with only necessary ports open
-- [ ] SSH key-based authentication (disable password auth)
-- [ ] Regular system updates (`sudo apt update && sudo apt upgrade`)
-- [ ] Strong `SESSION_SECRET` (32+ random characters)
-- [ ] `.env` file permissions set to 600 (`chmod 600 .env`)
-- [ ] HTTPS enabled with valid SSL certificate
-- [ ] Security headers configured in Caddy
-- [ ] Regular database backups
-- [ ] Monitor disk space (`df -h`)
-- [ ] Monitor application logs for errors
-- [ ] Keep Node.js and dependencies updated
+### Production Server
+- **Host**: `deploy@guesty.remoterepublic.com`
+- **Path**: `/opt/guesty-calendar-app`
+- **Process**: PM2 (`guesty-calendar`), requires nvm sourcing for CLI commands
+- **Proxy**: Caddy with auto-SSL on port 3005
+- **Deploy**: `git pull && npm install && npm run build && pm2 restart guesty-calendar`
+- **Logs**: `pm2 logs guesty-calendar --lines 50`
+- **Health**: `curl https://guesty.remoterepublic.com/health`
 
 ### Production Checklist
-
-Before going live, verify:
-
-- [ ] Domain DNS points to server IP
-- [ ] SSL certificate valid and auto-renewing
-- [ ] Application starts and runs without errors
-- [ ] PM2 configured to restart on boot
-- [ ] Environment variables set correctly
-- [ ] `data/properties.json` present with all properties configured
-- [ ] Google OAuth configured with production callback URL
-- [ ] Admin emails whitelisted
-- [ ] Health check endpoints responding
-- [ ] Guesty API credentials valid
-- [ ] All properties synced (`npx tsx src/scripts/sync-property.ts <slug>` for each)
+- [ ] `data/properties.json` present with all properties
+- [ ] All properties synced (`sync-property.ts <slug>` for each)
+- [ ] `.env` configured (Guesty API, OAuth, Resend, session secret)
+- [ ] Google OAuth callback URL set for production domain
+- [ ] Health check responding
 - [ ] Weekly report recipients configured per property
 - [ ] GA4 service account configured (if applicable)
-- [ ] Firewall rules applied
-- [ ] Log rotation configured
-- [ ] Backup strategy in place
-- [ ] Monitoring/alerting set up
-
-### Deployment Workflow Summary
-
-**Initial Setup:**
-1. Set up server (user, Node.js, PM2, Caddy)
-2. Configure firewall
-3. Point domain to server
-4. Clone repository and install dependencies
-5. Configure `.env` (API keys, auth) and verify `data/properties.json`
-6. Build and start with PM2
-7. Sync all properties: `npx tsx src/scripts/sync-property.ts <slug>` for each
-8. Configure Caddy reverse proxy
-9. Verify SSL and HTTPS working
-10. Test admin dashboard with property switching
-
-**Subsequent Updates:**
-1. SSH into server
-2. `cd /opt/guesty-calendar-app`
-3. `git pull origin main`
-4. `npm install` (if dependencies changed)
-5. `npm run build`
-6. `pm2 restart guesty-calendar`
-7. Check logs: `pm2 logs guesty-calendar --lines 50`
-8. Verify: `curl https://your-domain.com/health`
