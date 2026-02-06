@@ -10,6 +10,7 @@ import path from 'path';
 import fs from 'fs';
 import { getListingById } from '../repositories/listings-repository.js';
 import { getAvailability } from '../repositories/availability-repository.js';
+import { getReservationsByPeriod } from '../repositories/reservation-repository.js';
 import { calculateQuote } from '../services/pricing-calculator.js';
 import { getCachedQuote, saveQuoteToCache, cleanupExpiredQuotes } from '../repositories/quotes-repository.js';
 import { getPropertyBySlug, type PropertyConfig } from '../config/properties.js';
@@ -315,5 +316,109 @@ router.get('/:slug/quote', resolveProperty, (req: Request, res: Response, next: 
     return next(error);
   }
 });
+
+/**
+ * GET /p/:slug/calendar.ics
+ * iCal feed with all reservations for a property.
+ * Subscribe to this URL in Google Calendar to get automatic booking entries.
+ */
+router.get('/:slug/calendar.ics', resolveProperty, (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const property = req.property!;
+    const propertyId = property.guestyPropertyId;
+
+    // Get past 6 months + future 12 months of reservations
+    const pastReservations = getReservationsByPeriod(propertyId, 180, 'past');
+    const futureReservations = getReservationsByPeriod(propertyId, 365, 'future');
+
+    // Deduplicate by reservation_id (in case of overlap)
+    const seen = new Set<string>();
+    const allReservations = [...futureReservations, ...pastReservations].filter(r => {
+      if (seen.has(r.reservation_id)) return false;
+      seen.add(r.reservation_id);
+      return true;
+    });
+
+    // Build iCal
+    const now = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+    const calName = `${property.name} - Bookings`;
+
+    const events = allReservations.map(r => {
+      const checkIn = (r.check_in_localized || r.check_in).split('T')[0].replace(/-/g, '');
+      const checkOut = (r.check_out_localized || r.check_out).split('T')[0].replace(/-/g, '');
+      const guestName = r.guest_name || 'Unknown Guest';
+      const status = r.status.charAt(0).toUpperCase() + r.status.slice(1);
+      const source = r.source || r.platform || 'Direct';
+      const guests = r.guests_count || 0;
+      const nights = r.nights_count || 0;
+      const payout = r.host_payout ? `${r.host_payout.toFixed(2)} ${r.currency || property.currency}` : '';
+      const code = r.confirmation_code || '';
+
+      const summary = escapeIcal(`${guestName} (${nights}N, ${guests} guests)`);
+      const description = escapeIcal(
+        [
+          `Guest: ${guestName}`,
+          `Status: ${status}`,
+          `Nights: ${nights}`,
+          `Guests: ${guests}`,
+          `Source: ${source}`,
+          code ? `Confirmation: ${code}` : '',
+          payout ? `Payout: ${payout}` : '',
+        ].filter(Boolean).join('\\n')
+      );
+      const location = escapeIcal(property.name);
+      const uid = `${r.reservation_id}@guesty-calendar`;
+
+      return [
+        'BEGIN:VEVENT',
+        `UID:${uid}`,
+        `DTSTAMP:${now}`,
+        `DTSTART;VALUE=DATE:${checkIn}`,
+        `DTEND;VALUE=DATE:${checkOut}`,
+        `SUMMARY:${summary}`,
+        `DESCRIPTION:${description}`,
+        `LOCATION:${location}`,
+        `STATUS:${r.status === 'confirmed' ? 'CONFIRMED' : 'TENTATIVE'}`,
+        'TRANSP:OPAQUE',
+        'END:VEVENT',
+      ].join('\r\n');
+    });
+
+    const ical = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//Guesty Calendar App//EN',
+      'CALSCALE:GREGORIAN',
+      'METHOD:PUBLISH',
+      `X-WR-CALNAME:${escapeIcal(calName)}`,
+      `X-WR-TIMEZONE:${property.timezone}`,
+      'REFRESH-INTERVAL;VALUE=DURATION:PT1H',
+      'X-PUBLISHED-TTL:PT1H',
+      ...events,
+      'END:VCALENDAR',
+    ].join('\r\n');
+
+    logger.info({ propertySlug: property.slug, reservationCount: allReservations.length }, 'iCal feed served');
+
+    res.set({
+      'Content-Type': 'text/calendar; charset=utf-8',
+      'Content-Disposition': `inline; filename="${property.slug}-bookings.ics"`,
+      'Cache-Control': 'public, max-age=900',
+    });
+    res.send(ical);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+/**
+ * Escape special characters for iCal text values
+ */
+function escapeIcal(text: string): string {
+  return text
+    .replace(/\\/g, '\\\\')
+    .replace(/;/g, '\\;')
+    .replace(/,/g, '\\,');
+}
 
 export default router;
