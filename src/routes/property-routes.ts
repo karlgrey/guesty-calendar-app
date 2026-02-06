@@ -361,21 +361,15 @@ router.get('/:slug/calendar.ics', resolveProperty, (req: Request, res: Response,
       const source = r.source || r.platform || 'Direct';
       const guests = r.guests_count || 0;
       const nights = r.nights_count || 0;
-      const payout = r.host_payout ? `${r.host_payout.toFixed(2)} ${r.currency || property.currency}` : '';
-      const code = r.confirmation_code || '';
-
       const summary = escapeIcal(`${guestName} (${nights}N, ${guests} guests)`);
-      const description = escapeIcal(
-        [
-          `Guest: ${guestName}`,
-          `Status: ${status}`,
-          `Nights: ${nights}`,
-          `Guests: ${guests}`,
-          `Source: ${source}`,
-          code ? `Confirmation: ${code}` : '',
-          payout ? `Payout: ${payout}` : '',
-        ].filter(Boolean).join('\\n')
-      );
+      const descLines = [
+        `Guest: ${guestName}`,
+        `Status: ${status}`,
+        `Nights: ${nights}`,
+        `Guests: ${guests}`,
+        `Source: ${source}`,
+      ];
+      const description = escapeIcal(descLines.join('\n'));
       const location = escapeIcal(property.name);
       const uid = `${r.reservation_id}@guesty-calendar`;
 
@@ -428,7 +422,8 @@ function escapeIcal(text: string): string {
   return text
     .replace(/\\/g, '\\\\')
     .replace(/;/g, '\\;')
-    .replace(/,/g, '\\,');
+    .replace(/,/g, '\\,')
+    .replace(/\n/g, '\\n');
 }
 
 export default router;
