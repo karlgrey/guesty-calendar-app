@@ -4,14 +4,24 @@
  * Sends a test weekly summary email immediately
  */
 
-import { sendWeeklySummaryEmail } from '../jobs/weekly-email.js';
+import { sendWeeklySummaryEmail, sendWeeklySummaryEmailForProperty } from '../jobs/weekly-email.js';
+import { getPropertyBySlug, getAllProperties } from '../config/properties.js';
 import { verifyEmailConnection } from '../services/email-service.js';
 import { initDatabase } from '../db/index.js';
 import logger from '../utils/logger.js';
 
 async function main() {
+  const slug = process.argv[2];
+
   console.log('Testing Email Functionality');
-  console.log('===========================\n');
+  console.log('===========================');
+  if (slug) {
+    console.log(`Property: ${slug}`);
+  } else {
+    console.log('Usage: npx tsx src/scripts/test-email.ts [slug]');
+    console.log('Available properties:', getAllProperties().map(p => p.slug).join(', '));
+  }
+  console.log('');
 
   // Initialize database
   console.log('Step 1: Initializing database...');
@@ -35,8 +45,19 @@ async function main() {
   console.log('✅ Email connection verified\n');
 
   // Send test email
-  console.log('Step 3: Sending weekly summary email...');
-  const result = await sendWeeklySummaryEmail();
+  let result;
+  if (slug) {
+    const property = getPropertyBySlug(slug);
+    if (!property) {
+      console.error(`❌ Property '${slug}' not found`);
+      process.exit(1);
+    }
+    console.log(`Step 3: Sending weekly summary email for ${property.name}...`);
+    result = await sendWeeklySummaryEmailForProperty(property);
+  } else {
+    console.log('Step 3: Sending weekly summary email (default property)...');
+    result = await sendWeeklySummaryEmail();
+  }
 
   if (result.sent) {
     console.log('\n✅ Test email sent successfully!');
