@@ -318,12 +318,22 @@ router.get('/:slug/quote', resolveProperty, (req: Request, res: Response, next: 
 });
 
 /**
- * GET /p/:slug/calendar.ics
+ * GET /p/:slug/calendar.ics?token=SECRET
  * iCal feed with all reservations for a property.
- * Subscribe to this URL in Google Calendar to get automatic booking entries.
+ * Protected by ICAL_TOKEN env var. Subscribe to this URL in Google Calendar.
  */
 router.get('/:slug/calendar.ics', resolveProperty, (req: Request, res: Response, next: NextFunction) => {
   try {
+    // Token auth - required when ICAL_TOKEN is set
+    const expectedToken = process.env.ICAL_TOKEN;
+    if (expectedToken) {
+      const providedToken = req.query.token as string;
+      if (!providedToken || providedToken !== expectedToken) {
+        res.status(403).json({ error: 'Invalid or missing token' });
+        return;
+      }
+    }
+
     const property = req.property!;
     const propertyId = property.guestyPropertyId;
 
