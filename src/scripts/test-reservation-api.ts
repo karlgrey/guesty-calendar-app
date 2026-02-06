@@ -6,10 +6,19 @@
 
 import { guestyClient } from '../services/guesty-client.js';
 import { config } from '../config/index.js';
+import { getDefaultProperty } from '../config/properties.js';
 import logger from '../utils/logger.js';
 
 async function main() {
   try {
+    const defaultProperty = getDefaultProperty();
+    const propertyId = config.guestyPropertyId || defaultProperty?.guestyPropertyId;
+
+    if (!propertyId) {
+      console.error('No property configured');
+      process.exit(1);
+    }
+
     // Fetch calendar data for a date range that includes bookings
     const today = new Date();
     const startDate = today.toISOString().split('T')[0];
@@ -17,7 +26,7 @@ async function main() {
 
     logger.info({ startDate, endDate }, 'Fetching calendar data...');
 
-    const calendar = await guestyClient.getCalendar(config.guestyPropertyId, startDate, endDate);
+    const calendar = await guestyClient.getCalendar(propertyId, startDate, endDate);
 
     // Find days with blockRefs (booked/blocked days)
     const daysWithBlocks = calendar.filter(day =>

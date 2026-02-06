@@ -100,8 +100,15 @@ function openMailtoLink(mailtoUrl) {
 }
 
 class BookingCalendar {
-  constructor(apiBaseUrl = '') {
-    this.apiBaseUrl = apiBaseUrl;
+  constructor(options = {}) {
+    // Property context - can come from options, window variable, or URL
+    this.propertySlug = options.propertySlug || window.__PROPERTY_SLUG__ || this.detectPropertyFromUrl();
+    this.propertyName = options.propertyName || window.__PROPERTY_NAME__ || 'Property';
+    this.bookingEmail = options.bookingEmail || window.__BOOKING_EMAIL__ || 'booking@farmhouse-prasser.de';
+
+    // Build API base URL based on property context
+    this.apiBaseUrl = this.propertySlug ? `/p/${this.propertySlug}` : '';
+
     this.currentDate = new Date();
     this.selectedCheckIn = null;
     this.selectedCheckOut = null;
@@ -122,6 +129,14 @@ class BookingCalendar {
     this.language = this.detectLanguage();
 
     this.init();
+  }
+
+  /**
+   * Detect property slug from URL path (/p/:slug or /p/:slug/...)
+   */
+  detectPropertyFromUrl() {
+    const match = window.location.pathname.match(/^\/p\/([^/]+)/);
+    return match ? match[1] : null;
   }
 
   /**
@@ -1944,7 +1959,7 @@ class BookingCalendar {
     emailBody += `${this.t('emailThankYou')}\n`;
 
     const body = encodeURIComponent(emailBody);
-    const recipient = 'booking@farmhouse-prasser.de';
+    const recipient = this.bookingEmail;
     const mailtoUrl = `mailto:${recipient}?subject=${subject}&body=${body}`;
 
     // Use our iframe/iOS-safe mailto handler

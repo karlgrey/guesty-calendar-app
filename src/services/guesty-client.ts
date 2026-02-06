@@ -6,6 +6,7 @@
 
 import Bottleneck from 'bottleneck';
 import { config } from '../config/index.js';
+import { getDefaultProperty } from '../config/properties.js';
 import { ExternalApiError } from '../utils/errors.js';
 import { logApiCall } from '../utils/logger.js';
 import logger from '../utils/logger.js';
@@ -589,7 +590,15 @@ export class GuestyClient {
   async healthCheck(): Promise<boolean> {
     try {
       // Try to fetch the configured property to verify access
-      await this.getListing(config.guestyPropertyId);
+      const defaultProperty = getDefaultProperty();
+      const propertyId = defaultProperty?.guestyPropertyId || config.guestyPropertyId;
+
+      if (!propertyId) {
+        logger.warn('No property configured for health check');
+        return true; // Consider healthy if no property to check
+      }
+
+      await this.getListing(propertyId);
       return true;
     } catch (error) {
       logger.error({ error }, 'Guesty API health check failed');

@@ -1,0 +1,40 @@
+{
+  "properties": [
+    {
+      "slug": "farmhouse",
+      "guestyPropertyId": "686d1e927ae7af00234115ad",
+      "name": "Farmhouse Prasser",
+      "timezone": "Europe/Berlin",
+      "currency": "EUR",
+      "bookingRecipientEmail": "booking@farmhouse-prasser.de",
+      "bookingSenderName": "Farmhouse Prasser",
+      "weeklyReport": {
+        "enabled": true,
+        "recipients": ["micha@remoterepublic.com"],
+        "day": 1,
+        "hour": 6
+      },
+      "ga4": {
+        "enabled": true,
+        "propertyId": "513788097",
+        "keyFilePath": "./data/ga4-service-account.json",
+        "syncHour": 3
+      }
+    },
+    {
+      "slug": "u19",
+      "guestyPropertyId": "69849a19d793670014d4a11a",
+      "name": "Uferstrasse 19",
+      "timezone": "Europe/Berlin",
+      "currency": "EUR",
+      "bookingRecipientEmail": "booking@remoterepublic.com",
+      "bookingSenderName": "Uferstrasse 19",
+      "weeklyReport": {
+        "enabled": true,
+        "recipients": ["micha@remoterepublic.com"],
+        "day": 1,
+        "hour": 6
+      }
+    }
+  ]
+}

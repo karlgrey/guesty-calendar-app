@@ -1,10 +1,12 @@
 /**
  * Weekly Email Job
  *
- * Sends a weekly summary email with dashboard statistics and upcoming bookings
+ * Sends a weekly summary email with dashboard statistics and upcoming bookings.
+ * Supports multi-property mode with per-property email settings.
  */
 
 import { config } from '../config/index.js';
+import { getAllProperties, type PropertyConfig } from '../config/properties.js';
 import { getListingById } from '../repositories/listings-repository.js';
 import { getAllTimeStats, getOccupancyRate, getAllTimeConversionRate, getCurrentYearStats, getMonthlyBookingComparison } from '../repositories/availability-repository.js';
 import { getReservationsByPeriod } from '../repositories/reservation-repository.js';
@@ -20,35 +22,40 @@ interface WeeklyEmailResult {
   sent: boolean;
   error?: string;
   recipientCount?: number;
+  propertySlug?: string;
 }
 
 /**
- * Send weekly summary email
+ * Send weekly summary email for a specific property
  */
-export async function sendWeeklySummaryEmail(): Promise<WeeklyEmailResult> {
+export async function sendWeeklySummaryEmailForProperty(property: PropertyConfig): Promise<WeeklyEmailResult> {
+  const { slug, guestyPropertyId, name, weeklyReport, ga4 } = property;
+
   try {
-    // Check if weekly report is enabled
-    if (!config.weeklyReportEnabled) {
-      logger.debug('Weekly report is disabled');
+    // Check if weekly report is enabled for this property
+    if (!weeklyReport.enabled) {
+      logger.debug({ propertySlug: slug }, 'Weekly report is disabled for this property');
       return {
         success: true,
         sent: false,
+        propertySlug: slug,
       };
     }
 
     // Check if recipients are configured
-    if (!config.weeklyReportRecipients || config.weeklyReportRecipients.length === 0) {
-      logger.warn('Weekly report enabled but no recipients configured');
+    if (!weeklyReport.recipients || weeklyReport.recipients.length === 0) {
+      logger.warn({ propertySlug: slug }, 'Weekly report enabled but no recipients configured');
       return {
         success: true,
         sent: false,
         error: 'No recipients configured',
+        propertySlug: slug,
       };
     }
 
-    logger.info('📧 Starting weekly summary email job');
+    logger.info({ propertySlug: slug, propertyName: name }, '📧 Starting weekly summary email job');
 
-    const propertyId = config.guestyPropertyId;
+    const propertyId = guestyPropertyId;
 
     // Get listing info
     const listing = getListingById(propertyId);
@@ -94,9 +101,9 @@ export async function sendWeeklySummaryEmail(): Promise<WeeklyEmailResult> {
     const allUpcomingBookings = getReservationsByPeriod(propertyId, 365, 'future');
     const upcomingBookings = allUpcomingBookings.slice(0, 5);
 
-    // Get website analytics if GA4 is enabled and has data
+    // Get website analytics if GA4 is enabled for this property and has data
     let websiteAnalytics = undefined;
-    if (config.ga4Enabled && hasAnalyticsData()) {
+    if (ga4?.enabled && hasAnalyticsData()) {
       const analyticsSummary = getAnalyticsSummary(30);
       const monthlyComparison = getMonthlyAnalyticsComparison();
       const topRegions = getTopRegions(30);
@@ -186,7 +193,7 @@ export async function sendWeeklySummaryEmail(): Promise<WeeklyEmailResult> {
 
     // Send email
     const sent = await sendEmail({
-      to: config.weeklyReportRecipients,
+      to: weeklyReport.recipients,
       subject: `📊 Weekly Summary - ${emailData.propertyTitle}`,
       html,
       text,
@@ -195,41 +202,133 @@ export async function sendWeeklySummaryEmail(): Promise<WeeklyEmailResult> {
     if (sent) {
       logger.info(
         {
-          recipientCount: config.weeklyReportRecipients.length,
-          recipients: config.weeklyReportRecipients,
+          propertySlug: slug,
+          recipientCount: weeklyReport.recipients.length,
+          recipients: weeklyReport.recipients,
           upcomingBookings: upcomingBookings.length,
           allTimeRevenue: allTimeStats.totalRevenue,
         },
-        '✅ Weekly summary email sent successfully'
+        `✅ Weekly summary email sent successfully for ${name}`
       );
 
       return {
         success: true,
         sent: true,
-        recipientCount: config.weeklyReportRecipients.length,
+        recipientCount: weeklyReport.recipients.length,
+        propertySlug: slug,
       };
     } else {
-      logger.error('Failed to send weekly summary email');
+      logger.error({ propertySlug: slug }, 'Failed to send weekly summary email');
       return {
         success: false,
         sent: false,
         error: 'Email sending failed',
+        propertySlug: slug,
       };
     }
   } catch (error) {
-    logger.error({ error }, '❌ Weekly email job failed');
+    logger.error({ error, propertySlug: slug }, `❌ Weekly email job failed for ${name}`);
     return {
       success: false,
       sent: false,
       error: error instanceof Error ? error.message : 'Unknown error',
+      propertySlug: slug,
     };
   }
 }
 
 /**
- * Check if weekly email should be sent today
+ * Send weekly summary email (legacy function for backward compatibility)
+ * Uses global config settings
+ */
+export async function sendWeeklySummaryEmail(): Promise<WeeklyEmailResult> {
+  // Try multi-property mode first
+  const properties = getAllProperties();
+  if (properties.length > 0) {
+    // In multi-property mode, this function shouldn't be called directly
+    // The scheduler calls sendWeeklySummaryEmailForProperty for each property
+    // But for backward compatibility, send for the first property
+    const property = properties[0];
+    return sendWeeklySummaryEmailForProperty(property);
+  }
+
+  // Legacy single-property mode using global config
+  if (!config.guestyPropertyId) {
+    return {
+      success: false,
+      sent: false,
+      error: 'No property configured',
+    };
+  }
+
+  // Create legacy property config from global settings
+  const legacyProperty: PropertyConfig = {
+    slug: 'default',
+    guestyPropertyId: config.guestyPropertyId,
+    name: 'Default Property',
+    timezone: config.propertyTimezone,
+    currency: config.propertyCurrency,
+    bookingRecipientEmail: config.bookingRecipientEmail,
+    bookingSenderName: config.bookingSenderName,
+    weeklyReport: {
+      enabled: config.weeklyReportEnabled as boolean,
+      recipients: config.weeklyReportRecipients as string[],
+      day: config.weeklyReportDay,
+      hour: config.weeklyReportHour,
+    },
+    ga4: {
+      enabled: config.ga4Enabled as boolean,
+      propertyId: config.ga4PropertyId,
+      keyFilePath: config.ga4KeyFilePath,
+      syncHour: config.ga4SyncHour,
+    },
+  };
+
+  return sendWeeklySummaryEmailForProperty(legacyProperty);
+}
+
+/**
+ * Check if weekly email should be sent for a specific property
  * Returns true if today matches the configured day and current hour matches configured hour
- * Uses the property's timezone (Europe/Berlin) to ensure correct scheduling
+ * Uses the property's timezone to ensure correct scheduling
+ */
+export function shouldSendWeeklyEmailForProperty(property: PropertyConfig): boolean {
+  const { slug, timezone, weeklyReport } = property;
+
+  if (!weeklyReport.enabled) {
+    return false;
+  }
+
+  // Get current time in the property's timezone
+  const now = new Date();
+  const propertyTime = toZonedTime(now, timezone);
+
+  const currentDay = getDay(propertyTime); // 0 = Sunday, 1 = Monday, etc.
+  const currentHour = getHours(propertyTime);
+
+  logger.debug(
+    {
+      propertySlug: slug,
+      utcTime: now.toISOString(),
+      propertyTime: propertyTime.toISOString(),
+      currentDay,
+      currentHour,
+      targetDay: weeklyReport.day,
+      targetHour: weeklyReport.hour,
+      timezone,
+    },
+    'Checking weekly email schedule for property'
+  );
+
+  return (
+    currentDay === weeklyReport.day &&
+    currentHour === weeklyReport.hour
+  );
+}
+
+/**
+ * Check if weekly email should be sent today (legacy function)
+ * Uses global config settings
  */
 export function shouldSendWeeklyEmail(): boolean {
   // Get current time in the property's timezone

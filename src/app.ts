@@ -19,6 +19,7 @@ import debugRoutes from './routes/debug.js';
 import adminRoutes from './routes/admin.js';
 import authRoutes from './routes/auth.js';
 import adminUsersRoutes from './routes/admin-users.js';
+import propertyRoutes from './routes/property-routes.js';
 
 /**
  * Create and configure Express application
@@ -80,7 +81,10 @@ export function createApp() {
   app.use('/admin', requireAuth, adminRoutes);
   app.use('/api/admin-users', adminUsersRoutes); // requireAuth is applied within the router
 
-  // Public API routes
+  // Property-specific API routes (multi-property support)
+  app.use('/p', propertyRoutes);
+
+  // Public API routes (legacy, uses default property)
   app.use('/listing', listingRoutes);
   app.use('/availability', availabilityRoutes);
   app.use('/quote', quoteRoutes);

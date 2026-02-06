@@ -7,6 +7,7 @@
 import express from 'express';
 import { getListingById } from '../repositories/listings-repository.js';
 import { config } from '../config/index.js';
+import { getDefaultProperty } from '../config/properties.js';
 import { NotFoundError } from '../utils/errors.js';
 import logger from '../utils/logger.js';
 
@@ -14,11 +15,18 @@ const router = express.Router();
 
 /**
  * GET /listing
- * Get listing information for the configured property
+ * Get listing information for the configured property (legacy, uses default property)
  */
 router.get('/', (_req, res, next) => {
   try {
-    const listing = getListingById(config.guestyPropertyId);
+    const defaultProperty = getDefaultProperty();
+    const propertyId = defaultProperty?.guestyPropertyId || config.guestyPropertyId;
+
+    if (!propertyId) {
+      throw new NotFoundError('No property configured');
+    }
+
+    const listing = getListingById(propertyId);
 
     if (!listing) {
       throw new NotFoundError('Listing not found. Please run data sync first.');

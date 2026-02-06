@@ -8,7 +8,8 @@ import express from 'express';
 import { calculateQuote } from '../services/pricing-calculator.js';
 import { getCachedQuote, saveQuoteToCache, cleanupExpiredQuotes } from '../repositories/quotes-repository.js';
 import { config } from '../config/index.js';
-import { ValidationError } from '../utils/errors.js';
+import { getDefaultProperty } from '../config/properties.js';
+import { ValidationError, NotFoundError } from '../utils/errors.js';
 import logger from '../utils/logger.js';
 
 const router = express.Router();
@@ -49,7 +50,12 @@ router.get('/', (req, res, next) => {
       throw new ValidationError('Guests must be a positive integer');
     }
 
-    const listingId = config.guestyPropertyId;
+    const defaultProperty = getDefaultProperty();
+    const listingId = defaultProperty?.guestyPropertyId || config.guestyPropertyId;
+
+    if (!listingId) {
+      throw new NotFoundError('No property configured');
+    }
 
     // Try to get cached quote
     let cachedQuote = getCachedQuote(listingId, checkIn as string, checkOut as string, guestCount);

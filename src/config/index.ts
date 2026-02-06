@@ -33,7 +33,8 @@ const configSchema = z.object({
   guestyClientSecret: z.string().min(1, 'GUESTY_CLIENT_SECRET is required'),
   guestyApiUrl: z.string().url().default('https://open-api.guesty.com/v1'),
   guestyOAuthUrl: z.string().url().default('https://open-api.guesty.com/oauth2/token'),
-  guestyPropertyId: z.string().min(1, 'GUESTY_PROPERTY_ID is required'),
+  guestyPropertyId: z.string().optional(), // Optional - falls back to properties.json
+  propertiesConfigPath: z.string().default('./data/properties.json'),
 
   // Property
   propertyCurrency: z.string().length(3).toUpperCase().default('EUR'),
@@ -115,6 +116,7 @@ function parseConfig() {
     guestyApiUrl: process.env.GUESTY_API_URL,
     guestyOAuthUrl: process.env.GUESTY_OAUTH_URL,
     guestyPropertyId: process.env.GUESTY_PROPERTY_ID,
+    propertiesConfigPath: process.env.PROPERTIES_CONFIG_PATH,
     propertyCurrency: process.env.PROPERTY_CURRENCY,
     propertyTimezone: process.env.PROPERTY_TIMEZONE,
     bookingRecipientEmail: process.env.BOOKING_RECIPIENT_EMAIL,

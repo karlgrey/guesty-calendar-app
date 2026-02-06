@@ -7,7 +7,8 @@
 import express from 'express';
 import { getAvailability } from '../repositories/availability-repository.js';
 import { config } from '../config/index.js';
-import { ValidationError } from '../utils/errors.js';
+import { getDefaultProperty } from '../config/properties.js';
+import { ValidationError, NotFoundError } from '../utils/errors.js';
 import logger from '../utils/logger.js';
 
 const router = express.Router();
@@ -56,8 +57,16 @@ router.get('/', (req, res, next) => {
       throw new ValidationError('Date range cannot exceed 365 days');
     }
 
+    // Get property ID
+    const defaultProperty = getDefaultProperty();
+    const propertyId = defaultProperty?.guestyPropertyId || config.guestyPropertyId;
+
+    if (!propertyId) {
+      throw new NotFoundError('No property configured');
+    }
+
     // Fetch availability from database
-    const availability = getAvailability(config.guestyPropertyId, from as string, to as string);
+    const availability = getAvailability(propertyId, from as string, to as string);
 
     // Transform to public response format
     const response = availability.map((day) => ({

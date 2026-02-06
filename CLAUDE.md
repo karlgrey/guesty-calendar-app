@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-A Node.js/TypeScript service that provides an Airbnb-style booking calendar for a single Guesty property. The service caches Guesty API data in SQLite and serves it through a public API with a vanilla JavaScript frontend.
+A Node.js/TypeScript service that provides Airbnb-style booking calendars for multiple Guesty properties. The service caches Guesty API data in SQLite and serves it through a public API with a vanilla JavaScript frontend. Properties are configured via `data/properties.json` and each gets its own URL namespace (`/p/:slug/...`).
 
 ## Development Commands
 
@@ -17,11 +17,14 @@ npm start               # Run production build from dist/
 
 ### Data Management
 ```bash
-npm run sync            # Sync data from Guesty API (respects cache freshness)
-npm run sync:force      # Force sync (ignore cache, refresh all data)
+npm run sync            # Sync all properties from Guesty API (respects cache freshness)
+npm run sync:force      # Force sync all properties (ignore cache, refresh all data)
 npm run db:init         # Initialize database (creates schema from schema.sql)
 npm run db:migrate      # Run pending database migrations
 npm run db:reset        # Drop and recreate database (WARNING: deletes all data)
+
+# Per-property sync
+npx tsx src/scripts/sync-property.ts <slug>  # Sync a single property by slug (e.g., farmhouse, u19)
 
 # Manual testing
 npx tsx src/scripts/test-force-sync.ts  # Test forced sync (bypasses cache)
@@ -29,6 +32,7 @@ npx tsx src/scripts/test-email.ts       # Send test weekly email immediately
 npx tsx src/scripts/test-timezone.ts    # Verify timezone conversion for scheduling
 npx tsx src/scripts/test-document.ts <reservationId> <quote|invoice>  # Test document generation
 npx tsx src/scripts/set-document-sequence.ts [year] [lastNumber]      # View/set document sequence
+npx tsx src/scripts/list-properties.ts  # List all properties from Guesty API
 ```
 
 ### Code Quality
@@ -38,22 +42,69 @@ npm test               # Run tests with Vitest
 ```
 
 ### Access Points
-- Main calendar UI: `http://localhost:3000`
-- Admin dashboard: `http://localhost:3000/admin` (requires authentication)
+- Default calendar UI: `http://localhost:3000` (serves first property)
+- Property calendar UI: `http://localhost:3000/p/:slug` (e.g., `/p/farmhouse`, `/p/u19`)
+- Property API: `http://localhost:3000/p/:slug/listing`, `/p/:slug/availability`, `/p/:slug/quote`
+- Admin dashboard: `http://localhost:3000/admin` (property stats, bookings, analytics, documents)
+- Admin system: `http://localhost:3000/admin/system` (health, sync, DB viewer, ETL, user management)
 - Login page: `http://localhost:3000/auth/login`
 - Health check: `http://localhost:3000/health`
 - Detailed health: `http://localhost:3000/health/detailed`
 
 ## Architecture Overview
 
+### Multi-Property Configuration
+
+Properties are defined in `data/properties.json`:
+```json
+{
+  "properties": [
+    {
+      "slug": "farmhouse",
+      "guestyPropertyId": "686d1e927ae7af00234115ad",
+      "name": "Farmhouse Prasser",
+      "timezone": "Europe/Berlin",
+      "currency": "EUR",
+      "bookingRecipientEmail": "booking@farmhouse-prasser.de",
+      "bookingSenderName": "Farmhouse Prasser",
+      "weeklyReport": {
+        "enabled": true,
+        "recipients": ["micha@remoterepublic.com"],
+        "day": 1,
+        "hour": 6
+      },
+      "ga4": {
+        "enabled": true,
+        "propertyId": "513788097",
+        "keyFilePath": "./data/ga4-service-account.json",
+        "syncHour": 3
+      }
+    }
+  ]
+}
+```
+
+**Key files:**
+- `data/properties.json` - Central property configuration (validated with Zod on startup)
+- `src/config/properties.ts` - Loader with `getPropertyBySlug()`, `getAllProperties()`, `getDefaultProperty()`
+- `src/routes/property-routes.ts` - Property-scoped API routes (`/p/:slug/...`)
+
+**Important patterns:**
+- `config.guestyPropertyId` is now **optional** in `.env` (overridden by `properties.json`)
+- Always use fallback: `config.guestyPropertyId || getDefaultProperty()?.guestyPropertyId`
+- `ga4` field is optional per property (defaults to `{ enabled: false }`)
+- Legacy routes (without `/p/:slug`) still work and use the default (first) property
+- `req.property` is available after `resolveProperty` middleware in property routes
+
 ### Data Flow
-1. **ETL Jobs** (`src/jobs/`) fetch data from Guesty API on startup and then hourly (configurable via `CACHE_AVAILABILITY_TTL`)
-2. **Guesty Client** (`src/services/guesty-client.ts`) handles OAuth authentication and rate-limited API requests using Bottleneck
-3. **Mappers** (`src/mappers/`) transform Guesty API responses into internal data models
-4. **Repositories** (`src/repositories/`) handle SQLite operations (CRUD + cache freshness checks)
-5. **Routes** (`src/routes/`) serve public API endpoints for listing, availability, and quotes
-6. **Pricing Calculator** (`src/services/pricing-calculator.ts`) computes quotes locally using cached data
-7. **Frontend** (`public/`) vanilla JavaScript calendar with overlay datepicker
+1. **Properties Config** (`data/properties.json`) defines all managed properties
+2. **ETL Jobs** (`src/jobs/`) fetch data from Guesty API for each property on startup and then hourly
+3. **Guesty Client** (`src/services/guesty-client.ts`) handles OAuth authentication and rate-limited API requests using Bottleneck
+4. **Mappers** (`src/mappers/`) transform Guesty API responses into internal data models
+5. **Repositories** (`src/repositories/`) handle SQLite operations (CRUD + cache freshness checks), keyed by `listing_id`
+6. **Routes** (`src/routes/`) serve public API endpoints per property (`/p/:slug/listing`, etc.)
+7. **Pricing Calculator** (`src/services/pricing-calculator.ts`) computes quotes locally using cached data
+8. **Frontend** (`public/`) vanilla JavaScript calendar with property context injection
 
 ### Rate Limiting Strategy
 The `GuestyClient` uses Bottleneck to enforce conservative limits:
@@ -71,11 +122,18 @@ The ETL scheduler interval is controlled by `CACHE_AVAILABILITY_TTL` - jobs run 
 
 **Daily Forced Sync:**
 - Runs every day at 2 AM (server time)
-- Bypasses all cache checks and forces a complete data refresh
+- Bypasses all cache checks and forces a complete data refresh for **all properties**
 - Ensures customer data changes in Guesty are picked up within 24 hours
 - Fetches 24 months of data (12 months past + 12 months future)
 - Updates both availability and reservation data
 - Scheduler checks hourly for the 2 AM trigger time
+
+### ETL Jobs (Multi-Property)
+- `runETLJobForProperty(property, force)` - Sync a single property
+- `runETLJob(force)` - Sync all properties sequentially
+- Scheduler tracks state per property: `propertyWeeklyEmailSent: Map<string, Date>`
+- Each property's data is stored with its `guestyPropertyId` as `listing_id` in the database
+- No database migrations needed for multi-property - all tables already use `listing_id` as key
 
 ### Error Handling
 Custom error classes in `src/utils/errors.ts`:
@@ -107,46 +165,77 @@ Session configuration:
 - 24-hour session lifetime
 - Session data stored in memory (consider Redis for multi-instance deployments)
 
+### Admin Dashboard
+
+The admin interface is split into two pages:
+
+**`/admin` - Property Dashboard:**
+- Property selector (switch between properties)
+- Key statistics (bookings, revenue, occupancy, conversion rate)
+- Current year stats with monthly booking comparison
+- Website analytics (only shown if property has GA4 enabled)
+- Upcoming bookings with document generation (quotes/invoices)
+
+**`/admin/system` - System & Infrastructure:**
+- System health monitoring
+- Manual data sync (per property)
+- Database viewer
+- ETL scheduler status
+- User management
+
+Both pages share authentication and styling. The property selector is available on both pages.
+
 ### Weekly Email Reports
-The application sends automated weekly summary emails with property statistics and upcoming bookings.
+The application sends automated weekly summary emails with property statistics and upcoming bookings. Each property has its own weekly report configuration in `data/properties.json`.
 
 **Features:**
+- Per-property configuration (enabled/disabled, recipients, schedule)
 - All-time statistics (total bookings, revenue, booked days)
+- Current year stats with 30-day booking comparison
+- Occupancy rates (next 4 weeks, last 3 months)
+- Conversion rate tracking
+- Website analytics (if GA4 enabled for the property)
 - Next 5 upcoming bookings with guest details
 - HTML and plain text email formats
-- Timezone-aware scheduling
-- Sent via Resend email service
+- Timezone-aware scheduling per property
 
-**Configuration (`.env`):**
+**Configuration** (in `data/properties.json` per property):
+```json
+{
+  "weeklyReport": {
+    "enabled": true,
+    "recipients": ["email1@example.com", "email2@example.com"],
+    "day": 1,
+    "hour": 6
+  }
+}
+```
+
+Fields: `day` = 0-6 (Sunday-Saturday), `hour` = 0-23 (in property's timezone).
+
+**Legacy `.env` fallback** (used only when `properties.json` is absent):
 ```bash
-# Email Service
-RESEND_API_KEY=your_resend_api_key
-EMAIL_FROM_ADDRESS=calendar@updates.yourdomain.com
-EMAIL_FROM_NAME=Property Calendar
-
-# Weekly Report Settings
 WEEKLY_REPORT_ENABLED=TRUE
-WEEKLY_REPORT_RECIPIENTS=email1@example.com,email2@example.com,email3@example.com
-WEEKLY_REPORT_DAY=1        # 0=Sunday, 1=Monday, 2=Tuesday, etc.
-WEEKLY_REPORT_HOUR=6       # Hour in property timezone (0-23)
-
-# Property Configuration
-PROPERTY_TIMEZONE=Europe/Berlin  # IANA timezone for scheduling
+WEEKLY_REPORT_RECIPIENTS=email1@example.com,email2@example.com
+WEEKLY_REPORT_DAY=1
+WEEKLY_REPORT_HOUR=6
 ```
 
 **How It Works:**
-1. **Scheduler** (`src/jobs/scheduler.ts`) checks hourly if it's time to send the email
-2. **Timezone Conversion**: Server time (UTC) is converted to property timezone using `date-fns-tz`
+1. **Scheduler** (`src/jobs/scheduler.ts`) iterates all properties and checks each property's schedule
+2. **Timezone Conversion**: Server time (UTC) is converted to each property's timezone using `date-fns-tz`
 3. **Scheduling Logic** (`src/jobs/weekly-email.ts`):
    - Gets current UTC time
-   - Converts to property timezone (e.g., Europe/Berlin)
-   - Checks if current day matches `WEEKLY_REPORT_DAY`
-   - Checks if current hour matches `WEEKLY_REPORT_HOUR`
-4. **Email Generation**:
-   - Fetches all-time statistics from database
+   - Converts to property's timezone (e.g., Europe/Berlin)
+   - Checks if current day matches property's `weeklyReport.day`
+   - Checks if current hour matches property's `weeklyReport.hour`
+4. **Email Generation** (`sendWeeklySummaryEmailForProperty(property)`):
+   - Fetches all-time and current year statistics from database
+   - Calculates occupancy rates and conversion data
+   - Includes website analytics if GA4 is enabled for the property
    - Retrieves next 5 upcoming bookings
    - Generates HTML email with styled template
-   - Sends via Resend API to all configured recipients
+   - Sends via Resend API to property-specific recipients
 
 **Testing:**
 ```bash
@@ -158,7 +247,7 @@ npx tsx src/scripts/test-email.ts
 ```
 
 **Files:**
-- `src/jobs/weekly-email.ts` - Email job logic and scheduling
+- `src/jobs/weekly-email.ts` - Email job logic with `sendWeeklySummaryEmailForProperty()`
 - `src/jobs/sync-inquiries.ts` - Syncs all reservations from Guesty for conversion tracking
 - `src/services/email-templates.ts` - HTML and text email generation
 - `src/services/email-service.ts` - Resend API integration
@@ -168,11 +257,12 @@ npx tsx src/scripts/test-email.ts
 - `src/scripts/test-alltime-conversion.ts` - Test conversion rate calculation
 
 **Important Notes:**
-- Emails are sent at the configured hour in the **property's timezone**, not server timezone
+- Emails are sent at the configured hour in each **property's timezone**, not server timezone
 - Server can run in any timezone (typically UTC) - conversion is automatic
 - Handles daylight saving time (DST) changes automatically
 - Schedule check runs every hour (controlled by ETL scheduler)
 - Requires verified domain in Resend for multiple recipients
+- Scheduler tracks per-property send state to prevent duplicate sends
 
 **Conversion Rate Tracking:**
 - Tracks all reservations (not just inquiries) to calculate realistic conversion rates
@@ -183,21 +273,37 @@ npx tsx src/scripts/test-email.ts
 - Admin dashboard and weekly email both display conversion statistics
 
 ### Google Analytics 4 Integration
-The application integrates with Google Analytics 4 to display website analytics in the admin dashboard.
+The application integrates with Google Analytics 4 to display website analytics in the admin dashboard. GA4 is configured **per property** and is optional - properties without GA4 configuration will not show the analytics section in the admin dashboard.
 
 **Features:**
 - Pageviews, users, sessions, and average session duration
 - Top 10 pages by pageviews
+- Monthly comparison with trend charts
+- Top regions by visitors
 - Daily automatic sync from GA4 API
 - Manual sync button in admin dashboard
+- Analytics section automatically hidden for properties without GA4
 
-**Configuration (`.env`):**
+**Configuration** (in `data/properties.json` per property):
+```json
+{
+  "ga4": {
+    "enabled": true,
+    "propertyId": "513788097",
+    "keyFilePath": "./data/ga4-service-account.json",
+    "syncHour": 3
+  }
+}
+```
+
+The `ga4` field is entirely optional. Properties without it default to `{ enabled: false }`.
+
+**Legacy `.env` fallback** (used only when `properties.json` is absent):
 ```bash
-# Google Analytics 4 Configuration
 GA4_ENABLED=true
-GA4_PROPERTY_ID=513788097           # Your GA4 Property ID (numeric)
-GA4_KEY_FILE_PATH=./data/ga4-service-account.json  # Path to service account key
-GA4_SYNC_HOUR=3                     # Hour to sync (0-23, in property timezone)
+GA4_PROPERTY_ID=513788097
+GA4_KEY_FILE_PATH=./data/ga4-service-account.json
+GA4_SYNC_HOUR=3
 ```
 
 **Setup Steps:**
@@ -212,16 +318,16 @@ GA4_SYNC_HOUR=3                     # Hour to sync (0-23, in property timezone)
    - Add service account email (from JSON file)
    - Grant "Viewer" role
 
-3. **Configure Environment:**
-   - Set `GA4_ENABLED=true`
-   - Set `GA4_PROPERTY_ID` (from GA4 Admin → Property Settings)
-   - Set `GA4_KEY_FILE_PATH` to point to your JSON key file
+3. **Configure in `properties.json`:**
+   - Add `ga4` object to the property that has GA4
+   - Set `enabled: true` and provide `propertyId` and `keyFilePath`
 
 **How It Works:**
 1. **Scheduler** (`src/jobs/scheduler.ts`) checks hourly if it's time to sync
 2. **Sync Job** (`src/jobs/sync-analytics.ts`) fetches last 30 days of data from GA4
 3. **GA4 Client** (`src/services/ga4-client.ts`) uses Google Analytics Data API
 4. **Repository** (`src/repositories/analytics-repository.ts`) stores data in SQLite
+5. **Admin Dashboard** checks `ga4Enabled` flag per property and shows/hides analytics section
 
 **Testing:**
 ```bash
@@ -255,6 +361,8 @@ The admin dashboard supports generating PDF quotes (Angebote) and invoices (Rech
 - Independent sequential counters per year (quotes and invoices don't share numbers)
 - Each reservation can have both a quote AND an invoice with different numbers
 - Example: Reservation gets Quote A-2025-0016, then Invoice 2025-0017
+
+**IMPORTANT: Document numbering is SHARED across all properties.** There is one global sequence per document type per year. A quote for Farmhouse and a quote for U19 draw from the same sequence. This is intentional for accounting compliance.
 
 **How It Works:**
 1. **First Click**: Fetches data from Guesty API, creates document in DB, assigns next available number
@@ -306,10 +414,11 @@ npx tsx src/scripts/set-document-sequence.ts 2025 47      # Set last number to 4
 - Repositories handle cache logic (check TTL → fetch if stale → upsert)
 - Foreign keys enabled (`PRAGMA foreign_keys = ON`)
 - Triggers auto-update `updated_at` timestamps
+- All tables use `listing_id` as key - no migrations needed for multi-property support
 
 ### Date Handling
 - Store dates as ISO 8601 strings (`YYYY-MM-DD` for dates, full ISO for timestamps)
-- All availability dates are in the property's timezone (`PROPERTY_TIMEZONE`)
+- All availability dates are in the property's timezone (configured per property in `properties.json`)
 - Always use UTC for `last_synced_at` and cache expiry fields
 
 ### Logging
@@ -317,6 +426,7 @@ npx tsx src/scripts/set-document-sequence.ts 2025 47      # Set last number to 4
 - Development: pretty-printed logs (`LOG_PRETTY=true`)
 - Production: JSON logs for aggregation
 - Log API calls with `logApiCall(service, endpoint, status, duration)`
+- Include `propertySlug` in log context for multi-property tracing
 
 ### Testing Patterns
 When writing tests:
@@ -325,24 +435,54 @@ When writing tests:
 - Mock Guesty API responses using fixtures from `fixtures/` directory
 - Test error cases (validation, cache miss, API errors)
 
+### TypeScript Pattern for Optional Config
+When accessing `config.guestyPropertyId` (now optional), always use the fallback:
+```typescript
+import { getDefaultProperty } from '../config/properties.js';
+const defaultProperty = getDefaultProperty();
+const propertyId = config.guestyPropertyId || defaultProperty?.guestyPropertyId;
+if (!propertyId) throw new NotFoundError('No property configured');
+```
+
 ## Important Files
 
 ### Configuration
 - `.env` - Environment variables (never commit, use `.env.example` as template)
+- `data/properties.json` - Multi-property configuration (slug, Guesty ID, email, weekly report, GA4)
 - `src/config/index.ts` - Config validation with Zod, exports typed `config` object
+- `src/config/properties.ts` - Property config loader with Zod validation, caching, and lookup functions
 - Schema: `schema.sql` (executed by `src/scripts/init-db.ts`)
 
 ### Critical Services
 - `src/services/guesty-client.ts` - OAuth + rate-limited Guesty API client
 - `src/services/pricing-calculator.ts` - Local quote computation (no API calls)
-- `src/jobs/scheduler.ts` - ETL job scheduling with jitter
-- `src/jobs/etl-job.ts` - Orchestrates listing + availability sync
+- `src/jobs/scheduler.ts` - ETL job scheduling with jitter, per-property state tracking
+- `src/jobs/etl-job.ts` - Orchestrates listing + availability sync (single + all properties)
+
+### Routes
+- `src/routes/property-routes.ts` - Property-scoped routes (`/p/:slug/listing`, `/p/:slug/availability`, `/p/:slug/quote`, `/p/:slug` frontend)
+- `src/routes/admin.ts` - Admin dashboard (`/admin`) and system page (`/admin/system`)
+- `src/routes/listing.ts` - Legacy listing route (uses default property)
+- `src/routes/availability.ts` - Legacy availability route (uses default property)
+- `src/routes/quote.ts` - Legacy quote route (uses default property)
 
 ### Type Definitions
 - `src/types/guesty.ts` - Guesty API response types
 - `src/types/models.ts` - Internal data models (matches DB schema)
 
+### Frontend
+- `public/calendar.js` - Calendar logic with property context support
+- `public/calendar.css` - Mobile-first responsive design
+- Property context injected via `window.__PROPERTY_SLUG__`, `window.__PROPERTY_NAME__`, `window.__BOOKING_EMAIL__`
+
 ## Common Tasks
+
+### Adding a New Property
+1. Find the Guesty listing ID: `npx tsx src/scripts/list-properties.ts`
+2. Add property config to `data/properties.json` (slug, guestyPropertyId, name, etc.)
+3. Sync the property: `npx tsx src/scripts/sync-property.ts <slug>`
+4. Verify in admin dashboard: switch to new property in the property selector
+5. Access the calendar: `http://localhost:3000/p/<slug>`
 
 ### Adding a New API Endpoint
 1. Create route handler in `src/routes/` (use Express Router)
@@ -350,6 +490,7 @@ When writing tests:
 3. Use repositories to fetch data (they handle cache logic)
 4. Return JSON with appropriate status codes
 5. Register route in `src/app.ts`
+6. For property-scoped endpoints, add to `src/routes/property-routes.ts` with `resolveProperty` middleware
 
 ### Modifying Database Schema
 1. Create a new migration file in `src/db/migrations/` with format `NNN_description.sql` (e.g., `002_add_bookings_table.sql`)
@@ -396,6 +537,9 @@ npm run dev
 - `calendar.js` contains all calendar logic (vanilla JS, no framework)
 - `calendar.css` is mobile-first responsive design
 - API calls use Fetch API (see `fetchListing`, `fetchAvailability`, `fetchQuote`)
+- Property context: constructor accepts `{ propertySlug, propertyName, bookingEmail }` options
+- API base URL built from property slug: `/p/${propertySlug}` (or empty for legacy routes)
+- Property detection fallback: checks `window.__PROPERTY_SLUG__` then URL pattern `/p/:slug`
 
 ## Git Workflow
 
@@ -404,10 +548,14 @@ npm run dev
 main (default branch)
 ├── .env (ignored, never commit)
 ├── .env.example (template, commit this)
+├── data/
+│   ├── properties.json (multi-property config, commit this)
+│   ├── calendar.db (SQLite database, ignored)
+│   ├── ga4-service-account.json (GA4 key, ignored)
+│   └── templates/ (PDF templates, commit these)
 ├── src/ (TypeScript source)
 ├── dist/ (compiled output, ignored)
 ├── public/ (static frontend files)
-├── data/ (SQLite database, ignored)
 └── CLAUDE.md (project documentation)
 ```
 
@@ -450,8 +598,6 @@ feat: Add weekly email reports feature
 - Add Resend email service integration
 - Create HTML email templates for weekly summaries
 - Add test scripts for email and timezone verification
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
 
 Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
@@ -505,8 +651,6 @@ feat: Add new feature
 
 - Detail 1
 - Detail 2
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
 
 Co-Authored-By: Claude <noreply@anthropic.com>
 EOF
@@ -729,9 +873,10 @@ The following are ignored and should never be committed:
 .env                          # Environment variables with secrets
 node_modules/                 # Dependencies (from npm install)
 dist/                         # Compiled TypeScript output
-data/                         # SQLite database files
-*.db                          # Database files
-*.db-journal                  # SQLite journal files
+data/*.db                     # SQLite database files
+data/*.db-journal             # SQLite journal files
+data/ga4-service-account.json # GA4 service account key
+data/.guesty-token-cache.json # OAuth token cache
 .DS_Store                     # macOS system files
 *.log                         # Log files
 .pm2/                         # PM2 process manager files
@@ -740,6 +885,8 @@ data/                         # SQLite database files
 Always commit:
 ```
 .env.example                  # Template for environment variables
+data/properties.json          # Multi-property configuration
+data/templates/               # PDF templates (Handlebars)
 src/                          # Source code
 public/                       # Static frontend files
 package.json                  # Dependencies list
@@ -752,11 +899,16 @@ README.md                     # Project readme
 
 ## Environment Variables
 
+**Note:** Many settings that were previously configured via `.env` are now per-property in `data/properties.json`. The `.env` variables serve as legacy fallbacks when `properties.json` is absent.
+
 Required:
 - `GUESTY_CLIENT_ID` - OAuth client ID for Guesty API
 - `GUESTY_CLIENT_SECRET` - OAuth client secret for Guesty API
-- `GUESTY_PROPERTY_ID` - Guesty listing ID to sync
-- `BOOKING_RECIPIENT_EMAIL` - Email for booking requests
+
+Legacy (optional if `properties.json` exists):
+- `GUESTY_PROPERTY_ID` - Guesty listing ID (overridden by `properties.json`)
+- `BOOKING_RECIPIENT_EMAIL` - Email for booking requests (overridden by `properties.json`)
+- `PROPERTY_TIMEZONE` - IANA timezone (overridden by `properties.json`, default: Europe/Berlin)
 
 Authentication (required for admin access):
 - `BASE_URL` - Full public URL (e.g., `https://guesty.remoterepublic.com` or `http://localhost:3000`)
@@ -769,12 +921,14 @@ Email service (required for weekly reports):
 - `RESEND_API_KEY` - API key from Resend (https://resend.com)
 - `EMAIL_FROM_ADDRESS` - Sender email (must be from verified domain)
 - `EMAIL_FROM_NAME` - Display name for sender
+
+Legacy weekly report settings (overridden by `properties.json`):
 - `WEEKLY_REPORT_ENABLED` - Enable/disable weekly emails (TRUE/FALSE)
 - `WEEKLY_REPORT_RECIPIENTS` - Comma-separated email list
 - `WEEKLY_REPORT_DAY` - Day of week (0=Sunday, 1=Monday, etc.)
 - `WEEKLY_REPORT_HOUR` - Hour in property timezone (0-23)
 
-Google Analytics 4 (optional, for website analytics):
+Legacy GA4 settings (overridden by `properties.json`):
 - `GA4_ENABLED` - Enable/disable GA4 integration (TRUE/FALSE)
 - `GA4_PROPERTY_ID` - GA4 Property ID (numeric, from GA4 Admin)
 - `GA4_KEY_FILE_PATH` - Path to service account JSON key file
@@ -785,7 +939,6 @@ Common optional:
 - `CACHE_AVAILABILITY_TTL` - Minutes between ETL runs (default: 60)
 - `LOG_LEVEL` - Pino log level (default: info)
 - `DATABASE_PATH` - SQLite file path (default: ./data/calendar.db)
-- `PROPERTY_TIMEZONE` - IANA timezone (default: Europe/Berlin)
 
 See `.env.example` for full list with descriptions.
 
@@ -912,6 +1065,9 @@ mkdir -p data
 # Copy environment file
 cp .env.example .env
 nano .env  # Edit with production values
+
+# Verify properties.json is present and correct
+cat data/properties.json
 ```
 
 ### PM2 Process Management
@@ -1180,16 +1336,18 @@ LOG_PRETTY=false  # Use JSON logs for production
 # Guesty API (from Guesty dashboard)
 GUESTY_CLIENT_ID=your_client_id
 GUESTY_CLIENT_SECRET=your_client_secret
-GUESTY_PROPERTY_ID=your_property_id
-
-# Booking
-BOOKING_RECIPIENT_EMAIL=bookings@your-domain.com
+# GUESTY_PROPERTY_ID is optional when using data/properties.json
 
 # Authentication
 SESSION_SECRET=$(openssl rand -base64 32)
 GOOGLE_CLIENT_ID=your_google_client_id
 GOOGLE_CLIENT_SECRET=your_google_client_secret
 ADMIN_ALLOWED_EMAILS=admin@your-domain.com
+
+# Email Service
+RESEND_API_KEY=your_resend_api_key
+EMAIL_FROM_ADDRESS=calendar@updates.yourdomain.com
+EMAIL_FROM_NAME=Property Calendar
 
 # Cache Configuration (in minutes)
 CACHE_LISTING_TTL=1440  # 24 hours
@@ -1199,6 +1357,8 @@ CACHE_QUOTE_TTL=60  # 60 minutes
 # Database
 DATABASE_PATH=./data/calendar.db
 ```
+
+**Note:** Property-specific settings (booking email, timezone, currency, weekly report, GA4) are configured in `data/properties.json`, not in `.env`.
 
 ### Monitoring and Logs
 
@@ -1296,6 +1456,9 @@ sudo lsof -i :3005
 # Verify environment variables
 pm2 env 0  # Check environment of process ID 0
 
+# Verify properties.json is valid
+node -e "console.log(JSON.parse(require('fs').readFileSync('data/properties.json','utf-8')))"
+
 # Test build manually
 cd /opt/guesty-calendar-app
 npm run build
@@ -1368,11 +1531,14 @@ Before going live, verify:
 - [ ] Application starts and runs without errors
 - [ ] PM2 configured to restart on boot
 - [ ] Environment variables set correctly
+- [ ] `data/properties.json` present with all properties configured
 - [ ] Google OAuth configured with production callback URL
 - [ ] Admin emails whitelisted
 - [ ] Health check endpoints responding
 - [ ] Guesty API credentials valid
-- [ ] Email booking recipient configured
+- [ ] All properties synced (`npx tsx src/scripts/sync-property.ts <slug>` for each)
+- [ ] Weekly report recipients configured per property
+- [ ] GA4 service account configured (if applicable)
 - [ ] Firewall rules applied
 - [ ] Log rotation configured
 - [ ] Backup strategy in place
@@ -1385,10 +1551,12 @@ Before going live, verify:
 2. Configure firewall
 3. Point domain to server
 4. Clone repository and install dependencies
-5. Configure environment variables
+5. Configure `.env` (API keys, auth) and verify `data/properties.json`
 6. Build and start with PM2
-7. Configure Caddy reverse proxy
-8. Verify SSL and HTTPS working
+7. Sync all properties: `npx tsx src/scripts/sync-property.ts <slug>` for each
+8. Configure Caddy reverse proxy
+9. Verify SSL and HTTPS working
+10. Test admin dashboard with property switching
 
 **Subsequent Updates:**
 1. SSH into server

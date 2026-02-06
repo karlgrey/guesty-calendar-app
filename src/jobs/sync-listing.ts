@@ -84,7 +84,16 @@ export async function syncListing(listingId: string, force: boolean = false): Pr
 
 /**
  * Sync the configured property listing
+ * @deprecated Use syncListing with explicit listingId instead
  */
 export async function syncConfiguredListing(force: boolean = false): Promise<SyncListingResult> {
-  return syncListing(config.guestyPropertyId, force);
+  const listingId = config.guestyPropertyId;
+  if (!listingId) {
+    return {
+      success: false,
+      listingId: '',
+      error: 'No property ID configured (GUESTY_PROPERTY_ID or properties.json)',
+    };
+  }
+  return syncListing(listingId, force);
 }

@@ -7,6 +7,7 @@
 import { Router } from 'express';
 import { guestyClient } from '../services/guesty-client.js';
 import { config } from '../config/index.js';
+import { getDefaultProperty } from '../config/properties.js';
 import { getDatabase } from '../db/index.js';
 import logger from '../utils/logger.js';
 
@@ -18,14 +19,23 @@ const router = Router();
  */
 router.get('/raw-listing', async (_req, res) => {
   try {
+    const defaultProperty = getDefaultProperty();
+    const propertyId = defaultProperty?.guestyPropertyId || config.guestyPropertyId;
+
+    if (!propertyId) {
+      return res.status(400).json({ error: 'No property configured' });
+    }
+
     logger.info('Fetching raw listing from Guesty API');
-    const listing = await guestyClient.getListing(config.guestyPropertyId);
+    const listing = await guestyClient.getListing(propertyId);
     res.json(listing);
+    return;
   } catch (error) {
     logger.error({ error }, 'Error fetching raw listing');
     res.status(500).json({
       error: error instanceof Error ? error.message : 'Unknown error'
     });
+    return;
   }
 });
 
@@ -35,7 +45,12 @@ router.get('/raw-listing', async (_req, res) => {
  */
 router.get('/', async (_req, res) => {
   try {
-    const propertyId = config.guestyPropertyId;
+    const defaultProperty = getDefaultProperty();
+    const propertyId = defaultProperty?.guestyPropertyId || config.guestyPropertyId;
+
+    if (!propertyId) {
+      return res.status(400).send('No property configured');
+    }
 
     // Get data from database cache only (to avoid rate limiting)
     logger.info('Fetching debug data from cache');
@@ -616,6 +631,7 @@ router.get('/', async (_req, res) => {
     `;
 
     res.send(html);
+    return;
   } catch (error) {
     logger.error({ error }, 'Error fetching debug data');
     res.status(500).send(`
@@ -626,6 +642,7 @@ router.get('/', async (_req, res) => {
         </body>
       </html>
     `);
+    return;
   }
 });
 

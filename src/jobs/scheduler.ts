@@ -5,9 +5,10 @@
  */
 
 import { runETLJob } from './etl-job.js';
-import { sendWeeklySummaryEmail, shouldSendWeeklyEmail } from './weekly-email.js';
+import { sendWeeklySummaryEmailForProperty, shouldSendWeeklyEmailForProperty } from './weekly-email.js';
 import { syncAnalytics, shouldSyncAnalytics } from './sync-analytics.js';
 import { config } from '../config/index.js';
+import { getAllProperties, type PropertyConfig } from '../config/properties.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -26,6 +27,8 @@ interface SchedulerState {
   weeklyEmailIntervalId: NodeJS.Timeout | null;
   lastWeeklyEmailCheck: Date | null;
   lastWeeklyEmailSent: Date | null;
+  // Per-property tracking for weekly emails
+  propertyWeeklyEmailSent: Map<string, Date>;
   dailyForceIntervalId: NodeJS.Timeout | null;
   lastDailyForceSync: Date | null;
   analyticsIntervalId: NodeJS.Timeout | null;
@@ -45,6 +48,7 @@ const state: SchedulerState = {
   weeklyEmailIntervalId: null,
   lastWeeklyEmailCheck: null,
   lastWeeklyEmailSent: null,
+  propertyWeeklyEmailSent: new Map(),
   dailyForceIntervalId: null,
   lastDailyForceSync: null,
   analyticsIntervalId: null,
@@ -122,34 +126,82 @@ async function executeScheduledJob() {
 }
 
 /**
- * Check and send weekly email if conditions are met
+ * Check and send weekly email for a specific property
+ */
+async function checkAndSendWeeklyEmailForProperty(property: PropertyConfig) {
+  const { slug, name, weeklyReport } = property;
+
+  if (!weeklyReport.enabled) {
+    return;
+  }
+
+  // Check if we should send email now for this property
+  if (shouldSendWeeklyEmailForProperty(property)) {
+    // Check if we already sent today for this property (to prevent duplicate sends)
+    const today = new Date().toDateString();
+    const lastSent = state.propertyWeeklyEmailSent.get(slug)?.toDateString();
+
+    if (lastSent === today) {
+      logger.debug({ propertySlug: slug }, 'Weekly email already sent today for property, skipping');
+      return;
+    }
+
+    logger.info({ propertySlug: slug, propertyName: name }, '📧 Weekly email conditions met, sending...');
+    const result = await sendWeeklySummaryEmailForProperty(property);
+
+    if (result.sent) {
+      state.propertyWeeklyEmailSent.set(slug, new Date());
+      state.lastWeeklyEmailSent = new Date();
+    }
+  }
+}
+
+/**
+ * Check and send weekly email if conditions are met (for all properties)
  */
 async function checkAndSendWeeklyEmail() {
   try {
     state.lastWeeklyEmailCheck = new Date();
 
+    const properties = getAllProperties();
+
+    // Multi-property mode
+    if (properties.length > 0) {
+      for (const property of properties) {
+        await checkAndSendWeeklyEmailForProperty(property);
+      }
+      return;
+    }
+
+    // Legacy single-property mode
     if (!config.weeklyReportEnabled) {
       return;
     }
 
-    // Check if we should send email now
-    if (shouldSendWeeklyEmail()) {
-      // Check if we already sent today (to prevent duplicate sends)
-      const today = new Date().toDateString();
-      const lastSent = state.lastWeeklyEmailSent?.toDateString();
+    // Create legacy property config and check
+    const legacyProperty: PropertyConfig = {
+      slug: 'default',
+      guestyPropertyId: config.guestyPropertyId || '',
+      name: 'Default Property',
+      timezone: config.propertyTimezone,
+      currency: config.propertyCurrency,
+      bookingRecipientEmail: config.bookingRecipientEmail,
+      bookingSenderName: config.bookingSenderName,
+      weeklyReport: {
+        enabled: config.weeklyReportEnabled as boolean,
+        recipients: config.weeklyReportRecipients as string[],
+        day: config.weeklyReportDay,
+        hour: config.weeklyReportHour,
+      },
+      ga4: {
+        enabled: config.ga4Enabled as boolean,
+        propertyId: config.ga4PropertyId,
+        keyFilePath: config.ga4KeyFilePath,
+        syncHour: config.ga4SyncHour,
+      },
+    };
 
-      if (lastSent === today) {
-        logger.debug('Weekly email already sent today, skipping');
-        return;
-      }
-
-      logger.info('📧 Weekly email conditions met, sending...');
-      const result = await sendWeeklySummaryEmail();
-
-      if (result.sent) {
-        state.lastWeeklyEmailSent = new Date();
-      }
-    }
+    await checkAndSendWeeklyEmailForProperty(legacyProperty);
   } catch (error) {
     logger.error({ error }, 'Error in weekly email check');
   }
@@ -301,15 +353,37 @@ export function startScheduler() {
   logger.info({ nextRun: state.nextRun }, '✅ Scheduler started');
 
   // Start weekly email checker (runs every hour)
-  if (config.weeklyReportEnabled) {
-    logger.info(
-      {
-        weeklyReportDay: config.weeklyReportDay,
-        weeklyReportHour: config.weeklyReportHour,
-        recipients: config.weeklyReportRecipients,
-      },
-      '📧 Starting weekly email scheduler'
-    );
+  const properties = getAllProperties();
+  const hasWeeklyReportEnabled = properties.length > 0
+    ? properties.some(p => p.weeklyReport.enabled)
+    : config.weeklyReportEnabled;
+
+  if (hasWeeklyReportEnabled) {
+    if (properties.length > 0) {
+      logger.info(
+        {
+          propertyCount: properties.length,
+          properties: properties
+            .filter(p => p.weeklyReport.enabled)
+            .map(p => ({
+              slug: p.slug,
+              day: p.weeklyReport.day,
+              hour: p.weeklyReport.hour,
+              recipients: p.weeklyReport.recipients,
+            })),
+        },
+        '📧 Starting multi-property weekly email scheduler'
+      );
+    } else {
+      logger.info(
+        {
+          weeklyReportDay: config.weeklyReportDay,
+          weeklyReportHour: config.weeklyReportHour,
+          recipients: config.weeklyReportRecipients,
+        },
+        '📧 Starting weekly email scheduler'
+      );
+    }
 
     // Check immediately on start
     checkAndSendWeeklyEmail();

@@ -6,11 +6,12 @@
 
 import express from 'express';
 import { getDatabase } from '../db/index.js';
-import { syncConfiguredListing } from '../jobs/sync-listing.js';
-import { syncConfiguredAvailability } from '../jobs/sync-availability.js';
-import { runETLJob } from '../jobs/etl-job.js';
+import { syncListing } from '../jobs/sync-listing.js';
+import { syncAvailability } from '../jobs/sync-availability.js';
+import { runETLJob, runETLJobForProperty } from '../jobs/etl-job.js';
 import { getSchedulerStatus } from '../jobs/scheduler.js';
 import { config } from '../config/index.js';
+import { getAllProperties, getPropertyBySlug, getDefaultProperty } from '../config/properties.js';
 import logger from '../utils/logger.js';
 import { getDashboardStats, getAllTimeConversionRate } from '../repositories/availability-repository.js';
 import { getListingById } from '../repositories/listings-repository.js';
@@ -504,6 +505,30 @@ router.get('/', (_req, res) => {
       box-shadow: 0 4px 12px rgba(42, 42, 42, 0.2);
     }
 
+    .property-selector {
+      font-family: var(--font-body);
+      font-size: 16px;
+      font-weight: 600;
+      padding: 10px 16px;
+      border: 2px solid var(--color-stone);
+      border-radius: var(--radius-sm);
+      background: var(--color-sand);
+      color: var(--color-charcoal);
+      cursor: pointer;
+      min-width: 200px;
+      transition: all 0.2s ease;
+    }
+
+    .property-selector:hover {
+      border-color: var(--color-forest);
+    }
+
+    .property-selector:focus {
+      outline: none;
+      border-color: var(--color-forest);
+      box-shadow: 0 0 0 3px rgba(45, 90, 61, 0.1);
+    }
+
     /* Custom color accents for specific cards */
     .card[style*="border-left-color: #28a745"],
     .card[style*="border-left-color: rgb(40, 167, 69)"] {
@@ -682,8 +707,16 @@ router.get('/', (_req, res) => {
 <body>
   <div class="container">
     <div class="header">
-      <h1>🛠️ Guesty Calendar Admin</h1>
-      <a href="/auth/logout"><button class="secondary">Logout</button></a>
+      <div style="display: flex; align-items: center; gap: 20px;">
+        <h1 style="margin-bottom: 0;">🛠️ Admin</h1>
+        <select id="propertySelector" class="property-selector" onchange="switchProperty(this.value)">
+          <option value="">Loading properties...</option>
+        </select>
+      </div>
+      <div style="display: flex; gap: 10px;">
+        <a href="/admin/system"><button class="secondary">System</button></a>
+        <a href="/auth/logout"><button class="secondary">Logout</button></a>
+      </div>
     </div>
 
     <div id="message" class="message"></div>
@@ -792,57 +825,56 @@ router.get('/', (_req, res) => {
       <div id="bookingsTable">Loading bookings...</div>
     </div>
 
-    <!-- Health Status -->
-    <div class="section">
-      <h2>System Health</h2>
-      <div class="grid" id="healthGrid">
-        <div class="card">
-          <h3>Status</h3>
-          <div class="value">Loading...</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- User Management -->
-    <div class="section">
-      <h2>User Management</h2>
-      <p style="color: #666; margin-bottom: 20px;">Manage admin users who can access this panel</p>
-      <div class="actions">
-        <button onclick="window.location.href='/admin/users'">👥 Manage Users</button>
-      </div>
-    </div>
-
-    <!-- Manual Sync -->
-    <div class="section">
-      <h2>Manual Data Sync</h2>
-      <p style="color: #666; margin-bottom: 20px;">Trigger immediate data refresh from Guesty API</p>
-      <div class="actions">
-        <button onclick="syncAll()">🔄 Sync All (Listing + Availability)</button>
-        <button onclick="syncListing()">📄 Sync Listing Only</button>
-        <button onclick="syncAvailability()">📅 Sync Availability Only</button>
-      </div>
-    </div>
-
-    <!-- Database Viewer -->
-    <div class="section">
-      <h2>Database</h2>
-      <div class="actions">
-        <button onclick="viewTable('listings')">View Listings</button>
-        <button onclick="viewTable('availability')">View Availability</button>
-        <button onclick="viewTable('cached_quotes')">View Cached Quotes</button>
-      </div>
-      <div id="tableView"></div>
-    </div>
-
-    <!-- Scheduler Status -->
-    <div class="section">
-      <h2>ETL Scheduler</h2>
-      <div id="schedulerStatus">Loading...</div>
-    </div>
   </div>
 
   <script>
     let currentPeriod = 'future'; // Track current period
+    let currentProperty = null; // Track current property slug
+    let propertiesMap = {}; // Track property metadata
+
+    // Load available properties for selector
+    async function loadProperties() {
+      try {
+        const res = await fetch('/admin/properties');
+        const data = await res.json();
+        const selector = document.getElementById('propertySelector');
+
+        if (data.properties && data.properties.length > 0) {
+          selector.innerHTML = data.properties.map(p =>
+            \`<option value="\${p.slug}" \${p.isDefault ? 'selected' : ''}>\${p.name}</option>\`
+          ).join('');
+          currentProperty = data.defaultSlug || data.properties[0].slug;
+          // Build lookup map for property metadata
+          data.properties.forEach(p => { propertiesMap[p.slug] = p; });
+        } else {
+          selector.innerHTML = '<option value="">No properties configured</option>';
+        }
+      } catch (error) {
+        console.error('Failed to load properties:', error);
+        document.getElementById('propertySelector').innerHTML = '<option value="">Error loading</option>';
+      }
+    }
+
+    // Switch to a different property
+    function switchProperty(slug) {
+      if (slug && slug !== currentProperty) {
+        currentProperty = slug;
+        loadDashboard();
+        updateAnalyticsVisibility();
+      }
+    }
+
+    // Show/hide analytics based on property GA4 config
+    function updateAnalyticsVisibility() {
+      const analyticsSection = document.getElementById('analyticsSection');
+      const propertyConfig = propertiesMap[currentProperty];
+      if (propertyConfig && propertyConfig.ga4Enabled) {
+        analyticsSection.style.display = 'block';
+        loadAnalytics();
+      } else {
+        analyticsSection.style.display = 'none';
+      }
+    }
 
     function showMessage(text, type = 'success') {
       const msg = document.getElementById('message');
@@ -991,195 +1023,6 @@ router.get('/', (_req, res) => {
       loadDashboard();
     }
 
-    async function loadHealth() {
-      try {
-        const res = await fetch('/admin/health');
-        const data = await res.json();
-
-        const grid = document.getElementById('healthGrid');
-
-        // Determine last sync status
-        let lastSyncHtml = '';
-        if (data.scheduler.lastSuccessfulRun) {
-          const successDate = new Date(data.scheduler.lastSuccessfulRun);
-          lastSyncHtml = \`
-            <div class="value" style="color: #28a745;">\${successDate.toLocaleTimeString()}</div>
-            <div class="subvalue" style="color: #28a745;">✓ Success · \${successDate.toLocaleDateString()}</div>
-          \`;
-        } else if (data.scheduler.lastFailedRun) {
-          const failDate = new Date(data.scheduler.lastFailedRun);
-          lastSyncHtml = \`
-            <div class="value" style="color: #dc3545;">\${failDate.toLocaleTimeString()}</div>
-            <div class="subvalue" style="color: #dc3545;">✗ Failed · \${failDate.toLocaleDateString()}</div>
-          \`;
-        } else {
-          lastSyncHtml = \`
-            <div class="value">Never</div>
-            <div class="subvalue">No syncs yet</div>
-          \`;
-        }
-
-        grid.innerHTML = \`
-          <div class="card">
-            <h3>Database</h3>
-            <div class="value">\${data.database}</div>
-            <div class="subvalue">Initialized: \${data.databaseInitialized ? 'Yes' : 'No'}</div>
-          </div>
-          <div class="card">
-            <h3>Scheduler</h3>
-            <div class="value">\${data.scheduler.running ? 'Running' : 'Stopped'}</div>
-            <div class="subvalue">Success: \${data.scheduler.successCount || 0} · Failed: \${data.scheduler.failureCount || 0}</div>
-          </div>
-          <div class="card">
-            <h3>Last Successful Sync</h3>
-            \${lastSyncHtml}
-          </div>
-          <div class="card">
-            <h3>Next Sync</h3>
-            <div class="value">\${data.scheduler.nextRun ? new Date(data.scheduler.nextRun).toLocaleTimeString() : 'N/A'}</div>
-            <div class="subvalue">Interval: \${data.scheduler.intervalMinutes} min</div>
-          </div>
-        \`;
-
-        // Scheduler status
-        const schedulerDiv = document.getElementById('schedulerStatus');
-        schedulerDiv.innerHTML = \`
-          <div class="grid">
-            <div class="card">
-              <h3>Status</h3>
-              <div class="value"><span class="status \${data.scheduler.running ? 'running' : 'stopped'}">\${data.scheduler.running ? 'Running' : 'Stopped'}</span></div>
-            </div>
-            <div class="card">
-              <h3>Total Jobs</h3>
-              <div class="value">\${data.scheduler.jobCount || 0}</div>
-              <div class="subvalue" style="color: #28a745;">✓ \${data.scheduler.successCount || 0} success</div>
-              <div class="subvalue" style="color: #dc3545;">✗ \${data.scheduler.failureCount || 0} failed</div>
-            </div>
-            <div class="card">
-              <h3>Refresh Interval</h3>
-              <div class="value">\${data.scheduler.intervalMinutes}</div>
-              <div class="subvalue">minutes</div>
-            </div>
-          </div>
-        \`;
-      } catch (error) {
-        showMessage('Failed to load health status: ' + error.message, 'error');
-      }
-    }
-
-    async function syncAll() {
-      const btn = event.target;
-      btn.disabled = true;
-      btn.innerHTML = '🔄 Syncing... <span class="loading"></span>';
-
-      try {
-        const res = await fetch('/admin/sync/all', { method: 'POST' });
-        const data = await res.json();
-
-        if (data.success) {
-          showMessage(\`✅ Sync completed in \${data.duration}ms\`, 'success');
-          loadHealth();
-        } else {
-          showMessage('❌ Sync failed: ' + (data.error || 'Unknown error'), 'error');
-        }
-      } catch (error) {
-        showMessage('❌ Sync failed: ' + error.message, 'error');
-      } finally {
-        btn.disabled = false;
-        btn.innerHTML = '🔄 Sync All (Listing + Availability)';
-      }
-    }
-
-    async function syncListing() {
-      const btn = event.target;
-      btn.disabled = true;
-      btn.innerHTML = '📄 Syncing... <span class="loading"></span>';
-
-      try {
-        const res = await fetch('/admin/sync/listing', { method: 'POST' });
-        const data = await res.json();
-
-        if (data.success) {
-          showMessage(\`✅ Listing synced\`, 'success');
-          loadHealth();
-        } else {
-          showMessage('❌ Sync failed: ' + (data.error || 'Unknown error'), 'error');
-        }
-      } catch (error) {
-        showMessage('❌ Sync failed: ' + error.message, 'error');
-      } finally {
-        btn.disabled = false;
-        btn.innerHTML = '📄 Sync Listing Only';
-      }
-    }
-
-    async function syncAvailability() {
-      const btn = event.target;
-      btn.disabled = true;
-      btn.innerHTML = '📅 Syncing... <span class="loading"></span>';
-
-      try {
-        const res = await fetch('/admin/sync/availability', { method: 'POST' });
-        const data = await res.json();
-
-        if (data.success) {
-          showMessage(\`✅ Availability synced (\${data.daysCount || 0} days)\`, 'success');
-          loadHealth();
-        } else {
-          showMessage('❌ Sync failed: ' + (data.error || 'Unknown error'), 'error');
-        }
-      } catch (error) {
-        showMessage('❌ Sync failed: ' + error.message, 'error');
-      } finally {
-        btn.disabled = false;
-        btn.innerHTML = '📅 Sync Availability Only';
-      }
-    }
-
-    async function viewTable(tableName) {
-      const tableView = document.getElementById('tableView');
-      tableView.innerHTML = '<p style="margin-top: 15px;">Loading...</p>';
-
-      try {
-        const res = await fetch(\`/admin/db/\${tableName}\`);
-        const data = await res.json();
-
-        if (data.rows.length === 0) {
-          tableView.innerHTML = '<p style="margin-top: 15px; color: #888;">No data found in this table.</p>';
-          return;
-        }
-
-        const columns = Object.keys(data.rows[0]);
-
-        let html = \`
-          <h3 style="margin-top: 20px; color: #555;">\${tableName} (\${data.count} rows)</h3>
-          <div style="overflow-x: auto;">
-            <table>
-              <thead>
-                <tr>\${columns.map(col => \`<th>\${col}</th>\`).join('')}</tr>
-              </thead>
-              <tbody>
-                \${data.rows.slice(0, 50).map(row => \`
-                  <tr>\${columns.map(col => {
-                    let value = row[col];
-                    if (value === null) value = '<em>null</em>';
-                    else if (typeof value === 'object') value = JSON.stringify(value);
-                    else if (typeof value === 'string' && value.length > 100) value = value.substring(0, 100) + '...';
-                    return \`<td>\${value}</td>\`;
-                  }).join('')}</tr>
-                \`).join('')}
-              </tbody>
-            </table>
-          </div>
-          \${data.count > 50 ? \`<p style="margin-top: 10px; color: #888;"><em>Showing first 50 of \${data.count} rows</em></p>\` : ''}
-        \`;
-
-        tableView.innerHTML = html;
-      } catch (error) {
-        tableView.innerHTML = \`<p style="margin-top: 15px; color: #dc3545;">Failed to load table: \${error.message}</p>\`;
-      }
-    }
-
     // Generate document (quote or invoice) - uses cached data if exists
     async function generateDocument(reservationId, documentType) {
       await downloadDocument('/admin/documents/generate', reservationId, documentType);
@@ -1246,7 +1089,8 @@ router.get('/', (_req, res) => {
 
     async function loadDashboard() {
       try {
-        const res = await fetch(\`/admin/dashboard-data?period=\${currentPeriod}\`);
+        const propertyParam = currentProperty ? \`&property=\${currentProperty}\` : '';
+        const res = await fetch(\`/admin/dashboard-data?period=\${currentPeriod}\${propertyParam}\`);
         const data = await res.json();
 
         // Update stats cards
@@ -1635,12 +1479,13 @@ router.get('/', (_req, res) => {
 
     // Load initial data
     console.log('[INIT] Loading initial data...');
-    loadHealth();
-    loadDashboard();
-    loadAnalytics();
+    // Load properties first, then dashboard and analytics
+    loadProperties().then(() => {
+      loadDashboard();
+      updateAnalyticsVisibility();
+    });
     loadDocumentSequence();
     console.log('[INIT] All load functions called');
-    setInterval(loadHealth, 10000); // Refresh every 10 seconds
 
     // Only auto-refresh dashboard for future data (not past)
     setInterval(() => {
@@ -1648,6 +1493,355 @@ router.get('/', (_req, res) => {
         loadDashboard();
       }
     }, 30000); // Refresh dashboard every 30 seconds if showing future
+  </script>
+</body>
+</html>
+  `);
+});
+
+/**
+ * GET /admin/system
+ * System & infrastructure admin page
+ */
+router.get('/system', (_req, res) => {
+  res.send(`
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>System - Guesty Calendar Admin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;0,9..144,700;1,9..144,300&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --color-cream: #faf8f5;
+      --color-sand: #f4f1ed;
+      --color-stone: #e8e4df;
+      --color-charcoal: #2a2a2a;
+      --color-warm-gray: #6b6560;
+      --color-forest: #2d5a3d;
+      --color-forest-light: #3d7a52;
+      --color-terracotta: #c75b3c;
+      --color-terracotta-light: #d67456;
+      --color-amber: #d4a574;
+      --color-sage: #8a9a7b;
+      --color-red: #c44536;
+      --color-red-dark: #a13828;
+      --font-display: 'Fraunces', serif;
+      --font-body: 'Manrope', sans-serif;
+      --font-mono: 'SF Mono', 'Monaco', 'Consolas', monospace;
+      --shadow-sm: 0 2px 8px rgba(42, 42, 42, 0.04);
+      --shadow-md: 0 4px 16px rgba(42, 42, 42, 0.08);
+      --radius-sm: 8px;
+      --radius-md: 12px;
+      --radius-lg: 16px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: var(--font-body); background: var(--color-cream); color: var(--color-charcoal); line-height: 1.6; }
+    .container { max-width: 1200px; margin: 0 auto; padding: 30px 20px; }
+    .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 1px solid var(--color-stone); }
+    .header h1 { font-family: var(--font-display); font-size: 28px; font-weight: 600; color: var(--color-charcoal); }
+    .section { background: white; border-radius: var(--radius-lg); padding: 24px; margin-bottom: 20px; box-shadow: var(--shadow-sm); border: 1px solid var(--color-stone); }
+    .section h2 { font-family: var(--font-display); font-size: 20px; font-weight: 600; margin-bottom: 20px; color: var(--color-charcoal); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
+    .card { background: var(--color-cream); padding: 20px; border-radius: var(--radius-md); border-left: 4px solid var(--color-forest); }
+    .card h3 { font-family: var(--font-body); font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-warm-gray); margin-bottom: 8px; font-weight: 600; }
+    .card .value { font-family: var(--font-display); font-size: 28px; font-weight: 700; color: var(--color-charcoal); }
+    .card .subvalue { font-size: 13px; color: var(--color-warm-gray); margin-top: 4px; }
+    button { padding: 10px 20px; border: none; border-radius: var(--radius-sm); cursor: pointer; font-size: 14px; font-family: var(--font-body); font-weight: 600; transition: all 0.2s; background: var(--color-forest); color: white; }
+    button:hover { background: var(--color-forest-light); transform: translateY(-1px); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    button.secondary { background: var(--color-sand); color: var(--color-charcoal); border: 1px solid var(--color-stone); }
+    button.secondary:hover { background: var(--color-stone); }
+    button.success { background: var(--color-forest); }
+    .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    .message { padding: 12px 16px; border-radius: var(--radius-sm); margin-bottom: 20px; display: none; font-weight: 500; }
+    .message.success { background: #ecfdf5; color: #065f46; border: 1px solid #a7f3d0; display: block; }
+    .message.error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; display: block; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--color-stone); }
+    th { font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-warm-gray); background: var(--color-cream); }
+    .status { padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+    .status.running { background: #ecfdf5; color: #065f46; }
+    .status.stopped { background: #fef2f2; color: #991b1b; }
+    .loading { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-radius: 50%; border-top-color: #fff; animation: spin 0.8s linear infinite; vertical-align: middle; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .property-selector { padding: 8px 12px; border: 1px solid var(--color-stone); border-radius: var(--radius-sm); font-family: var(--font-body); font-size: 14px; background: white; color: var(--color-charcoal); cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div style="display: flex; align-items: center; gap: 20px;">
+        <h1 style="margin-bottom: 0;">System</h1>
+        <select id="propertySelector" class="property-selector" onchange="switchProperty(this.value)">
+          <option value="">Loading properties...</option>
+        </select>
+      </div>
+      <div style="display: flex; gap: 10px;">
+        <a href="/admin"><button class="secondary">Dashboard</button></a>
+        <a href="/auth/logout"><button class="secondary">Logout</button></a>
+      </div>
+    </div>
+
+    <div id="message" class="message"></div>
+
+    <!-- System Health -->
+    <div class="section">
+      <h2>System Health</h2>
+      <div class="grid" id="healthGrid">
+        <div class="card">
+          <h3>Status</h3>
+          <div class="value">Loading...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ETL Scheduler -->
+    <div class="section">
+      <h2>ETL Scheduler</h2>
+      <div id="schedulerStatus">Loading...</div>
+    </div>
+
+    <!-- Manual Sync -->
+    <div class="section">
+      <h2>Manual Data Sync</h2>
+      <p style="color: var(--color-warm-gray); margin-bottom: 20px;">Trigger immediate data refresh from Guesty API</p>
+      <div class="actions">
+        <button onclick="syncAll(event)">Sync All (Listing + Availability)</button>
+        <button onclick="syncListing(event)">Sync Listing Only</button>
+        <button onclick="syncAvailability(event)">Sync Availability Only</button>
+      </div>
+    </div>
+
+    <!-- User Management -->
+    <div class="section">
+      <h2>User Management</h2>
+      <p style="color: var(--color-warm-gray); margin-bottom: 20px;">Manage admin users who can access this panel</p>
+      <div class="actions">
+        <button onclick="window.location.href='/admin/users'">Manage Users</button>
+      </div>
+    </div>
+
+    <!-- Database Viewer -->
+    <div class="section">
+      <h2>Database</h2>
+      <div class="actions">
+        <button onclick="viewTable('listings')">View Listings</button>
+        <button onclick="viewTable('availability')">View Availability</button>
+        <button onclick="viewTable('cached_quotes')">View Cached Quotes</button>
+      </div>
+      <div id="tableView"></div>
+    </div>
+  </div>
+
+  <script>
+    let currentProperty = null;
+
+    function showMessage(text, type) {
+      const msg = document.getElementById('message');
+      msg.textContent = text;
+      msg.className = 'message ' + type;
+      setTimeout(() => { msg.style.display = 'none'; msg.className = 'message'; }, 5000);
+    }
+
+    async function loadProperties() {
+      try {
+        const res = await fetch('/admin/properties');
+        const data = await res.json();
+        const selector = document.getElementById('propertySelector');
+        selector.innerHTML = data.properties.map(p =>
+          \`<option value="\${p.slug}" \${p.isDefault ? 'selected' : ''}>\${p.name}</option>\`
+        ).join('');
+        currentProperty = data.defaultSlug || data.properties[0]?.slug;
+      } catch (error) {
+        console.error('Failed to load properties:', error);
+      }
+    }
+
+    function switchProperty(slug) {
+      currentProperty = slug;
+    }
+
+    async function loadHealth() {
+      try {
+        const res = await fetch('/admin/health');
+        const data = await res.json();
+
+        const grid = document.getElementById('healthGrid');
+
+        let lastSyncHtml = '';
+        if (data.scheduler.lastSuccessfulRun) {
+          const successDate = new Date(data.scheduler.lastSuccessfulRun);
+          lastSyncHtml = \`
+            <div class="value" style="color: #28a745;">\${successDate.toLocaleTimeString()}</div>
+            <div class="subvalue" style="color: #28a745;">Success · \${successDate.toLocaleDateString()}</div>
+          \`;
+        } else if (data.scheduler.lastFailedRun) {
+          const failDate = new Date(data.scheduler.lastFailedRun);
+          lastSyncHtml = \`
+            <div class="value" style="color: #dc3545;">\${failDate.toLocaleTimeString()}</div>
+            <div class="subvalue" style="color: #dc3545;">Failed · \${failDate.toLocaleDateString()}</div>
+          \`;
+        } else {
+          lastSyncHtml = \`<div class="value">Never</div><div class="subvalue">No syncs yet</div>\`;
+        }
+
+        grid.innerHTML = \`
+          <div class="card">
+            <h3>Database</h3>
+            <div class="value">\${data.database}</div>
+            <div class="subvalue">Initialized: \${data.databaseInitialized ? 'Yes' : 'No'}</div>
+          </div>
+          <div class="card">
+            <h3>Scheduler</h3>
+            <div class="value">\${data.scheduler.running ? 'Running' : 'Stopped'}</div>
+            <div class="subvalue">Success: \${data.scheduler.successCount || 0} · Failed: \${data.scheduler.failureCount || 0}</div>
+          </div>
+          <div class="card">
+            <h3>Last Successful Sync</h3>
+            \${lastSyncHtml}
+          </div>
+          <div class="card">
+            <h3>Next Sync</h3>
+            <div class="value">\${data.scheduler.nextRun ? new Date(data.scheduler.nextRun).toLocaleTimeString() : 'N/A'}</div>
+            <div class="subvalue">Interval: \${data.scheduler.intervalMinutes} min</div>
+          </div>
+        \`;
+
+        const schedulerDiv = document.getElementById('schedulerStatus');
+        schedulerDiv.innerHTML = \`
+          <div class="grid">
+            <div class="card">
+              <h3>Status</h3>
+              <div class="value"><span class="status \${data.scheduler.running ? 'running' : 'stopped'}">\${data.scheduler.running ? 'Running' : 'Stopped'}</span></div>
+            </div>
+            <div class="card">
+              <h3>Total Jobs</h3>
+              <div class="value">\${data.scheduler.jobCount || 0}</div>
+              <div class="subvalue" style="color: #28a745;">\${data.scheduler.successCount || 0} success</div>
+              <div class="subvalue" style="color: #dc3545;">\${data.scheduler.failureCount || 0} failed</div>
+            </div>
+            <div class="card">
+              <h3>Refresh Interval</h3>
+              <div class="value">\${data.scheduler.intervalMinutes}</div>
+              <div class="subvalue">minutes</div>
+            </div>
+          </div>
+        \`;
+      } catch (error) {
+        showMessage('Failed to load health status: ' + error.message, 'error');
+      }
+    }
+
+    async function syncAll(e) {
+      const btn = e.target;
+      btn.disabled = true;
+      btn.innerHTML = 'Syncing... <span class="loading"></span>';
+      try {
+        const propertyParam = currentProperty ? \`?property=\${currentProperty}\` : '';
+        const res = await fetch(\`/admin/sync/all\${propertyParam}\`, { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          showMessage(\`Sync completed in \${data.duration}ms\`, 'success');
+          loadHealth();
+        } else {
+          showMessage('Sync failed: ' + (data.error || 'Unknown error'), 'error');
+        }
+      } catch (error) {
+        showMessage('Sync failed: ' + error.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Sync All (Listing + Availability)';
+      }
+    }
+
+    async function syncListing(e) {
+      const btn = e.target;
+      btn.disabled = true;
+      btn.innerHTML = 'Syncing... <span class="loading"></span>';
+      try {
+        const propertyParam = currentProperty ? \`?property=\${currentProperty}\` : '';
+        const res = await fetch(\`/admin/sync/listing\${propertyParam}\`, { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          showMessage('Listing synced', 'success');
+          loadHealth();
+        } else {
+          showMessage('Sync failed: ' + (data.error || 'Unknown error'), 'error');
+        }
+      } catch (error) {
+        showMessage('Sync failed: ' + error.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Sync Listing Only';
+      }
+    }
+
+    async function syncAvailability(e) {
+      const btn = e.target;
+      btn.disabled = true;
+      btn.innerHTML = 'Syncing... <span class="loading"></span>';
+      try {
+        const propertyParam = currentProperty ? \`?property=\${currentProperty}\` : '';
+        const res = await fetch(\`/admin/sync/availability\${propertyParam}\`, { method: 'POST' });
+        const data = await res.json();
+        if (data.success) {
+          showMessage(\`Availability synced (\${data.daysCount || 0} days)\`, 'success');
+          loadHealth();
+        } else {
+          showMessage('Sync failed: ' + (data.error || 'Unknown error'), 'error');
+        }
+      } catch (error) {
+        showMessage('Sync failed: ' + error.message, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Sync Availability Only';
+      }
+    }
+
+    async function viewTable(tableName) {
+      const tableView = document.getElementById('tableView');
+      tableView.innerHTML = '<p style="margin-top: 15px;">Loading...</p>';
+      try {
+        const res = await fetch(\`/admin/db/\${tableName}\`);
+        const data = await res.json();
+        if (data.rows.length === 0) {
+          tableView.innerHTML = '<p style="margin-top: 15px; color: #888;">No data found.</p>';
+          return;
+        }
+        const columns = Object.keys(data.rows[0]);
+        tableView.innerHTML = \`
+          <h3 style="margin-top: 20px; color: #555;">\${tableName} (\${data.count} rows)</h3>
+          <div style="overflow-x: auto;">
+            <table>
+              <thead><tr>\${columns.map(col => \`<th>\${col}</th>\`).join('')}</tr></thead>
+              <tbody>
+                \${data.rows.slice(0, 50).map(row => \`
+                  <tr>\${columns.map(col => {
+                    let value = row[col];
+                    if (value === null) value = '<em>null</em>';
+                    else if (typeof value === 'object') value = JSON.stringify(value);
+                    else if (typeof value === 'string' && value.length > 100) value = value.substring(0, 100) + '...';
+                    return \`<td>\${value}</td>\`;
+                  }).join('')}</tr>
+                \`).join('')}
+              </tbody>
+            </table>
+          </div>
+          \${data.count > 50 ? \`<p style="margin-top: 10px; color: #888;"><em>Showing first 50 of \${data.count} rows</em></p>\` : ''}
+        \`;
+      } catch (error) {
+        tableView.innerHTML = \`<p style="margin-top: 15px; color: #dc3545;">Failed to load table: \${error.message}</p>\`;
+      }
+    }
+
+    // Init
+    loadProperties();
+    loadHealth();
+    setInterval(loadHealth, 10000);
   </script>
 </body>
 </html>
@@ -1689,9 +1883,30 @@ router.get('/health', (_req, res) => {
 /**
  * POST /admin/sync/all
  * Trigger full ETL job (listing + availability)
+ * Query params: property=slug (optional, syncs specific property or all if not specified)
  */
-router.post('/sync/all', async (_req, res, next) => {
+router.post('/sync/all', async (req, res, next) => {
   try {
+    const propertySlug = req.query.property as string | undefined;
+
+    if (propertySlug) {
+      const property = getPropertyBySlug(propertySlug);
+      if (!property) {
+        return res.status(404).json({ error: `Property '${propertySlug}' not found` });
+      }
+      logger.info({ propertySlug }, 'Manual full sync triggered for property via admin');
+      const result = await runETLJobForProperty(property, true);
+      return res.json({
+        success: result.success,
+        propertySlug: property.slug,
+        listing: result.listing,
+        availability: result.availability,
+        duration: result.duration,
+        timestamp: result.timestamp,
+      });
+    }
+
+    // Sync all properties
     logger.info('Manual full sync triggered via admin');
     const result = await runETLJob(true); // force=true
 
@@ -1702,19 +1917,36 @@ router.post('/sync/all', async (_req, res, next) => {
       duration: result.duration,
       timestamp: result.timestamp,
     });
+    return;
   } catch (error) {
-    next(error);
+    return next(error);
   }
 });
 
 /**
  * POST /admin/sync/listing
  * Trigger listing sync only
+ * Query params: property=slug (optional)
  */
-router.post('/sync/listing', async (_req, res, next) => {
+router.post('/sync/listing', async (req, res, next) => {
   try {
-    logger.info('Manual listing sync triggered via admin');
-    const result = await syncConfiguredListing(true); // force=true
+    const propertySlug = req.query.property as string | undefined;
+    let listingId: string;
+
+    if (propertySlug) {
+      const property = getPropertyBySlug(propertySlug);
+      if (!property) {
+        return res.status(404).json({ error: `Property '${propertySlug}' not found` });
+      }
+      listingId = property.guestyPropertyId;
+      logger.info({ propertySlug }, 'Manual listing sync triggered for property via admin');
+    } else {
+      const defaultProperty = getDefaultProperty();
+      listingId = defaultProperty?.guestyPropertyId || config.guestyPropertyId || '';
+      logger.info('Manual listing sync triggered via admin');
+    }
+
+    const result = await syncListing(listingId, true); // force=true
 
     res.json({
       success: result.success,
@@ -1723,19 +1955,36 @@ router.post('/sync/listing', async (_req, res, next) => {
       skipped: result.skipped,
       error: result.error,
     });
+    return;
   } catch (error) {
-    next(error);
+    return next(error);
   }
 });
 
 /**
  * POST /admin/sync/availability
  * Trigger availability sync only
+ * Query params: property=slug (optional)
  */
-router.post('/sync/availability', async (_req, res, next) => {
+router.post('/sync/availability', async (req, res, next) => {
   try {
-    logger.info('Manual availability sync triggered via admin');
-    const result = await syncConfiguredAvailability(true); // force=true
+    const propertySlug = req.query.property as string | undefined;
+    let listingId: string;
+
+    if (propertySlug) {
+      const property = getPropertyBySlug(propertySlug);
+      if (!property) {
+        return res.status(404).json({ error: `Property '${propertySlug}' not found` });
+      }
+      listingId = property.guestyPropertyId;
+      logger.info({ propertySlug }, 'Manual availability sync triggered for property via admin');
+    } else {
+      const defaultProperty = getDefaultProperty();
+      listingId = defaultProperty?.guestyPropertyId || config.guestyPropertyId || '';
+      logger.info('Manual availability sync triggered via admin');
+    }
+
+    const result = await syncAvailability(listingId, true); // force=true
 
     res.json({
       success: result.success,
@@ -1744,8 +1993,9 @@ router.post('/sync/availability', async (_req, res, next) => {
       skipped: result.skipped,
       error: result.error,
     });
+    return;
   } catch (error) {
-    next(error);
+    return next(error);
   }
 });
 
@@ -1803,11 +2053,25 @@ router.get('/db/:table', (req, res, next) => {
 /**
  * GET /admin/dashboard-data
  * Get dashboard statistics and bookings
- * Query params: period=past|future (default: future)
+ * Query params: property=slug (default: first property), period=past|future (default: future)
  */
 router.get('/dashboard-data', async (req, res, next) => {
   try {
-    const propertyId = config.guestyPropertyId;
+    // Resolve property from query param or use default
+    const propertySlug = req.query.property as string | undefined;
+    let propertyId: string;
+
+    if (propertySlug) {
+      const property = getPropertyBySlug(propertySlug);
+      if (!property) {
+        return res.status(404).json({ error: `Property '${propertySlug}' not found` });
+      }
+      propertyId = property.guestyPropertyId;
+    } else {
+      const defaultProperty = getDefaultProperty();
+      propertyId = defaultProperty?.guestyPropertyId || config.guestyPropertyId || '';
+    }
+
     const period = (req.query.period as 'past' | 'future') || 'future';
 
     // Get listing info
@@ -1845,7 +2109,16 @@ router.get('/dashboard-data', async (req, res, next) => {
       };
     });
 
+    // Get the resolved property slug for the response
+    const resolvedProperty = propertySlug
+      ? getPropertyBySlug(propertySlug)
+      : getDefaultProperty();
+
     res.json({
+      property: {
+        slug: resolvedProperty?.slug || 'default',
+        name: resolvedProperty?.name || listing?.nickname || listing?.title || 'Unknown Property',
+      },
       listing: {
         title: listing?.nickname || listing?.title || 'Unknown Property',
         currency: listing?.currency || 'EUR',
@@ -1862,9 +2135,29 @@ router.get('/dashboard-data', async (req, res, next) => {
       bookings,
       period, // Include period in response so UI knows what's displayed
     });
+    return;
   } catch (error) {
-    next(error);
+    return next(error);
   }
+});
+
+/**
+ * GET /admin/properties
+ * Get list of configured properties for property selector
+ */
+router.get('/properties', (_req, res) => {
+  const properties = getAllProperties();
+  const defaultProperty = getDefaultProperty();
+
+  res.json({
+    properties: properties.map(p => ({
+      slug: p.slug,
+      name: p.name,
+      isDefault: p.slug === defaultProperty?.slug,
+      ga4Enabled: p.ga4?.enabled || false,
+    })),
+    defaultSlug: defaultProperty?.slug || null,
+  });
 });
 
 /**

@@ -231,9 +231,18 @@ export async function syncAvailability(listingId: string, force: boolean = false
 
 /**
  * Sync availability for the configured property
+ * @deprecated Use syncAvailability with explicit listingId instead
  */
 export async function syncConfiguredAvailability(force: boolean = false): Promise<SyncAvailabilityResult> {
-  return syncAvailability(config.guestyPropertyId, force);
+  const listingId = config.guestyPropertyId;
+  if (!listingId) {
+    return {
+      success: false,
+      listingId: '',
+      error: 'No property ID configured (GUESTY_PROPERTY_ID or properties.json)',
+    };
+  }
+  return syncAvailability(listingId, force);
 }
 
 /**

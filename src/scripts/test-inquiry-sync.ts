@@ -5,6 +5,7 @@
  */
 
 import { config } from '../config/index.js';
+import { getDefaultProperty } from '../config/properties.js';
 import { initDatabase } from '../db/index.js';
 import { syncInquiries } from '../jobs/sync-inquiries.js';
 import logger from '../utils/logger.js';
@@ -19,9 +20,17 @@ async function main() {
     initDatabase();
     console.log('✅ Database initialized');
 
+    const defaultProperty = getDefaultProperty();
+    const propertyId = config.guestyPropertyId || defaultProperty?.guestyPropertyId;
+
+    if (!propertyId) {
+      console.error('No property configured');
+      process.exit(1);
+    }
+
     // Sync inquiries
     console.log('\nStep 2: Syncing inquiries from Guesty...');
-    const result = await syncInquiries(config.guestyPropertyId);
+    const result = await syncInquiries(propertyId);
 
     if (result.success) {
       console.log('✅ Inquiry sync completed successfully!');
