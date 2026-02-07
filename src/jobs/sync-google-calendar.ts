@@ -7,6 +7,7 @@
 
 import { googleCalendarClient, toGoogleEventId } from '../services/google-calendar-client.js';
 import { getReservationsByPeriod } from '../repositories/reservation-repository.js';
+import { getListingById } from '../repositories/listings-repository.js';
 import type { PropertyConfig } from '../config/properties.js';
 import type { Reservation } from '../types/models.js';
 import logger from '../utils/logger.js';
@@ -98,8 +99,10 @@ export async function syncGoogleCalendarForProperty(
   logger.info({ propertySlug: slug, calendarId }, 'Starting Google Calendar sync');
 
   try {
-    const checkInTime = googleCalendar.checkInTime;
-    const checkOutTime = googleCalendar.checkOutTime;
+    // Check-in/out times: listing (from Guesty) takes priority, config as fallback
+    const listing = getListingById(guestyPropertyId);
+    const checkInTime = listing?.check_in_time || googleCalendar.checkInTime;
+    const checkOutTime = listing?.check_out_time || googleCalendar.checkOutTime;
 
     // Get past 6 months + future 12 months of reservations (same range as iCal)
     const pastReservations = getReservationsByPeriod(guestyPropertyId, 180, 'past');

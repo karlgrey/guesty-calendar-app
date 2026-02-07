@@ -46,6 +46,9 @@ export interface GuestyListing {
     checkOutTime?: string;
   };
 
+  defaultCheckInTime?: string;  // e.g. "08:00"
+  defaultCheckOutTime?: string; // e.g. "16:00"
+
   address?: {
     full?: string;
     city?: string;

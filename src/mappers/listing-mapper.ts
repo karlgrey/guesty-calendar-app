@@ -63,8 +63,8 @@ export function mapListing(guestyListing: GuestyListing): Omit<Listing, 'created
     // Terms
     min_nights: guestyListing.terms?.minNights ?? 1,
     max_nights: guestyListing.terms?.maxNights ?? null,
-    check_in_time: guestyListing.terms?.checkInTime ?? null,
-    check_out_time: guestyListing.terms?.checkOutTime ?? null,
+    check_in_time: guestyListing.defaultCheckInTime ?? guestyListing.terms?.checkInTime ?? null,
+    check_out_time: guestyListing.defaultCheckOutTime ?? guestyListing.terms?.checkOutTime ?? null,
 
     // Metadata
     active,
