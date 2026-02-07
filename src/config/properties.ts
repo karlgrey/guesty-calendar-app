@@ -31,6 +31,8 @@ export interface GA4Config {
 export interface GoogleCalendarConfig {
   enabled: boolean;
   calendarId?: string;
+  checkInTime?: string;  // e.g. "16:00"
+  checkOutTime?: string; // e.g. "12:00"
 }
 
 /**
@@ -72,6 +74,8 @@ const ga4ConfigSchema = z.object({
 const googleCalendarConfigSchema = z.object({
   enabled: z.boolean(),
   calendarId: z.string().optional(),
+  checkInTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+  checkOutTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
 });
 
 const weeklyReportConfigSchema = z.object({

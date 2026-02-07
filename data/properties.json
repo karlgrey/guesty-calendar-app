@@ -22,7 +22,9 @@
       },
       "googleCalendar": {
         "enabled": true,
-        "calendarId": "0ff0bca5d3931d1ccf6266f841876b66b5b63697b2157cb0947c7551792aba9e@group.calendar.google.com"
+        "calendarId": "0ff0bca5d3931d1ccf6266f841876b66b5b63697b2157cb0947c7551792aba9e@group.calendar.google.com",
+        "checkInTime": "08:00",
+        "checkOutTime": "16:00"
       }
     },
     {
@@ -41,7 +43,9 @@
       },
       "googleCalendar": {
         "enabled": true,
-        "calendarId": "3bbc5c76ebe58f39ae603416015713828d67e6b640b5201e74b60f3c7b6570b2@group.calendar.google.com"
+        "calendarId": "3bbc5c76ebe58f39ae603416015713828d67e6b640b5201e74b60f3c7b6570b2@group.calendar.google.com",
+        "checkInTime": "15:00",
+        "checkOutTime": "12:00"
       }
     }
   ]

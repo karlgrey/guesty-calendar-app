@@ -20,30 +20,62 @@ export interface GoogleCalendarSyncResult {
 }
 
 /**
+ * Add one day to a YYYY-MM-DD date string
+ */
+function addOneDay(dateStr: string): string {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const d = new Date(year, month - 1, day + 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Format a YYYY-MM-DD date string in German: "Do, 15. Aug 2025"
+ */
+function formatDateDE(dateStr: string): string {
+  const [year, month, day] = dateStr.split('-').map(Number);
+  const d = new Date(year, month - 1, day);
+  const days = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+  const months = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+  return `${days[d.getDay()]}, ${d.getDate()}. ${months[d.getMonth()]} ${d.getFullYear()}`;
+}
+
+/**
  * Build a Google Calendar event from a reservation
  */
-function buildCalendarEvent(reservation: Reservation, propertyName: string) {
+function buildCalendarEvent(
+  reservation: Reservation,
+  propertyName: string,
+  checkInTime: string | undefined,
+  checkOutTime: string | undefined
+) {
   const guestName = reservation.guest_name || 'Unknown Guest';
   const nights = reservation.nights_count || 0;
   const guests = reservation.guests_count || 0;
   const status = reservation.status.charAt(0).toUpperCase() + reservation.status.slice(1);
   const source = reservation.source || reservation.platform || 'Direct';
 
-  // Use localized dates for all-day events (DATE format, no time)
   const checkIn = (reservation.check_in_localized || reservation.check_in).split('T')[0];
   const checkOut = (reservation.check_out_localized || reservation.check_out).split('T')[0];
 
+  // End date +1 day: Google all-day events use exclusive end date,
+  // but guests are still present on checkout day until checkout time.
+  const endDate = addOneDay(checkOut);
+
+  const descLines = [
+    `Status: ${status}`,
+    `Check-in: ${formatDateDE(checkIn)}${checkInTime ? ' ab ' + checkInTime + ' Uhr' : ''}`,
+    `Check-out: ${formatDateDE(checkOut)}${checkOutTime ? ' bis ' + checkOutTime + ' Uhr' : ''}`,
+    `Nächte: ${nights}`,
+    `Gäste: ${guests}`,
+    `Quelle: ${source}`,
+  ];
+
   return {
-    summary: `${guestName} (${nights}N, ${guests} guests)`,
-    description: [
-      `Status: ${status}`,
-      `Nights: ${nights}`,
-      `Guests: ${guests}`,
-      `Source: ${source}`,
-    ].join('\n'),
+    summary: `${guestName} (${nights}N, ${guests} Gäste)`,
+    description: descLines.join('\n'),
     location: propertyName,
     start: { date: checkIn },
-    end: { date: checkOut },
+    end: { date: endDate },
     transparency: 'opaque' as const,
   };
 }
@@ -66,6 +98,9 @@ export async function syncGoogleCalendarForProperty(
   logger.info({ propertySlug: slug, calendarId }, 'Starting Google Calendar sync');
 
   try {
+    const checkInTime = googleCalendar.checkInTime;
+    const checkOutTime = googleCalendar.checkOutTime;
+
     // Get past 6 months + future 12 months of reservations (same range as iCal)
     const pastReservations = getReservationsByPeriod(guestyPropertyId, 180, 'past');
     const futureReservations = getReservationsByPeriod(guestyPropertyId, 365, 'future');
@@ -93,7 +128,7 @@ export async function syncGoogleCalendarForProperty(
     for (const reservation of activeReservations) {
       try {
         const eventId = toGoogleEventId(reservation.reservation_id);
-        const event = buildCalendarEvent(reservation, name);
+        const event = buildCalendarEvent(reservation, name, checkInTime, checkOutTime);
         await googleCalendarClient.upsertEvent(calendarId, eventId, event);
         eventsUpserted++;
       } catch (error) {
