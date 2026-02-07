@@ -26,6 +26,14 @@ export interface GA4Config {
 }
 
 /**
+ * Google Calendar configuration for a property
+ */
+export interface GoogleCalendarConfig {
+  enabled: boolean;
+  calendarId?: string;
+}
+
+/**
  * Weekly report configuration for a property
  */
 export interface WeeklyReportConfig {
@@ -48,6 +56,7 @@ export interface PropertyConfig {
   bookingSenderName: string;
   weeklyReport: WeeklyReportConfig;
   ga4?: GA4Config;
+  googleCalendar?: GoogleCalendarConfig;
 }
 
 /**
@@ -58,6 +67,11 @@ const ga4ConfigSchema = z.object({
   propertyId: z.string().optional(),
   keyFilePath: z.string().optional(),
   syncHour: z.number().int().min(0).max(23).optional(),
+});
+
+const googleCalendarConfigSchema = z.object({
+  enabled: z.boolean(),
+  calendarId: z.string().optional(),
 });
 
 const weeklyReportConfigSchema = z.object({
@@ -77,6 +91,7 @@ const propertyConfigSchema = z.object({
   bookingSenderName: z.string().min(1),
   weeklyReport: weeklyReportConfigSchema,
   ga4: ga4ConfigSchema.optional().default({ enabled: false }),
+  googleCalendar: googleCalendarConfigSchema.optional().default({ enabled: false }),
 });
 
 const propertiesFileSchema = z.object({

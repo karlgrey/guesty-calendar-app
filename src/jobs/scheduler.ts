@@ -7,6 +7,7 @@
 import { runETLJob } from './etl-job.js';
 import { sendWeeklySummaryEmailForProperty, shouldSendWeeklyEmailForProperty } from './weekly-email.js';
 import { syncAnalytics, shouldSyncAnalytics } from './sync-analytics.js';
+import { syncGoogleCalendarForProperty } from './sync-google-calendar.js';
 import { config } from '../config/index.js';
 import { getAllProperties, type PropertyConfig } from '../config/properties.js';
 import logger from '../utils/logger.js';
@@ -33,6 +34,8 @@ interface SchedulerState {
   lastDailyForceSync: Date | null;
   analyticsIntervalId: NodeJS.Timeout | null;
   lastAnalyticsSync: Date | null;
+  googleCalendarIntervalId: NodeJS.Timeout | null;
+  propertyGoogleCalendarLastSync: Map<string, Date>;
 }
 
 const state: SchedulerState = {
@@ -53,6 +56,8 @@ const state: SchedulerState = {
   lastDailyForceSync: null,
   analyticsIntervalId: null,
   lastAnalyticsSync: null,
+  googleCalendarIntervalId: null,
+  propertyGoogleCalendarLastSync: new Map(),
 };
 
 /**
@@ -240,6 +245,35 @@ async function checkAndSyncAnalytics() {
 }
 
 /**
+ * Check and sync Google Calendar for all enabled properties
+ */
+async function checkAndSyncGoogleCalendar() {
+  try {
+    const properties = getAllProperties();
+
+    for (const property of properties) {
+      if (!property.googleCalendar?.enabled || !property.googleCalendar.calendarId) {
+        continue;
+      }
+
+      try {
+        const result = await syncGoogleCalendarForProperty(property);
+        if (result.success) {
+          state.propertyGoogleCalendarLastSync.set(property.slug, new Date());
+        }
+      } catch (error) {
+        logger.error(
+          { error, propertySlug: property.slug },
+          'Error syncing Google Calendar for property'
+        );
+      }
+    }
+  } catch (error) {
+    logger.error({ error }, 'Error in Google Calendar sync check');
+  }
+}
+
+/**
  * Check if daily forced sync should run (at 2 AM)
  */
 function shouldRunDailyForceSync(): boolean {
@@ -419,6 +453,26 @@ export function startScheduler() {
     // Check every hour
     state.analyticsIntervalId = setInterval(checkAndSyncAnalytics, hourlyInterval);
   }
+
+  // Start Google Calendar sync scheduler (runs every 30 min, same as ETL)
+  const hasGoogleCalendarEnabled = properties.some(p => p.googleCalendar?.enabled);
+  if (hasGoogleCalendarEnabled) {
+    const gcalProperties = properties.filter(p => p.googleCalendar?.enabled);
+    logger.info(
+      {
+        propertyCount: gcalProperties.length,
+        properties: gcalProperties.map(p => ({ slug: p.slug, calendarId: p.googleCalendar?.calendarId })),
+      },
+      '📅 Starting Google Calendar sync scheduler'
+    );
+
+    // Sync after a short delay on start (let ETL populate data first)
+    setTimeout(() => checkAndSyncGoogleCalendar(), 30_000);
+
+    // Sync every 30 minutes
+    const gcalInterval = 30 * 60 * 1000;
+    state.googleCalendarIntervalId = setInterval(checkAndSyncGoogleCalendar, gcalInterval);
+  }
 }
 
 /**
@@ -450,6 +504,11 @@ export function stopScheduler() {
     state.analyticsIntervalId = null;
   }
 
+  if (state.googleCalendarIntervalId) {
+    clearInterval(state.googleCalendarIntervalId);
+    state.googleCalendarIntervalId = null;
+  }
+
   state.running = false;
   state.nextRun = null;
 
@@ -472,6 +531,11 @@ export function getSchedulerStatus() {
     intervalMinutes: getJobInterval() / (60 * 1000),
     lastDailyForceSync: state.lastDailyForceSync?.toISOString() || null,
     lastAnalyticsSync: state.lastAnalyticsSync?.toISOString() || null,
+    googleCalendarLastSync: Object.fromEntries(
+      Array.from(state.propertyGoogleCalendarLastSync.entries()).map(
+        ([slug, date]) => [slug, date.toISOString()]
+      )
+    ),
   };
 }
 
