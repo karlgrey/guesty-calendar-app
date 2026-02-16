@@ -249,14 +249,14 @@ export function getReservationsByPeriod(
 }
 
 /**
- * Get cancelled/declined reservations (for Google Calendar cleanup)
- * Returns reservations with check-in within the given range that are no longer active.
+ * Get cancelled/declined reservation IDs (for Google Calendar cleanup).
+ * Queries the inquiries table since cancelled reservations are deleted from the reservations table.
  */
-export function getCancelledReservations(
+export function getCancelledReservationIds(
   listingId: string,
   pastDays: number = 180,
   futureDays: number = 365
-): Reservation[] {
+): string[] {
   const db = getDatabase();
 
   try {
@@ -268,19 +268,19 @@ export function getCancelledReservations(
     futureDate.setDate(futureDate.getDate() + futureDays);
     const futureDateStr = futureDate.toISOString().split('T')[0];
 
-    const query = `SELECT * FROM reservations
+    const query = `SELECT inquiry_id FROM inquiries
                    WHERE listing_id = ?
                    AND date(check_in) >= ?
                    AND date(check_in) <= ?
                    AND status IN ('canceled', 'cancelled', 'declined')
                    ORDER BY check_in ASC`;
 
-    const rows = db.prepare(query).all(listingId, pastDateStr, futureDateStr) as ReservationRow[];
-    return rows.map(rowToReservation);
+    const rows = db.prepare(query).all(listingId, pastDateStr, futureDateStr) as Array<{ inquiry_id: string }>;
+    return rows.map(r => r.inquiry_id);
   } catch (error) {
-    logger.error({ error, listingId }, 'Failed to get cancelled reservations');
+    logger.error({ error, listingId }, 'Failed to get cancelled reservation IDs');
     throw new DatabaseError(
-      `Failed to get cancelled reservations: ${error instanceof Error ? error.message : 'Unknown error'}`
+      `Failed to get cancelled reservation IDs: ${error instanceof Error ? error.message : 'Unknown error'}`
     );
   }
 }

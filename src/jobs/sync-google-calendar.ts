@@ -6,7 +6,7 @@
  */
 
 import { googleCalendarClient, toGoogleEventId } from '../services/google-calendar-client.js';
-import { getReservationsByPeriod, getCancelledReservations } from '../repositories/reservation-repository.js';
+import { getReservationsByPeriod, getCancelledReservationIds } from '../repositories/reservation-repository.js';
 import { getListingById } from '../repositories/listings-repository.js';
 import type { PropertyConfig } from '../config/properties.js';
 import type { Reservation } from '../types/models.js';
@@ -108,8 +108,8 @@ export async function syncGoogleCalendarForProperty(
     const pastReservations = getReservationsByPeriod(guestyPropertyId, 180, 'past');
     const futureReservations = getReservationsByPeriod(guestyPropertyId, 365, 'future');
 
-    // Get cancelled/declined reservations separately (for cleanup)
-    const cancelledReservations = getCancelledReservations(guestyPropertyId, 180, 365);
+    // Get cancelled/declined reservation IDs from inquiries table (for cleanup)
+    const cancelledReservationIds = getCancelledReservationIds(guestyPropertyId, 180, 365);
 
     // Deduplicate active reservations by reservation_id
     const seen = new Set<string>();
@@ -139,15 +139,15 @@ export async function syncGoogleCalendarForProperty(
       }
     }
 
-    // Delete cancelled reservations
-    for (const reservation of cancelledReservations) {
+    // Delete cancelled reservations from calendar
+    for (const reservationId of cancelledReservationIds) {
       try {
-        const eventId = toGoogleEventId(reservation.reservation_id);
+        const eventId = toGoogleEventId(reservationId);
         const deleted = await googleCalendarClient.deleteEvent(calendarId, eventId);
         if (deleted) eventsDeleted++;
       } catch (error) {
         logger.warn(
-          { error, reservationId: reservation.reservation_id, propertySlug: slug },
+          { error, reservationId, propertySlug: slug },
           'Failed to delete calendar event'
         );
       }
@@ -161,7 +161,7 @@ export async function syncGoogleCalendarForProperty(
         eventsUpserted,
         eventsDeleted,
         totalReservations: activeReservations.length,
-        cancelledReservations: cancelledReservations.length,
+        cancelledReservations: cancelledReservationIds.length,
         durationMs,
       },
       'Google Calendar sync completed'
