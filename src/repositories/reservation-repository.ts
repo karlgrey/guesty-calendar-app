@@ -249,6 +249,43 @@ export function getReservationsByPeriod(
 }
 
 /**
+ * Get cancelled/declined reservations (for Google Calendar cleanup)
+ * Returns reservations with check-in within the given range that are no longer active.
+ */
+export function getCancelledReservations(
+  listingId: string,
+  pastDays: number = 180,
+  futureDays: number = 365
+): Reservation[] {
+  const db = getDatabase();
+
+  try {
+    const pastDate = new Date();
+    pastDate.setDate(pastDate.getDate() - pastDays);
+    const pastDateStr = pastDate.toISOString().split('T')[0];
+
+    const futureDate = new Date();
+    futureDate.setDate(futureDate.getDate() + futureDays);
+    const futureDateStr = futureDate.toISOString().split('T')[0];
+
+    const query = `SELECT * FROM reservations
+                   WHERE listing_id = ?
+                   AND date(check_in) >= ?
+                   AND date(check_in) <= ?
+                   AND status IN ('canceled', 'cancelled', 'declined')
+                   ORDER BY check_in ASC`;
+
+    const rows = db.prepare(query).all(listingId, pastDateStr, futureDateStr) as ReservationRow[];
+    return rows.map(rowToReservation);
+  } catch (error) {
+    logger.error({ error, listingId }, 'Failed to get cancelled reservations');
+    throw new DatabaseError(
+      `Failed to get cancelled reservations: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
+  }
+}
+
+/**
  * Get reservations in a date range
  */
 export function getReservationsInRange(
