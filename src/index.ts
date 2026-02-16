@@ -51,9 +51,13 @@ async function start() {
       logger.info(`Health check: http://${config.host}:${config.port}/health`);
     });
 
-    // Start job scheduler
-    logger.info('Starting scheduled ETL jobs...');
-    startScheduler();
+    // Start job scheduler (skip in development to avoid duplicate emails)
+    if (config.nodeEnv === 'production') {
+      logger.info('Starting scheduled ETL jobs...');
+      startScheduler();
+    } else {
+      logger.info('Skipping scheduler in development mode (use npm run sync to sync manually)');
+    }
 
     // Graceful shutdown
     const shutdown = async (signal: string) => {
