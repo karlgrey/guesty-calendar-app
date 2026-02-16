@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
+    "build": "tsc && cp -r src/db/migrations dist/db/",
     "start": "node dist/index.js",
     "sync": "tsx src/scripts/run-sync.ts",
     "sync:force": "tsx src/scripts/run-sync.ts --force",
