@@ -243,6 +243,30 @@ export interface GuestyGuest {
 }
 
 /**
+ * Normalized response from Guesty POST /quotes API
+ * Extracted from the deeply nested rates.ratePlans[0].money.money structure
+ */
+export interface GuestyQuoteResponse {
+  fareAccommodation: number;
+  fareAccommodationAdjusted: number;
+  fareAccommodationBase: number;
+  extraGuestFee: number;
+  fareCleaning: number;
+  totalTaxes: number;
+  hostPayout: number;
+  subTotalPrice: number;
+  nightlyRates: Array<{ date: string; price: number; basePrice: number }>;
+  promotions: Array<{
+    name: string;
+    type: string;
+    discountType: string;
+    discountAmount: number;
+    savings: number;
+  }>;
+  taxes: Array<{ name: string; type: string; amount: number; units: string }>;
+}
+
+/**
  * Guesty API error response
  */
 export interface GuestyError {

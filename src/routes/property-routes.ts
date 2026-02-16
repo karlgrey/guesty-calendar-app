@@ -11,10 +11,9 @@ import fs from 'fs';
 import { getListingById } from '../repositories/listings-repository.js';
 import { getAvailability } from '../repositories/availability-repository.js';
 import { getReservationsByPeriod } from '../repositories/reservation-repository.js';
-import { calculateQuote } from '../services/pricing-calculator.js';
+import { calculateQuoteWithGuesty } from '../services/pricing-calculator.js';
 import { getCachedQuote, saveQuoteToCache, cleanupExpiredQuotes } from '../repositories/quotes-repository.js';
 import { getPropertyBySlug, type PropertyConfig } from '../config/properties.js';
-import { config } from '../config/index.js';
 import { NotFoundError, ValidationError } from '../utils/errors.js';
 import logger from '../utils/logger.js';
 
@@ -193,9 +192,9 @@ router.get('/:slug/availability', resolveProperty, (req: Request, res: Response,
 
 /**
  * GET /p/:slug/quote?checkIn=YYYY-MM-DD&checkOut=YYYY-MM-DD&guests=N
- * Get price quote for a specific property
+ * Get price quote for a specific property (uses Guesty API with local fallback)
  */
-router.get('/:slug/quote', resolveProperty, (req: Request, res: Response, next: NextFunction) => {
+router.get('/:slug/quote', resolveProperty, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const property = req.property!;
     const { checkIn, checkOut, guests } = req.query;
@@ -244,24 +243,25 @@ router.get('/:slug/quote', resolveProperty, (req: Request, res: Response, next: 
                 savings: cachedQuote.discount_savings,
               }
             : null,
+          promotions: cachedQuote.promotions_json ? JSON.parse(cachedQuote.promotions_json) : [],
           breakdown: cachedQuote.breakdown,
         },
       });
     }
 
-    // Cache miss - calculate fresh quote
-    logger.debug({ propertySlug: property.slug, listingId, checkIn, checkOut, guests: guestCount }, 'Cache miss, calculating fresh quote');
+    // Cache miss - calculate fresh quote via Guesty API (with local fallback)
+    logger.debug({ propertySlug: property.slug, listingId, checkIn, checkOut, guests: guestCount }, 'Cache miss, fetching Guesty quote');
 
-    const quote = calculateQuote({
+    const quote = await calculateQuoteWithGuesty({
       listingId,
       checkIn: checkIn as string,
       checkOut: checkOut as string,
       guests: guestCount,
     });
 
-    // Save to cache
+    // Save to cache (shorter TTL of 15min for promotion-aware quotes)
     const expiresAt = new Date();
-    expiresAt.setMinutes(expiresAt.getMinutes() + config.cacheQuoteTtl);
+    expiresAt.setMinutes(expiresAt.getMinutes() + 15);
 
     saveQuoteToCache({
       listing_id: quote.listingId,
@@ -279,6 +279,7 @@ router.get('/:slug/quote', resolveProperty, (req: Request, res: Response, next: 
       discount_applied: quote.discountApplied,
       discount_factor: quote.discountFactor,
       discount_savings: quote.discountSavings,
+      promotions_json: quote.promotions.length > 0 ? JSON.stringify(quote.promotions) : null,
       breakdown: quote.breakdown,
       expires_at: expiresAt.toISOString(),
     });
@@ -308,6 +309,7 @@ router.get('/:slug/quote', resolveProperty, (req: Request, res: Response, next: 
               savings: quote.discountSavings,
             }
           : null,
+        promotions: quote.promotions,
         breakdown: quote.breakdown,
       },
     });

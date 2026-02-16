@@ -649,6 +649,45 @@ class BookingCalendar {
   }
 
   /**
+   * Get total savings from all discounts (weekly/monthly + promotions)
+   */
+  getTotalSavings(quote) {
+    let savings = 0;
+    if (quote.discount && quote.discount.savings > 0) {
+      savings += quote.discount.savings;
+    }
+    if (quote.promotions && quote.promotions.length > 0) {
+      savings += quote.promotions.reduce((sum, p) => sum + (p.savings || 0), 0);
+    }
+    return savings;
+  }
+
+  /**
+   * Map Guesty promotion type to German display label
+   */
+  getPromotionLabel(promo) {
+    const typeLabels = {
+      'los_direct_bookings': 'Rabatt für Langzeitaufenthalte',
+      'last_minute': 'Last-Minute-Rabatt',
+      'early_bird': 'Early-Bird-Rabatt',
+    };
+    return typeLabels[promo.type] || promo.name;
+  }
+
+  /**
+   * Format total price with strikethrough original when promotions are active
+   */
+  formatTotalWithPromotion(quote) {
+    const totalWithoutCleaning = quote.pricing.totalPrice - quote.pricing.cleaningFee;
+    const totalSavings = this.getTotalSavings(quote);
+    if (totalSavings > 0) {
+      const originalTotal = totalWithoutCleaning + totalSavings;
+      return `<span class="price-original">${this.formatCurrency(originalTotal, quote.currency)}</span> <span class="price-discounted">${this.formatCurrency(totalWithoutCleaning, quote.currency)}</span>`;
+    }
+    return this.formatCurrency(totalWithoutCleaning, quote.currency);
+  }
+
+  /**
    * Set up event listeners
    */
   setupEventListeners() {
@@ -881,11 +920,16 @@ class BookingCalendar {
       const priceEl = document.getElementById('header-price');
       if (priceEl) {
         const priceWithoutCleaning = quote.pricing.totalPrice - quote.pricing.cleaningFee;
-        const totalPrice = this.formatCurrency(priceWithoutCleaning, quote.currency);
         const nightsText = this.language === 'de'
           ? `für ${quote.nights} ${quote.nights === 1 ? 'Nacht' : 'Nächte'}`
           : `for ${quote.nights} ${quote.nights === 1 ? 'night' : 'nights'}`;
-        priceEl.innerHTML = `<span class="price-underline" onclick="calendar.togglePricingOverlay()">${totalPrice}</span> ${nightsText}`;
+        const headerSavings = this.getTotalSavings(quote);
+        if (headerSavings > 0) {
+          const originalTotal = priceWithoutCleaning + headerSavings;
+          priceEl.innerHTML = `<span class="price-original" style="font-size:0.85em">${this.formatCurrency(originalTotal, quote.currency)}</span> <span class="price-underline price-discounted" onclick="calendar.togglePricingOverlay()">${this.formatCurrency(priceWithoutCleaning, quote.currency)}</span> ${nightsText}`;
+        } else {
+          priceEl.innerHTML = `<span class="price-underline" onclick="calendar.togglePricingOverlay()">${this.formatCurrency(priceWithoutCleaning, quote.currency)}</span> ${nightsText}`;
+        }
       }
 
       // Update date inputs
@@ -966,13 +1010,25 @@ class BookingCalendar {
       // Build pricing breakdown
       let breakdownHtml = '';
 
-      // Accommodation fare
+      // Accommodation fare (base rate before discounts)
+      const baseNightlyRateSummary = quote.breakdown.nightlyRates[0]?.basePrice || 0;
+      const baseTotalSummary = baseNightlyRateSummary * quote.nights;
       breakdownHtml += `
         <div class="breakdown-row">
-          <span class="breakdown-label">${this.formatCurrency(quote.breakdown.nightlyRates[0]?.adjustedPrice || 0, quote.currency)} × ${quote.nights} night${quote.nights > 1 ? 's' : ''}</span>
-          <span class="breakdown-value">${this.formatCurrency(quote.pricing.accommodationFare, quote.currency)}</span>
+          <span class="breakdown-label">${this.formatCurrency(baseNightlyRateSummary, quote.currency)} × ${quote.nights} night${quote.nights > 1 ? 's' : ''}</span>
+          <span class="breakdown-value">${this.formatCurrency(baseTotalSummary, quote.currency)}</span>
         </div>
       `;
+
+      // Extra guest fee
+      if (quote.pricing.extraGuestFee > 0) {
+        breakdownHtml += `
+          <div class="breakdown-row">
+            <span class="breakdown-label">Extra guest fee</span>
+            <span class="breakdown-value">${this.formatCurrency(quote.pricing.extraGuestFee, quote.currency)}</span>
+          </div>
+        `;
+      }
 
       // Discount (if applicable)
       if (quote.discount) {
@@ -984,16 +1040,18 @@ class BookingCalendar {
         `;
       }
 
-      // Cleaning fee - removed from display (kept in email only)
-
-      // Extra guest fee
-      if (quote.pricing.extraGuestFee > 0) {
-        breakdownHtml += `
-          <div class="breakdown-row">
-            <span class="breakdown-label">Extra guest fee</span>
-            <span class="breakdown-value">${this.formatCurrency(quote.pricing.extraGuestFee, quote.currency)}</span>
-          </div>
-        `;
+      // Promotions (e.g. Length-of-Stay, Last-Minute, Early Bird)
+      if (quote.promotions && quote.promotions.length > 0) {
+        quote.promotions.forEach(promo => {
+          if (promo.savings > 0) {
+            breakdownHtml += `
+              <div class="breakdown-row discount">
+                <span class="breakdown-label">${this.getPromotionLabel(promo)} −${Math.round(promo.discountPercent)}%</span>
+                <span class="breakdown-value">−${this.formatCurrency(promo.savings, quote.currency)}</span>
+              </div>
+            `;
+          }
+        });
       }
 
       // Taxes
@@ -1029,7 +1087,7 @@ class BookingCalendar {
           </div>
           <div class="selection-row" style="border-top: 2px solid #e5e7eb; margin-top: 1rem; padding-top: 1rem;">
             <span class="selection-label">Total Price</span>
-            <span class="selection-value total-price">${this.formatCurrency(quote.pricing.totalPrice - quote.pricing.cleaningFee, quote.currency)}</span>
+            <span class="selection-value total-price">${this.formatTotalWithPromotion(quote)}</span>
           </div>
         </div>
 
@@ -1194,7 +1252,17 @@ class BookingCalendar {
       </div>
     `;
 
-    // 2. Discounts (with percentage if available)
+    // 2. Extra guests
+    if (quote.pricing.extraGuestFee > 0) {
+      breakdownHtml += `
+        <div class="breakdown-row">
+          <span class="breakdown-label">${this.t('extraGuests')}</span>
+          <span class="breakdown-value">${this.formatCurrency(quote.pricing.extraGuestFee, quote.currency)}</span>
+        </div>
+      `;
+    }
+
+    // 3. Discounts (with percentage if available)
     if (quote.discount) {
       const discountLabel = quote.discount.type === 'weekly'
         ? this.t('weeklyDiscount')
@@ -1213,16 +1281,18 @@ class BookingCalendar {
       `;
     }
 
-    // 3. Cleaning (removed from display, kept in email only)
-
-    // 4. Extra guests
-    if (quote.pricing.extraGuestFee > 0) {
-      breakdownHtml += `
-        <div class="breakdown-row">
-          <span class="breakdown-label">${this.t('extraGuests')}</span>
-          <span class="breakdown-value">${this.formatCurrency(quote.pricing.extraGuestFee, quote.currency)}</span>
-        </div>
-      `;
+    // 4. Promotions (e.g. Length-of-Stay, Last-Minute, Early Bird)
+    if (quote.promotions && quote.promotions.length > 0) {
+      quote.promotions.forEach(promo => {
+        if (promo.savings > 0) {
+          breakdownHtml += `
+            <div class="breakdown-row discount">
+              <span class="breakdown-label">${this.getPromotionLabel(promo)} −${Math.round(promo.discountPercent)}%</span>
+              <span class="breakdown-value">−${this.formatCurrency(promo.savings, quote.currency)}</span>
+            </div>
+          `;
+        }
+      });
     }
 
     // 5. Taxes
@@ -1239,10 +1309,13 @@ class BookingCalendar {
 
     // 6. Total at the bottom (excluding cleaning fee)
     const totalWithoutCleaning = quote.pricing.totalPrice - quote.pricing.cleaningFee;
+    const overlayTotalSavings = this.getTotalSavings(quote);
     breakdownHtml += `
       <div class="breakdown-row total">
         <span class="breakdown-label">${this.t('total')}</span>
-        <span class="breakdown-value">${this.formatCurrency(totalWithoutCleaning, quote.currency)}</span>
+        <span class="breakdown-value">${overlayTotalSavings > 0
+          ? `<span class="price-original">${this.formatCurrency(totalWithoutCleaning + overlayTotalSavings, quote.currency)}</span> <span class="price-discounted">${this.formatCurrency(totalWithoutCleaning, quote.currency)}</span>`
+          : this.formatCurrency(totalWithoutCleaning, quote.currency)}</span>
       </div>
     `;
 

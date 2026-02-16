@@ -5,7 +5,7 @@
  */
 
 import express from 'express';
-import { calculateQuote } from '../services/pricing-calculator.js';
+import { calculateQuoteWithGuesty } from '../services/pricing-calculator.js';
 import { getCachedQuote, saveQuoteToCache, cleanupExpiredQuotes } from '../repositories/quotes-repository.js';
 import { config } from '../config/index.js';
 import { getDefaultProperty } from '../config/properties.js';
@@ -28,9 +28,9 @@ function isValidDate(dateString: string): boolean {
 
 /**
  * GET /quote?checkIn=YYYY-MM-DD&checkOut=YYYY-MM-DD&guests=N
- * Get price quote with complete breakdown
+ * Get price quote with complete breakdown (uses Guesty API with local fallback)
  */
-router.get('/', (req, res, next) => {
+router.get('/', async (req, res, next) => {
   try {
     const { checkIn, checkOut, guests } = req.query;
 
@@ -58,7 +58,7 @@ router.get('/', (req, res, next) => {
     }
 
     // Try to get cached quote
-    let cachedQuote = getCachedQuote(listingId, checkIn as string, checkOut as string, guestCount);
+    const cachedQuote = getCachedQuote(listingId, checkIn as string, checkOut as string, guestCount);
 
     if (cachedQuote) {
       logger.debug({ listingId, checkIn, checkOut, guests: guestCount }, 'Quote served from cache');
@@ -86,24 +86,25 @@ router.get('/', (req, res, next) => {
                 savings: cachedQuote.discount_savings,
               }
             : null,
+          promotions: cachedQuote.promotions_json ? JSON.parse(cachedQuote.promotions_json) : [],
           breakdown: cachedQuote.breakdown,
         },
       });
     }
 
-    // Cache miss - calculate fresh quote
-    logger.debug({ listingId, checkIn, checkOut, guests: guestCount }, 'Cache miss, calculating fresh quote');
+    // Cache miss - calculate fresh quote via Guesty API (with local fallback)
+    logger.debug({ listingId, checkIn, checkOut, guests: guestCount }, 'Cache miss, fetching Guesty quote');
 
-    const quote = calculateQuote({
+    const quote = await calculateQuoteWithGuesty({
       listingId,
       checkIn: checkIn as string,
       checkOut: checkOut as string,
       guests: guestCount,
     });
 
-    // Save to cache
+    // Save to cache (shorter TTL of 15min for promotion-aware quotes)
     const expiresAt = new Date();
-    expiresAt.setMinutes(expiresAt.getMinutes() + config.cacheQuoteTtl);
+    expiresAt.setMinutes(expiresAt.getMinutes() + 15);
 
     saveQuoteToCache({
       listing_id: quote.listingId,
@@ -121,6 +122,7 @@ router.get('/', (req, res, next) => {
       discount_applied: quote.discountApplied,
       discount_factor: quote.discountFactor,
       discount_savings: quote.discountSavings,
+      promotions_json: quote.promotions.length > 0 ? JSON.stringify(quote.promotions) : null,
       breakdown: quote.breakdown,
       expires_at: expiresAt.toISOString(),
     });
@@ -152,6 +154,7 @@ router.get('/', (req, res, next) => {
               savings: quote.discountSavings,
             }
           : null,
+        promotions: quote.promotions,
         breakdown: quote.breakdown,
       },
     });

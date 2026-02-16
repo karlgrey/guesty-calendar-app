@@ -6,6 +6,7 @@
 
 import { getListingById } from '../repositories/listings-repository.js';
 import { getAvailability, areDatesAvailable } from '../repositories/availability-repository.js';
+import { guestyClient } from './guesty-client.js';
 import { ValidationError, NotFoundError } from '../utils/errors.js';
 import logger from '../utils/logger.js';
 import type { Listing, Tax, PriceBreakdown } from '../types/models.js';
@@ -15,6 +16,13 @@ export interface QuoteRequest {
   checkIn: string; // YYYY-MM-DD
   checkOut: string; // YYYY-MM-DD
   guests: number;
+}
+
+export interface PromotionInfo {
+  name: string;
+  type: string;
+  discountPercent: number;
+  savings: number;
 }
 
 export interface QuoteResult {
@@ -33,6 +41,7 @@ export interface QuoteResult {
   discountApplied: 'weekly' | 'monthly' | null;
   discountFactor: number | null;
   discountSavings: number | null;
+  promotions: PromotionInfo[];
   breakdown: PriceBreakdown;
 }
 
@@ -333,6 +342,128 @@ export function calculateQuote(request: QuoteRequest): QuoteResult {
     discountApplied: type,
     discountFactor: type ? factor : null,
     discountSavings,
+    promotions: [],
     breakdown,
   };
+}
+
+/**
+ * Calculate quote using Guesty API (includes promotions), with local fallback
+ */
+export async function calculateQuoteWithGuesty(request: QuoteRequest): Promise<QuoteResult> {
+  const { listingId, checkIn, checkOut, guests } = request;
+
+  try {
+    logger.debug({ listingId, checkIn, checkOut, guests }, 'Fetching Guesty API quote');
+
+    const guestyQuote = await guestyClient.getQuote(listingId, checkIn, checkOut, guests);
+
+    const nights = calculateNights(checkIn, checkOut);
+
+    // Get listing for currency and discount info
+    const listing = getListingById(listingId);
+    const currency = listing?.currency || 'EUR';
+
+    // Determine discount from local listing data (Guesty doesn't expose this separately)
+    const { factor, type } = listing ? getDiscountFactor(nights, listing) : { factor: 1.0, type: null as 'weekly' | 'monthly' | null };
+
+    // Calculate discount savings from local calculation
+    // Use fareAccommodationBase (excludes extra guest fee) since baseTotal is pure accommodation
+    let discountSavings: number | null = null;
+    if (type && listing) {
+      const availability = getAvailability(listing.id, checkIn, checkOut);
+      const priceMap = new Map<string, number>();
+      availability.forEach((day) => priceMap.set(day.date, day.price));
+
+      let baseTotal = 0;
+      const checkInDate = new Date(checkIn);
+      for (let i = 0; i < nights; i++) {
+        const currentDate = new Date(checkInDate);
+        currentDate.setDate(currentDate.getDate() + i);
+        const dateStr = currentDate.toISOString().split('T')[0];
+        baseTotal += priceMap.get(dateStr) || listing.base_price;
+      }
+      discountSavings = baseTotal - guestyQuote.fareAccommodationBase;
+      if (discountSavings < 0) discountSavings = null;
+    }
+
+    // Build promotions from Guesty response
+    const promotions: PromotionInfo[] = guestyQuote.promotions
+      .filter(p => p.savings > 0)
+      .map(p => ({
+        name: p.name,
+        type: p.type,
+        discountPercent: p.discountAmount,
+        savings: p.savings,
+      }));
+
+    // Use adjusted accommodation (after promotions)
+    // Guesty bundles extra guest fee into fareAccommodation, so we split it out for display
+    const accommodationFare = guestyQuote.fareAccommodationAdjusted;
+    const cleaningFee = guestyQuote.fareCleaning;
+    const extraGuestFee = guestyQuote.extraGuestFee;
+    const totalTaxes = guestyQuote.totalTaxes;
+    const subtotal = accommodationFare + cleaningFee + extraGuestFee;
+    const totalPrice = guestyQuote.hostPayout;
+
+    // Build breakdown from Guesty data
+    const nightlyRates = guestyQuote.nightlyRates.map(nr => ({
+      date: nr.date,
+      basePrice: nr.basePrice,
+      adjustedPrice: nr.price,
+    }));
+
+    const taxBreakdown = guestyQuote.taxes.map(t => ({
+      type: t.type,
+      amount: t.amount,
+      description: `${t.name} ${t.units === 'PERCENTAGE' ? `${t.amount}%` : ''}`.trim(),
+    }));
+
+    const breakdown: PriceBreakdown = {
+      nightlyRates,
+      accommodationFare,
+      fees: {
+        cleaning: cleaningFee,
+        extraGuest: extraGuestFee,
+      },
+      taxes: taxBreakdown,
+      subtotal,
+      totalTaxes,
+      total: totalPrice,
+    };
+
+    logger.debug({
+      listingId,
+      totalPrice,
+      promotionCount: promotions.length,
+      promotionSavings: promotions.reduce((sum, p) => sum + p.savings, 0),
+    }, 'Guesty API quote calculated successfully');
+
+    return {
+      listingId,
+      checkIn,
+      checkOut,
+      guests,
+      nights,
+      currency,
+      accommodationFare,
+      cleaningFee,
+      extraGuestFee,
+      subtotal,
+      totalTaxes,
+      totalPrice,
+      discountApplied: type,
+      discountFactor: type ? factor : null,
+      discountSavings,
+      promotions,
+      breakdown,
+    };
+  } catch (error) {
+    logger.warn(
+      { error: error instanceof Error ? error.message : error, listingId, checkIn, checkOut },
+      'Guesty API quote failed, falling back to local calculator'
+    );
+
+    return calculateQuote(request);
+  }
 }

@@ -67,6 +67,16 @@ body {
     color: var(--primary-color);
 }
 
+.header-price .price-original {
+    text-decoration: line-through;
+    color: var(--text-secondary);
+    font-weight: 400;
+}
+
+.header-price .price-discounted {
+    color: var(--success-color);
+}
+
 .booking-inputs {
     display: grid;
     grid-template-columns: 1fr;
@@ -887,6 +897,37 @@ body {
 .total-price {
     font-size: 1.5rem;
     color: var(--primary-color);
+}
+
+.total-price .price-original {
+    text-decoration: line-through;
+    color: var(--text-secondary);
+    font-size: 1.1rem;
+    font-weight: 400;
+    margin-right: 0.4rem;
+}
+
+.total-price .price-discounted {
+    color: var(--success-color);
+}
+
+.breakdown-value .price-original {
+    text-decoration: line-through;
+    color: var(--text-secondary);
+    font-weight: 400;
+    margin-right: 0.3rem;
+}
+
+.breakdown-row.total .price-original {
+    text-decoration: line-through;
+    color: var(--text-secondary);
+    font-weight: 400;
+    font-size: 0.8em;
+    margin-right: 0.3rem;
+}
+
+.breakdown-row.total .price-discounted {
+    color: var(--success-color);
 }
 
 .error-message {

@@ -10,7 +10,7 @@ import { getDefaultProperty } from '../config/properties.js';
 import { ExternalApiError } from '../utils/errors.js';
 import { logApiCall } from '../utils/logger.js';
 import logger from '../utils/logger.js';
-import type { GuestyListing, GuestyCalendarResponse, GuestyGuest } from '../types/guesty.js';
+import type { GuestyListing, GuestyCalendarResponse, GuestyGuest, GuestyQuoteResponse } from '../types/guesty.js';
 import fs from 'fs';
 import path from 'path';
 
@@ -582,6 +582,125 @@ export class GuestyClient {
     logger.debug({ reservationId, status: reservation.status }, 'Reservation fetched successfully');
 
     return reservation;
+  }
+
+  /**
+   * Fetch a quote from Guesty's /quotes API (includes promotions)
+   */
+  async getQuote(listingId: string, checkIn: string, checkOut: string, guests: number): Promise<GuestyQuoteResponse> {
+    logger.debug({ listingId, checkIn, checkOut, guests }, 'Fetching quote from Guesty API');
+
+    const result = await this.request<any>('/quotes', {
+      method: 'POST',
+      body: JSON.stringify({
+        listingId,
+        checkInDateLocalized: checkIn,
+        checkOutDateLocalized: checkOut,
+        guestsCount: guests,
+        source: 'manual',
+      }),
+    });
+
+    // Extract money from nested structure: rates.ratePlans[0].money.money
+    const money = result.rates?.ratePlans?.[0]?.money?.money;
+    if (!money) {
+      throw new ExternalApiError('Guesty quote response missing money data', 502, 'Guesty', { result });
+    }
+
+    // Extract nightly rates from days array
+    const days = result.rates?.ratePlans?.[0]?.days || [];
+    const nights = days.length;
+    const nightlyRates = days.map((d: any) => ({
+      date: d.date,
+      price: d.price,
+      basePrice: d.basePrice || d.price,
+    }));
+
+    // Calculate extra guest fee from settingsSnapshot
+    // Guesty bundles it into fareAccommodation, so we derive it for display
+    const settings = money.settingsSnapshot || {};
+    const guestsIncluded = settings.guestsIncludedInRegularFee || 0;
+    const extraPersonFee = settings.extraPersonFee || 0;
+    const extraGuests = Math.max(0, guests - guestsIncluded);
+    const extraGuestFee = extraGuests * extraPersonFee * nights;
+    const fareAccommodationBase = (money.fareAccommodation || 0) - extraGuestFee;
+
+    // Extract promotions from invoiceItems (PROMOTION type) — supports multiple
+    const promotions: GuestyQuoteResponse['promotions'] = [];
+    const promoMeta = result.promotions; // single object with rule details
+    const promoItems = (money.invoiceItems || []).filter(
+      (i: any) => i.type === 'PROMOTION' || i.normalType === 'PRO'
+    );
+
+    for (const item of promoItems) {
+      if (item.amount >= 0) continue; // only negative amounts are discounts
+      const savings = Math.abs(item.amount);
+      const fareAcc = money.fareAccommodation || 1;
+
+      // Try to match with top-level promotions metadata for type/rule info
+      const hasMatchingMeta = promoMeta && promoMeta.name === item.title;
+      promotions.push({
+        name: item.title || item.description || 'Promotion',
+        type: hasMatchingMeta ? (promoMeta.type || 'unknown') : 'unknown',
+        discountType: hasMatchingMeta ? (promoMeta.rule?.discountType || 'percent') : 'percent',
+        discountAmount: hasMatchingMeta ? (promoMeta.rule?.discountAmount || Math.round((savings / fareAcc) * 100)) : Math.round((savings / fareAcc) * 100),
+        savings,
+      });
+    }
+
+    // Fallback: if no invoice items but top-level promotions object exists and fareAccommodationAdjusted differs
+    if (promotions.length === 0 && promoMeta && promoMeta.active && promoMeta.rule) {
+      const totalPromoSavings = (money.fareAccommodation || 0) - (money.fareAccommodationAdjusted ?? money.fareAccommodation ?? 0);
+      if (totalPromoSavings > 0) {
+        promotions.push({
+          name: promoMeta.name || 'Promotion',
+          type: promoMeta.type || 'unknown',
+          discountType: promoMeta.rule.discountType || 'percent',
+          discountAmount: promoMeta.rule.discountAmount || 0,
+          savings: totalPromoSavings,
+        });
+      }
+    }
+
+    // Extract taxes from invoiceItems (more reliable than money.taxes)
+    const taxItems = (money.invoiceItems || []).filter((i: any) => i.isTax || i.type === 'TAX');
+    const taxes = taxItems.length > 0
+      ? taxItems.map((t: any) => ({
+          name: t.title || t.type || 'Tax',
+          type: t.normalType || t.type || 'TAX',
+          amount: t.amount || 0,
+          units: 'FIXED' as const,
+        }))
+      : (money.taxes || []).map((t: any) => ({
+          name: t.name || t.type || 'Tax',
+          type: t.type || 'TAX',
+          amount: t.amount || 0,
+          units: t.units || 'FIXED',
+        }));
+
+    const response: GuestyQuoteResponse = {
+      fareAccommodation: money.fareAccommodation || 0,
+      fareAccommodationAdjusted: money.fareAccommodationAdjusted ?? money.fareAccommodation ?? 0,
+      fareAccommodationBase,
+      extraGuestFee,
+      fareCleaning: money.fareCleaning || 0,
+      totalTaxes: money.totalTaxes || 0,
+      hostPayout: money.hostPayout || 0,
+      subTotalPrice: money.subTotalPrice || 0,
+      nightlyRates,
+      promotions,
+      taxes,
+    };
+
+    logger.debug({
+      listingId,
+      fareAccommodation: response.fareAccommodation,
+      fareAccommodationAdjusted: response.fareAccommodationAdjusted,
+      promotionCount: promotions.length,
+      promotions: promotions.map(p => p.name),
+    }, 'Guesty quote fetched successfully');
+
+    return response;
   }
 
   /**

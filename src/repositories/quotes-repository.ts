@@ -57,12 +57,12 @@ export function saveQuoteToCache(quote: Omit<QuoteCache, 'id' | 'created_at'>): 
         listing_id, check_in, check_out, guests, nights, currency,
         accommodation_fare, cleaning_fee, extra_guest_fee, subtotal,
         total_taxes, total_price, discount_applied, discount_factor,
-        discount_savings, breakdown, expires_at
+        discount_savings, promotions_json, breakdown, expires_at
       ) VALUES (
         @listing_id, @check_in, @check_out, @guests, @nights, @currency,
         @accommodation_fare, @cleaning_fee, @extra_guest_fee, @subtotal,
         @total_taxes, @total_price, @discount_applied, @discount_factor,
-        @discount_savings, @breakdown, @expires_at
+        @discount_savings, @promotions_json, @breakdown, @expires_at
       )
     `);
 
@@ -82,6 +82,7 @@ export function saveQuoteToCache(quote: Omit<QuoteCache, 'id' | 'created_at'>): 
       discount_applied: quote.discount_applied,
       discount_factor: quote.discount_factor,
       discount_savings: quote.discount_savings,
+      promotions_json: quote.promotions_json,
       breakdown: JSON.stringify(quote.breakdown),
       expires_at: quote.expires_at,
     });

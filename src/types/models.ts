@@ -149,6 +149,9 @@ export interface QuoteCache {
   discount_factor: number | null; // e.g., 0.90
   discount_savings: number | null; // Amount saved
 
+  // Promotions (from Guesty API, stored as JSON array)
+  promotions_json: string | null;
+
   // Full breakdown (stored as JSON)
   breakdown: PriceBreakdown;
 
@@ -292,6 +295,7 @@ export interface QuoteCacheRow {
   discount_applied: 'weekly' | 'monthly' | null;
   discount_factor: number | null;
   discount_savings: number | null;
+  promotions_json: string | null;
   breakdown: string; // JSON string
   expires_at: string;
   created_at: string;
