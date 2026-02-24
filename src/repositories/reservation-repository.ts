@@ -249,8 +249,9 @@ export function getReservationsByPeriod(
 }
 
 /**
- * Get cancelled/declined reservation IDs (for Google Calendar cleanup).
+ * Get inactive reservation IDs (for Google Calendar cleanup).
  * Queries the inquiries table since cancelled reservations are deleted from the reservations table.
+ * Includes all non-active statuses: canceled, cancelled, declined, expired, closed.
  */
 export function getCancelledReservationIds(
   listingId: string,
@@ -272,7 +273,7 @@ export function getCancelledReservationIds(
                    WHERE listing_id = ?
                    AND date(check_in) >= ?
                    AND date(check_in) <= ?
-                   AND status IN ('canceled', 'cancelled', 'declined')
+                   AND status NOT IN ('confirmed', 'reserved')
                    ORDER BY check_in ASC`;
 
     const rows = db.prepare(query).all(listingId, pastDateStr, futureDateStr) as Array<{ inquiry_id: string }>;
