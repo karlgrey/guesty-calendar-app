@@ -273,7 +273,7 @@ export function getCancelledReservationIds(
                    WHERE listing_id = ?
                    AND date(check_in) >= ?
                    AND date(check_in) <= ?
-                   AND status NOT IN ('confirmed', 'reserved')
+                   AND status IN ('canceled', 'cancelled', 'declined', 'expired', 'closed')
                    ORDER BY check_in ASC`;
 
     const rows = db.prepare(query).all(listingId, pastDateStr, futureDateStr) as Array<{ inquiry_id: string }>;

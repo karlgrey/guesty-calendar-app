@@ -131,23 +131,27 @@ export async function syncGoogleCalendarForProperty(
         const event = buildCalendarEvent(reservation, name, checkInTime, checkOutTime);
         await googleCalendarClient.upsertEvent(calendarId, eventId, event);
         eventsUpserted++;
+        // Small delay to avoid Google Calendar API rate limits
+        await new Promise(resolve => setTimeout(resolve, 200));
       } catch (error) {
         logger.warn(
-          { error, reservationId: reservation.reservation_id, propertySlug: slug },
+          { error: error instanceof Error ? error.message : error, reservationId: reservation.reservation_id, propertySlug: slug },
           'Failed to upsert calendar event'
         );
       }
     }
 
-    // Delete cancelled reservations from calendar
+    // Delete cancelled/expired/closed reservations from calendar
     for (const reservationId of cancelledReservationIds) {
       try {
         const eventId = toGoogleEventId(reservationId);
         const deleted = await googleCalendarClient.deleteEvent(calendarId, eventId);
         if (deleted) eventsDeleted++;
+        // Small delay to avoid Google Calendar API rate limits
+        await new Promise(resolve => setTimeout(resolve, 200));
       } catch (error) {
         logger.warn(
-          { error, reservationId, propertySlug: slug },
+          { error: error instanceof Error ? error.message : error, reservationId, propertySlug: slug },
           'Failed to delete calendar event'
         );
       }
