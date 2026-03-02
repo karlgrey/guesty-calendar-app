@@ -2017,11 +2017,11 @@ class BookingCalendar {
 
     // Taxes
     if (quote.breakdown.taxes && quote.breakdown.taxes.length > 0) {
-      const totalTaxRate = quote.breakdown.taxes.reduce((sum, tax) => {
-        // Extract percentage from description if available (e.g., "7% Tax")
-        const match = tax.description.match(/(\d+)%/);
-        return sum + (match ? parseInt(match[1]) : 0);
-      }, 0);
+      // Calculate tax rate from amounts (Guesty doesn't always include % in description)
+      const subtotalBeforeTax = quote.pricing.subtotal || (quote.pricing.totalPrice - quote.pricing.totalTaxes);
+      const totalTaxRate = subtotalBeforeTax > 0
+        ? Math.round((quote.pricing.totalTaxes / subtotalBeforeTax) * 100)
+        : 0;
       emailBody += `${this.t('emailTaxes')} (${totalTaxRate}%): ${this.formatCurrency(quote.pricing.totalTaxes, quote.currency)}\n\n`;
     }
 
