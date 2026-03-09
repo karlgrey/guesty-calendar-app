@@ -1991,11 +1991,17 @@ class BookingCalendar {
 
     emailBody += `${this.t('emailPriceOverview')}:\n`;
 
-    // Accommodation fare
-    const nightlyRate = quote.breakdown.nightlyRates[0]?.adjustedPrice || 0;
-    emailBody += ` •  ${this.t('emailAccommodation')}: ${this.formatCurrency(nightlyRate, quote.currency)} × ${quote.nights} ${this.t('nightsLowercase')(quote.nights)} = ${this.formatCurrency(quote.pricing.accommodationFare, quote.currency)}\n`;
+    // Accommodation (base rate before discounts)
+    const emailBaseRate = quote.breakdown.nightlyRates[0]?.basePrice || 0;
+    const emailBaseTotal = emailBaseRate * quote.nights;
+    emailBody += ` •  ${this.t('emailAccommodation')}: ${this.formatCurrency(emailBaseRate, quote.currency)} × ${quote.nights} ${this.t('nightsLowercase')(quote.nights)} = ${this.formatCurrency(emailBaseTotal, quote.currency)}\n`;
 
-    // Discount
+    // Extra guest fee
+    if (quote.pricing.extraGuestFee > 0) {
+      emailBody += ` •  ${this.t('emailExtraGuests')}: ${this.formatCurrency(quote.pricing.extraGuestFee, quote.currency)}\n`;
+    }
+
+    // Discount (weekly/monthly)
     if (quote.discount) {
       const discountLabel = quote.discount.type === 'weekly'
         ? this.t('weeklyDiscount')
@@ -2003,21 +2009,24 @@ class BookingCalendar {
       emailBody += ` •  ${discountLabel}: –${this.formatCurrency(quote.discount.savings, quote.currency)}\n`;
     }
 
+    // Promotions (LOS, Last-Minute, Early Bird)
+    if (quote.promotions && quote.promotions.length > 0) {
+      quote.promotions.forEach(promo => {
+        if (promo.savings > 0) {
+          emailBody += ` •  ${this.getPromotionLabel(promo)} −${Math.round(promo.discountPercent)}%: –${this.formatCurrency(promo.savings, quote.currency)}\n`;
+        }
+      });
+    }
+
     // Cleaning fee
     if (quote.pricing.cleaningFee > 0) {
       emailBody += ` •  ${this.t('emailCleaning')}: ${this.formatCurrency(quote.pricing.cleaningFee, quote.currency)}\n`;
-    }
-
-    // Extra guest fee
-    if (quote.pricing.extraGuestFee > 0) {
-      emailBody += ` •  ${this.t('emailExtraGuests')}: ${this.formatCurrency(quote.pricing.extraGuestFee, quote.currency)}\n`;
     }
 
     emailBody += `\n${this.t('emailSubtotal')}: ${this.formatCurrency(quote.pricing.subtotal, quote.currency)}\n\n`;
 
     // Taxes
     if (quote.breakdown.taxes && quote.breakdown.taxes.length > 0) {
-      // Calculate tax rate from amounts (Guesty doesn't always include % in description)
       const subtotalBeforeTax = quote.pricing.subtotal || (quote.pricing.totalPrice - quote.pricing.totalTaxes);
       const totalTaxRate = subtotalBeforeTax > 0
         ? Math.round((quote.pricing.totalTaxes / subtotalBeforeTax) * 100)
