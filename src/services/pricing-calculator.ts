@@ -399,11 +399,12 @@ export async function calculateQuoteWithGuesty(request: QuoteRequest): Promise<Q
 
     // Use adjusted accommodation (after promotions)
     // Guesty bundles extra guest fee into fareAccommodation, so we split it out for display
+    // but subtotal must NOT add it again (it's already in accommodationFare)
     const accommodationFare = guestyQuote.fareAccommodationAdjusted;
     const cleaningFee = guestyQuote.fareCleaning;
     const extraGuestFee = guestyQuote.extraGuestFee;
     const totalTaxes = guestyQuote.totalTaxes;
-    const subtotal = accommodationFare + cleaningFee + extraGuestFee;
+    const subtotal = accommodationFare + cleaningFee;
     const totalPrice = guestyQuote.hostPayout;
 
     // Build breakdown from Guesty data
