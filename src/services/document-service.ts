@@ -207,40 +207,74 @@ function extractPricingFromReservation(reservation: any, listing: any): {
   const extraGuestNights = extraGuests * nights;
 
   // Extract discounts from Guesty
-  // Calculate total discount by comparing original vs final prices
   let discountTotal = 0;
   let discountDescription: string | undefined;
 
-  // Calculate accommodation discount
-  const accommodationDiscount = euroToCents(money?.fareAccommodationDiscount || 0);
+  // 1. Check for promotion items in invoiceItems (normalType: 'PRO')
+  // Guesty stores promotions as separate line items with negative amounts
+  const promotionItems = (money?.invoiceItems || []).filter((item: any) =>
+    item.normalType === 'PRO' || item.type === 'PROMOTION'
+  );
 
-  // Calculate cleaning fee discount (difference between baseAmount and amount)
+  if (promotionItems.length > 0) {
+    // Sum all promotion amounts (already negative)
+    const promotionDiscount = promotionItems.reduce((sum: number, item: any) =>
+      sum + euroToCents(item.amount || 0), 0);
+    discountTotal += promotionDiscount;
+
+    // Use promotion titles as description
+    const promoDescriptions = promotionItems
+      .map((item: any) => item.title)
+      .filter((title: string) => title && title.trim());
+    if (promoDescriptions.length > 0) {
+      discountDescription = promoDescriptions.join(', ');
+    }
+  }
+
+  // 2. Check fareAccommodationDiscount (traditional Guesty discount field)
+  const accommodationDiscount = euroToCents(money?.fareAccommodationDiscount || 0);
+  if (accommodationDiscount < 0) {
+    discountTotal += accommodationDiscount;
+  }
+
+  // 3. Check cleaning fee discount (difference between baseAmount and amount)
   let cleaningDiscount = 0;
   if (cleaningFeeItem?.baseAmount && cleaningFeeItem?.amount) {
     cleaningDiscount = euroToCents(cleaningFeeItem.amount - cleaningFeeItem.baseAmount);
   }
+  if (cleaningDiscount < 0) {
+    discountTotal += cleaningDiscount;
+  }
 
-  // Total discount is sum of all discounts (these are negative values)
-  discountTotal = accommodationDiscount + cleaningDiscount;
+  // 4. Fallback: if no explicit discount found but subtotal doesn't match sum of items,
+  // derive the discount from the difference
+  if (discountTotal === 0) {
+    const expectedSubtotal = accommodationTotal + extraGuestTotal + cleaningFee;
+    const guestySubtotal = euroToCents(money?.subTotalPrice || 0);
+    if (guestySubtotal > 0 && guestySubtotal < expectedSubtotal) {
+      discountTotal = guestySubtotal - expectedSubtotal; // negative value
+    }
+  }
 
-  // Try to get discount description from adjustments in nightlyRateInvoiceItems
-  const afItem = money?.nightlyRateInvoiceItems?.find((item: any) => item.normalType === 'AF');
-  const cfItem = money?.nightlyRateInvoiceItems?.find((item: any) => item.normalType === 'CF');
+  // Try to get discount description from adjustments in nightlyRateInvoiceItems (if not already set)
+  if (!discountDescription) {
+    const afItem = money?.nightlyRateInvoiceItems?.find((item: any) => item.normalType === 'AF');
+    const cfItem = money?.nightlyRateInvoiceItems?.find((item: any) => item.normalType === 'CF');
 
-  const allAdjustments = [
-    ...(afItem?.adjustments || []),
-    ...(cfItem?.adjustments || []),
-  ];
+    const allAdjustments = [
+      ...(afItem?.adjustments || []),
+      ...(cfItem?.adjustments || []),
+    ];
 
-  if (allAdjustments.length > 0) {
-    // Get unique descriptions from adjustments
-    const descriptions = allAdjustments
-      .map((adj: any) => adj.description)
-      .filter((desc: string) => desc && desc.trim())
-      .filter((desc: string, index: number, arr: string[]) => arr.indexOf(desc) === index);
+    if (allAdjustments.length > 0) {
+      const descriptions = allAdjustments
+        .map((adj: any) => adj.description)
+        .filter((desc: string) => desc && desc.trim())
+        .filter((desc: string, index: number, arr: string[]) => arr.indexOf(desc) === index);
 
-    if (descriptions.length > 0) {
-      discountDescription = descriptions.join(', ');
+      if (descriptions.length > 0) {
+        discountDescription = descriptions.join(', ');
+      }
     }
   }
 
