@@ -206,76 +206,16 @@ function extractPricingFromReservation(reservation: any, listing: any): {
   const extraGuests = Math.max(0, guestsCount - guestsIncluded);
   const extraGuestNights = extraGuests * nights;
 
-  // Extract discounts from Guesty
+  // Extract discount from Guesty
+  // Use a single reliable source: compare the sum of line items against Guesty's subTotalPrice
+  // This avoids double-counting from multiple discount fields (PRO items, fareAccommodationDiscount, etc.)
   let discountTotal = 0;
-  let discountDescription: string | undefined;
+  const discountDescription: string | undefined = undefined;
 
-  // 1. Check for promotion items in invoiceItems (normalType: 'PRO')
-  // Guesty stores promotions as separate line items with negative amounts
-  const promotionItems = (money?.invoiceItems || []).filter((item: any) =>
-    item.normalType === 'PRO' || item.type === 'PROMOTION'
-  );
-
-  if (promotionItems.length > 0) {
-    // Sum all promotion amounts (already negative)
-    const promotionDiscount = promotionItems.reduce((sum: number, item: any) =>
-      sum + euroToCents(item.amount || 0), 0);
-    discountTotal += promotionDiscount;
-
-    // Use promotion titles as description
-    const promoDescriptions = promotionItems
-      .map((item: any) => item.title)
-      .filter((title: string) => title && title.trim());
-    if (promoDescriptions.length > 0) {
-      discountDescription = promoDescriptions.join(', ');
-    }
-  }
-
-  // 2. Check fareAccommodationDiscount (traditional Guesty discount field)
-  const accommodationDiscount = euroToCents(money?.fareAccommodationDiscount || 0);
-  if (accommodationDiscount < 0) {
-    discountTotal += accommodationDiscount;
-  }
-
-  // 3. Check cleaning fee discount (difference between baseAmount and amount)
-  let cleaningDiscount = 0;
-  if (cleaningFeeItem?.baseAmount && cleaningFeeItem?.amount) {
-    cleaningDiscount = euroToCents(cleaningFeeItem.amount - cleaningFeeItem.baseAmount);
-  }
-  if (cleaningDiscount < 0) {
-    discountTotal += cleaningDiscount;
-  }
-
-  // 4. Fallback: if no explicit discount found but subtotal doesn't match sum of items,
-  // derive the discount from the difference
-  if (discountTotal === 0) {
-    const expectedSubtotal = accommodationTotal + extraGuestTotal + cleaningFee;
-    const guestySubtotal = euroToCents(money?.subTotalPrice || 0);
-    if (guestySubtotal > 0 && guestySubtotal < expectedSubtotal) {
-      discountTotal = guestySubtotal - expectedSubtotal; // negative value
-    }
-  }
-
-  // Try to get discount description from adjustments in nightlyRateInvoiceItems (if not already set)
-  if (!discountDescription) {
-    const afItem = money?.nightlyRateInvoiceItems?.find((item: any) => item.normalType === 'AF');
-    const cfItem = money?.nightlyRateInvoiceItems?.find((item: any) => item.normalType === 'CF');
-
-    const allAdjustments = [
-      ...(afItem?.adjustments || []),
-      ...(cfItem?.adjustments || []),
-    ];
-
-    if (allAdjustments.length > 0) {
-      const descriptions = allAdjustments
-        .map((adj: any) => adj.description)
-        .filter((desc: string) => desc && desc.trim())
-        .filter((desc: string, index: number, arr: string[]) => arr.indexOf(desc) === index);
-
-      if (descriptions.length > 0) {
-        discountDescription = descriptions.join(', ');
-      }
-    }
+  const expectedSubtotal = accommodationTotal + extraGuestTotal + cleaningFee;
+  const guestySubtotal = euroToCents(money?.subTotalPrice || 0);
+  if (guestySubtotal > 0 && guestySubtotal < expectedSubtotal) {
+    discountTotal = guestySubtotal - expectedSubtotal; // negative value
   }
 
   // Get guest notes from reservation.notes.guest
