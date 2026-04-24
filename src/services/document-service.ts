@@ -9,9 +9,9 @@ import { guestyClient } from './guesty-client.js';
 import { pdfGenerator } from './pdf-generator.js';
 import {
   createDocument,
+  updateDocument,
   getDocumentByReservation,
   getDocumentById,
-  deleteDocumentById,
   type DocumentType,
   type DocumentData,
   type Document,
@@ -301,47 +301,44 @@ export async function createOrGetDocument(options: CreateDocumentOptions): Promi
 }
 
 /**
- * Refresh/regenerate a document with fresh data from Guesty API
- * Deletes the existing document and creates a new one with a new document number
- * If no document exists, creates a new one
+ * Refresh a document with fresh data from Guesty API.
+ * The document number is preserved — only the data is updated.
+ * If no document exists yet, a new one is created.
+ *
+ * Guesty fetch happens BEFORE any DB write, so a failure there
+ * leaves the existing document intact (no data loss).
  */
 export async function refreshDocument(options: CreateDocumentOptions): Promise<DocumentResult> {
   const { reservationId, documentType } = options;
 
   logger.info({ reservationId, documentType }, 'Refreshing document with fresh Guesty data');
 
-  // Check if document exists
   const existingDoc = getDocumentByReservation(reservationId, documentType);
 
+  // Fetch fresh data from Guesty before touching the DB
+  const freshData = await fetchDocumentDataFromGuesty(reservationId, documentType);
+
+  let document: Document;
   if (existingDoc) {
-    // Delete existing document to allow new number generation
+    // Preserve the document number — update data only
+    const { documentType: _dt, reservationId: _rid, ...updateData } = freshData;
+    document = updateDocument(existingDoc.id, updateData);
     logger.info(
-      { documentNumber: existingDoc.documentNumber, id: existingDoc.id },
-      'Deleting existing document to create new one with new number'
+      { documentNumber: document.documentNumber, type: documentType, reservationId },
+      'Existing document updated with fresh data (number preserved)'
     );
-
-    deleteDocumentById(existingDoc.id);
-
+  } else {
+    // No document yet — create new with a freshly issued number
+    document = createDocument(freshData);
     logger.info(
-      { documentNumber: existingDoc.documentNumber, type: documentType, reservationId },
-      'Existing document deleted, creating new one with new number'
+      { documentNumber: document.documentNumber, type: documentType, reservationId },
+      'New document created during refresh (no prior document existed)'
     );
   }
 
-  // Create new document with new number (whether replacing old one or first time)
-  logger.info({ reservationId, documentType }, 'Creating new document with fresh data and new number');
-
-  const document = await fetchAndCreateDocument(reservationId, documentType);
-
-  logger.info(
-    { documentNumber: document.documentNumber, type: documentType, reservationId },
-    'New document created'
-  );
-
-  // Generate PDF
   const pdf = await pdfGenerator.generatePDF(document);
 
-  return { document, pdf, isNew: true };
+  return { document, pdf, isNew: !existingDoc };
 }
 
 /**

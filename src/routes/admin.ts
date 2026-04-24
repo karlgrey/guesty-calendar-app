@@ -1050,8 +1050,11 @@ router.get('/', (_req, res) => {
         });
 
         if (!response.ok) {
-          const error = await response.json();
-          throw new Error(error.error || 'Failed to generate document');
+          const payload = await response.json().catch(() => ({}));
+          const msg = typeof payload.error === 'string'
+            ? payload.error
+            : (payload.error && payload.error.message) || 'Failed to generate document';
+          throw new Error(msg);
         }
 
         // Get the PDF blob and download it

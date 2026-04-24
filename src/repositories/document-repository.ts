@@ -538,24 +538,24 @@ export function getDocumentSequenceInfo(year: number = new Date().getFullYear())
 
     const lastNumber = sequenceRow?.last_number || 0;
 
-    // Get last invoice document
+    // Get last invoice document (highest number, not most recently created)
     const lastInvoiceRow = db
       .prepare(`
         SELECT * FROM documents
         WHERE document_type = 'invoice'
         AND document_number LIKE ?
-        ORDER BY created_at DESC
+        ORDER BY document_number DESC
         LIMIT 1
       `)
       .get(`${year}-%`) as DocumentRow | undefined;
 
-    // Get last quote document
+    // Get last quote document (highest number, not most recently created)
     const lastQuoteRow = db
       .prepare(`
         SELECT * FROM documents
         WHERE document_type = 'quote'
         AND document_number LIKE ?
-        ORDER BY created_at DESC
+        ORDER BY document_number DESC
         LIMIT 1
       `)
       .get(`A-${year}-%`) as DocumentRow | undefined;
