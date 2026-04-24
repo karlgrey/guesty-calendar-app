@@ -152,14 +152,14 @@ function rowToDocument(row: DocumentRow): Document {
  * Generate the next document number for a given type and year
  * Format: A-2025-0001 (quote) or 2025-0001 (invoice, no prefix)
  *
- * Uses a single shared sequence so that when a quote becomes an invoice,
- * they share the same number (e.g., A-2025-0001 → 2025-0001)
+ * Quotes and invoices have independent counters: each type has its own
+ * sequence per year, so a quote never consumes an invoice number or vice
+ * versa. This keeps invoice numbering gap-free as required by §14 UStG.
  */
 export function getNextDocumentNumber(type: DocumentType): string {
   const db = getDatabase();
   const year = new Date().getFullYear();
-  // Use 'shared' as the sequence type - one sequence for both quotes and invoices
-  const sequenceType = 'shared';
+  const sequenceType = type;
 
   try {
     // Use a transaction to ensure atomicity
@@ -518,27 +518,34 @@ export function listDocuments(type?: DocumentType, limit: number = 100): Documen
   }
 }
 
-/**
- * Get document sequence information including last invoice
- */
-export function getDocumentSequenceInfo(year: number = new Date().getFullYear()): {
-  year: number;
+export interface DocumentSequenceTypeInfo {
   lastNumber: number;
   nextNumber: number;
-  lastInvoice: Document | null;
-  lastQuote: Document | null;
-} {
+  lastDocument: Document | null;
+}
+
+export interface DocumentSequenceInfo {
+  year: number;
+  invoice: DocumentSequenceTypeInfo;
+  quote: DocumentSequenceTypeInfo;
+}
+
+/**
+ * Get document sequence information for both types (invoice and quote)
+ * for the given year. Counters are independent per type.
+ */
+export function getDocumentSequenceInfo(year: number = new Date().getFullYear()): DocumentSequenceInfo {
   const db = getDatabase();
 
   try {
-    // Get sequence from document_sequences table
-    const sequenceRow = db
-      .prepare('SELECT last_number FROM document_sequences WHERE year = ? AND sequence_type = ?')
-      .get(year, 'shared') as { last_number: number } | undefined;
+    const getSequence = (sequenceType: DocumentType): number => {
+      const row = db
+        .prepare('SELECT last_number FROM document_sequences WHERE year = ? AND sequence_type = ?')
+        .get(year, sequenceType) as { last_number: number } | undefined;
+      return row?.last_number || 0;
+    };
 
-    const lastNumber = sequenceRow?.last_number || 0;
-
-    // Get last invoice document (highest number, not most recently created)
+    // Highest-number document per type (not most recently created)
     const lastInvoiceRow = db
       .prepare(`
         SELECT * FROM documents
@@ -549,7 +556,6 @@ export function getDocumentSequenceInfo(year: number = new Date().getFullYear())
       `)
       .get(`${year}-%`) as DocumentRow | undefined;
 
-    // Get last quote document (highest number, not most recently created)
     const lastQuoteRow = db
       .prepare(`
         SELECT * FROM documents
@@ -560,12 +566,21 @@ export function getDocumentSequenceInfo(year: number = new Date().getFullYear())
       `)
       .get(`A-${year}-%`) as DocumentRow | undefined;
 
+    const invoiceLast = getSequence('invoice');
+    const quoteLast = getSequence('quote');
+
     return {
       year,
-      lastNumber,
-      nextNumber: lastNumber + 1,
-      lastInvoice: lastInvoiceRow ? rowToDocument(lastInvoiceRow) : null,
-      lastQuote: lastQuoteRow ? rowToDocument(lastQuoteRow) : null,
+      invoice: {
+        lastNumber: invoiceLast,
+        nextNumber: invoiceLast + 1,
+        lastDocument: lastInvoiceRow ? rowToDocument(lastInvoiceRow) : null,
+      },
+      quote: {
+        lastNumber: quoteLast,
+        nextNumber: quoteLast + 1,
+        lastDocument: lastQuoteRow ? rowToDocument(lastQuoteRow) : null,
+      },
     };
   } catch (error) {
     logger.error({ error, year }, 'Failed to get document sequence info');
@@ -576,22 +591,21 @@ export function getDocumentSequenceInfo(year: number = new Date().getFullYear())
 }
 
 /**
- * Set document sequence number for a year
+ * Set document sequence number for a year and type
  */
-export function setDocumentSequenceNumber(year: number, newNumber: number): void {
+export function setDocumentSequenceNumber(year: number, type: DocumentType, newNumber: number): void {
   const db = getDatabase();
 
   try {
-    // Ensure sequence record exists
     db.prepare(`
       INSERT INTO document_sequences (sequence_type, year, last_number)
-      VALUES ('shared', ?, ?)
+      VALUES (?, ?, ?)
       ON CONFLICT(sequence_type, year) DO UPDATE SET last_number = ?
-    `).run(year, newNumber, newNumber);
+    `).run(type, year, newNumber, newNumber);
 
-    logger.info({ year, newNumber }, 'Document sequence number updated');
+    logger.info({ year, type, newNumber }, 'Document sequence number updated');
   } catch (error) {
-    logger.error({ error, year, newNumber }, 'Failed to set document sequence number');
+    logger.error({ error, year, type, newNumber }, 'Failed to set document sequence number');
     throw new DatabaseError(
       `Failed to set document sequence number: ${error instanceof Error ? error.message : 'Unknown error'}`
     );

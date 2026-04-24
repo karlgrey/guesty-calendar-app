@@ -762,24 +762,43 @@ router.get('/', (_req, res) => {
           <div id="lastQuoteInfo">Lädt...</div>
         </div>
       </div>
-      <div class="card" style="margin-top: 20px;">
-        <h3>Nächste Dokumentennummer</h3>
-        <div id="nextNumberInfo" style="margin-bottom: 15px; font-size: 18px; font-weight: bold; color: #2563eb;">
-          Lädt...
+      <div class="grid" style="grid-template-columns: 1fr 1fr; margin-top: 20px;">
+        <div class="card">
+          <h3>Nächste Rechnungsnummer</h3>
+          <div id="nextInvoiceInfo" style="margin-bottom: 15px; font-size: 18px; font-weight: bold; color: #2563eb;">
+            Lädt...
+          </div>
+          <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+            <label for="manualInvoiceSequence" style="font-weight: 500;">Letzte Nummer:</label>
+            <input
+              type="number"
+              id="manualInvoiceSequence"
+              min="0"
+              max="99999"
+              style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; width: 100px;"
+            />
+            <button onclick="updateSequence('invoice')" class="success" id="updateInvoiceBtn">💾 Speichern</button>
+          </div>
+          <div id="invoiceSequenceMessage" style="margin-top: 10px; font-size: 14px;"></div>
         </div>
-        <div style="display: flex; gap: 10px; align-items: center;">
-          <label for="manualSequence" style="font-weight: 500;">Letzte Nummer manuell setzen:</label>
-          <input
-            type="number"
-            id="manualSequence"
-            placeholder="z.B. 17"
-            min="0"
-            max="99999"
-            style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; width: 120px;"
-          />
-          <button onclick="updateSequence()" class="success" id="updateSequenceBtn">💾 Speichern</button>
+        <div class="card">
+          <h3>Nächste Angebotsnummer</h3>
+          <div id="nextQuoteInfo" style="margin-bottom: 15px; font-size: 18px; font-weight: bold; color: #059669;">
+            Lädt...
+          </div>
+          <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+            <label for="manualQuoteSequence" style="font-weight: 500;">Letzte Nummer:</label>
+            <input
+              type="number"
+              id="manualQuoteSequence"
+              min="0"
+              max="99999"
+              style="padding: 8px; border: 1px solid #ddd; border-radius: 4px; width: 100px;"
+            />
+            <button onclick="updateSequence('quote')" class="success" id="updateQuoteBtn">💾 Speichern</button>
+          </div>
+          <div id="quoteSequenceMessage" style="margin-top: 10px; font-size: 14px;"></div>
         </div>
-        <div id="sequenceMessage" style="margin-top: 10px; font-size: 14px;"></div>
       </div>
     </div>
 
@@ -885,84 +904,71 @@ router.get('/', (_req, res) => {
       }, 5000);
     }
 
-    // Load document sequence information
+    // Load document sequence information (independent counters for invoice and quote)
     async function loadDocumentSequence() {
-      console.log('[Document Sequence] Starting to load...');
       try {
         const response = await fetch('/admin/api/document-sequence');
-        console.log('[Document Sequence] Response received:', response.status);
         const result = await response.json();
-        console.log('[Document Sequence] Result:', result);
 
-        if (result.success) {
-          const { lastNumber, nextNumber, lastInvoice, lastQuote } = result.data;
+        if (!result.success) return;
 
-          // Update last invoice info
-          const lastInvoiceEl = document.getElementById('lastInvoiceInfo');
-          if (lastInvoice) {
-            const customerDisplay = lastInvoice.customerCompany
-              ? \`\${lastInvoice.customerCompany}<br/><small>\${lastInvoice.customerName || 'N/A'}</small>\`
-              : lastInvoice.customerName || 'N/A';
-            lastInvoiceEl.innerHTML = \`
-              <div style="margin-bottom: 8px;"><strong>\${lastInvoice.documentNumber}</strong></div>
-              <div style="font-size: 14px; color: #666;">
-                \${customerDisplay}<br/>
-                Check-in: \${new Date(lastInvoice.checkIn).toLocaleDateString('de-DE')}<br/>
-                Gesamt: €\${lastInvoice.total.toFixed(2)}<br/>
-                <small>Erstellt: \${new Date(lastInvoice.createdAt).toLocaleString('de-DE')}</small>
-              </div>
-            \`;
-          } else {
-            lastInvoiceEl.innerHTML = '<div style="color: #999;">Keine Rechnung vorhanden</div>';
+        const { year, invoice, quote } = result.data;
+
+        const renderLastDoc = (elId, doc, emptyText) => {
+          const el = document.getElementById(elId);
+          if (!doc) {
+            el.innerHTML = \`<div style="color: #999;">\${emptyText}</div>\`;
+            return;
           }
-
-          // Update last quote info
-          const lastQuoteEl = document.getElementById('lastQuoteInfo');
-          if (lastQuote) {
-            const customerDisplay = lastQuote.customerCompany
-              ? \`\${lastQuote.customerCompany}<br/><small>\${lastQuote.customerName || 'N/A'}</small>\`
-              : lastQuote.customerName || 'N/A';
-            lastQuoteEl.innerHTML = \`
-              <div style="margin-bottom: 8px;"><strong>\${lastQuote.documentNumber}</strong></div>
-              <div style="font-size: 14px; color: #666;">
-                \${customerDisplay}<br/>
-                Check-in: \${new Date(lastQuote.checkIn).toLocaleDateString('de-DE')}<br/>
-                Gesamt: €\${lastQuote.total.toFixed(2)}<br/>
-                <small>Erstellt: \${new Date(lastQuote.createdAt).toLocaleString('de-DE')}</small>
-              </div>
-            \`;
-          } else {
-            lastQuoteEl.innerHTML = '<div style="color: #999;">Kein Angebot vorhanden</div>';
-          }
-
-          // Update next number info
-          const year = new Date().getFullYear();
-          document.getElementById('nextNumberInfo').innerHTML = \`
-            Nächstes Angebot: <span style="color: #059669;">A-\${year}-\${String(nextNumber).padStart(4, '0')}</span> &nbsp;|&nbsp;
-            Nächste Rechnung: <span style="color: #2563eb;">\${year}-\${String(nextNumber).padStart(4, '0')}</span>
-            <br/><small style="color: #666; font-weight: normal;">Aktuelle letzte Nummer: \${lastNumber}</small>
+          const customerDisplay = doc.customerCompany
+            ? \`\${doc.customerCompany}<br/><small>\${doc.customerName || 'N/A'}</small>\`
+            : doc.customerName || 'N/A';
+          el.innerHTML = \`
+            <div style="margin-bottom: 8px;"><strong>\${doc.documentNumber}</strong></div>
+            <div style="font-size: 14px; color: #666;">
+              \${customerDisplay}<br/>
+              Check-in: \${new Date(doc.checkIn).toLocaleDateString('de-DE')}<br/>
+              Gesamt: €\${doc.total.toFixed(2)}<br/>
+              <small>Erstellt: \${new Date(doc.createdAt).toLocaleString('de-DE')}</small>
+            </div>
           \`;
+        };
 
-          // Set input field to current last number
-          document.getElementById('manualSequence').value = lastNumber;
-        }
+        renderLastDoc('lastInvoiceInfo', invoice.lastDocument, 'Keine Rechnung vorhanden');
+        renderLastDoc('lastQuoteInfo', quote.lastDocument, 'Kein Angebot vorhanden');
+
+        const padded = (n) => String(n).padStart(4, '0');
+
+        document.getElementById('nextInvoiceInfo').innerHTML = \`
+          <span style="color: #2563eb;">\${year}-\${padded(invoice.nextNumber)}</span>
+          <br/><small style="color: #666; font-weight: normal;">Aktuelle letzte Nummer: \${invoice.lastNumber}</small>
+        \`;
+        document.getElementById('nextQuoteInfo').innerHTML = \`
+          <span style="color: #059669;">A-\${year}-\${padded(quote.nextNumber)}</span>
+          <br/><small style="color: #666; font-weight: normal;">Aktuelle letzte Nummer: \${quote.lastNumber}</small>
+        \`;
+
+        document.getElementById('manualInvoiceSequence').value = invoice.lastNumber;
+        document.getElementById('manualQuoteSequence').value = quote.lastNumber;
       } catch (error) {
         console.error('[Document Sequence] Failed to load:', error);
-        const el = document.getElementById('nextNumberInfo');
-        if (el) {
-          el.innerHTML = '<span style="color: red;">Fehler beim Laden</span>';
-        } else {
-          console.error('[Document Sequence] Element nextNumberInfo not found!');
-        }
+        const invEl = document.getElementById('nextInvoiceInfo');
+        const qEl = document.getElementById('nextQuoteInfo');
+        if (invEl) invEl.innerHTML = '<span style="color: red;">Fehler beim Laden</span>';
+        if (qEl) qEl.innerHTML = '<span style="color: red;">Fehler beim Laden</span>';
       }
     }
 
-    // Update document sequence
-    async function updateSequence() {
-      const input = document.getElementById('manualSequence');
+    // Update document sequence for a specific type (invoice or quote)
+    async function updateSequence(type) {
+      const inputId = type === 'invoice' ? 'manualInvoiceSequence' : 'manualQuoteSequence';
+      const btnId = type === 'invoice' ? 'updateInvoiceBtn' : 'updateQuoteBtn';
+      const msgId = type === 'invoice' ? 'invoiceSequenceMessage' : 'quoteSequenceMessage';
+
+      const input = document.getElementById(inputId);
       const newNumber = parseInt(input.value);
-      const btn = document.getElementById('updateSequenceBtn');
-      const msgEl = document.getElementById('sequenceMessage');
+      const btn = document.getElementById(btnId);
+      const msgEl = document.getElementById(msgId);
 
       if (isNaN(newNumber) || newNumber < 0) {
         msgEl.innerHTML = '<span style="color: red;">Ungültige Nummer</span>';
@@ -978,18 +984,21 @@ router.get('/', (_req, res) => {
         const response = await fetch('/admin/api/document-sequence', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ year, lastNumber: newNumber })
+          body: JSON.stringify({ year, type, lastNumber: newNumber })
         });
 
         const result = await response.json();
 
         if (result.success) {
           msgEl.innerHTML = \`<span style="color: green;">✓ \${result.message}</span>\`;
-          showMessage('Dokumentennummer erfolgreich aktualisiert!', 'success');
-          // Reload sequence info
+          const label = type === 'invoice' ? 'Rechnungsnummer' : 'Angebotsnummer';
+          showMessage(\`\${label} erfolgreich aktualisiert!\`, 'success');
           await loadDocumentSequence();
         } else {
-          msgEl.innerHTML = \`<span style="color: red;">✗ \${result.error}</span>\`;
+          const errMsg = typeof result.error === 'string'
+            ? result.error
+            : (result.error && result.error.message) || 'Fehler beim Speichern';
+          msgEl.innerHTML = \`<span style="color: red;">✗ \${errMsg}</span>\`;
         }
       } catch (error) {
         console.error('Failed to update sequence:', error);
@@ -3040,37 +3049,37 @@ router.get('/documents/reservation/:reservationId', (req, res, next) => {
 
 /**
  * GET /admin/api/document-sequence
- * Get document sequence information (last number, last invoice/quote)
+ * Get document sequence information (separate counters for quote and invoice)
  */
 router.get('/api/document-sequence', (_req, res, next) => {
   try {
     const currentYear = new Date().getFullYear();
     const sequenceInfo = getDocumentSequenceInfo(currentYear);
 
+    const serializeDoc = (doc: typeof sequenceInfo.invoice.lastDocument) => doc ? {
+      documentNumber: doc.documentNumber,
+      reservationId: doc.reservationId,
+      customerName: doc.customer.name,
+      customerCompany: doc.customer.company,
+      checkIn: doc.checkIn,
+      total: doc.total / 100,
+      createdAt: doc.createdAt,
+    } : null;
+
     res.json({
       success: true,
       data: {
         year: sequenceInfo.year,
-        lastNumber: sequenceInfo.lastNumber,
-        nextNumber: sequenceInfo.nextNumber,
-        lastInvoice: sequenceInfo.lastInvoice ? {
-          documentNumber: sequenceInfo.lastInvoice.documentNumber,
-          reservationId: sequenceInfo.lastInvoice.reservationId,
-          customerName: sequenceInfo.lastInvoice.customer.name,
-          customerCompany: sequenceInfo.lastInvoice.customer.company,
-          checkIn: sequenceInfo.lastInvoice.checkIn,
-          total: sequenceInfo.lastInvoice.total / 100,
-          createdAt: sequenceInfo.lastInvoice.createdAt,
-        } : null,
-        lastQuote: sequenceInfo.lastQuote ? {
-          documentNumber: sequenceInfo.lastQuote.documentNumber,
-          reservationId: sequenceInfo.lastQuote.reservationId,
-          customerName: sequenceInfo.lastQuote.customer.name,
-          customerCompany: sequenceInfo.lastQuote.customer.company,
-          checkIn: sequenceInfo.lastQuote.checkIn,
-          total: sequenceInfo.lastQuote.total / 100,
-          createdAt: sequenceInfo.lastQuote.createdAt,
-        } : null,
+        invoice: {
+          lastNumber: sequenceInfo.invoice.lastNumber,
+          nextNumber: sequenceInfo.invoice.nextNumber,
+          lastDocument: serializeDoc(sequenceInfo.invoice.lastDocument),
+        },
+        quote: {
+          lastNumber: sequenceInfo.quote.lastNumber,
+          nextNumber: sequenceInfo.quote.nextNumber,
+          lastDocument: serializeDoc(sequenceInfo.quote.lastDocument),
+        },
       },
     });
   } catch (error) {
@@ -3080,21 +3089,28 @@ router.get('/api/document-sequence', (_req, res, next) => {
 
 /**
  * POST /admin/api/document-sequence
- * Update document sequence number (for manual correction)
+ * Update document sequence number for a specific type (invoice or quote)
  */
 router.post('/api/document-sequence', express.json(), (req, res, next) => {
   try {
-    const { year, lastNumber } = req.body;
+    const { year, type, lastNumber } = req.body;
 
-    if (!year || typeof lastNumber !== 'number') {
+    if (!year || typeof lastNumber !== 'number' || !type) {
       res.status(400).json({
         success: false,
-        error: 'year and lastNumber are required',
+        error: 'year, type and lastNumber are required',
       });
       return;
     }
 
-    // Validate year
+    if (type !== 'invoice' && type !== 'quote') {
+      res.status(400).json({
+        success: false,
+        error: 'type must be "invoice" or "quote"',
+      });
+      return;
+    }
+
     if (year < 2020 || year > 2100) {
       res.status(400).json({
         success: false,
@@ -3103,7 +3119,6 @@ router.post('/api/document-sequence', express.json(), (req, res, next) => {
       return;
     }
 
-    // Validate lastNumber
     if (lastNumber < 0 || lastNumber > 99999) {
       res.status(400).json({
         success: false,
@@ -3112,15 +3127,19 @@ router.post('/api/document-sequence', express.json(), (req, res, next) => {
       return;
     }
 
-    setDocumentSequenceNumber(year, lastNumber);
+    setDocumentSequenceNumber(year, type, lastNumber);
 
-    logger.info({ year, lastNumber }, 'Document sequence manually updated via admin panel');
+    const nextPadded = String(lastNumber + 1).padStart(4, '0');
+    const nextFormatted = type === 'quote' ? `A-${year}-${nextPadded}` : `${year}-${nextPadded}`;
+
+    logger.info({ year, type, lastNumber }, 'Document sequence manually updated via admin panel');
 
     res.json({
       success: true,
-      message: `Next document will be: A-${year}-${String(lastNumber + 1).padStart(4, '0')} / ${year}-${String(lastNumber + 1).padStart(4, '0')}`,
+      message: `Next ${type} will be: ${nextFormatted}`,
       data: {
         year,
+        type,
         lastNumber,
         nextNumber: lastNumber + 1,
       },
