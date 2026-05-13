@@ -124,6 +124,19 @@ Optional per property. Configured in `properties.json` `ga4` field (or omit for 
 - Refresh button (↻) fetches fresh Guesty data but preserves the document number
 - Company names (GmbH, AG, UG, Ltd, etc.) in guest firstName auto-detected
 
+### Guest Fingerprint (Migration 012)
+
+Lokal berechneter Fingerprint für Repeat-Customer-Analyse — keine zusätzlichen Guesty-API-Calls.
+Felder: `reservations.internal_guest_id` (Slug), `reservations.guest_company` (Klartext-Firma, NULL bei Privatpersonen).
+- Algorithmus: `src/utils/guest-fingerprint.ts` (pure function, vollständig getestet in `guest-fingerprint.test.ts`)
+- Schreibt sich bei jedem ETL-Sync automatisch ins Mapping (`reservation-mapper.ts`)
+- Einmaliges Backfill: `npx tsx src/scripts/backfill-guest-fingerprint.ts --apply`
+- Spec: `docs/superpowers/specs/2026-05-13-guest-fingerprint-design.md`
+
+**Pre-Backfill-Check (wichtig):** Bei stale-Sync würden alte Namen gefingerprintet. Daher
+vor dem Backfill auf Production einen Force-Sync laufen lassen:
+`npx tsx src/scripts/sync-property.ts farmhouse` und `... u19`.
+
 ### Authentication
 - Google OAuth 2.0 via Passport.js (`src/config/auth.ts`)
 - Email whitelist: `ADMIN_ALLOWED_EMAILS` env var
