@@ -106,15 +106,19 @@ Beide Listen sind als TS-Konstanten oben in der Datei definiert und einfach erwe
 
 | Input | `id` | `company` |
 |---|---|---|
-| `"Sabine Fastic GmbH"` | `fastic` | `Sabine Fastic GmbH` |
+| `"Sabine Fastic GmbH"` (alter DB-Stand) | `sabine` | `Sabine Fastic GmbH` |
+| `"Fastic GmbH Sabine Drescher"` (aktueller Guesty-Stand) | `fastic` | `Fastic GmbH` |
 | `"Rewe Markt GmbH"` | `rewe` | `Rewe Markt GmbH` |
 | `"digitransform.de Gesellschaft für digitale Transformation mbH Thomas Grieß"` | `digitransform` | `digitransform.de Gesellschaft für digitale Transformation mbH` |
 | `"Penguin Random House Verlagsgruppe GmbH Katja Weingartner"` | `penguin` | `Penguin Random House Verlagsgruppe GmbH` |
 | `"Aenu Advisor GmbH  Catrin Schmidt"` | `aenu` | `Aenu Advisor GmbH` |
+| `"Flink SE"` | `flink` | `Flink SE` |
 | `"Sebastian Memmel"` | `sebastian_memmel` | `null` |
 | `"Cynthia"` | `cynthia` | `null` |
 | `"Evoléna De Wilde"` | `evolena_de_wilde` | `null` |
 | `""` / `null` | `null` | `null` |
+
+**Anmerkung:** Bei „Vorname Marke Rechtsform"-Mustern (wie „Sabine Fastic GmbH") produziert der Algorithmus den Vornamen als ID — unser Code kann Vornamen nicht von Markennamen unterscheiden. Konkret betroffen ist dieser eine Datensatz; in Guesty wurde der Name inzwischen auf „Fastic GmbH Sabine Drescher" korrigiert, beim nächsten Sync propagiert sich der korrekte Fingerprint `fastic`. Daher ist der frische Sync vor dem Backfill (Sektion 7) zentral.
 
 ---
 
