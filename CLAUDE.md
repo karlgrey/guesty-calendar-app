@@ -137,6 +137,29 @@ Felder: `reservations.internal_guest_id` (Slug), `reservations.guest_company` (K
 vor dem Backfill auf Production einen Force-Sync laufen lassen:
 `npx tsx src/scripts/sync-property.ts farmhouse` und `... u19`.
 
+### Hostex Integration
+
+Zweiter Booking-Provider neben Guesty. Parallel-Modul-Architektur, ETL-Dispatch nach `provider`-Feld in `properties.json`.
+- **Provider-Discriminator**: jede Property hat `provider: 'guesty' | 'hostex'` (Default `guesty`)
+- **Hostex-Properties** brauchen `hostexPropertyId` (String) und `static`-Block in `properties.json` (mit Pflichtfeld `accommodates`)
+- **API-Client**: `src/services/hostex-client.ts` (Header-Token via `HOSTEX_ACCESS_TOKEN` env-var, Bottleneck-Rate-Limit, Exponential-Backoff)
+- **Mapper**: `src/mappers/hostex/{property,reservation,calendar}-mapper.ts` (alle pure functions, vollständig getestet)
+- **ETL**: `src/jobs/hostex/{sync-properties,sync-reservations,sync-calendar}.ts` (Reihenfolge: properties → reservations → calendar → re-property)
+- **Status-Routing**: alle Reservations → `inquiries` (BI-Pool), aktive (`accepted`/`wait_pay`) zusätzlich → `reservations`
+- **Manueller Test**: `npx tsx src/scripts/test-hostex-sync.ts <slug>`
+- **Spec**: `docs/superpowers/specs/2026-05-13-hostex-integration-design.md`
+
+**Deployment-Reihenfolge (Production):**
+1. `HOSTEX_ACCESS_TOKEN=...` in `/opt/guesty-calendar-app/.env` ergänzen
+2. `data/properties.json` erweitern um 3 Hostex-Properties mit `provider: 'hostex'` + `static`-Block
+3. `git pull && npm install && npm run build && pm2 restart guesty-calendar`
+4. `pm2 logs guesty-calendar --lines 20` → keine Zod-Validation-Errors
+5. Manueller Test pro Property: `npx tsx src/scripts/test-hostex-sync.ts <slug>`
+6. SQL-Stichprobe für jede Property: `sqlite3 data/calendar.db "SELECT id, title, base_price FROM listings WHERE id IN ('12659676', '12659677', '12659678')"`
+7. 24h PM2-Logs auf WARN/ERROR beobachten — besonders unknown-status Warnings
+
+**Rollback**: 3 Hostex-Property-Einträge aus `properties.json` entfernen, Server-Restart. DB-Rows können stehenbleiben oder via SQL gelöscht werden.
+
 ### Authentication
 - Google OAuth 2.0 via Passport.js (`src/config/auth.ts`)
 - Email whitelist: `ADMIN_ALLOWED_EMAILS` env var
