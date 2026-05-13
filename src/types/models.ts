@@ -206,6 +206,10 @@ export interface Reservation {
   last_synced_at: string;
   created_at: string;
   updated_at: string;
+
+  // Local-only fingerprint (computed in mapper, see src/utils/guest-fingerprint.ts)
+  internal_guest_id: string | null;
+  guest_company: string | null;
 }
 
 /**
@@ -335,6 +339,8 @@ export interface ReservationRow {
   last_synced_at: string;
   created_at: string;
   updated_at: string;
+  internal_guest_id: string | null;
+  guest_company: string | null;
 }
 
 /**
