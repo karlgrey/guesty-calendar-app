@@ -149,4 +149,70 @@ describe('fingerprintGuest', () => {
       expect(a).toEqual(b);
     });
   });
+
+  describe('Regression: alle 33 Farmhouse-Bestandsnamen (Stand 2026-05-13)', () => {
+    const fixtures: Array<{ input: string; id: string | null; company: string | null }> = [
+      { input: 'Sabine Fastic GmbH', id: 'sabine', company: 'Sabine Fastic GmbH' },
+      { input: 'Carola AS IT', id: 'carola_as_it', company: null },
+      { input: 'Flora', id: 'flora', company: null },
+      { input: 'Open Cash', id: 'open_cash', company: null },
+      { input: 'Rewe Markt GmbH', id: 'rewe', company: 'Rewe Markt GmbH' },
+      { input: 'Paul Petereit', id: 'paul_petereit', company: null },
+      { input: 'Cynthia', id: 'cynthia', company: null },
+      { input: 'Ulf Hansen', id: 'ulf_hansen', company: null },
+      { input: 'Sebastian Memmel', id: 'sebastian_memmel', company: null },
+      { input: 'Benjamin Minack', id: 'benjamin_minack', company: null },
+      { input: 'Flink SE', id: 'flink', company: 'Flink SE' },
+      { input: 'Evoléna De Wilde', id: 'evolena_de_wilde', company: null },
+      {
+        input:
+          'digitransform.de Gesellschaft für digitale Transformation mbH Thomas Grieß',
+        id: 'digitransform',
+        company:
+          'digitransform.de Gesellschaft für digitale Transformation mbH',
+      },
+      { input: 'Fluxraum GmbH Daphne Glasberg', id: 'fluxraum', company: 'Fluxraum GmbH' },
+      { input: 'Awake Project GmbH BIRGIT AMELUNG', id: 'awake', company: 'Awake Project GmbH' },
+      { input: 'Tilo Jung', id: 'tilo_jung', company: null },
+      { input: 'Kaputt Agency GmbH Vian Nguyen', id: 'kaputt', company: 'Kaputt Agency GmbH' },
+      { input: 'Clara Iglhaut', id: 'clara_iglhaut', company: null },
+      { input: 'Michael Krüger', id: 'michael_krueger', company: null },
+      { input: 'Green Grizzly GmbH Casimir Carmer', id: 'green', company: 'Green Grizzly GmbH' },
+      {
+        input: 'Savills Immobilien Beratungs-GmbH Zoofenster - Minh-Ha Nguyen',
+        id: 'savills',
+        company: 'Savills Immobilien Beratungs-GmbH',
+      },
+      { input: 'Pentaleap GmbH Veronika Drefke', id: 'pentaleap', company: 'Pentaleap GmbH' },
+      { input: 'SuperX GmbH Helen Khandro Raimann', id: 'superx', company: 'SuperX GmbH' },
+      { input: 'Steffen Harter', id: 'steffen_harter', company: null },
+      { input: 'Annabell Victoria Wünsche', id: 'annabell_victoria_wuensche', company: null },
+      { input: 'Isabelle Reich', id: 'isabelle_reich', company: null },
+      {
+        input: 'Penguin Random House Verlagsgruppe GmbH Katja Weingartner',
+        id: 'penguin',
+        company: 'Penguin Random House Verlagsgruppe GmbH',
+      },
+      {
+        input: 'Lüftungstechnik Gehrmann Bauelemente GmbH Hardi Gehrmann',
+        id: 'lueftungstechnik',
+        company: 'Lüftungstechnik Gehrmann Bauelemente GmbH',
+      },
+      { input: 'Derya Harke', id: 'derya_harke', company: null },
+      { input: 'Ilona Koch', id: 'ilona_koch', company: null },
+      { input: 'Aenu Advisor GmbH  Catrin Schmidt', id: 'aenu', company: 'Aenu Advisor GmbH' },
+      { input: 'Malin Dettmann-Levin', id: 'malin_dettmannlevin', company: null },
+      { input: 'Stephanie Heinrich', id: 'stephanie_heinrich', company: null },
+    ];
+
+    it('alle 33 Bestandsnamen', () => {
+      expect(fixtures.length).toBe(33);
+    });
+
+    for (const fx of fixtures) {
+      it(`fixture: ${fx.input}`, () => {
+        expect(fingerprintGuest(fx.input)).toEqual({ id: fx.id, company: fx.company });
+      });
+    }
+  });
 });
