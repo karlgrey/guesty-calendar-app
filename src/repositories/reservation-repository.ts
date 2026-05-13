@@ -27,7 +27,8 @@ export function upsertReservation(
         status, confirmation_code, source, platform,
         planned_arrival, planned_departure,
         currency, total_price, host_payout, balance_due, total_paid,
-        created_at_guesty, reserved_at, last_synced_at
+        created_at_guesty, reserved_at, last_synced_at,
+        internal_guest_id, guest_company
       ) VALUES (
         @reservation_id, @listing_id, @check_in, @check_out,
         @check_in_localized, @check_out_localized, @nights_count,
@@ -35,7 +36,8 @@ export function upsertReservation(
         @status, @confirmation_code, @source, @platform,
         @planned_arrival, @planned_departure,
         @currency, @total_price, @host_payout, @balance_due, @total_paid,
-        @created_at_guesty, @reserved_at, @last_synced_at
+        @created_at_guesty, @reserved_at, @last_synced_at,
+        @internal_guest_id, @guest_company
       )
       ON CONFLICT(reservation_id) DO UPDATE SET
         check_in = excluded.check_in,
@@ -63,6 +65,8 @@ export function upsertReservation(
         created_at_guesty = excluded.created_at_guesty,
         reserved_at = excluded.reserved_at,
         last_synced_at = excluded.last_synced_at,
+        internal_guest_id = excluded.internal_guest_id,
+        guest_company = excluded.guest_company,
         updated_at = datetime('now')
     `);
 
@@ -92,7 +96,8 @@ export function upsertReservationBatch(
         status, confirmation_code, source, platform,
         planned_arrival, planned_departure,
         currency, total_price, host_payout, balance_due, total_paid,
-        created_at_guesty, reserved_at, last_synced_at
+        created_at_guesty, reserved_at, last_synced_at,
+        internal_guest_id, guest_company
       ) VALUES (
         @reservation_id, @listing_id, @check_in, @check_out,
         @check_in_localized, @check_out_localized, @nights_count,
@@ -100,7 +105,8 @@ export function upsertReservationBatch(
         @status, @confirmation_code, @source, @platform,
         @planned_arrival, @planned_departure,
         @currency, @total_price, @host_payout, @balance_due, @total_paid,
-        @created_at_guesty, @reserved_at, @last_synced_at
+        @created_at_guesty, @reserved_at, @last_synced_at,
+        @internal_guest_id, @guest_company
       )
       ON CONFLICT(reservation_id) DO UPDATE SET
         check_in = excluded.check_in,
@@ -128,6 +134,8 @@ export function upsertReservationBatch(
         created_at_guesty = excluded.created_at_guesty,
         reserved_at = excluded.reserved_at,
         last_synced_at = excluded.last_synced_at,
+        internal_guest_id = excluded.internal_guest_id,
+        guest_company = excluded.guest_company,
         updated_at = datetime('now')
     `);
 
