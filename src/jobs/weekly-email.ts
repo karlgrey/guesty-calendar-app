@@ -6,7 +6,7 @@
  */
 
 import { config } from '../config/index.js';
-import { getAllProperties, type PropertyConfig } from '../config/properties.js';
+import { getAllProperties, getListingId, type PropertyConfig } from '../config/properties.js';
 import { getListingById } from '../repositories/listings-repository.js';
 import { getAllTimeStats, getOccupancyRate, getAllTimeConversionRate, getCurrentYearStats, getMonthlyBookingComparison } from '../repositories/availability-repository.js';
 import { getReservationsByPeriod } from '../repositories/reservation-repository.js';
@@ -29,7 +29,7 @@ interface WeeklyEmailResult {
  * Send weekly summary email for a specific property
  */
 export async function sendWeeklySummaryEmailForProperty(property: PropertyConfig): Promise<WeeklyEmailResult> {
-  const { slug, guestyPropertyId, name, weeklyReport, ga4 } = property;
+  const { slug, name, weeklyReport, ga4 } = property;
 
   try {
     // Check if weekly report is enabled for this property
@@ -55,7 +55,7 @@ export async function sendWeeklySummaryEmailForProperty(property: PropertyConfig
 
     logger.info({ propertySlug: slug, propertyName: name }, '📧 Starting weekly summary email job');
 
-    const propertyId = guestyPropertyId!;
+    const propertyId = getListingId(property);
 
     // Get listing info
     const listing = getListingById(propertyId);

@@ -11,9 +11,9 @@ import fs from 'fs';
 import { getListingById } from '../repositories/listings-repository.js';
 import { getAvailability } from '../repositories/availability-repository.js';
 import { getReservationsByPeriod } from '../repositories/reservation-repository.js';
-import { calculateQuoteWithGuesty } from '../services/pricing-calculator.js';
+import { calculateQuote, calculateQuoteWithGuesty } from '../services/pricing-calculator.js';
 import { getCachedQuote, saveQuoteToCache, cleanupExpiredQuotes } from '../repositories/quotes-repository.js';
-import { getPropertyBySlug, type PropertyConfig } from '../config/properties.js';
+import { getPropertyBySlug, getListingId, type PropertyConfig } from '../config/properties.js';
 import { NotFoundError, ValidationError } from '../utils/errors.js';
 import logger from '../utils/logger.js';
 
@@ -95,7 +95,7 @@ router.get('/:slug', resolveProperty, (req: Request, res: Response, next: NextFu
 router.get('/:slug/listing', resolveProperty, (req: Request, res: Response, next: NextFunction) => {
   try {
     const property = req.property!;
-    const listing = getListingById(property.guestyPropertyId!);
+    const listing = getListingById(getListingId(property));
 
     if (!listing) {
       throw new NotFoundError('Listing not found. Please run data sync first.');
@@ -166,7 +166,7 @@ router.get('/:slug/availability', resolveProperty, (req: Request, res: Response,
       throw new ValidationError('Date range cannot exceed 365 days');
     }
 
-    const availability = getAvailability(property.guestyPropertyId!, from as string, to as string);
+    const availability = getAvailability(getListingId(property), from as string, to as string);
 
     const response = availability.map((day) => ({
       date: day.date,
@@ -212,7 +212,7 @@ router.get('/:slug/quote', resolveProperty, async (req: Request, res: Response, 
       throw new ValidationError('Guests must be a positive integer');
     }
 
-    const listingId = property.guestyPropertyId!;
+    const listingId = getListingId(property);
 
     // Try to get cached quote
     const cachedQuote = getCachedQuote(listingId, checkIn as string, checkOut as string, guestCount);
@@ -249,15 +249,13 @@ router.get('/:slug/quote', resolveProperty, async (req: Request, res: Response, 
       });
     }
 
-    // Cache miss - calculate fresh quote via Guesty API (with local fallback)
-    logger.debug({ propertySlug: property.slug, listingId, checkIn, checkOut, guests: guestCount }, 'Cache miss, fetching Guesty quote');
+    // Cache miss - calculate fresh quote; for Hostex use local calculator, for Guesty use API (with local fallback)
+    logger.debug({ propertySlug: property.slug, listingId, checkIn, checkOut, guests: guestCount }, 'Cache miss, fetching quote');
 
-    const quote = await calculateQuoteWithGuesty({
-      listingId,
-      checkIn: checkIn as string,
-      checkOut: checkOut as string,
-      guests: guestCount,
-    });
+    const quoteRequest = { listingId, checkIn: checkIn as string, checkOut: checkOut as string, guests: guestCount };
+    const quote = property.provider === 'hostex'
+      ? calculateQuote(quoteRequest)
+      : await calculateQuoteWithGuesty(quoteRequest);
 
     // Save to cache (shorter TTL of 15min for promotion-aware quotes)
     const expiresAt = new Date();
@@ -337,7 +335,7 @@ router.get('/:slug/calendar.ics', resolveProperty, (req: Request, res: Response,
     }
 
     const property = req.property!;
-    const propertyId = property.guestyPropertyId!;
+    const propertyId = getListingId(property);
 
     // Get past 6 months + future 12 months of reservations
     const pastReservations = getReservationsByPeriod(propertyId, 180, 'past');

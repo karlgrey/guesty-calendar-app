@@ -8,7 +8,7 @@
 import { googleCalendarClient, toGoogleEventId } from '../services/google-calendar-client.js';
 import { getReservationsByPeriod, getCancelledReservationIds } from '../repositories/reservation-repository.js';
 import { getListingById } from '../repositories/listings-repository.js';
-import type { PropertyConfig } from '../config/properties.js';
+import { getListingId, type PropertyConfig } from '../config/properties.js';
 import type { Reservation } from '../types/models.js';
 import logger from '../utils/logger.js';
 
@@ -88,28 +88,29 @@ export async function syncGoogleCalendarForProperty(
   property: PropertyConfig
 ): Promise<GoogleCalendarSyncResult> {
   const startTime = Date.now();
-  const { slug, name, guestyPropertyId, googleCalendar } = property;
+  const { slug, name, googleCalendar } = property;
 
   if (!googleCalendar?.enabled || !googleCalendar.calendarId) {
     return { success: true, eventsUpserted: 0, eventsDeleted: 0 };
   }
 
   const calendarId = googleCalendar.calendarId;
+  const listingId = getListingId(property);
 
   logger.info({ propertySlug: slug, calendarId }, 'Starting Google Calendar sync');
 
   try {
     // Check-in/out times: listing (from Guesty) takes priority, config as fallback
-    const listing = getListingById(guestyPropertyId!);
+    const listing = getListingById(listingId);
     const checkInTime = listing?.check_in_time || googleCalendar.checkInTime;
     const checkOutTime = listing?.check_out_time || googleCalendar.checkOutTime;
 
     // Get past 6 months + future 12 months of active reservations
-    const pastReservations = getReservationsByPeriod(guestyPropertyId!, 180, 'past');
-    const futureReservations = getReservationsByPeriod(guestyPropertyId!, 365, 'future');
+    const pastReservations = getReservationsByPeriod(listingId, 180, 'past');
+    const futureReservations = getReservationsByPeriod(listingId, 365, 'future');
 
     // Get cancelled/declined reservation IDs from inquiries table (for cleanup)
-    const cancelledReservationIds = getCancelledReservationIds(guestyPropertyId!, 180, 365);
+    const cancelledReservationIds = getCancelledReservationIds(listingId, 180, 365);
 
     // Deduplicate active reservations by reservation_id
     const seen = new Set<string>();

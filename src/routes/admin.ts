@@ -11,7 +11,7 @@ import { syncAvailability } from '../jobs/sync-availability.js';
 import { runETLJob, runETLJobForProperty } from '../jobs/etl-job.js';
 import { getSchedulerStatus } from '../jobs/scheduler.js';
 import { config } from '../config/index.js';
-import { getAllProperties, getPropertyBySlug, getDefaultProperty } from '../config/properties.js';
+import { getAllProperties, getPropertyBySlug, getDefaultProperty, getListingId } from '../config/properties.js';
 import logger from '../utils/logger.js';
 import { getDashboardStats, getAllTimeConversionRate } from '../repositories/availability-repository.js';
 import { getListingById } from '../repositories/listings-repository.js';
@@ -1950,7 +1950,7 @@ router.post('/sync/listing', async (req, res, next) => {
       if (!property) {
         return res.status(404).json({ error: `Property '${propertySlug}' not found` });
       }
-      listingId = property.guestyPropertyId!;
+      listingId = getListingId(property);
       logger.info({ propertySlug }, 'Manual listing sync triggered for property via admin');
     } else {
       const defaultProperty = getDefaultProperty();
@@ -1988,7 +1988,7 @@ router.post('/sync/availability', async (req, res, next) => {
       if (!property) {
         return res.status(404).json({ error: `Property '${propertySlug}' not found` });
       }
-      listingId = property.guestyPropertyId!;
+      listingId = getListingId(property);
       logger.info({ propertySlug }, 'Manual availability sync triggered for property via admin');
     } else {
       const defaultProperty = getDefaultProperty();
@@ -2078,7 +2078,7 @@ router.get('/dashboard-data', async (req, res, next) => {
       if (!property) {
         return res.status(404).json({ error: `Property '${propertySlug}' not found` });
       }
-      propertyId = property.guestyPropertyId!;
+      propertyId = getListingId(property);
     } else {
       const defaultProperty = getDefaultProperty();
       propertyId = defaultProperty?.guestyPropertyId || config.guestyPropertyId || '';

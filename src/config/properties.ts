@@ -287,6 +287,20 @@ export function getPropertyByHostexId(hostexId: string): PropertyConfig | undefi
 }
 
 /**
+ * Get the provider-specific listing ID. Use this anywhere code needs the
+ * database listing_id from a PropertyConfig, regardless of provider.
+ * Throws if neither ID is set — schema validation should have caught this earlier.
+ */
+export function getListingId(property: PropertyConfig): string {
+  if (property.provider === 'hostex') {
+    if (!property.hostexPropertyId) throw new Error(`Hostex property ${property.slug} missing hostexPropertyId`);
+    return property.hostexPropertyId;
+  }
+  if (!property.guestyPropertyId) throw new Error(`Guesty property ${property.slug} missing guestyPropertyId`);
+  return property.guestyPropertyId;
+}
+
+/**
  * Get all configured properties
  */
 export function getAllProperties(): PropertyConfig[] {
