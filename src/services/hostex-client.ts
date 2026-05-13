@@ -17,6 +17,7 @@ import type {
   HostexProperty,
   HostexPropertiesData,
   HostexReservation,
+  HostexReservationsData,
   HostexCalendarResponse,
 } from '../types/hostex.js';
 
@@ -149,12 +150,35 @@ export class HostexClient {
    * GET /v3/reservations — list reservations with pagination
    * Implemented in Task 6.
    */
-  async getReservations(_opts: {
+  async getReservations(opts: {
     propertyId?: string;
     startCheckIn?: string;
     endCheckIn?: string;
   } = {}): Promise<HostexReservation[]> {
-    throw new Error('Not implemented yet — see Task 6');
+    const limit = 100;
+    let offset = 0;
+    const all: HostexReservation[] = [];
+    const safetyMax = 1000; // hard cap to avoid runaway pagination
+
+    while (true) {
+      const params = new URLSearchParams();
+      params.set('limit', String(limit));
+      params.set('offset', String(offset));
+      if (opts.propertyId) params.set('property_id', opts.propertyId);
+      if (opts.startCheckIn) params.set('start_check_in_date', opts.startCheckIn);
+      if (opts.endCheckIn) params.set('end_check_in_date', opts.endCheckIn);
+
+      const data = await this.call<HostexReservationsData>('GET', `/reservations?${params.toString()}`);
+      const batch = data.reservations || [];
+      all.push(...batch);
+      if (batch.length < limit) break;
+      offset += limit;
+      if (all.length >= safetyMax) {
+        logger.warn({ all: all.length, safetyMax }, 'Hostex getReservations hit safety cap, stopping pagination');
+        break;
+      }
+    }
+    return all;
   }
 
   /**
