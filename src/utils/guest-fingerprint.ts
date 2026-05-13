@@ -83,116 +83,15 @@ function findLastLegalForm(normalized: string): LegalMatch | null {
     const re = new RegExp(pattern, 'gi');
     let m: RegExpExecArray | null;
     while ((m = re.exec(normalized)) !== null) {
-      // Position der Capture-Group 1 = tatsächliche Position der Rechtsform.
       const startIndex = normalized.indexOf(m[1], m.index);
       const endIndex = startIndex + m[1].length;
       if (!best || startIndex > best.startIndex) {
         best = { startIndex, endIndex };
       }
-      // Endlos-Loop-Schutz bei Zero-Width-Matches.
       if (re.lastIndex === m.index) re.lastIndex++;
     }
   }
   return best;
-}
-
-/**
- * Canonical legal-form casing (keyed by lowercase).
- */
-const CANONICAL_LEGAL_CASE: Record<string, string> = {
-  'gmbh & co kg': 'GmbH & Co KG',
-  'gmbh & co. kg': 'GmbH & Co. KG',
-  'gmbh und co kg': 'GmbH und Co KG',
-  'gmbh': 'GmbH',
-  'mbh': 'mbH',
-  'ag': 'AG',
-  'se': 'SE',
-  'ug': 'UG',
-  'kg': 'KG',
-  'ohg': 'OHG',
-  'kgaa': 'KGaA',
-  'ltd': 'Ltd',
-  'limited': 'Limited',
-  'inc': 'Inc',
-  'llc': 'LLC',
-  'co': 'Co',
-};
-
-/**
- * Normalise company casing so that results are case-invariant with respect to
- * the raw input, while still preserving intentional mixed-case in the input.
- *
- * Strategy (per space-separated word):
- *   - If the word's lowercase matches a legal-form → replace with canonical form.
- *   - Else if the word is ALL-UPPERCASE → convert to Title-Case (e.g. "REWE" → "Rewe").
- *   - Otherwise → keep as-is (preserves "digitransform.de", "für", "Gesellschaft", etc.).
- *
- * This satisfies two constraints simultaneously:
- *   1. `fingerprintGuest('REWE MARKT GMBH').company === fingerprintGuest('Rewe Markt GmbH').company`
- *   2. The company for an already mixed-case input like
- *      `'digitransform.de Gesellschaft für digitale Transformation mbH'`
- *      is returned verbatim.
- */
-function normalizeCompanyCasing(input: string): string {
-  const lower = input.toLowerCase();
-
-  // Locate the last legal-form span (substring, with word-boundary check).
-  const sortedForms = Object.keys(CANONICAL_LEGAL_CASE).sort((a, b) => b.length - a.length);
-  let legalStart = -1;
-  let legalEnd = -1;
-  let canonicalForm = '';
-
-  for (const form of sortedForms) {
-    let searchFrom = 0;
-    let lastFound = -1;
-    while (true) {
-      const found = lower.indexOf(form, searchFrom);
-      if (found === -1) break;
-      const before = found === 0 ? '' : lower[found - 1];
-      const after = found + form.length >= lower.length ? '' : lower[found + form.length];
-      const isWordChar = (c: string) => /[a-z0-9]/.test(c);
-      if (!isWordChar(before) && !isWordChar(after)) {
-        lastFound = found;
-      }
-      searchFrom = found + 1;
-    }
-    if (lastFound !== -1 && lastFound > legalStart) {
-      legalStart = lastFound;
-      legalEnd = lastFound + form.length;
-      canonicalForm = CANONICAL_LEGAL_CASE[form];
-    }
-  }
-
-  /**
-   * Normalise a single non-legal-form word:
-   * ALL-CAPS → title-case; anything else → keep as-is.
-   */
-  function normalizeWord(word: string): string {
-    if (word === word.toUpperCase() && /[A-Z]/.test(word)) {
-      // All uppercase (at least one letter) → title-case.
-      return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
-    }
-    return word;
-  }
-
-  if (legalStart === -1) {
-    // No legal form – normalize each word.
-    return input
-      .split(/(\s+)/)
-      .map((part) => (part.trim() ? normalizeWord(part) : part))
-      .join('');
-  }
-
-  // Split into: before-legal, legal-form token, after-legal.
-  const beforeStr = input.substring(0, legalStart);
-  const afterStr = input.substring(legalEnd);
-
-  const normalizedBefore = beforeStr
-    .split(/(\s+)/)
-    .map((part) => (part.trim() ? normalizeWord(part) : part))
-    .join('');
-
-  return (normalizedBefore + canonicalForm + afterStr).trim();
 }
 
 function firmaMode(
@@ -214,13 +113,12 @@ function firmaMode(
   }
   const id = cleaned.length > 0 ? cleaned[0] : null;
 
-  // company = canonical-cased string up to (and including) the legal form.
-  // We locate the legal form boundary using the lowercase raw input, then
-  // apply toTitleCase() so the result is case-invariant.
+  // company = original-Casing-String bis Ende der Rechtsform.
+  // Wir suchen die gleiche lowercase-Form der Rechtsform im lower-cased Raw-Input
+  // (Rechtsformen enthalten keine Umlaute, also ist die Länge identisch).
   const lowerRaw = rawTrimmed.toLowerCase();
   const legalTokenLower = normalized.substring(legal.startIndex, legal.endIndex);
 
-  // Finde letztes Vorkommen mit Wortgrenzen.
   let lastIdx = -1;
   let searchFrom = 0;
   while (true) {
@@ -238,14 +136,10 @@ function firmaMode(
     searchFrom = found + 1;
   }
 
-  let rawCompany: string;
-  if (lastIdx === -1) {
-    rawCompany = rawTrimmed.substring(0, legal.endIndex).trim();
-  } else {
-    rawCompany = rawTrimmed.substring(0, lastIdx + legalTokenLower.length).trim();
-  }
-
-  const company = normalizeCompanyCasing(rawCompany);
+  const company =
+    lastIdx === -1
+      ? rawTrimmed.substring(0, legal.endIndex).trim()
+      : rawTrimmed.substring(0, lastIdx + legalTokenLower.length).trim();
 
   return { id, company };
 }

@@ -136,10 +136,11 @@ describe('fingerprintGuest', () => {
   });
 
   describe('Stabilität', () => {
-    it('case-Insensitiv: gleicher Output bei unterschiedlichen Casings', () => {
-      expect(fingerprintGuest('REWE MARKT GMBH')).toEqual(
-        fingerprintGuest('Rewe Markt GmbH')
-      );
+    it('case-Insensitiv: id bleibt gleich bei unterschiedlichen Casings', () => {
+      const a = fingerprintGuest('REWE MARKT GMBH');
+      const b = fingerprintGuest('Rewe Markt GmbH');
+      expect(a.id).toBe(b.id);
+      // Note: company preserves the original input casing by design.
     });
 
     it('deterministisch: zweimaliger Aufruf liefert gleiches Ergebnis', () => {
