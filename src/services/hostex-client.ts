@@ -185,12 +185,16 @@ export class HostexClient {
    * POST /v3/listings/calendar — calendar for one or more listings
    * Implemented in Task 7.
    */
-  async getListingCalendars(_opts: {
+  async getListingCalendars(opts: {
     startDate: string;
     endDate: string;
     listings: Array<{ channel_type: string; listing_id: string }>;
   }): Promise<HostexCalendarResponse> {
-    throw new Error('Not implemented yet — see Task 7');
+    return this.call<HostexCalendarResponse>('POST', '/listings/calendar', {
+      start_date: opts.startDate,
+      end_date: opts.endDate,
+      listings: opts.listings,
+    });
   }
 }
 
