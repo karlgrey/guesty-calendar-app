@@ -36,6 +36,10 @@ const configSchema = z.object({
   guestyPropertyId: z.string().optional(), // Optional - falls back to properties.json
   propertiesConfigPath: z.string().default('./data/properties.json'),
 
+  // Hostex API (optional — only required if hostex-provider properties exist)
+  hostexAccessToken: z.string().optional(),
+  hostexApiUrl: z.string().url().default('https://api.hostex.io/v3'),
+
   // Property
   propertyCurrency: z.string().length(3).toUpperCase().default('EUR'),
   propertyTimezone: z.string().default('Europe/Berlin'),
@@ -117,6 +121,8 @@ function parseConfig() {
     guestyOAuthUrl: process.env.GUESTY_OAUTH_URL,
     guestyPropertyId: process.env.GUESTY_PROPERTY_ID,
     propertiesConfigPath: process.env.PROPERTIES_CONFIG_PATH,
+    hostexAccessToken: process.env.HOSTEX_ACCESS_TOKEN,
+    hostexApiUrl: process.env.HOSTEX_API_URL,
     propertyCurrency: process.env.PROPERTY_CURRENCY,
     propertyTimezone: process.env.PROPERTY_TIMEZONE,
     bookingRecipientEmail: process.env.BOOKING_RECIPIENT_EMAIL,
