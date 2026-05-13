@@ -20,9 +20,9 @@
         "number_of_pets": 0,
         "status": "accepted",
         "stay_status": "checkin_pending",
-        "guest_name": "Anke Morgenroth",
+        "guest_name": "Test Guest 01",
         "guest_phone": "+49 0000000000",
-        "guest_email": "",
+        "guest_email": "masked@example.com",
         "cancelled_at": null,
         "booked_at": "2026-05-11T06:14:35+00:00",
         "created_at": "2026-05-13T09:53:18+00:00",
@@ -71,7 +71,7 @@
           "lock_code": null,
           "lock_code_visible_after": "12:00",
           "deposit": null,
-          "check_in_guide_url": "https://hostex.io/web/checkin_guide/share/7e7530e0314f49ba5f6817b8f31a9f3469c04b47b420512d"
+          "check_in_guide_url": "[redacted]"
         },
         "remarks": "",
         "channel_remarks": "",
@@ -84,9 +84,9 @@
         "guests": [
           {
             "id": 73825704,
-            "name": "Anke Morgenroth",
-            "phone": "+49 1772373936",
-            "email": "",
+            "name": "Test Guest 01.1",
+            "phone": "+49 0000000000",
+            "email": "masked@example.com",
             "id_type": null,
             "id_number": null,
             "gender": null,
@@ -114,9 +114,9 @@
         "number_of_pets": 0,
         "status": "accepted",
         "stay_status": "checkin_pending",
-        "guest_name": "Amber Hiles",
+        "guest_name": "Test Guest 02",
         "guest_phone": "+49 0000000000",
-        "guest_email": "",
+        "guest_email": "masked@example.com",
         "cancelled_at": null,
         "booked_at": "2026-05-10T14:59:14+00:00",
         "created_at": "2026-05-13T09:56:37+00:00",
@@ -165,7 +165,7 @@
           "lock_code": null,
           "lock_code_visible_after": "12:00",
           "deposit": null,
-          "check_in_guide_url": "https://hostex.io/web/checkin_guide/share/eb39aef02b424f4713a84623631b9eae03da96c24ba3de99"
+          "check_in_guide_url": "[redacted]"
         },
         "remarks": "",
         "channel_remarks": "",
@@ -178,9 +178,9 @@
         "guests": [
           {
             "id": 73825923,
-            "name": "Amber Hiles",
-            "phone": "+1 7062633372",
-            "email": "",
+            "name": "Test Guest 02.1",
+            "phone": "+49 0000000000",
+            "email": "masked@example.com",
             "id_type": null,
             "id_number": null,
             "gender": null,
@@ -208,9 +208,9 @@
         "number_of_pets": 0,
         "status": "accepted",
         "stay_status": "checkin_pending",
-        "guest_name": "Wei An Wang",
+        "guest_name": "Test Guest 03",
         "guest_phone": "+49 0000000000",
-        "guest_email": "",
+        "guest_email": "masked@example.com",
         "cancelled_at": null,
         "booked_at": "2026-05-09T01:01:00+00:00",
         "created_at": "2026-05-13T09:56:37+00:00",
@@ -259,7 +259,7 @@
           "lock_code": null,
           "lock_code_visible_after": "12:00",
           "deposit": null,
-          "check_in_guide_url": "https://hostex.io/web/checkin_guide/share/e1fd9aa9afc9b61a675c0e98700139dde318f7353440c11b"
+          "check_in_guide_url": "[redacted]"
         },
         "remarks": "",
         "channel_remarks": "",
@@ -272,9 +272,9 @@
         "guests": [
           {
             "id": 73825922,
-            "name": "Wei An Wang",
-            "phone": "+886 966550636",
-            "email": "",
+            "name": "Test Guest 03.1",
+            "phone": "+49 0000000000",
+            "email": "masked@example.com",
             "id_type": null,
             "id_number": null,
             "gender": null,
@@ -302,9 +302,9 @@
         "number_of_pets": 1,
         "status": "accepted",
         "stay_status": "checkin_pending",
-        "guest_name": "Janine Schallat",
+        "guest_name": "Test Guest 04",
         "guest_phone": "+49 0000000000",
-        "guest_email": "",
+        "guest_email": "masked@example.com",
         "cancelled_at": null,
         "booked_at": "2026-05-08T19:23:33+00:00",
         "created_at": "2026-05-13T09:53:18+00:00",
@@ -353,7 +353,7 @@
           "lock_code": null,
           "lock_code_visible_after": "12:00",
           "deposit": null,
-          "check_in_guide_url": "https://hostex.io/web/checkin_guide/share/61de2c076bb11827b8f39386790328bfe951dce11fd2544b"
+          "check_in_guide_url": "[redacted]"
         },
         "remarks": "",
         "channel_remarks": "",
@@ -366,9 +366,9 @@
         "guests": [
           {
             "id": 73825707,
-            "name": "Janine Schallat",
-            "phone": "+49 1722594036",
-            "email": "",
+            "name": "Test Guest 04.1",
+            "phone": "+49 0000000000",
+            "email": "masked@example.com",
             "id_type": null,
             "id_number": null,
             "gender": null,
@@ -396,9 +396,9 @@
         "number_of_pets": 0,
         "status": "accepted",
         "stay_status": "checkin_pending",
-        "guest_name": "Daniel Pfeifer",
+        "guest_name": "Test Guest 05",
         "guest_phone": "+49 0000000000",
-        "guest_email": "",
+        "guest_email": "masked@example.com",
         "cancelled_at": null,
         "booked_at": "2026-05-05T15:55:27+00:00",
         "created_at": "2026-05-13T09:53:18+00:00",
@@ -447,7 +447,7 @@
           "lock_code": null,
           "lock_code_visible_after": "12:00",
           "deposit": null,
-          "check_in_guide_url": "https://hostex.io/web/checkin_guide/share/de9d7287c725239268be68583746badcacf20f41178e55f8"
+          "check_in_guide_url": "[redacted]"
         },
         "remarks": "",
         "channel_remarks": "",
@@ -460,9 +460,9 @@
         "guests": [
           {
             "id": 73825706,
-            "name": "Daniel Pfeifer",
-            "phone": "+49 17632802980",
-            "email": "",
+            "name": "Test Guest 05.1",
+            "phone": "+49 0000000000",
+            "email": "masked@example.com",
             "id_type": null,
             "id_number": null,
             "gender": null,
@@ -490,9 +490,9 @@
         "number_of_pets": 0,
         "status": "accepted",
         "stay_status": "stay_completed",
-        "guest_name": "Joachim",
-        "guest_phone": "",
-        "guest_email": "",
+        "guest_name": "Test Guest 06",
+        "guest_phone": "+49 0000000000",
+        "guest_email": "masked@example.com",
         "cancelled_at": null,
         "booked_at": "2026-05-04T05:24:27+00:00",
         "created_at": "2026-05-13T09:53:18+00:00",
@@ -541,7 +541,7 @@
           "lock_code": null,
           "lock_code_visible_after": "12:00",
           "deposit": null,
-          "check_in_guide_url": "https://hostex.io/web/checkin_guide/share/0c0c2b7cfee0bafe4b520399b07c7052031f1998acd10df3"
+          "check_in_guide_url": "[redacted]"
         },
         "remarks": "",
         "channel_remarks": "",
@@ -554,9 +554,9 @@
         "guests": [
           {
             "id": 73825701,
-            "name": "Joachim",
-            "phone": "",
-            "email": "",
+            "name": "Test Guest 06.1",
+            "phone": "+49 0000000000",
+            "email": "masked@example.com",
             "id_type": null,
             "id_number": null,
             "gender": null,
@@ -584,9 +584,9 @@
         "number_of_pets": 0,
         "status": "accepted",
         "stay_status": "checkin_pending",
-        "guest_name": "Zino Bentlin",
+        "guest_name": "Test Guest 07",
         "guest_phone": "+49 0000000000",
-        "guest_email": "",
+        "guest_email": "masked@example.com",
         "cancelled_at": null,
         "booked_at": "2026-05-02T15:07:06+00:00",
         "created_at": "2026-05-13T09:53:24+00:00",
@@ -635,7 +635,7 @@
           "lock_code": null,
           "lock_code_visible_after": "12:00",
           "deposit": null,
-          "check_in_guide_url": "https://hostex.io/web/checkin_guide/share/21b4a2ebcf36bb3f6fa04a63a87e0f065f2a4d6e4ee571be"
+          "check_in_guide_url": "[redacted]"
         },
         "remarks": "",
         "channel_remarks": "",
@@ -648,9 +648,9 @@
         "guests": [
           {
             "id": 73825718,
-            "name": "Zino Bentlin",
-            "phone": "+49 17686406076",
-            "email": "",
+            "name": "Test Guest 07.1",
+            "phone": "+49 0000000000",
+            "email": "masked@example.com",
             "id_type": null,
             "id_number": null,
             "gender": null,
@@ -678,9 +678,9 @@
         "number_of_pets": 0,
         "status": "accepted",
         "stay_status": "stay_completed",
-        "guest_name": "Maxi Marie",
-        "guest_phone": "",
-        "guest_email": "",
+        "guest_name": "Test Guest 08",
+        "guest_phone": "+49 0000000000",
+        "guest_email": "masked@example.com",
         "cancelled_at": null,
         "booked_at": "2026-04-30T06:50:40+00:00",
         "created_at": "2026-05-13T09:53:24+00:00",
@@ -729,7 +729,7 @@
           "lock_code": null,
           "lock_code_visible_after": "12:00",
           "deposit": null,
-          "check_in_guide_url": "https://hostex.io/web/checkin_guide/share/a5a5ab071a9bb6b1bc25bd2b9cf9d46171bed097ee6bb148"
+          "check_in_guide_url": "[redacted]"
         },
         "remarks": "",
         "channel_remarks": "",
@@ -742,9 +742,9 @@
         "guests": [
           {
             "id": 73825716,
-            "name": "Maxi Marie",
-            "phone": "",
-            "email": "",
+            "name": "Test Guest 08.1",
+            "phone": "+49 0000000000",
+            "email": "masked@example.com",
             "id_type": null,
             "id_number": null,
             "gender": null,
@@ -772,9 +772,9 @@
         "number_of_pets": 0,
         "status": "accepted",
         "stay_status": "checkin_pending",
-        "guest_name": "Rafael Krause",
+        "guest_name": "Test Guest 09",
         "guest_phone": "+49 0000000000",
-        "guest_email": "",
+        "guest_email": "masked@example.com",
         "cancelled_at": null,
         "booked_at": "2026-04-25T21:02:15+00:00",
         "created_at": "2026-05-13T09:53:18+00:00",
@@ -823,7 +823,7 @@
           "lock_code": null,
           "lock_code_visible_after": "12:00",
           "deposit": null,
-          "check_in_guide_url": "https://hostex.io/web/checkin_guide/share/8d73afaba19373ddf10a9d9bcf0447ef75fa23848eebc74f"
+          "check_in_guide_url": "[redacted]"
         },
         "remarks": "",
         "channel_remarks": "",
@@ -836,9 +836,9 @@
         "guests": [
           {
             "id": 73825702,
-            "name": "Rafael Krause",
-            "phone": "+49 17642289763",
-            "email": "",
+            "name": "Test Guest 09.1",
+            "phone": "+49 0000000000",
+            "email": "masked@example.com",
             "id_type": null,
             "id_number": null,
             "gender": null,
@@ -866,9 +866,9 @@
         "number_of_pets": 0,
         "status": "accepted",
         "stay_status": "checkin_pending",
-        "guest_name": "Nannette Neitzel",
+        "guest_name": "Test Guest 10",
         "guest_phone": "+49 0000000000",
-        "guest_email": "",
+        "guest_email": "masked@example.com",
         "cancelled_at": null,
         "booked_at": "2026-04-14T07:31:21+00:00",
         "created_at": "2026-05-13T09:53:18+00:00",
@@ -917,7 +917,7 @@
           "lock_code": null,
           "lock_code_visible_after": "12:00",
           "deposit": null,
-          "check_in_guide_url": "https://hostex.io/web/checkin_guide/share/f9e724173928feb38ccd0891e96eec6e710146eff3a0d53d"
+          "check_in_guide_url": "[redacted]"
         },
         "remarks": "",
         "channel_remarks": "",
@@ -930,9 +930,9 @@
         "guests": [
           {
             "id": 73825703,
-            "name": "Nannette Neitzel",
-            "phone": "+49 15126939089",
-            "email": "",
+            "name": "Test Guest 10.1",
+            "phone": "+49 0000000000",
+            "email": "masked@example.com",
             "id_type": null,
             "id_number": null,
             "gender": null,
@@ -960,9 +960,9 @@
         "number_of_pets": 1,
         "status": "accepted",
         "stay_status": "stay_completed",
-        "guest_name": "Alana",
-        "guest_phone": "",
-        "guest_email": "",
+        "guest_name": "Test Guest 11",
+        "guest_phone": "+49 0000000000",
+        "guest_email": "masked@example.com",
         "cancelled_at": null,
         "booked_at": "2026-04-07T20:10:36+00:00",
         "created_at": "2026-05-13T09:53:18+00:00",
@@ -1011,7 +1011,7 @@
           "lock_code": null,
           "lock_code_visible_after": "12:00",
           "deposit": null,
-          "check_in_guide_url": "https://hostex.io/web/checkin_guide/share/502de8b448681a68cd80c2e82ee1c00af2df300a77ae7568"
+          "check_in_guide_url": "[redacted]"
         },
         "remarks": "",
         "channel_remarks": "",
@@ -1024,9 +1024,9 @@
         "guests": [
           {
             "id": 73825700,
-            "name": "Alana",
-            "phone": "",
-            "email": "",
+            "name": "Test Guest 11.1",
+            "phone": "+49 0000000000",
+            "email": "masked@example.com",
             "id_type": null,
             "id_number": null,
             "gender": null,
@@ -1054,9 +1054,9 @@
         "number_of_pets": 0,
         "status": "accepted",
         "stay_status": "stay_completed",
-        "guest_name": "Mouaz",
-        "guest_phone": "",
-        "guest_email": "",
+        "guest_name": "Test Guest 12",
+        "guest_phone": "+49 0000000000",
+        "guest_email": "masked@example.com",
         "cancelled_at": null,
         "booked_at": "2026-04-07T13:17:51+00:00",
         "created_at": "2026-05-13T09:53:24+00:00",
@@ -1099,7 +1099,7 @@
           "lock_code": null,
           "lock_code_visible_after": "12:00",
           "deposit": null,
-          "check_in_guide_url": "https://hostex.io/web/checkin_guide/share/973cb3fe92cffcd39e05c678d8bf74d7d088fbc4da54ed13"
+          "check_in_guide_url": "[redacted]"
         },
         "remarks": "",
         "channel_remarks": "",
@@ -1112,9 +1112,9 @@
         "guests": [
           {
             "id": 73825715,
-            "name": "Mouaz",
-            "phone": "",
-            "email": "",
+            "name": "Test Guest 12.1",
+            "phone": "+49 0000000000",
+            "email": "masked@example.com",
             "id_type": null,
             "id_number": null,
             "gender": null,
@@ -1142,9 +1142,9 @@
         "number_of_pets": 0,
         "status": "accepted",
         "stay_status": "checkin_pending",
-        "guest_name": "Jonas Pekker",
+        "guest_name": "Test Guest 13",
         "guest_phone": "+49 0000000000",
-        "guest_email": "",
+        "guest_email": "masked@example.com",
         "cancelled_at": null,
         "booked_at": "2026-04-07T06:19:07+00:00",
         "created_at": "2026-05-13T09:53:24+00:00",
@@ -1193,7 +1193,7 @@
           "lock_code": null,
           "lock_code_visible_after": "12:00",
           "deposit": null,
-          "check_in_guide_url": "https://hostex.io/web/checkin_guide/share/f8da46b00776b89b535c95db85beb497087168a432ee739e"
+          "check_in_guide_url": "[redacted]"
         },
         "remarks": "",
         "channel_remarks": "",
@@ -1206,9 +1206,9 @@
         "guests": [
           {
             "id": 73825717,
-            "name": "Jonas Pekker",
-            "phone": "+49 1626972991",
-            "email": "",
+            "name": "Test Guest 13.1",
+            "phone": "+49 0000000000",
+            "email": "masked@example.com",
             "id_type": null,
             "id_number": null,
             "gender": null,
@@ -1236,9 +1236,9 @@
         "number_of_pets": 1,
         "status": "accepted",
         "stay_status": "stay_completed",
-        "guest_name": "Teresa",
-        "guest_phone": "",
-        "guest_email": "",
+        "guest_name": "Test Guest 14",
+        "guest_phone": "+49 0000000000",
+        "guest_email": "masked@example.com",
         "cancelled_at": null,
         "booked_at": "2026-03-30T09:08:28+00:00",
         "created_at": "2026-05-13T09:53:17+00:00",
@@ -1287,7 +1287,7 @@
           "lock_code": null,
           "lock_code_visible_after": "12:00",
           "deposit": null,
-          "check_in_guide_url": "https://hostex.io/web/checkin_guide/share/2d4397d513e6baaf55ff7b5d7598a68593bc277b3856e14c"
+          "check_in_guide_url": "[redacted]"
         },
         "remarks": "",
         "channel_remarks": "",
@@ -1300,9 +1300,9 @@
         "guests": [
           {
             "id": 73825699,
-            "name": "Teresa",
-            "phone": "",
-            "email": "",
+            "name": "Test Guest 14.1",
+            "phone": "+49 0000000000",
+            "email": "masked@example.com",
             "id_type": null,
             "id_number": null,
             "gender": null,
@@ -1330,9 +1330,9 @@
         "number_of_pets": 1,
         "status": "accepted",
         "stay_status": "stay_completed",
-        "guest_name": "Evgenii",
-        "guest_phone": "",
-        "guest_email": "",
+        "guest_name": "Test Guest 15",
+        "guest_phone": "+49 0000000000",
+        "guest_email": "masked@example.com",
         "cancelled_at": null,
         "booked_at": "2026-03-28T12:26:13+00:00",
         "created_at": "2026-05-13T09:53:17+00:00",
@@ -1381,7 +1381,7 @@
           "lock_code": null,
           "lock_code_visible_after": "12:00",
           "deposit": null,
-          "check_in_guide_url": "https://hostex.io/web/checkin_guide/share/9d6fbcd39d2c6db466dd1d425a505741cb97c42f5765ff2f"
+          "check_in_guide_url": "[redacted]"
         },
         "remarks": "",
         "channel_remarks": "",
@@ -1394,9 +1394,9 @@
         "guests": [
           {
             "id": 73825698,
-            "name": "Evgenii",
-            "phone": "",
-            "email": "",
+            "name": "Test Guest 15.1",
+            "phone": "+49 0000000000",
+            "email": "masked@example.com",
             "id_type": null,
             "id_number": null,
             "gender": null,
@@ -1424,9 +1424,9 @@
         "number_of_pets": 0,
         "status": "accepted",
         "stay_status": "stay_completed",
-        "guest_name": "Mouaz",
-        "guest_phone": "",
-        "guest_email": "",
+        "guest_name": "Test Guest 16",
+        "guest_phone": "+49 0000000000",
+        "guest_email": "masked@example.com",
         "cancelled_at": null,
         "booked_at": "2026-03-19T05:25:39+00:00",
         "created_at": "2026-05-13T09:53:24+00:00",
@@ -1475,7 +1475,7 @@
           "lock_code": null,
           "lock_code_visible_after": "12:00",
           "deposit": null,
-          "check_in_guide_url": "https://hostex.io/web/checkin_guide/share/3da03bc39897f2c9aa17dc29140e24e0c9802d0ee2818c27"
+          "check_in_guide_url": "[redacted]"
         },
         "remarks": "",
         "channel_remarks": "",
@@ -1488,9 +1488,9 @@
         "guests": [
           {
             "id": 73825715,
-            "name": "Mouaz",
-            "phone": "",
-            "email": "",
+            "name": "Test Guest 16.1",
+            "phone": "+49 0000000000",
+            "email": "masked@example.com",
             "id_type": null,
             "id_number": null,
             "gender": null,
@@ -1518,9 +1518,9 @@
         "number_of_pets": 0,
         "status": "accepted",
         "stay_status": "checkin_pending",
-        "guest_name": "Sofia Helfrich",
+        "guest_name": "Test Guest 17",
         "guest_phone": "+49 0000000000",
-        "guest_email": "",
+        "guest_email": "masked@example.com",
         "cancelled_at": null,
         "booked_at": "2026-03-18T14:19:18+00:00",
         "created_at": "2026-05-13T09:53:19+00:00",
@@ -1569,7 +1569,7 @@
           "lock_code": null,
           "lock_code_visible_after": "12:00",
           "deposit": null,
-          "check_in_guide_url": "https://hostex.io/web/checkin_guide/share/60bce51a0d8aebedc224093826b79b9a56e187d86b8ee6f1"
+          "check_in_guide_url": "[redacted]"
         },
         "remarks": "",
         "channel_remarks": "",
@@ -1582,9 +1582,9 @@
         "guests": [
           {
             "id": 73825708,
-            "name": "Sofia Helfrich",
-            "phone": "+49 15902404716",
-            "email": "",
+            "name": "Test Guest 17.1",
+            "phone": "+49 0000000000",
+            "email": "masked@example.com",
             "id_type": null,
             "id_number": null,
             "gender": null,
@@ -1612,9 +1612,9 @@
         "number_of_pets": 0,
         "status": "accepted",
         "stay_status": "stay_completed",
-        "guest_name": "Ivor",
-        "guest_phone": "",
-        "guest_email": "",
+        "guest_name": "Test Guest 18",
+        "guest_phone": "+49 0000000000",
+        "guest_email": "masked@example.com",
         "cancelled_at": null,
         "booked_at": "2026-03-18T13:25:58+00:00",
         "created_at": "2026-05-13T09:53:17+00:00",
@@ -1657,7 +1657,7 @@
           "lock_code": null,
           "lock_code_visible_after": "12:00",
           "deposit": null,
-          "check_in_guide_url": "https://hostex.io/web/checkin_guide/share/0e64007109bbfa0e613cfe9dac89bc9cb8989bcabb85c5e6"
+          "check_in_guide_url": "[redacted]"
         },
         "remarks": "",
         "channel_remarks": "",
@@ -1670,9 +1670,9 @@
         "guests": [
           {
             "id": 73825697,
-            "name": "Ivor",
-            "phone": "",
-            "email": "",
+            "name": "Test Guest 18.1",
+            "phone": "+49 0000000000",
+            "email": "masked@example.com",
             "id_type": null,
             "id_number": null,
             "gender": null,
@@ -1700,9 +1700,9 @@
         "number_of_pets": 0,
         "status": "accepted",
         "stay_status": "checkin_pending",
-        "guest_name": "Kaya Milobara",
+        "guest_name": "Test Guest 19",
         "guest_phone": "+49 0000000000",
-        "guest_email": "",
+        "guest_email": "masked@example.com",
         "cancelled_at": null,
         "booked_at": "2026-03-17T05:40:13+00:00",
         "created_at": "2026-05-13T09:53:18+00:00",
@@ -1745,7 +1745,7 @@
           "lock_code": null,
           "lock_code_visible_after": "12:00",
           "deposit": null,
-          "check_in_guide_url": "https://hostex.io/web/checkin_guide/share/4a4a5cf264d7d6852810595ea3644a46c923e3e0629b1cea"
+          "check_in_guide_url": "[redacted]"
         },
         "remarks": "",
         "channel_remarks": "",
@@ -1758,9 +1758,9 @@
         "guests": [
           {
             "id": 73825705,
-            "name": "Kaya Milobara",
-            "phone": "+49 17634647978",
-            "email": "",
+            "name": "Test Guest 19.1",
+            "phone": "+49 0000000000",
+            "email": "masked@example.com",
             "id_type": null,
             "id_number": null,
             "gender": null,
