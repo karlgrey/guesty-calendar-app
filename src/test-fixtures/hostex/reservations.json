@@ -1,0 +1,1777 @@
+{
+  "request_id": "RT2026051318545880410",
+  "error_code": 200,
+  "error_msg": "Done.",
+  "data": {
+    "reservations": [
+      {
+        "reservation_code": "0-HM533PZBP2-id3zpmfvbo",
+        "stay_code": "0-HM533PZBP2-id3zpmfvbo",
+        "channel_id": "HM533PZBP2",
+        "property_id": 12659676,
+        "channel_type": "airbnb",
+        "listing_id": "1635436646666826858",
+        "check_in_date": "2026-05-30",
+        "check_out_date": "2026-05-31",
+        "number_of_guests": 3,
+        "number_of_adults": 3,
+        "number_of_children": 0,
+        "number_of_infants": 0,
+        "number_of_pets": 0,
+        "status": "accepted",
+        "stay_status": "checkin_pending",
+        "guest_name": "Anke Morgenroth",
+        "guest_phone": "+49 0000000000",
+        "guest_email": "",
+        "cancelled_at": null,
+        "booked_at": "2026-05-11T06:14:35+00:00",
+        "created_at": "2026-05-13T09:53:18+00:00",
+        "creator": "System",
+        "rates": {
+          "total_rate": {
+            "currency": "EUR",
+            "amount": 149
+          },
+          "total_commission": {
+            "currency": "EUR",
+            "amount": 23.1
+          },
+          "rate": {
+            "currency": "EUR",
+            "amount": 149
+          },
+          "commission": {
+            "currency": "EUR",
+            "amount": 23.1
+          },
+          "details": [
+            {
+              "type": "ACCOMMODATION",
+              "description": "Accommodation",
+              "currency": "EUR",
+              "amount": 129
+            },
+            {
+              "type": "HOST_SERVICE_FEE",
+              "description": "Commission",
+              "currency": "EUR",
+              "amount": 23.1
+            },
+            {
+              "type": "CLEANING_FEE",
+              "description": "Cleaning fee",
+              "currency": "EUR",
+              "amount": 20
+            }
+          ]
+        },
+        "check_in_details": {
+          "arrival_at": null,
+          "departure_at": null,
+          "lock_code": null,
+          "lock_code_visible_after": "12:00",
+          "deposit": null,
+          "check_in_guide_url": "https://hostex.io/web/checkin_guide/share/7e7530e0314f49ba5f6817b8f31a9f3469c04b47b420512d"
+        },
+        "remarks": "",
+        "channel_remarks": "",
+        "conversation_id": "0-2527892347",
+        "tags": [],
+        "custom_channel": {
+          "id": 1,
+          "name": "Airbnb"
+        },
+        "guests": [
+          {
+            "id": 73825704,
+            "name": "Anke Morgenroth",
+            "phone": "+49 1772373936",
+            "email": "",
+            "id_type": null,
+            "id_number": null,
+            "gender": null,
+            "country": null,
+            "is_booker": true
+          }
+        ],
+        "custom_fields": null,
+        "in_reservation_box": false,
+        "additional_fees": []
+      },
+      {
+        "reservation_code": "0-HMRK8QX8KX-id3zt2ow0p",
+        "stay_code": "0-HMRK8QX8KX-id3zt2ow0p",
+        "channel_id": "HMRK8QX8KX",
+        "property_id": 12659678,
+        "channel_type": "airbnb",
+        "listing_id": "1678837365136764301",
+        "check_in_date": "2026-06-14",
+        "check_out_date": "2026-06-18",
+        "number_of_guests": 2,
+        "number_of_adults": 2,
+        "number_of_children": 0,
+        "number_of_infants": 0,
+        "number_of_pets": 0,
+        "status": "accepted",
+        "stay_status": "checkin_pending",
+        "guest_name": "Amber Hiles",
+        "guest_phone": "+49 0000000000",
+        "guest_email": "",
+        "cancelled_at": null,
+        "booked_at": "2026-05-10T14:59:14+00:00",
+        "created_at": "2026-05-13T09:56:37+00:00",
+        "creator": "System",
+        "rates": {
+          "total_rate": {
+            "currency": "EUR",
+            "amount": 1016
+          },
+          "total_commission": {
+            "currency": "EUR",
+            "amount": 187.4
+          },
+          "rate": {
+            "currency": "EUR",
+            "amount": 1016
+          },
+          "commission": {
+            "currency": "EUR",
+            "amount": 187.4
+          },
+          "details": [
+            {
+              "type": "ACCOMMODATION",
+              "description": "Accommodation",
+              "currency": "EUR",
+              "amount": 896
+            },
+            {
+              "type": "HOST_SERVICE_FEE",
+              "description": "Commission",
+              "currency": "EUR",
+              "amount": 187.4
+            },
+            {
+              "type": "CLEANING_FEE",
+              "description": "Cleaning fee",
+              "currency": "EUR",
+              "amount": 100
+            }
+          ]
+        },
+        "check_in_details": {
+          "arrival_at": null,
+          "departure_at": null,
+          "lock_code": null,
+          "lock_code_visible_after": "12:00",
+          "deposit": null,
+          "check_in_guide_url": "https://hostex.io/web/checkin_guide/share/eb39aef02b424f4713a84623631b9eae03da96c24ba3de99"
+        },
+        "remarks": "",
+        "channel_remarks": "",
+        "conversation_id": "0-2527654114",
+        "tags": [],
+        "custom_channel": {
+          "id": 1,
+          "name": "Airbnb"
+        },
+        "guests": [
+          {
+            "id": 73825923,
+            "name": "Amber Hiles",
+            "phone": "+1 7062633372",
+            "email": "",
+            "id_type": null,
+            "id_number": null,
+            "gender": null,
+            "country": null,
+            "is_booker": true
+          }
+        ],
+        "custom_fields": null,
+        "in_reservation_box": false,
+        "additional_fees": []
+      },
+      {
+        "reservation_code": "0-HMQBCCMBHA-id3zt2lyrq",
+        "stay_code": "0-HMQBCCMBHA-id3zt2lyrq",
+        "channel_id": "HMQBCCMBHA",
+        "property_id": 12659678,
+        "channel_type": "airbnb",
+        "listing_id": "1678837365136764301",
+        "check_in_date": "2026-05-26",
+        "check_out_date": "2026-05-30",
+        "number_of_guests": 2,
+        "number_of_adults": 2,
+        "number_of_children": 0,
+        "number_of_infants": 0,
+        "number_of_pets": 0,
+        "status": "accepted",
+        "stay_status": "checkin_pending",
+        "guest_name": "Wei An Wang",
+        "guest_phone": "+49 0000000000",
+        "guest_email": "",
+        "cancelled_at": null,
+        "booked_at": "2026-05-09T01:01:00+00:00",
+        "created_at": "2026-05-13T09:56:37+00:00",
+        "creator": "System",
+        "rates": {
+          "total_rate": {
+            "currency": "EUR",
+            "amount": 1016
+          },
+          "total_commission": {
+            "currency": "EUR",
+            "amount": 187.4
+          },
+          "rate": {
+            "currency": "EUR",
+            "amount": 1016
+          },
+          "commission": {
+            "currency": "EUR",
+            "amount": 187.4
+          },
+          "details": [
+            {
+              "type": "ACCOMMODATION",
+              "description": "Accommodation",
+              "currency": "EUR",
+              "amount": 896
+            },
+            {
+              "type": "HOST_SERVICE_FEE",
+              "description": "Commission",
+              "currency": "EUR",
+              "amount": 187.4
+            },
+            {
+              "type": "CLEANING_FEE",
+              "description": "Cleaning fee",
+              "currency": "EUR",
+              "amount": 100
+            }
+          ]
+        },
+        "check_in_details": {
+          "arrival_at": null,
+          "departure_at": null,
+          "lock_code": null,
+          "lock_code_visible_after": "12:00",
+          "deposit": null,
+          "check_in_guide_url": "https://hostex.io/web/checkin_guide/share/e1fd9aa9afc9b61a675c0e98700139dde318f7353440c11b"
+        },
+        "remarks": "",
+        "channel_remarks": "",
+        "conversation_id": "0-2526334208",
+        "tags": [],
+        "custom_channel": {
+          "id": 1,
+          "name": "Airbnb"
+        },
+        "guests": [
+          {
+            "id": 73825922,
+            "name": "Wei An Wang",
+            "phone": "+886 966550636",
+            "email": "",
+            "id_type": null,
+            "id_number": null,
+            "gender": null,
+            "country": null,
+            "is_booker": true
+          }
+        ],
+        "custom_fields": null,
+        "in_reservation_box": false,
+        "additional_fees": []
+      },
+      {
+        "reservation_code": "0-HMYBT3Z49J-id3zpmoeop",
+        "stay_code": "0-HMYBT3Z49J-id3zpmoeop",
+        "channel_id": "HMYBT3Z49J",
+        "property_id": 12659676,
+        "channel_type": "airbnb",
+        "listing_id": "1635436646666826858",
+        "check_in_date": "2026-07-17",
+        "check_out_date": "2026-07-22",
+        "number_of_guests": 2,
+        "number_of_adults": 1,
+        "number_of_children": 1,
+        "number_of_infants": 0,
+        "number_of_pets": 1,
+        "status": "accepted",
+        "stay_status": "checkin_pending",
+        "guest_name": "Janine Schallat",
+        "guest_phone": "+49 0000000000",
+        "guest_email": "",
+        "cancelled_at": null,
+        "booked_at": "2026-05-08T19:23:33+00:00",
+        "created_at": "2026-05-13T09:53:18+00:00",
+        "creator": "System",
+        "rates": {
+          "total_rate": {
+            "currency": "EUR",
+            "amount": 665
+          },
+          "total_commission": {
+            "currency": "EUR",
+            "amount": 103.08
+          },
+          "rate": {
+            "currency": "EUR",
+            "amount": 665
+          },
+          "commission": {
+            "currency": "EUR",
+            "amount": 103.08
+          },
+          "details": [
+            {
+              "type": "ACCOMMODATION",
+              "description": "Accommodation",
+              "currency": "EUR",
+              "amount": 645
+            },
+            {
+              "type": "HOST_SERVICE_FEE",
+              "description": "Commission",
+              "currency": "EUR",
+              "amount": 103.08
+            },
+            {
+              "type": "CLEANING_FEE",
+              "description": "Cleaning fee",
+              "currency": "EUR",
+              "amount": 20
+            }
+          ]
+        },
+        "check_in_details": {
+          "arrival_at": null,
+          "departure_at": null,
+          "lock_code": null,
+          "lock_code_visible_after": "12:00",
+          "deposit": null,
+          "check_in_guide_url": "https://hostex.io/web/checkin_guide/share/61de2c076bb11827b8f39386790328bfe951dce11fd2544b"
+        },
+        "remarks": "",
+        "channel_remarks": "",
+        "conversation_id": "0-2525962911",
+        "tags": [],
+        "custom_channel": {
+          "id": 1,
+          "name": "Airbnb"
+        },
+        "guests": [
+          {
+            "id": 73825707,
+            "name": "Janine Schallat",
+            "phone": "+49 1722594036",
+            "email": "",
+            "id_type": null,
+            "id_number": null,
+            "gender": null,
+            "country": null,
+            "is_booker": true
+          }
+        ],
+        "custom_fields": null,
+        "in_reservation_box": false,
+        "additional_fees": []
+      },
+      {
+        "reservation_code": "0-HMZCH22PP3-id3zpmld2g",
+        "stay_code": "0-HMZCH22PP3-id3zpmld2g",
+        "channel_id": "HMZCH22PP3",
+        "property_id": 12659676,
+        "channel_type": "airbnb",
+        "listing_id": "1635436646666826858",
+        "check_in_date": "2026-07-03",
+        "check_out_date": "2026-07-06",
+        "number_of_guests": 4,
+        "number_of_adults": 4,
+        "number_of_children": 0,
+        "number_of_infants": 0,
+        "number_of_pets": 0,
+        "status": "accepted",
+        "stay_status": "checkin_pending",
+        "guest_name": "Daniel Pfeifer",
+        "guest_phone": "+49 0000000000",
+        "guest_email": "",
+        "cancelled_at": null,
+        "booked_at": "2026-05-05T15:55:27+00:00",
+        "created_at": "2026-05-13T09:53:18+00:00",
+        "creator": "System",
+        "rates": {
+          "total_rate": {
+            "currency": "EUR",
+            "amount": 407
+          },
+          "total_commission": {
+            "currency": "EUR",
+            "amount": 63.09
+          },
+          "rate": {
+            "currency": "EUR",
+            "amount": 407
+          },
+          "commission": {
+            "currency": "EUR",
+            "amount": 63.09
+          },
+          "details": [
+            {
+              "type": "ACCOMMODATION",
+              "description": "Accommodation",
+              "currency": "EUR",
+              "amount": 387
+            },
+            {
+              "type": "HOST_SERVICE_FEE",
+              "description": "Commission",
+              "currency": "EUR",
+              "amount": 63.09
+            },
+            {
+              "type": "CLEANING_FEE",
+              "description": "Cleaning fee",
+              "currency": "EUR",
+              "amount": 20
+            }
+          ]
+        },
+        "check_in_details": {
+          "arrival_at": null,
+          "departure_at": null,
+          "lock_code": null,
+          "lock_code_visible_after": "12:00",
+          "deposit": null,
+          "check_in_guide_url": "https://hostex.io/web/checkin_guide/share/de9d7287c725239268be68583746badcacf20f41178e55f8"
+        },
+        "remarks": "",
+        "channel_remarks": "",
+        "conversation_id": "0-2522752814",
+        "tags": [],
+        "custom_channel": {
+          "id": 1,
+          "name": "Airbnb"
+        },
+        "guests": [
+          {
+            "id": 73825706,
+            "name": "Daniel Pfeifer",
+            "phone": "+49 17632802980",
+            "email": "",
+            "id_type": null,
+            "id_number": null,
+            "gender": null,
+            "country": null,
+            "is_booker": true
+          }
+        ],
+        "custom_fields": null,
+        "in_reservation_box": false,
+        "additional_fees": []
+      },
+      {
+        "reservation_code": "0-HMZQHTJTT4-id3zpm7fp1",
+        "stay_code": "0-HMZQHTJTT4-id3zpm7fp1",
+        "channel_id": "HMZQHTJTT4",
+        "property_id": 12659676,
+        "channel_type": "airbnb",
+        "listing_id": "1635436646666826858",
+        "check_in_date": "2026-05-07",
+        "check_out_date": "2026-05-10",
+        "number_of_guests": 4,
+        "number_of_adults": 4,
+        "number_of_children": 0,
+        "number_of_infants": 0,
+        "number_of_pets": 0,
+        "status": "accepted",
+        "stay_status": "stay_completed",
+        "guest_name": "Joachim",
+        "guest_phone": "",
+        "guest_email": "",
+        "cancelled_at": null,
+        "booked_at": "2026-05-04T05:24:27+00:00",
+        "created_at": "2026-05-13T09:53:18+00:00",
+        "creator": "System",
+        "rates": {
+          "total_rate": {
+            "currency": "EUR",
+            "amount": 391.52
+          },
+          "total_commission": {
+            "currency": "EUR",
+            "amount": 60.69
+          },
+          "rate": {
+            "currency": "EUR",
+            "amount": 391.52
+          },
+          "commission": {
+            "currency": "EUR",
+            "amount": 60.69
+          },
+          "details": [
+            {
+              "type": "ACCOMMODATION",
+              "description": "Accommodation",
+              "currency": "EUR",
+              "amount": 371.52
+            },
+            {
+              "type": "HOST_SERVICE_FEE",
+              "description": "Commission",
+              "currency": "EUR",
+              "amount": 60.69
+            },
+            {
+              "type": "CLEANING_FEE",
+              "description": "Cleaning fee",
+              "currency": "EUR",
+              "amount": 20
+            }
+          ]
+        },
+        "check_in_details": {
+          "arrival_at": null,
+          "departure_at": null,
+          "lock_code": null,
+          "lock_code_visible_after": "12:00",
+          "deposit": null,
+          "check_in_guide_url": "https://hostex.io/web/checkin_guide/share/0c0c2b7cfee0bafe4b520399b07c7052031f1998acd10df3"
+        },
+        "remarks": "",
+        "channel_remarks": "",
+        "conversation_id": "0-2521218018",
+        "tags": [],
+        "custom_channel": {
+          "id": 1,
+          "name": "Airbnb"
+        },
+        "guests": [
+          {
+            "id": 73825701,
+            "name": "Joachim",
+            "phone": "",
+            "email": "",
+            "id_type": null,
+            "id_number": null,
+            "gender": null,
+            "country": null,
+            "is_booker": true
+          }
+        ],
+        "custom_fields": null,
+        "in_reservation_box": false,
+        "additional_fees": []
+      },
+      {
+        "reservation_code": "0-HMB8HMWRKZ-id3zpqa3la",
+        "stay_code": "0-HMB8HMWRKZ-id3zpqa3la",
+        "channel_id": "HMB8HMWRKZ",
+        "property_id": 12659677,
+        "channel_type": "airbnb",
+        "listing_id": "1406340600305404294",
+        "check_in_date": "2026-05-22",
+        "check_out_date": "2026-05-27",
+        "number_of_guests": 1,
+        "number_of_adults": 1,
+        "number_of_children": 0,
+        "number_of_infants": 0,
+        "number_of_pets": 0,
+        "status": "accepted",
+        "stay_status": "checkin_pending",
+        "guest_name": "Zino Bentlin",
+        "guest_phone": "+49 0000000000",
+        "guest_email": "",
+        "cancelled_at": null,
+        "booked_at": "2026-05-02T15:07:06+00:00",
+        "created_at": "2026-05-13T09:53:24+00:00",
+        "creator": "System",
+        "rates": {
+          "total_rate": {
+            "currency": "EUR",
+            "amount": 800
+          },
+          "total_commission": {
+            "currency": "EUR",
+            "amount": 124
+          },
+          "rate": {
+            "currency": "EUR",
+            "amount": 800
+          },
+          "commission": {
+            "currency": "EUR",
+            "amount": 124
+          },
+          "details": [
+            {
+              "type": "ACCOMMODATION",
+              "description": "Accommodation",
+              "currency": "EUR",
+              "amount": 750
+            },
+            {
+              "type": "HOST_SERVICE_FEE",
+              "description": "Commission",
+              "currency": "EUR",
+              "amount": 124
+            },
+            {
+              "type": "CLEANING_FEE",
+              "description": "Cleaning fee",
+              "currency": "EUR",
+              "amount": 50
+            }
+          ]
+        },
+        "check_in_details": {
+          "arrival_at": null,
+          "departure_at": null,
+          "lock_code": null,
+          "lock_code_visible_after": "12:00",
+          "deposit": null,
+          "check_in_guide_url": "https://hostex.io/web/checkin_guide/share/21b4a2ebcf36bb3f6fa04a63a87e0f065f2a4d6e4ee571be"
+        },
+        "remarks": "",
+        "channel_remarks": "",
+        "conversation_id": "0-2519683140",
+        "tags": [],
+        "custom_channel": {
+          "id": 1,
+          "name": "Airbnb"
+        },
+        "guests": [
+          {
+            "id": 73825718,
+            "name": "Zino Bentlin",
+            "phone": "+49 17686406076",
+            "email": "",
+            "id_type": null,
+            "id_number": null,
+            "gender": null,
+            "country": null,
+            "is_booker": true
+          }
+        ],
+        "custom_fields": null,
+        "in_reservation_box": false,
+        "additional_fees": []
+      },
+      {
+        "reservation_code": "0-HMN3KPY42C-id3zpq4mil",
+        "stay_code": "0-HMN3KPY42C-id3zpq4mil",
+        "channel_id": "HMN3KPY42C",
+        "property_id": 12659677,
+        "channel_type": "airbnb",
+        "listing_id": "1406340600305404294",
+        "check_in_date": "2026-05-01",
+        "check_out_date": "2026-05-03",
+        "number_of_guests": 1,
+        "number_of_adults": 1,
+        "number_of_children": 0,
+        "number_of_infants": 0,
+        "number_of_pets": 0,
+        "status": "accepted",
+        "stay_status": "stay_completed",
+        "guest_name": "Maxi Marie",
+        "guest_phone": "",
+        "guest_email": "",
+        "cancelled_at": null,
+        "booked_at": "2026-04-30T06:50:40+00:00",
+        "created_at": "2026-05-13T09:53:24+00:00",
+        "creator": "System",
+        "rates": {
+          "total_rate": {
+            "currency": "EUR",
+            "amount": 350
+          },
+          "total_commission": {
+            "currency": "EUR",
+            "amount": 54.25
+          },
+          "rate": {
+            "currency": "EUR",
+            "amount": 350
+          },
+          "commission": {
+            "currency": "EUR",
+            "amount": 54.25
+          },
+          "details": [
+            {
+              "type": "ACCOMMODATION",
+              "description": "Accommodation",
+              "currency": "EUR",
+              "amount": 300
+            },
+            {
+              "type": "HOST_SERVICE_FEE",
+              "description": "Commission",
+              "currency": "EUR",
+              "amount": 54.25
+            },
+            {
+              "type": "CLEANING_FEE",
+              "description": "Cleaning fee",
+              "currency": "EUR",
+              "amount": 50
+            }
+          ]
+        },
+        "check_in_details": {
+          "arrival_at": null,
+          "departure_at": null,
+          "lock_code": null,
+          "lock_code_visible_after": "12:00",
+          "deposit": null,
+          "check_in_guide_url": "https://hostex.io/web/checkin_guide/share/a5a5ab071a9bb6b1bc25bd2b9cf9d46171bed097ee6bb148"
+        },
+        "remarks": "",
+        "channel_remarks": "",
+        "conversation_id": "0-2517398217",
+        "tags": [],
+        "custom_channel": {
+          "id": 1,
+          "name": "Airbnb"
+        },
+        "guests": [
+          {
+            "id": 73825716,
+            "name": "Maxi Marie",
+            "phone": "",
+            "email": "",
+            "id_type": null,
+            "id_number": null,
+            "gender": null,
+            "country": null,
+            "is_booker": true
+          }
+        ],
+        "custom_fields": null,
+        "in_reservation_box": false,
+        "additional_fees": []
+      },
+      {
+        "reservation_code": "0-HMZDJAN9X3-id3zpma309",
+        "stay_code": "0-HMZDJAN9X3-id3zpma309",
+        "channel_id": "HMZDJAN9X3",
+        "property_id": 12659676,
+        "channel_type": "airbnb",
+        "listing_id": "1635436646666826858",
+        "check_in_date": "2026-05-14",
+        "check_out_date": "2026-05-17",
+        "number_of_guests": 4,
+        "number_of_adults": 2,
+        "number_of_children": 1,
+        "number_of_infants": 1,
+        "number_of_pets": 0,
+        "status": "accepted",
+        "stay_status": "checkin_pending",
+        "guest_name": "Rafael Krause",
+        "guest_phone": "+49 0000000000",
+        "guest_email": "",
+        "cancelled_at": null,
+        "booked_at": "2026-04-25T21:02:15+00:00",
+        "created_at": "2026-05-13T09:53:18+00:00",
+        "creator": "System",
+        "rates": {
+          "total_rate": {
+            "currency": "EUR",
+            "amount": 407
+          },
+          "total_commission": {
+            "currency": "EUR",
+            "amount": 63.09
+          },
+          "rate": {
+            "currency": "EUR",
+            "amount": 407
+          },
+          "commission": {
+            "currency": "EUR",
+            "amount": 63.09
+          },
+          "details": [
+            {
+              "type": "ACCOMMODATION",
+              "description": "Accommodation",
+              "currency": "EUR",
+              "amount": 387
+            },
+            {
+              "type": "HOST_SERVICE_FEE",
+              "description": "Commission",
+              "currency": "EUR",
+              "amount": 63.09
+            },
+            {
+              "type": "CLEANING_FEE",
+              "description": "Cleaning fee",
+              "currency": "EUR",
+              "amount": 20
+            }
+          ]
+        },
+        "check_in_details": {
+          "arrival_at": null,
+          "departure_at": null,
+          "lock_code": null,
+          "lock_code_visible_after": "12:00",
+          "deposit": null,
+          "check_in_guide_url": "https://hostex.io/web/checkin_guide/share/8d73afaba19373ddf10a9d9bcf0447ef75fa23848eebc74f"
+        },
+        "remarks": "",
+        "channel_remarks": "",
+        "conversation_id": "0-2512879936",
+        "tags": [],
+        "custom_channel": {
+          "id": 1,
+          "name": "Airbnb"
+        },
+        "guests": [
+          {
+            "id": 73825702,
+            "name": "Rafael Krause",
+            "phone": "+49 17642289763",
+            "email": "",
+            "id_type": null,
+            "id_number": null,
+            "gender": null,
+            "country": null,
+            "is_booker": true
+          }
+        ],
+        "custom_fields": null,
+        "in_reservation_box": false,
+        "additional_fees": []
+      },
+      {
+        "reservation_code": "0-HM5HDKWMP4-id3zpmcuqu",
+        "stay_code": "0-HM5HDKWMP4-id3zpmcuqu",
+        "channel_id": "HM5HDKWMP4",
+        "property_id": 12659676,
+        "channel_type": "airbnb",
+        "listing_id": "1635436646666826858",
+        "check_in_date": "2026-05-22",
+        "check_out_date": "2026-05-25",
+        "number_of_guests": 3,
+        "number_of_adults": 3,
+        "number_of_children": 0,
+        "number_of_infants": 0,
+        "number_of_pets": 0,
+        "status": "accepted",
+        "stay_status": "checkin_pending",
+        "guest_name": "Nannette Neitzel",
+        "guest_phone": "+49 0000000000",
+        "guest_email": "",
+        "cancelled_at": null,
+        "booked_at": "2026-04-14T07:31:21+00:00",
+        "created_at": "2026-05-13T09:53:18+00:00",
+        "creator": "System",
+        "rates": {
+          "total_rate": {
+            "currency": "EUR",
+            "amount": 407
+          },
+          "total_commission": {
+            "currency": "EUR",
+            "amount": 63.09
+          },
+          "rate": {
+            "currency": "EUR",
+            "amount": 407
+          },
+          "commission": {
+            "currency": "EUR",
+            "amount": 63.09
+          },
+          "details": [
+            {
+              "type": "ACCOMMODATION",
+              "description": "Accommodation",
+              "currency": "EUR",
+              "amount": 387
+            },
+            {
+              "type": "HOST_SERVICE_FEE",
+              "description": "Commission",
+              "currency": "EUR",
+              "amount": 63.09
+            },
+            {
+              "type": "CLEANING_FEE",
+              "description": "Cleaning fee",
+              "currency": "EUR",
+              "amount": 20
+            }
+          ]
+        },
+        "check_in_details": {
+          "arrival_at": null,
+          "departure_at": null,
+          "lock_code": null,
+          "lock_code_visible_after": "12:00",
+          "deposit": null,
+          "check_in_guide_url": "https://hostex.io/web/checkin_guide/share/f9e724173928feb38ccd0891e96eec6e710146eff3a0d53d"
+        },
+        "remarks": "",
+        "channel_remarks": "",
+        "conversation_id": "0-2501066789",
+        "tags": [],
+        "custom_channel": {
+          "id": 1,
+          "name": "Airbnb"
+        },
+        "guests": [
+          {
+            "id": 73825703,
+            "name": "Nannette Neitzel",
+            "phone": "+49 15126939089",
+            "email": "",
+            "id_type": null,
+            "id_number": null,
+            "gender": null,
+            "country": null,
+            "is_booker": true
+          }
+        ],
+        "custom_fields": null,
+        "in_reservation_box": false,
+        "additional_fees": []
+      },
+      {
+        "reservation_code": "0-HM9444X8XZ-id3zpm4psa",
+        "stay_code": "0-HM9444X8XZ-id3zpm4psa",
+        "channel_id": "HM9444X8XZ",
+        "property_id": 12659676,
+        "channel_type": "airbnb",
+        "listing_id": "1635436646666826858",
+        "check_in_date": "2026-05-02",
+        "check_out_date": "2026-05-03",
+        "number_of_guests": 4,
+        "number_of_adults": 4,
+        "number_of_children": 0,
+        "number_of_infants": 0,
+        "number_of_pets": 1,
+        "status": "accepted",
+        "stay_status": "stay_completed",
+        "guest_name": "Alana",
+        "guest_phone": "",
+        "guest_email": "",
+        "cancelled_at": null,
+        "booked_at": "2026-04-07T20:10:36+00:00",
+        "created_at": "2026-05-13T09:53:18+00:00",
+        "creator": "System",
+        "rates": {
+          "total_rate": {
+            "currency": "EUR",
+            "amount": 149
+          },
+          "total_commission": {
+            "currency": "EUR",
+            "amount": 23.1
+          },
+          "rate": {
+            "currency": "EUR",
+            "amount": 149
+          },
+          "commission": {
+            "currency": "EUR",
+            "amount": 23.1
+          },
+          "details": [
+            {
+              "type": "ACCOMMODATION",
+              "description": "Accommodation",
+              "currency": "EUR",
+              "amount": 129
+            },
+            {
+              "type": "HOST_SERVICE_FEE",
+              "description": "Commission",
+              "currency": "EUR",
+              "amount": 23.1
+            },
+            {
+              "type": "CLEANING_FEE",
+              "description": "Cleaning fee",
+              "currency": "EUR",
+              "amount": 20
+            }
+          ]
+        },
+        "check_in_details": {
+          "arrival_at": null,
+          "departure_at": null,
+          "lock_code": null,
+          "lock_code_visible_after": "12:00",
+          "deposit": null,
+          "check_in_guide_url": "https://hostex.io/web/checkin_guide/share/502de8b448681a68cd80c2e82ee1c00af2df300a77ae7568"
+        },
+        "remarks": "",
+        "channel_remarks": "",
+        "conversation_id": "0-2494954984",
+        "tags": [],
+        "custom_channel": {
+          "id": 1,
+          "name": "Airbnb"
+        },
+        "guests": [
+          {
+            "id": 73825700,
+            "name": "Alana",
+            "phone": "",
+            "email": "",
+            "id_type": null,
+            "id_number": null,
+            "gender": null,
+            "country": null,
+            "is_booker": true
+          }
+        ],
+        "custom_fields": null,
+        "in_reservation_box": false,
+        "additional_fees": []
+      },
+      {
+        "reservation_code": "0-HMJ8B48Z4N-id3zpq1znd",
+        "stay_code": "0-HMJ8B48Z4N-id3zpq1znd",
+        "channel_id": "HMJ8B48Z4N",
+        "property_id": 12659677,
+        "channel_type": "airbnb",
+        "listing_id": "1406340600305404294",
+        "check_in_date": "2026-04-10",
+        "check_out_date": "2026-04-11",
+        "number_of_guests": 1,
+        "number_of_adults": 1,
+        "number_of_children": 0,
+        "number_of_infants": 0,
+        "number_of_pets": 0,
+        "status": "accepted",
+        "stay_status": "stay_completed",
+        "guest_name": "Mouaz",
+        "guest_phone": "",
+        "guest_email": "",
+        "cancelled_at": null,
+        "booked_at": "2026-04-07T13:17:51+00:00",
+        "created_at": "2026-05-13T09:53:24+00:00",
+        "creator": "System",
+        "rates": {
+          "total_rate": {
+            "currency": "EUR",
+            "amount": 120
+          },
+          "total_commission": {
+            "currency": "EUR",
+            "amount": 18.6
+          },
+          "rate": {
+            "currency": "EUR",
+            "amount": 120
+          },
+          "commission": {
+            "currency": "EUR",
+            "amount": 18.6
+          },
+          "details": [
+            {
+              "type": "ACCOMMODATION",
+              "description": "Accommodation",
+              "currency": "EUR",
+              "amount": 120
+            },
+            {
+              "type": "HOST_SERVICE_FEE",
+              "description": "Commission",
+              "currency": "EUR",
+              "amount": 18.6
+            }
+          ]
+        },
+        "check_in_details": {
+          "arrival_at": null,
+          "departure_at": null,
+          "lock_code": null,
+          "lock_code_visible_after": "12:00",
+          "deposit": null,
+          "check_in_guide_url": "https://hostex.io/web/checkin_guide/share/973cb3fe92cffcd39e05c678d8bf74d7d088fbc4da54ed13"
+        },
+        "remarks": "",
+        "channel_remarks": "",
+        "conversation_id": "0-2494472428",
+        "tags": [],
+        "custom_channel": {
+          "id": 1,
+          "name": "Airbnb"
+        },
+        "guests": [
+          {
+            "id": 73825715,
+            "name": "Mouaz",
+            "phone": "",
+            "email": "",
+            "id_type": null,
+            "id_number": null,
+            "gender": null,
+            "country": null,
+            "is_booker": true
+          }
+        ],
+        "custom_fields": null,
+        "in_reservation_box": false,
+        "additional_fees": []
+      },
+      {
+        "reservation_code": "0-HMM8293QKC-id3zpq7cd7",
+        "stay_code": "0-HMM8293QKC-id3zpq7cd7",
+        "channel_id": "HMM8293QKC",
+        "property_id": 12659677,
+        "channel_type": "airbnb",
+        "listing_id": "1406340600305404294",
+        "check_in_date": "2026-05-15",
+        "check_out_date": "2026-05-17",
+        "number_of_guests": 2,
+        "number_of_adults": 2,
+        "number_of_children": 0,
+        "number_of_infants": 0,
+        "number_of_pets": 0,
+        "status": "accepted",
+        "stay_status": "checkin_pending",
+        "guest_name": "Jonas Pekker",
+        "guest_phone": "+49 0000000000",
+        "guest_email": "",
+        "cancelled_at": null,
+        "booked_at": "2026-04-07T06:19:07+00:00",
+        "created_at": "2026-05-13T09:53:24+00:00",
+        "creator": "System",
+        "rates": {
+          "total_rate": {
+            "currency": "EUR",
+            "amount": 350
+          },
+          "total_commission": {
+            "currency": "EUR",
+            "amount": 54.25
+          },
+          "rate": {
+            "currency": "EUR",
+            "amount": 350
+          },
+          "commission": {
+            "currency": "EUR",
+            "amount": 54.25
+          },
+          "details": [
+            {
+              "type": "ACCOMMODATION",
+              "description": "Accommodation",
+              "currency": "EUR",
+              "amount": 300
+            },
+            {
+              "type": "HOST_SERVICE_FEE",
+              "description": "Commission",
+              "currency": "EUR",
+              "amount": 54.25
+            },
+            {
+              "type": "CLEANING_FEE",
+              "description": "Cleaning fee",
+              "currency": "EUR",
+              "amount": 50
+            }
+          ]
+        },
+        "check_in_details": {
+          "arrival_at": null,
+          "departure_at": null,
+          "lock_code": null,
+          "lock_code_visible_after": "12:00",
+          "deposit": null,
+          "check_in_guide_url": "https://hostex.io/web/checkin_guide/share/f8da46b00776b89b535c95db85beb497087168a432ee739e"
+        },
+        "remarks": "",
+        "channel_remarks": "",
+        "conversation_id": "0-2493694691",
+        "tags": [],
+        "custom_channel": {
+          "id": 1,
+          "name": "Airbnb"
+        },
+        "guests": [
+          {
+            "id": 73825717,
+            "name": "Jonas Pekker",
+            "phone": "+49 1626972991",
+            "email": "",
+            "id_type": null,
+            "id_number": null,
+            "gender": null,
+            "country": null,
+            "is_booker": true
+          }
+        ],
+        "custom_fields": null,
+        "in_reservation_box": false,
+        "additional_fees": []
+      },
+      {
+        "reservation_code": "0-HMFTHHRSTM-id3zpm0zf9",
+        "stay_code": "0-HMFTHHRSTM-id3zpm0zf9",
+        "channel_id": "HMFTHHRSTM",
+        "property_id": 12659676,
+        "channel_type": "airbnb",
+        "listing_id": "1635436646666826858",
+        "check_in_date": "2026-04-07",
+        "check_out_date": "2026-04-10",
+        "number_of_guests": 4,
+        "number_of_adults": 3,
+        "number_of_children": 1,
+        "number_of_infants": 0,
+        "number_of_pets": 1,
+        "status": "accepted",
+        "stay_status": "stay_completed",
+        "guest_name": "Teresa",
+        "guest_phone": "",
+        "guest_email": "",
+        "cancelled_at": null,
+        "booked_at": "2026-03-30T09:08:28+00:00",
+        "created_at": "2026-05-13T09:53:17+00:00",
+        "creator": "System",
+        "rates": {
+          "total_rate": {
+            "currency": "EUR",
+            "amount": 391.52
+          },
+          "total_commission": {
+            "currency": "EUR",
+            "amount": 60.69
+          },
+          "rate": {
+            "currency": "EUR",
+            "amount": 391.52
+          },
+          "commission": {
+            "currency": "EUR",
+            "amount": 60.69
+          },
+          "details": [
+            {
+              "type": "ACCOMMODATION",
+              "description": "Accommodation",
+              "currency": "EUR",
+              "amount": 371.52
+            },
+            {
+              "type": "HOST_SERVICE_FEE",
+              "description": "Commission",
+              "currency": "EUR",
+              "amount": 60.69
+            },
+            {
+              "type": "CLEANING_FEE",
+              "description": "Cleaning fee",
+              "currency": "EUR",
+              "amount": 20
+            }
+          ]
+        },
+        "check_in_details": {
+          "arrival_at": null,
+          "departure_at": null,
+          "lock_code": null,
+          "lock_code_visible_after": "12:00",
+          "deposit": null,
+          "check_in_guide_url": "https://hostex.io/web/checkin_guide/share/2d4397d513e6baaf55ff7b5d7598a68593bc277b3856e14c"
+        },
+        "remarks": "",
+        "channel_remarks": "",
+        "conversation_id": "0-2486442922",
+        "tags": [],
+        "custom_channel": {
+          "id": 1,
+          "name": "Airbnb"
+        },
+        "guests": [
+          {
+            "id": 73825699,
+            "name": "Teresa",
+            "phone": "",
+            "email": "",
+            "id_type": null,
+            "id_number": null,
+            "gender": null,
+            "country": null,
+            "is_booker": true
+          }
+        ],
+        "custom_fields": null,
+        "in_reservation_box": false,
+        "additional_fees": []
+      },
+      {
+        "reservation_code": "0-HMEETBX52K-id3zplya18",
+        "stay_code": "0-HMEETBX52K-id3zplya18",
+        "channel_id": "HMEETBX52K",
+        "property_id": 12659676,
+        "channel_type": "airbnb",
+        "listing_id": "1635436646666826858",
+        "check_in_date": "2026-04-03",
+        "check_out_date": "2026-04-05",
+        "number_of_guests": 2,
+        "number_of_adults": 2,
+        "number_of_children": 0,
+        "number_of_infants": 0,
+        "number_of_pets": 1,
+        "status": "accepted",
+        "stay_status": "stay_completed",
+        "guest_name": "Evgenii",
+        "guest_phone": "",
+        "guest_email": "",
+        "cancelled_at": null,
+        "booked_at": "2026-03-28T12:26:13+00:00",
+        "created_at": "2026-05-13T09:53:17+00:00",
+        "creator": "System",
+        "rates": {
+          "total_rate": {
+            "currency": "EUR",
+            "amount": 267.68
+          },
+          "total_commission": {
+            "currency": "EUR",
+            "amount": 41.49
+          },
+          "rate": {
+            "currency": "EUR",
+            "amount": 267.68
+          },
+          "commission": {
+            "currency": "EUR",
+            "amount": 41.49
+          },
+          "details": [
+            {
+              "type": "ACCOMMODATION",
+              "description": "Accommodation",
+              "currency": "EUR",
+              "amount": 247.68
+            },
+            {
+              "type": "HOST_SERVICE_FEE",
+              "description": "Commission",
+              "currency": "EUR",
+              "amount": 41.49
+            },
+            {
+              "type": "CLEANING_FEE",
+              "description": "Cleaning fee",
+              "currency": "EUR",
+              "amount": 20
+            }
+          ]
+        },
+        "check_in_details": {
+          "arrival_at": null,
+          "departure_at": null,
+          "lock_code": null,
+          "lock_code_visible_after": "12:00",
+          "deposit": null,
+          "check_in_guide_url": "https://hostex.io/web/checkin_guide/share/9d6fbcd39d2c6db466dd1d425a505741cb97c42f5765ff2f"
+        },
+        "remarks": "",
+        "channel_remarks": "",
+        "conversation_id": "0-2484566508",
+        "tags": [],
+        "custom_channel": {
+          "id": 1,
+          "name": "Airbnb"
+        },
+        "guests": [
+          {
+            "id": 73825698,
+            "name": "Evgenii",
+            "phone": "",
+            "email": "",
+            "id_type": null,
+            "id_number": null,
+            "gender": null,
+            "country": null,
+            "is_booker": true
+          }
+        ],
+        "custom_fields": null,
+        "in_reservation_box": false,
+        "additional_fees": []
+      },
+      {
+        "reservation_code": "0-HMQSPWNY2D-id3zppz87l",
+        "stay_code": "0-HMQSPWNY2D-id3zppz87l",
+        "channel_id": "HMQSPWNY2D",
+        "property_id": 12659677,
+        "channel_type": "airbnb",
+        "listing_id": "1406340600305404294",
+        "check_in_date": "2026-03-21",
+        "check_out_date": "2026-03-22",
+        "number_of_guests": 2,
+        "number_of_adults": 2,
+        "number_of_children": 0,
+        "number_of_infants": 0,
+        "number_of_pets": 0,
+        "status": "accepted",
+        "stay_status": "stay_completed",
+        "guest_name": "Mouaz",
+        "guest_phone": "",
+        "guest_email": "",
+        "cancelled_at": null,
+        "booked_at": "2026-03-19T05:25:39+00:00",
+        "created_at": "2026-05-13T09:53:24+00:00",
+        "creator": "System",
+        "rates": {
+          "total_rate": {
+            "currency": "EUR",
+            "amount": 200
+          },
+          "total_commission": {
+            "currency": "EUR",
+            "amount": 31
+          },
+          "rate": {
+            "currency": "EUR",
+            "amount": 200
+          },
+          "commission": {
+            "currency": "EUR",
+            "amount": 31
+          },
+          "details": [
+            {
+              "type": "ACCOMMODATION",
+              "description": "Accommodation",
+              "currency": "EUR",
+              "amount": 150
+            },
+            {
+              "type": "HOST_SERVICE_FEE",
+              "description": "Commission",
+              "currency": "EUR",
+              "amount": 31
+            },
+            {
+              "type": "CLEANING_FEE",
+              "description": "Cleaning fee",
+              "currency": "EUR",
+              "amount": 50
+            }
+          ]
+        },
+        "check_in_details": {
+          "arrival_at": null,
+          "departure_at": null,
+          "lock_code": null,
+          "lock_code_visible_after": "12:00",
+          "deposit": null,
+          "check_in_guide_url": "https://hostex.io/web/checkin_guide/share/3da03bc39897f2c9aa17dc29140e24e0c9802d0ee2818c27"
+        },
+        "remarks": "",
+        "channel_remarks": "",
+        "conversation_id": "0-2472820291",
+        "tags": [],
+        "custom_channel": {
+          "id": 1,
+          "name": "Airbnb"
+        },
+        "guests": [
+          {
+            "id": 73825715,
+            "name": "Mouaz",
+            "phone": "",
+            "email": "",
+            "id_type": null,
+            "id_number": null,
+            "gender": null,
+            "country": null,
+            "is_booker": true
+          }
+        ],
+        "custom_fields": null,
+        "in_reservation_box": false,
+        "additional_fees": []
+      },
+      {
+        "reservation_code": "0-HMXFZZQ2D8-id3zpmsogn",
+        "stay_code": "0-HMXFZZQ2D8-id3zpmsogn",
+        "channel_id": "HMXFZZQ2D8",
+        "property_id": 12659676,
+        "channel_type": "airbnb",
+        "listing_id": "1635436646666826858",
+        "check_in_date": "2026-08-13",
+        "check_out_date": "2026-08-16",
+        "number_of_guests": 3,
+        "number_of_adults": 3,
+        "number_of_children": 0,
+        "number_of_infants": 0,
+        "number_of_pets": 0,
+        "status": "accepted",
+        "stay_status": "checkin_pending",
+        "guest_name": "Sofia Helfrich",
+        "guest_phone": "+49 0000000000",
+        "guest_email": "",
+        "cancelled_at": null,
+        "booked_at": "2026-03-18T14:19:18+00:00",
+        "created_at": "2026-05-13T09:53:19+00:00",
+        "creator": "System",
+        "rates": {
+          "total_rate": {
+            "currency": "EUR",
+            "amount": 407
+          },
+          "total_commission": {
+            "currency": "EUR",
+            "amount": 63.09
+          },
+          "rate": {
+            "currency": "EUR",
+            "amount": 407
+          },
+          "commission": {
+            "currency": "EUR",
+            "amount": 63.09
+          },
+          "details": [
+            {
+              "type": "ACCOMMODATION",
+              "description": "Accommodation",
+              "currency": "EUR",
+              "amount": 387
+            },
+            {
+              "type": "HOST_SERVICE_FEE",
+              "description": "Commission",
+              "currency": "EUR",
+              "amount": 63.09
+            },
+            {
+              "type": "CLEANING_FEE",
+              "description": "Cleaning fee",
+              "currency": "EUR",
+              "amount": 20
+            }
+          ]
+        },
+        "check_in_details": {
+          "arrival_at": null,
+          "departure_at": null,
+          "lock_code": null,
+          "lock_code_visible_after": "12:00",
+          "deposit": null,
+          "check_in_guide_url": "https://hostex.io/web/checkin_guide/share/60bce51a0d8aebedc224093826b79b9a56e187d86b8ee6f1"
+        },
+        "remarks": "",
+        "channel_remarks": "",
+        "conversation_id": "0-2474976715",
+        "tags": [],
+        "custom_channel": {
+          "id": 1,
+          "name": "Airbnb"
+        },
+        "guests": [
+          {
+            "id": 73825708,
+            "name": "Sofia Helfrich",
+            "phone": "+49 15902404716",
+            "email": "",
+            "id_type": null,
+            "id_number": null,
+            "gender": null,
+            "country": null,
+            "is_booker": true
+          }
+        ],
+        "custom_fields": null,
+        "in_reservation_box": false,
+        "additional_fees": []
+      },
+      {
+        "reservation_code": "0-HMY5EY3MQE-id3zplvmjs",
+        "stay_code": "0-HMY5EY3MQE-id3zplvmjs",
+        "channel_id": "HMY5EY3MQE",
+        "property_id": 12659676,
+        "channel_type": "airbnb",
+        "listing_id": "1635436646666826858",
+        "check_in_date": "2026-03-20",
+        "check_out_date": "2026-03-22",
+        "number_of_guests": 1,
+        "number_of_adults": 1,
+        "number_of_children": 0,
+        "number_of_infants": 0,
+        "number_of_pets": 0,
+        "status": "accepted",
+        "stay_status": "stay_completed",
+        "guest_name": "Ivor",
+        "guest_phone": "",
+        "guest_email": "",
+        "cancelled_at": null,
+        "booked_at": "2026-03-18T13:25:58+00:00",
+        "created_at": "2026-05-13T09:53:17+00:00",
+        "creator": "System",
+        "rates": {
+          "total_rate": {
+            "currency": "EUR",
+            "amount": 206.4
+          },
+          "total_commission": {
+            "currency": "EUR",
+            "amount": 31.99
+          },
+          "rate": {
+            "currency": "EUR",
+            "amount": 206.4
+          },
+          "commission": {
+            "currency": "EUR",
+            "amount": 31.99
+          },
+          "details": [
+            {
+              "type": "ACCOMMODATION",
+              "description": "Accommodation",
+              "currency": "EUR",
+              "amount": 206.4
+            },
+            {
+              "type": "HOST_SERVICE_FEE",
+              "description": "Commission",
+              "currency": "EUR",
+              "amount": 31.99
+            }
+          ]
+        },
+        "check_in_details": {
+          "arrival_at": null,
+          "departure_at": null,
+          "lock_code": null,
+          "lock_code_visible_after": "12:00",
+          "deposit": null,
+          "check_in_guide_url": "https://hostex.io/web/checkin_guide/share/0e64007109bbfa0e613cfe9dac89bc9cb8989bcabb85c5e6"
+        },
+        "remarks": "",
+        "channel_remarks": "",
+        "conversation_id": "0-2474122130",
+        "tags": [],
+        "custom_channel": {
+          "id": 1,
+          "name": "Airbnb"
+        },
+        "guests": [
+          {
+            "id": 73825697,
+            "name": "Ivor",
+            "phone": "",
+            "email": "",
+            "id_type": null,
+            "id_number": null,
+            "gender": null,
+            "country": null,
+            "is_booker": true
+          }
+        ],
+        "custom_fields": null,
+        "in_reservation_box": false,
+        "additional_fees": []
+      },
+      {
+        "reservation_code": "0-HMR9HYA9AM-id3zpmim4f",
+        "stay_code": "0-HMR9HYA9AM-id3zpmim4f",
+        "channel_id": "HMR9HYA9AM",
+        "property_id": 12659676,
+        "channel_type": "airbnb",
+        "listing_id": "1635436646666826858",
+        "check_in_date": "2026-06-13",
+        "check_out_date": "2026-06-14",
+        "number_of_guests": 4,
+        "number_of_adults": 4,
+        "number_of_children": 0,
+        "number_of_infants": 0,
+        "number_of_pets": 0,
+        "status": "accepted",
+        "stay_status": "checkin_pending",
+        "guest_name": "Kaya Milobara",
+        "guest_phone": "+49 0000000000",
+        "guest_email": "",
+        "cancelled_at": null,
+        "booked_at": "2026-03-17T05:40:13+00:00",
+        "created_at": "2026-05-13T09:53:18+00:00",
+        "creator": "System",
+        "rates": {
+          "total_rate": {
+            "currency": "EUR",
+            "amount": 103.2
+          },
+          "total_commission": {
+            "currency": "EUR",
+            "amount": 16
+          },
+          "rate": {
+            "currency": "EUR",
+            "amount": 103.2
+          },
+          "commission": {
+            "currency": "EUR",
+            "amount": 16
+          },
+          "details": [
+            {
+              "type": "ACCOMMODATION",
+              "description": "Accommodation",
+              "currency": "EUR",
+              "amount": 103.2
+            },
+            {
+              "type": "HOST_SERVICE_FEE",
+              "description": "Commission",
+              "currency": "EUR",
+              "amount": 16
+            }
+          ]
+        },
+        "check_in_details": {
+          "arrival_at": null,
+          "departure_at": null,
+          "lock_code": null,
+          "lock_code_visible_after": "12:00",
+          "deposit": null,
+          "check_in_guide_url": "https://hostex.io/web/checkin_guide/share/4a4a5cf264d7d6852810595ea3644a46c923e3e0629b1cea"
+        },
+        "remarks": "",
+        "channel_remarks": "",
+        "conversation_id": "0-2473346960",
+        "tags": [],
+        "custom_channel": {
+          "id": 1,
+          "name": "Airbnb"
+        },
+        "guests": [
+          {
+            "id": 73825705,
+            "name": "Kaya Milobara",
+            "phone": "+49 17634647978",
+            "email": "",
+            "id_type": null,
+            "id_number": null,
+            "gender": null,
+            "country": null,
+            "is_booker": true
+          }
+        ],
+        "custom_fields": null,
+        "in_reservation_box": false,
+        "additional_fees": []
+      }
+    ]
+  }
+}
