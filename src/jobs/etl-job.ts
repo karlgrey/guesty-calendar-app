@@ -11,6 +11,9 @@ import { syncInquiries } from './sync-inquiries.js';
 import { config } from '../config/index.js';
 import { getAllProperties, getDefaultProperty, type PropertyConfig } from '../config/properties.js';
 import logger from '../utils/logger.js';
+import { syncHostexProperty } from './hostex/sync-properties.js';
+import { syncHostexReservations } from './hostex/sync-reservations.js';
+import { syncHostexCalendar } from './hostex/sync-calendar.js';
 
 export interface ETLJobResult {
   success: boolean;
@@ -44,6 +47,71 @@ export interface MultiPropertyETLResult {
   timestamp: string;
 }
 
+async function runHostexETL(property: PropertyConfig, force: boolean): Promise<ETLJobResult> {
+  const startTime = Date.now();
+  const timestamp = new Date().toISOString();
+  const slug = property.slug;
+
+  logger.info({ propertySlug: slug, force }, `🚀 Starting Hostex ETL for ${property.name}`);
+
+  // Step 1: bootstrap property listing
+  const propertyResult = await syncHostexProperty(property);
+
+  // Step 2: reservations (always run, FK on listings.id satisfied by Step 1)
+  const reservationsResult = propertyResult.success
+    ? await syncHostexReservations(property)
+    : { success: false, inquiriesCount: 0, confirmedCount: 0, error: 'Skipped: property sync failed' };
+
+  // Step 3: calendar
+  const calendarResult = propertyResult.success && propertyResult.hostexProperty
+    ? await syncHostexCalendar(property, propertyResult.hostexProperty)
+    : { success: false, daysCount: 0, error: 'Skipped: property sync failed' };
+
+  // Step 4 (optional re-mapping): if reservations & calendar succeeded, re-sync property
+  // so the mapper sees the freshly-synced dynamic data for next-run accuracy.
+  if (propertyResult.success && reservationsResult.success && calendarResult.success) {
+    await syncHostexProperty(property);
+  }
+
+  const success =
+    propertyResult.success && reservationsResult.success && calendarResult.success;
+
+  const duration = Date.now() - startTime;
+  logger.info(
+    {
+      propertySlug: slug,
+      duration,
+      success,
+      daysCount: calendarResult.daysCount,
+      inquiriesCount: reservationsResult.inquiriesCount,
+      confirmedCount: reservationsResult.confirmedCount,
+    },
+    success
+      ? `✅ Hostex ETL completed for ${property.name}`
+      : `⚠️  Hostex ETL completed with errors for ${property.name}`
+  );
+
+  return {
+    success,
+    propertySlug: slug,
+    propertyName: property.name,
+    listing: { success: propertyResult.success, error: propertyResult.error },
+    availability: {
+      success: calendarResult.success,
+      daysCount: calendarResult.daysCount,
+      error: calendarResult.error,
+    },
+    inquiries: {
+      success: reservationsResult.success,
+      inquiriesCount: reservationsResult.inquiriesCount,
+      confirmedCount: reservationsResult.confirmedCount,
+      error: reservationsResult.error,
+    },
+    duration,
+    timestamp,
+  };
+}
+
 /**
  * Run ETL job for a single property
  */
@@ -52,6 +120,12 @@ export async function runETLJobForProperty(
   force: boolean = false
 ): Promise<ETLJobResult> {
   const startTime = Date.now();
+
+  // Dispatch by provider — Hostex has its own ETL pipeline
+  if (property.provider === 'hostex') {
+    return runHostexETL(property, force);
+  }
+
   const timestamp = new Date().toISOString();
   const { slug, guestyPropertyId, name } = property;
 
