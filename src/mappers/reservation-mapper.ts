@@ -7,6 +7,7 @@
 import type { GuestyCalendarDay } from '../types/guesty.js';
 import type { Reservation } from '../types/models.js';
 import logger from '../utils/logger.js';
+import { fingerprintGuest } from '../utils/guest-fingerprint.js';
 
 /**
  * Extract reservation data from calendar day
@@ -65,6 +66,9 @@ export function extractReservationFromCalendar(
       created_at_guesty: res.createdAt || null,
       reserved_at: res.reservedAt || null,
       last_synced_at: lastSyncedAt,
+
+      // Local-only fingerprint (computed from guest_name, see src/utils/guest-fingerprint.ts)
+      ...fingerprintGuestSafe(res.guest?.fullName || null),
     };
   } catch (error) {
     logger.error({ error, reservationId: res._id }, 'Failed to map reservation from calendar day');
@@ -90,4 +94,20 @@ export function extractReservationsFromCalendar(
   }
 
   return Array.from(reservationsMap.values());
+}
+
+/**
+ * Defensive wrapper: any fingerprint failure logs warn but never crashes the mapper.
+ * Returns the two fields needed for the Reservation object.
+ */
+function fingerprintGuestSafe(
+  rawName: string | null
+): { internal_guest_id: string | null; guest_company: string | null } {
+  try {
+    const fp = fingerprintGuest(rawName);
+    return { internal_guest_id: fp.id, guest_company: fp.company };
+  } catch (error) {
+    logger.warn({ error, rawName }, 'fingerprintGuest threw, falling back to nulls');
+    return { internal_guest_id: null, guest_company: null };
+  }
 }
