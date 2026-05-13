@@ -46,11 +46,39 @@ export interface WeeklyReportConfig {
 }
 
 /**
+ * Static config for hostex providers — fills fields Hostex API doesn't expose.
+ */
+export interface PropertyStaticConfig {
+  accommodates: number;
+  bedrooms?: number | null;
+  bathrooms?: number | null;
+  propertyType?: string | null;
+  extraPersonFee?: number;
+  guestsIncluded?: number;
+  weeklyPriceFactor?: number;
+  monthlyPriceFactor?: number;
+  taxes?: Array<{
+    type: string;
+    amount: number;
+    units: 'PERCENTAGE' | 'FIXED';
+    quantifier: 'PER_NIGHT' | 'PER_STAY' | 'PER_GUEST' | 'PER_GUEST_PER_NIGHT';
+    appliedToAllFees?: boolean;
+    appliedOnFees?: string[];
+  }>;
+  basePrice?: number | null;
+  cleaningFee?: number | null;
+  minNights?: number | null;
+  maxNights?: number | null;
+}
+
+/**
  * Property configuration interface
  */
 export interface PropertyConfig {
   slug: string;
-  guestyPropertyId: string;
+  provider: 'guesty' | 'hostex';
+  guestyPropertyId?: string;
+  hostexPropertyId?: string;
   name: string;
   timezone: string;
   currency: string;
@@ -59,6 +87,7 @@ export interface PropertyConfig {
   weeklyReport: WeeklyReportConfig;
   ga4?: GA4Config;
   googleCalendar?: GoogleCalendarConfig;
+  static?: PropertyStaticConfig;
 }
 
 /**
@@ -85,9 +114,36 @@ const weeklyReportConfigSchema = z.object({
   hour: z.number().int().min(0).max(23),
 });
 
+const taxConfigSchema = z.object({
+  type: z.string(),
+  amount: z.number(),
+  units: z.enum(['PERCENTAGE', 'FIXED']),
+  quantifier: z.enum(['PER_NIGHT', 'PER_STAY', 'PER_GUEST', 'PER_GUEST_PER_NIGHT']),
+  appliedToAllFees: z.boolean().optional(),
+  appliedOnFees: z.array(z.string()).optional(),
+});
+
+const propertyStaticConfigSchema = z.object({
+  accommodates: z.number().int().min(1, 'static.accommodates is required and must be >= 1'),
+  bedrooms: z.number().int().min(0).nullable().optional(),
+  bathrooms: z.number().min(0).nullable().optional(),
+  propertyType: z.string().nullable().optional(),
+  extraPersonFee: z.number().min(0).optional(),
+  guestsIncluded: z.number().int().min(1).optional(),
+  weeklyPriceFactor: z.number().positive().optional(),
+  monthlyPriceFactor: z.number().positive().optional(),
+  taxes: z.array(taxConfigSchema).optional(),
+  basePrice: z.number().nullable().optional(),
+  cleaningFee: z.number().nullable().optional(),
+  minNights: z.number().int().min(1).nullable().optional(),
+  maxNights: z.number().int().min(1).nullable().optional(),
+});
+
 const propertyConfigSchema = z.object({
   slug: z.string().min(1).regex(/^[a-z0-9-]+$/, 'Slug must be lowercase alphanumeric with hyphens'),
-  guestyPropertyId: z.string().min(1),
+  provider: z.enum(['guesty', 'hostex']).default('guesty'),
+  guestyPropertyId: z.string().optional(),
+  hostexPropertyId: z.string().optional(),
   name: z.string().min(1),
   timezone: z.string().default('Europe/Berlin'),
   currency: z.string().length(3).toUpperCase().default('EUR'),
@@ -96,7 +152,27 @@ const propertyConfigSchema = z.object({
   weeklyReport: weeklyReportConfigSchema,
   ga4: ga4ConfigSchema.optional().default({ enabled: false }),
   googleCalendar: googleCalendarConfigSchema.optional().default({ enabled: false }),
-});
+  static: propertyStaticConfigSchema.optional(),
+}).refine(
+  (data) => {
+    if (data.provider === 'guesty') return !!data.guestyPropertyId;
+    if (data.provider === 'hostex') return !!data.hostexPropertyId;
+    return false;
+  },
+  {
+    message: 'guestyPropertyId is required when provider=guesty; hostexPropertyId is required when provider=hostex',
+    path: ['provider'],
+  }
+).refine(
+  (data) => {
+    if (data.provider === 'hostex') return !!data.static;
+    return true;
+  },
+  {
+    message: 'static block is required when provider=hostex',
+    path: ['static'],
+  }
+);
 
 const propertiesFileSchema = z.object({
   properties: z.array(propertyConfigSchema).min(1, 'At least one property is required'),
@@ -194,6 +270,20 @@ export function getPropertyBySlug(slug: string): PropertyConfig | undefined {
 export function getPropertyByGuestyId(guestyId: string): PropertyConfig | undefined {
   const properties = loadPropertiesConfig();
   return properties.find((p) => p.guestyPropertyId === guestyId);
+}
+
+/**
+ * Get all properties for a specific provider
+ */
+export function getPropertiesByProvider(provider: 'guesty' | 'hostex'): PropertyConfig[] {
+  return loadPropertiesConfig().filter((p) => p.provider === provider);
+}
+
+/**
+ * Get a property by its Hostex property ID
+ */
+export function getPropertyByHostexId(hostexId: string): PropertyConfig | undefined {
+  return loadPropertiesConfig().find((p) => p.hostexPropertyId === hostexId);
 }
 
 /**

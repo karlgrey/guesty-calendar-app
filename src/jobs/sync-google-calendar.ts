@@ -100,16 +100,16 @@ export async function syncGoogleCalendarForProperty(
 
   try {
     // Check-in/out times: listing (from Guesty) takes priority, config as fallback
-    const listing = getListingById(guestyPropertyId);
+    const listing = getListingById(guestyPropertyId!);
     const checkInTime = listing?.check_in_time || googleCalendar.checkInTime;
     const checkOutTime = listing?.check_out_time || googleCalendar.checkOutTime;
 
     // Get past 6 months + future 12 months of active reservations
-    const pastReservations = getReservationsByPeriod(guestyPropertyId, 180, 'past');
-    const futureReservations = getReservationsByPeriod(guestyPropertyId, 365, 'future');
+    const pastReservations = getReservationsByPeriod(guestyPropertyId!, 180, 'past');
+    const futureReservations = getReservationsByPeriod(guestyPropertyId!, 365, 'future');
 
     // Get cancelled/declined reservation IDs from inquiries table (for cleanup)
-    const cancelledReservationIds = getCancelledReservationIds(guestyPropertyId, 180, 365);
+    const cancelledReservationIds = getCancelledReservationIds(guestyPropertyId!, 180, 365);
 
     // Deduplicate active reservations by reservation_id
     const seen = new Set<string>();

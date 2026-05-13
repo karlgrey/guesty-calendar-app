@@ -55,7 +55,7 @@ export async function sendWeeklySummaryEmailForProperty(property: PropertyConfig
 
     logger.info({ propertySlug: slug, propertyName: name }, '📧 Starting weekly summary email job');
 
-    const propertyId = guestyPropertyId;
+    const propertyId = guestyPropertyId!;
 
     // Get listing info
     const listing = getListingById(propertyId);
@@ -264,6 +264,7 @@ export async function sendWeeklySummaryEmail(): Promise<WeeklyEmailResult> {
   // Create legacy property config from global settings
   const legacyProperty: PropertyConfig = {
     slug: 'default',
+    provider: 'guesty',
     guestyPropertyId: config.guestyPropertyId,
     name: 'Default Property',
     timezone: config.propertyTimezone,

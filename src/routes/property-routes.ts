@@ -95,7 +95,7 @@ router.get('/:slug', resolveProperty, (req: Request, res: Response, next: NextFu
 router.get('/:slug/listing', resolveProperty, (req: Request, res: Response, next: NextFunction) => {
   try {
     const property = req.property!;
-    const listing = getListingById(property.guestyPropertyId);
+    const listing = getListingById(property.guestyPropertyId!);
 
     if (!listing) {
       throw new NotFoundError('Listing not found. Please run data sync first.');
@@ -166,7 +166,7 @@ router.get('/:slug/availability', resolveProperty, (req: Request, res: Response,
       throw new ValidationError('Date range cannot exceed 365 days');
     }
 
-    const availability = getAvailability(property.guestyPropertyId, from as string, to as string);
+    const availability = getAvailability(property.guestyPropertyId!, from as string, to as string);
 
     const response = availability.map((day) => ({
       date: day.date,
@@ -212,7 +212,7 @@ router.get('/:slug/quote', resolveProperty, async (req: Request, res: Response, 
       throw new ValidationError('Guests must be a positive integer');
     }
 
-    const listingId = property.guestyPropertyId;
+    const listingId = property.guestyPropertyId!;
 
     // Try to get cached quote
     const cachedQuote = getCachedQuote(listingId, checkIn as string, checkOut as string, guestCount);
@@ -337,7 +337,7 @@ router.get('/:slug/calendar.ics', resolveProperty, (req: Request, res: Response,
     }
 
     const property = req.property!;
-    const propertyId = property.guestyPropertyId;
+    const propertyId = property.guestyPropertyId!;
 
     // Get past 6 months + future 12 months of reservations
     const pastReservations = getReservationsByPeriod(propertyId, 180, 'past');

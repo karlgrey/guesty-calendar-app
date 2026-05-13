@@ -1950,7 +1950,7 @@ router.post('/sync/listing', async (req, res, next) => {
       if (!property) {
         return res.status(404).json({ error: `Property '${propertySlug}' not found` });
       }
-      listingId = property.guestyPropertyId;
+      listingId = property.guestyPropertyId!;
       logger.info({ propertySlug }, 'Manual listing sync triggered for property via admin');
     } else {
       const defaultProperty = getDefaultProperty();
@@ -1988,7 +1988,7 @@ router.post('/sync/availability', async (req, res, next) => {
       if (!property) {
         return res.status(404).json({ error: `Property '${propertySlug}' not found` });
       }
-      listingId = property.guestyPropertyId;
+      listingId = property.guestyPropertyId!;
       logger.info({ propertySlug }, 'Manual availability sync triggered for property via admin');
     } else {
       const defaultProperty = getDefaultProperty();
@@ -2078,7 +2078,7 @@ router.get('/dashboard-data', async (req, res, next) => {
       if (!property) {
         return res.status(404).json({ error: `Property '${propertySlug}' not found` });
       }
-      propertyId = property.guestyPropertyId;
+      propertyId = property.guestyPropertyId!;
     } else {
       const defaultProperty = getDefaultProperty();
       propertyId = defaultProperty?.guestyPropertyId || config.guestyPropertyId || '';

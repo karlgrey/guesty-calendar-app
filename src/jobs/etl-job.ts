@@ -60,15 +60,15 @@ export async function runETLJobForProperty(
   try {
     // Step 1: Sync listing data
     logger.info({ propertySlug: slug }, 'Step 1/3: Syncing listing data...');
-    const listingResult = await syncListing(guestyPropertyId, force);
+    const listingResult = await syncListing(guestyPropertyId!, force);
 
     // Step 2: Sync availability data
     logger.info({ propertySlug: slug }, 'Step 2/3: Syncing availability data...');
-    const availabilityResult = await syncAvailability(guestyPropertyId, force);
+    const availabilityResult = await syncAvailability(guestyPropertyId!, force);
 
     // Step 3: Sync inquiries data
     logger.info({ propertySlug: slug }, 'Step 3/3: Syncing inquiries data...');
-    const inquiriesResult = await syncInquiries(guestyPropertyId);
+    const inquiriesResult = await syncInquiries(guestyPropertyId!);
 
     const duration = Date.now() - startTime;
     const overallSuccess = listingResult.success && availabilityResult.success && inquiriesResult.success;
@@ -232,6 +232,7 @@ export async function runETLJob(force: boolean = false): Promise<ETLJobResult> {
     // Fallback: create a minimal property config from environment
     const legacyProperty: PropertyConfig = {
       slug: 'default',
+      provider: 'guesty',
       guestyPropertyId: config.guestyPropertyId,
       name: 'Default Property',
       timezone: config.propertyTimezone,

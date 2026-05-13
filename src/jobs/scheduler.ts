@@ -186,6 +186,7 @@ async function checkAndSendWeeklyEmail() {
     // Create legacy property config and check
     const legacyProperty: PropertyConfig = {
       slug: 'default',
+      provider: 'guesty',
       guestyPropertyId: config.guestyPropertyId || '',
       name: 'Default Property',
       timezone: config.propertyTimezone,
