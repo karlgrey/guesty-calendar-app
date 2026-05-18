@@ -14,6 +14,9 @@ import logger from '../utils/logger.js';
 import { syncHostexProperty } from './hostex/sync-properties.js';
 import { syncHostexReservations } from './hostex/sync-reservations.js';
 import { syncHostexCalendar } from './hostex/sync-calendar.js';
+import { syncAirbnbProperty } from './airbnb-mail/sync-properties.js';
+import { syncAirbnbMail } from './airbnb-mail/sync-mail.js';
+import { syncAirbnbIcal } from './airbnb-mail/sync-ical.js';
 
 export interface ETLJobResult {
   success: boolean;
@@ -45,6 +48,66 @@ export interface MultiPropertyETLResult {
   results: Record<string, ETLJobResult>;
   totalDuration: number;
   timestamp: string;
+}
+
+async function runAirbnbMailETL(property: PropertyConfig, force: boolean): Promise<ETLJobResult> {
+  const startTime = Date.now();
+  const timestamp = new Date().toISOString();
+  const slug = property.slug;
+
+  logger.info({ propertySlug: slug, force }, `🚀 Starting Airbnb-Mail ETL for ${property.name}`);
+
+  // Step 1: property listing (static)
+  const propertyResult = await syncAirbnbProperty(property);
+
+  // Step 2: mail sync (reservations + inquiries)
+  const mailResult = propertyResult.success
+    ? await syncAirbnbMail(property)
+    : { success: false, fetched: 0, parsedOk: 0, parsedError: 0, prunedArchive: 0, error: 'Skipped: property sync failed' };
+
+  // Step 3: iCal sync (availability)
+  const icalResult = propertyResult.success
+    ? await syncAirbnbIcal(property)
+    : { success: false, daysCount: 0, events: 0, error: 'Skipped: property sync failed' };
+
+  const success = propertyResult.success && mailResult.success && icalResult.success;
+  const duration = Date.now() - startTime;
+
+  logger.info(
+    {
+      propertySlug: slug,
+      duration,
+      success,
+      mailsFetched: mailResult.fetched,
+      mailsParsedOk: mailResult.parsedOk,
+      mailsParsedError: mailResult.parsedError,
+      daysCount: icalResult.daysCount,
+      icalEvents: icalResult.events,
+    },
+    success
+      ? `✅ Airbnb-Mail ETL completed for ${property.name}`
+      : `⚠️  Airbnb-Mail ETL completed with errors for ${property.name}`
+  );
+
+  return {
+    success,
+    propertySlug: slug,
+    propertyName: property.name,
+    listing: { success: propertyResult.success, error: propertyResult.error },
+    availability: {
+      success: icalResult.success,
+      daysCount: icalResult.daysCount,
+      error: icalResult.error,
+    },
+    inquiries: {
+      success: mailResult.success,
+      inquiriesCount: mailResult.parsedOk,
+      confirmedCount: mailResult.parsedOk,
+      error: mailResult.error,
+    },
+    duration,
+    timestamp,
+  };
 }
 
 async function runHostexETL(property: PropertyConfig, force: boolean): Promise<ETLJobResult> {
@@ -124,6 +187,9 @@ export async function runETLJobForProperty(
   // Dispatch by provider — Hostex has its own ETL pipeline
   if (property.provider === 'hostex') {
     return runHostexETL(property, force);
+  }
+  if (property.provider === 'airbnb-mail') {
+    return runAirbnbMailETL(property, force);
   }
 
   const timestamp = new Date().toISOString();
