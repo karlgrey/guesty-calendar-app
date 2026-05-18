@@ -8,6 +8,8 @@ pnpm-lock.yaml
 .env
 .env.local
 .env.*.local
+.env.*
+!.env.example
 
 # Build output
 dist/
@@ -20,6 +22,13 @@ build/
 data/*.db
 data/generated/
 data/ga4-service-account.json
+
+# Sensitive runtime data
+data/.guesty-token-cache.json
+data/*.pdf
+data/*.csv
+data/bi-*.md
+data/briefing-*.md
 
 # Logs
 logs/
