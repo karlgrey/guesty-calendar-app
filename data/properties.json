@@ -2,6 +2,7 @@
   "properties": [
     {
       "slug": "farmhouse",
+      "provider": "guesty",
       "guestyPropertyId": "686d1e927ae7af00234115ad",
       "name": "Farmhouse Prasser",
       "timezone": "Europe/Berlin",
@@ -29,6 +30,7 @@
     },
     {
       "slug": "u19",
+      "provider": "guesty",
       "guestyPropertyId": "69849a19d793670014d4a11a",
       "name": "Uferstrasse 19",
       "timezone": "Europe/Berlin",
@@ -46,6 +48,74 @@
         "calendarId": "3bbc5c76ebe58f39ae603416015713828d67e6b640b5201e74b60f3c7b6570b2@group.calendar.google.com",
         "checkInTime": "15:00",
         "checkOutTime": "12:00"
+      }
+    },
+    {
+      "slug": "alte-schilderwerkstatt",
+      "provider": "hostex",
+      "hostexPropertyId": "12659676",
+      "name": "Alte Schilderwerkstatt",
+      "timezone": "Europe/Berlin",
+      "currency": "EUR",
+      "bookingRecipientEmail": "schiffmuehle@remoterepublic.com",
+      "bookingSenderName": "Remote Republic Schiffmühle",
+      "weeklyReport": {
+        "enabled": true,
+        "recipients": ["micha@remoterepublic.com"],
+        "day": 1,
+        "hour": 6
+      },
+      "googleCalendar": {
+        "enabled": true,
+        "calendarId": "c_615a7b7886d153f615bdcb8686a6467ccf35bce3261ab31b7187823346449b53@group.calendar.google.com",
+        "checkInTime": "15:00",
+        "checkOutTime": "12:00"
+      },
+      "static": {
+        "accommodates": 4,
+        "bedrooms": 1,
+        "bathrooms": 1,
+        "propertyType": "Loft",
+        "cleaningFee": 30,
+        "extraPersonFee": 0,
+        "guestsIncluded": 4,
+        "weeklyPriceFactor": 0.9,
+        "monthlyPriceFactor": 0.8,
+        "taxes": []
+      }
+    },
+    {
+      "slug": "bootshaus-alte-oder",
+      "provider": "hostex",
+      "hostexPropertyId": "12659677",
+      "name": "Bootshaus an der alten Oder",
+      "timezone": "Europe/Berlin",
+      "currency": "EUR",
+      "bookingRecipientEmail": "schiffmuehle@remoterepublic.com",
+      "bookingSenderName": "Remote Republic Schiffmühle",
+      "weeklyReport": {
+        "enabled": true,
+        "recipients": ["micha@remoterepublic.com"],
+        "day": 1,
+        "hour": 6
+      },
+      "googleCalendar": {
+        "enabled": true,
+        "calendarId": "c_615a7b7886d153f615bdcb8686a6467ccf35bce3261ab31b7187823346449b53@group.calendar.google.com",
+        "checkInTime": "15:00",
+        "checkOutTime": "12:00"
+      },
+      "static": {
+        "accommodates": 2,
+        "bedrooms": 1,
+        "bathrooms": 1,
+        "propertyType": "Cabin",
+        "cleaningFee": 50,
+        "extraPersonFee": 0,
+        "guestsIncluded": 2,
+        "weeklyPriceFactor": 0.9,
+        "monthlyPriceFactor": 0.8,
+        "taxes": []
       }
     }
   ]

@@ -34,12 +34,13 @@ export async function syncHostexCalendar(
       throw new Error(`No channels configured for Hostex property ${listingId}`);
     }
 
+    // Hostex constraint: start_date must be within 1 year of "now" (no past dates).
+    // Calendar covers future availability/pricing — past reservations come from
+    // /v3/reservations separately. We sync today → today+24 months.
     const now = new Date();
-    const start = new Date(now);
-    start.setMonth(start.getMonth() - 12);
     const end = new Date(now);
-    end.setMonth(end.getMonth() + 12);
-    const startStr = start.toISOString().split('T')[0];
+    end.setMonth(end.getMonth() + 24);
+    const startStr = now.toISOString().split('T')[0];
     const endStr = end.toISOString().split('T')[0];
 
     logger.info({ slug, listingId, startStr, endStr }, 'Hostex: starting calendar sync');
