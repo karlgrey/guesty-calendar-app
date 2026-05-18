@@ -76,9 +76,11 @@ export interface PropertyStaticConfig {
  */
 export interface PropertyConfig {
   slug: string;
-  provider: 'guesty' | 'hostex';
+  provider: 'guesty' | 'hostex' | 'airbnb-mail';
   guestyPropertyId?: string;
   hostexPropertyId?: string;
+  airbnbListingId?: string;
+  airbnbIcalUrl?: string;
   name: string;
   timezone: string;
   currency: string;
@@ -141,9 +143,11 @@ const propertyStaticConfigSchema = z.object({
 
 const propertyConfigSchema = z.object({
   slug: z.string().min(1).regex(/^[a-z0-9-]+$/, 'Slug must be lowercase alphanumeric with hyphens'),
-  provider: z.enum(['guesty', 'hostex']).default('guesty'),
+  provider: z.enum(['guesty', 'hostex', 'airbnb-mail']).default('guesty'),
   guestyPropertyId: z.string().optional(),
   hostexPropertyId: z.string().optional(),
+  airbnbListingId: z.string().optional(),
+  airbnbIcalUrl: z.string().url().optional(),
   name: z.string().min(1),
   timezone: z.string().default('Europe/Berlin'),
   currency: z.string().length(3).toUpperCase().default('EUR'),
@@ -157,19 +161,20 @@ const propertyConfigSchema = z.object({
   (data) => {
     if (data.provider === 'guesty') return !!data.guestyPropertyId;
     if (data.provider === 'hostex') return !!data.hostexPropertyId;
+    if (data.provider === 'airbnb-mail') return !!data.airbnbListingId && !!data.airbnbIcalUrl;
     return false;
   },
   {
-    message: 'guestyPropertyId is required when provider=guesty; hostexPropertyId is required when provider=hostex',
+    message: 'guestyPropertyId required for provider=guesty; hostexPropertyId for provider=hostex; airbnbListingId + airbnbIcalUrl for provider=airbnb-mail',
     path: ['provider'],
   }
 ).refine(
   (data) => {
-    if (data.provider === 'hostex') return !!data.static;
+    if (data.provider === 'hostex' || data.provider === 'airbnb-mail') return !!data.static;
     return true;
   },
   {
-    message: 'static block is required when provider=hostex',
+    message: 'static block is required when provider=hostex or provider=airbnb-mail',
     path: ['static'],
   }
 );
@@ -275,7 +280,7 @@ export function getPropertyByGuestyId(guestyId: string): PropertyConfig | undefi
 /**
  * Get all properties for a specific provider
  */
-export function getPropertiesByProvider(provider: 'guesty' | 'hostex'): PropertyConfig[] {
+export function getPropertiesByProvider(provider: 'guesty' | 'hostex' | 'airbnb-mail'): PropertyConfig[] {
   return loadPropertiesConfig().filter((p) => p.provider === provider);
 }
 
@@ -284,6 +289,13 @@ export function getPropertiesByProvider(provider: 'guesty' | 'hostex'): Property
  */
 export function getPropertyByHostexId(hostexId: string): PropertyConfig | undefined {
   return loadPropertiesConfig().find((p) => p.hostexPropertyId === hostexId);
+}
+
+/**
+ * Get a property by its Airbnb listing ID
+ */
+export function getPropertyByAirbnbId(airbnbId: string): PropertyConfig | undefined {
+  return loadPropertiesConfig().find((p) => p.airbnbListingId === airbnbId);
 }
 
 /**
