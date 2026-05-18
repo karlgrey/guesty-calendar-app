@@ -40,6 +40,12 @@ const configSchema = z.object({
   hostexAccessToken: z.string().optional(),
   hostexApiUrl: z.string().url().default('https://api.hostex.io/v3'),
 
+  // Airbnb-Mail integration (optional — only required if airbnb-mail providers exist)
+  airbnbMailHost: z.string().optional(),
+  airbnbMailPort: z.coerce.number().int().min(1).max(65535).default(993),
+  airbnbMailUser: z.string().optional(),
+  airbnbMailPassword: z.string().optional(),
+
   // Property
   propertyCurrency: z.string().length(3).toUpperCase().default('EUR'),
   propertyTimezone: z.string().default('Europe/Berlin'),
@@ -123,6 +129,10 @@ function parseConfig() {
     propertiesConfigPath: process.env.PROPERTIES_CONFIG_PATH,
     hostexAccessToken: process.env.HOSTEX_ACCESS_TOKEN,
     hostexApiUrl: process.env.HOSTEX_API_URL,
+    airbnbMailHost: process.env.AIRBNB_MAIL_HOST,
+    airbnbMailPort: process.env.AIRBNB_MAIL_PORT,
+    airbnbMailUser: process.env.AIRBNB_MAIL_USER,
+    airbnbMailPassword: process.env.AIRBNB_MAIL_PASSWORD,
     propertyCurrency: process.env.PROPERTY_CURRENCY,
     propertyTimezone: process.env.PROPERTY_TIMEZONE,
     bookingRecipientEmail: process.env.BOOKING_RECIPIENT_EMAIL,
