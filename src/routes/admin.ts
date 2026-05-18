@@ -724,7 +724,7 @@ router.get('/', (_req, res) => {
     <!-- Dashboard Stats -->
     <div class="section">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-        <h2 style="margin: 0;">📊 Dashboard Overview</h2>
+        <h2 id="dashboardTitle" style="margin: 0;">📊 Dashboard Overview</h2>
         <div style="display: flex; gap: 10px;">
           <button id="btnFuture" class="success" onclick="switchPeriod('future')">Next 12 Months</button>
           <button id="btnPast" onclick="switchPeriod('past')">Last 12 Months</button>
@@ -740,7 +740,7 @@ router.get('/', (_req, res) => {
 
     <!-- Conversion Rate Stats -->
     <div class="section">
-      <h2>🎯 Reservation → Confirmed Conversion (All-Time)</h2>
+      <h2 id="conversionTitle">🎯 Reservation → Confirmed Conversion (All-Time)</h2>
       <div class="grid" id="conversionGrid">
         <div class="card">
           <h3>Loading...</h3>
@@ -751,7 +751,7 @@ router.get('/', (_req, res) => {
 
     <!-- Document Sequence Management -->
     <div class="section">
-      <h2>📄 Dokumenten-Verwaltung</h2>
+      <h2 id="docsTitle">📄 Dokumenten-Verwaltung</h2>
       <div class="grid" style="grid-template-columns: 1fr 1fr;">
         <div class="card">
           <h3>Letzte Rechnung</h3>
@@ -805,7 +805,7 @@ router.get('/', (_req, res) => {
     <!-- Website Analytics (GA4) -->
     <div class="section" id="analyticsSection" style="display: none;">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-        <h2 style="margin: 0;">📈 Website Analytics (Last 30 Days)</h2>
+        <h2 id="analyticsTitle" style="margin: 0;">📈 Website Analytics (Last 30 Days)</h2>
         <button onclick="syncAnalytics()" id="syncAnalyticsBtn">🔄 Sync Now</button>
       </div>
       <div class="grid" id="analyticsGrid">
@@ -865,6 +865,7 @@ router.get('/', (_req, res) => {
           currentProperty = data.defaultSlug || data.properties[0].slug;
           // Build lookup map for property metadata
           data.properties.forEach(p => { propertiesMap[p.slug] = p; });
+          applyPropertyContext();
         } else {
           selector.innerHTML = '<option value="">No properties configured</option>';
         }
@@ -878,9 +879,33 @@ router.get('/', (_req, res) => {
     function switchProperty(slug) {
       if (slug && slug !== currentProperty) {
         currentProperty = slug;
+        applyPropertyContext();
         loadDashboard();
         updateAnalyticsVisibility();
       }
+    }
+
+    // Update property-bezogene Headers + Buttons mit aktuellem Property-Namen
+    function applyPropertyContext() {
+      const propName = propertiesMap[currentProperty]?.name;
+      if (!propName) return;
+      const suffix = ' — ' + propName;
+      const set = (id, base) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = base + suffix;
+      };
+      set('dashboardTitle', '📊 Dashboard Overview');
+      set('conversionTitle', '🎯 Reservation → Confirmed Conversion (All-Time)');
+      set('docsTitle', '📄 Dokumenten-Verwaltung');
+      set('analyticsTitle', '📈 Website Analytics (Last 30 Days)');
+      const syncBtn = document.getElementById('syncAnalyticsBtn');
+      if (syncBtn) syncBtn.textContent = '🔄 Sync Now' + suffix;
+      // bookingsTitle wird in switchPeriod gesetzt — Suffix dort mit angehängt
+      const periodBtn = document.getElementById('btnFuture');
+      const currentPeriodLabel = (periodBtn && periodBtn.classList.contains('success'))
+        ? '📅 Upcoming Bookings'
+        : '📅 Past Bookings';
+      set('bookingsTitle', currentPeriodLabel);
     }
 
     // Show/hide analytics based on property GA4 config
@@ -1024,9 +1049,11 @@ router.get('/', (_req, res) => {
         btnFuture.classList.remove('success');
       }
 
-      // Update bookings title
+      // Update bookings title (with property suffix re-applied)
       const bookingsTitle = document.getElementById('bookingsTitle');
-      bookingsTitle.textContent = period === 'future' ? '📅 Upcoming Bookings' : '📅 Past Bookings';
+      const base = period === 'future' ? '📅 Upcoming Bookings' : '📅 Past Bookings';
+      const propName = propertiesMap[currentProperty]?.name;
+      bookingsTitle.textContent = propName ? base + ' — ' + propName : base;
 
       // Reload dashboard data
       loadDashboard();
@@ -1346,6 +1373,7 @@ router.get('/', (_req, res) => {
       } finally {
         btn.disabled = false;
         btn.innerHTML = '🔄 Sync Now';
+        applyPropertyContext();
       }
     }
 
@@ -1619,12 +1647,12 @@ router.get('/system', (_req, res) => {
 
     <!-- Manual Sync -->
     <div class="section">
-      <h2>Manual Data Sync</h2>
+      <h2 id="manualSyncTitle">Manual Data Sync</h2>
       <p style="color: var(--color-warm-gray); margin-bottom: 20px;">Trigger immediate data refresh from Guesty API</p>
       <div class="actions">
-        <button onclick="syncAll(event)">Sync All (Listing + Availability)</button>
-        <button onclick="syncListing(event)">Sync Listing Only</button>
-        <button onclick="syncAvailability(event)">Sync Availability Only</button>
+        <button id="syncAllBtn" onclick="syncAll(event)">Sync All (Listing + Availability)</button>
+        <button id="syncListingBtn" onclick="syncListing(event)">Sync Listing Only</button>
+        <button id="syncAvailabilityBtn" onclick="syncAvailability(event)">Sync Availability Only</button>
       </div>
     </div>
 
@@ -1651,6 +1679,7 @@ router.get('/system', (_req, res) => {
 
   <script>
     let currentProperty = null;
+    const propertiesMap = {};
 
     function showMessage(text, type) {
       const msg = document.getElementById('message');
@@ -1668,6 +1697,8 @@ router.get('/system', (_req, res) => {
           \`<option value="\${p.slug}" \${p.isDefault ? 'selected' : ''}>\${p.name}</option>\`
         ).join('');
         currentProperty = data.defaultSlug || data.properties[0]?.slug;
+        data.properties.forEach(p => { propertiesMap[p.slug] = p; });
+        applyPropertyContext();
       } catch (error) {
         console.error('Failed to load properties:', error);
       }
@@ -1675,6 +1706,22 @@ router.get('/system', (_req, res) => {
 
     function switchProperty(slug) {
       currentProperty = slug;
+      applyPropertyContext();
+    }
+
+    // Update property-bezogene Headers + Buttons mit aktuellem Property-Namen
+    function applyPropertyContext() {
+      const propName = propertiesMap[currentProperty]?.name;
+      if (!propName) return;
+      const suffix = ' — ' + propName;
+      const set = (id, base) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = base + suffix;
+      };
+      set('manualSyncTitle', 'Manual Data Sync');
+      set('syncAllBtn', 'Sync All (Listing + Availability)');
+      set('syncListingBtn', 'Sync Listing Only');
+      set('syncAvailabilityBtn', 'Sync Availability Only');
     }
 
     async function loadHealth() {
@@ -1767,6 +1814,7 @@ router.get('/system', (_req, res) => {
       } finally {
         btn.disabled = false;
         btn.textContent = 'Sync All (Listing + Availability)';
+        applyPropertyContext();
       }
     }
 
@@ -1789,6 +1837,7 @@ router.get('/system', (_req, res) => {
       } finally {
         btn.disabled = false;
         btn.textContent = 'Sync Listing Only';
+        applyPropertyContext();
       }
     }
 
@@ -1811,6 +1860,7 @@ router.get('/system', (_req, res) => {
       } finally {
         btn.disabled = false;
         btn.textContent = 'Sync Availability Only';
+        applyPropertyContext();
       }
     }
 
