@@ -511,8 +511,10 @@ Reihenfolge auf Production (analog zu Hostex-Deploy):
 
 ## 13. Offene Punkte für Implementation
 
-- **Echte Subject-Patterns**: Aus 2-3 echten anonymisierten Mails pro Type extrahieren — die in Section 4.2 aufgelisteten Patterns sind Schätzungen.
-- **HTML-Selektoren in Parsern**: Airbnb-Templates haben Struktur (z.B. table-Layout, Inline-Styles), die wir mit `cheerio` auslesen. Konkrete Selektoren erst nach Inspektion echter Mails.
+> **Wichtig**: Subject-Patterns, Mail-Typ-Erkennung und HTML-Selektoren sind in der ersten Implementation **bewusst Schätzungen**. Plan: erst deployen, Live-Mails ankommen lassen, dann Patterns/Selektoren **mit echten Daten kalibrieren**. Das `airbnb_mail_archive` mit `parse_status='error'` macht das systematisch möglich: Reparse-Skript läuft über alle Fehler-Mails nach jedem Parser-Update.
+
+- **Echte Subject-Patterns**: Aus 2-3 echten anonymisierten Mails pro Type extrahieren — die in Section 4.2 aufgelisteten Patterns sind Schätzungen. **Kalibrierung nach Live-Anbindung**.
+- **HTML-Selektoren in Parsern**: Airbnb-Templates haben Struktur (z.B. table-Layout, Inline-Styles), die wir mit `cheerio` auslesen. Konkrete Selektoren erst nach Inspektion echter Mails. **Kalibrierung nach Live-Anbindung**.
 - **Cleaning-Fee-Extraktion**: ob die aufgeschlüsselten Beträge ausgewiesen sind, muss verifiziert werden.
 - **Modification-Mail-Format**: enthält die ggf. nur Diff (alte vs neue Daten) oder kompletter Snapshot? Bei Diff: Mapper muss bestehende Reservation lesen und Diff anwenden.
 - **iCal-Cache-Headers**: Airbnb iCal-URL hat ggf. `ETag` / `Last-Modified`. Wenn ja, sparen wir Bandwidth via Conditional-GET. Optimierung, nicht Pflicht.
