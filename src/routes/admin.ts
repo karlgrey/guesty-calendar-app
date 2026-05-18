@@ -1643,7 +1643,7 @@ router.get('/system', (_req, res) => {
       <div class="actions">
         <button onclick="viewTable('listings')">View Listings</button>
         <button onclick="viewTable('availability')">View Availability</button>
-        <button onclick="viewTable('cached_quotes')">View Cached Quotes</button>
+        <button onclick="viewTable('quotes_cache')">View Cached Quotes</button>
       </div>
       <div id="tableView"></div>
     </div>
@@ -2019,7 +2019,7 @@ router.get('/db/:table', (req, res, next) => {
   const { table } = req.params;
 
   // Whitelist allowed tables
-  const allowedTables = ['listings', 'availability', 'cached_quotes'];
+  const allowedTables = ['listings', 'availability', 'quotes_cache'];
   if (!allowedTables.includes(table)) {
     return res.status(400).json({ error: 'Invalid table name' });
   }
@@ -2042,7 +2042,7 @@ router.get('/db/:table', (req, res, next) => {
           // Keep as string if parsing fails
         }
       }
-      if (table === 'cached_quotes' && row.breakdown) {
+      if (table === 'quotes_cache' && row.breakdown) {
         try {
           row.breakdown = JSON.parse(row.breakdown);
         } catch (e) {
