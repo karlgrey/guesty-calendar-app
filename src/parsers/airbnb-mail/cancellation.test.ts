@@ -34,8 +34,41 @@ describe('parseCancellation', () => {
     expect(out?.type).toBe('cancellation');
   });
 
-  it('returns null when reservation code missing', () => {
-    const bad: RawMail = { ...baseMail, textBody: 'cancellation but no code' };
+  it('returns null when reservation code missing from both body and subject', () => {
+    const bad: RawMail = {
+      ...baseMail,
+      subject: 'Reservierung storniert',
+      textBody: 'cancellation but no code',
+    };
     expect(parseCancellation(bad)).toBeNull();
+  });
+
+  it('parses cancellation with only reservation code (no guest, no dates)', () => {
+    const minimal: RawMail = {
+      uid: 99,
+      messageId: 'minimal@airbnb.com',
+      subject: 'Reservierung storniert: HMMINCANCEL',
+      fromAddress: 'automated@airbnb.com',
+      receivedAt: '2026-05-18T13:00:00.000Z',
+      htmlBody: '',
+      textBody: 'Diese Reservierung wurde storniert.\nReservierungscode: HMMINCANCEL',
+    };
+    const out = parseCancellation(minimal);
+    expect(out?.reservationCode).toBe('HMMINCANCEL');
+    expect(out?.type).toBe('cancellation');
+  });
+
+  it('extracts reservation code from subject when body has no code', () => {
+    const subjectOnly: RawMail = {
+      uid: 100,
+      messageId: 'subjectonly@airbnb.com',
+      subject: 'Reservierung storniert: HMSUBJ123',
+      fromAddress: 'automated@airbnb.com',
+      receivedAt: '2026-05-18T13:00:00.000Z',
+      htmlBody: '',
+      textBody: 'Diese Reservierung wurde storniert.',
+    };
+    const out = parseCancellation(subjectOnly);
+    expect(out?.reservationCode).toBe('HMSUBJ123');
   });
 });
