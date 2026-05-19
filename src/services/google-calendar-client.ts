@@ -11,19 +11,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import logger from '../utils/logger.js';
 
+export { toGoogleEventId } from './google-event-id.js';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const SCOPES = ['https://www.googleapis.com/auth/calendar'];
 const DEFAULT_KEY_FILE = path.resolve(__dirname, '../../data/ga4-service-account.json');
 
-/**
- * Convert a Guesty reservation_id to a valid Google Calendar event ID.
- * Google requires: lowercase alphanumeric, 5-1024 chars.
- */
-export function toGoogleEventId(reservationId: string): string {
-  return reservationId.toLowerCase().replace(/[^a-z0-9]/g, '');
-}
 
 /**
  * Google Calendar Client - Singleton
