@@ -253,7 +253,8 @@ router.get('/:slug/quote', resolveProperty, async (req: Request, res: Response, 
     logger.debug({ propertySlug: property.slug, listingId, checkIn, checkOut, guests: guestCount }, 'Cache miss, fetching quote');
 
     const quoteRequest = { listingId, checkIn: checkIn as string, checkOut: checkOut as string, guests: guestCount };
-    const quote = property.provider === 'hostex'
+    const useLocal = property.provider === 'hostex' || property.provider === 'airbnb-mail';
+    const quote = useLocal
       ? calculateQuote(quoteRequest)
       : await calculateQuoteWithGuesty(quoteRequest);
 
