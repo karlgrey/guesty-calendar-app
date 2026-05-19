@@ -71,7 +71,10 @@ async function processMail(row: MailRow): Promise<{ ok: boolean; error?: string 
     checkIn: property.googleCalendar?.checkInTime ?? '15:00',
     checkOut: property.googleCalendar?.checkOutTime ?? '12:00',
   };
-  const { asInquiry, asReservation } = mapAirbnbReservation(parsed, property.airbnbListingId, defaultTimes);
+  const { asInquiry, asReservation } = mapAirbnbReservation(parsed, property.airbnbListingId, defaultTimes, {
+    coHostShareRate: property.static?.coHostShareRate,
+    incomeTaxRate: property.static?.incomeTaxRate,
+  });
 
   const db = getDatabase();
   db.prepare(`

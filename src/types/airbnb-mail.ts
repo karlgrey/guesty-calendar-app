@@ -40,9 +40,10 @@ export interface ParsedAirbnbMail {
   numberOfAdults?: number;
   numberOfChildren?: number;
   totalPrice?: number;
-  hostPayout?: number;
+  hostPayout?: number;        // "Du verdienst" from the booking mail — brutto, before co-host + income tax
   cleaningFee?: number;
-  serviceFee?: number;
+  serviceFee?: number;        // guest-side Airbnb service fee
+  occupancyTax?: number;      // "Belegungssteuern" — Airbnb passes these through, not part of host revenue
   receivedAt: string;
   messageId: string;
 }

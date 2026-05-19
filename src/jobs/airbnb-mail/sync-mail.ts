@@ -146,7 +146,10 @@ export async function syncAirbnbMail(property: PropertyConfig): Promise<SyncMail
           continue;
         }
 
-        const { asInquiry, asReservation } = mapAirbnbReservation(parsed, airbnbListingId, defaultTimes);
+        const { asInquiry, asReservation } = mapAirbnbReservation(parsed, airbnbListingId, defaultTimes, {
+          coHostShareRate: property.static?.coHostShareRate,
+          incomeTaxRate: property.static?.incomeTaxRate,
+        });
 
         upsertInquiry.run(
           asInquiry.inquiry_id,

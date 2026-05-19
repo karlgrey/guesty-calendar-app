@@ -10,9 +10,11 @@
  */
 
 import { fingerprintGuest } from '../../utils/guest-fingerprint.js';
+import { computeEffectivePayout } from '../../utils/airbnb-payout.js';
 import logger from '../../utils/logger.js';
 import type { ParsedAirbnbMail } from '../../types/airbnb-mail.js';
 import type { Reservation } from '../../types/models.js';
+import type { PropertyStaticConfig } from '../../config/properties.js';
 
 export interface MappedAirbnbInquiry {
   inquiry_id: string;
@@ -54,7 +56,8 @@ function fingerprintSafe(name: string | null) {
 export function mapAirbnbReservation(
   parsed: ParsedAirbnbMail,
   airbnbListingId: string,
-  defaultTimes: { checkIn: string; checkOut: string }
+  defaultTimes: { checkIn: string; checkOut: string },
+  payoutRates?: Pick<PropertyStaticConfig, 'coHostShareRate' | 'incomeTaxRate'>
 ): MappedAirbnbResult {
   const now = new Date().toISOString();
   const inquiryStatus = STATUS_MAP_INQUIRY[parsed.type];
@@ -107,7 +110,15 @@ export function mapAirbnbReservation(
     planned_departure: null,
     currency: 'EUR',
     total_price: parsed.totalPrice ?? 0,
-    host_payout: parsed.hostPayout ?? 0,
+    host_payout: computeEffectivePayout(
+      {
+        hostPayoutBrutto: parsed.hostPayout,
+        cleaningFee: parsed.cleaningFee,
+        totalPrice: parsed.totalPrice,
+        occupancyTax: parsed.occupancyTax,
+      },
+      payoutRates ?? {}
+    ).hostPayoutEffective,
     balance_due: null,
     total_paid: null,
     created_at_guesty: parsed.receivedAt,

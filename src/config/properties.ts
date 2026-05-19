@@ -69,6 +69,11 @@ export interface PropertyStaticConfig {
   cleaningFee?: number | null;
   minNights?: number | null;
   maxNights?: number | null;
+  // Effective-payout deductions (airbnb-mail provider, default 0 for all others).
+  // Co-host share applies to (host_payout − cleaning_fee).
+  // Income tax applies to (total_price − occupancy_tax).
+  coHostShareRate?: number;
+  incomeTaxRate?: number;
 }
 
 /**
@@ -140,6 +145,8 @@ const propertyStaticConfigSchema = z.object({
   cleaningFee: z.number().nullable().optional(),
   minNights: z.number().int().min(1).nullable().optional(),
   maxNights: z.number().int().min(1).nullable().optional(),
+  coHostShareRate: z.number().min(0).max(1).optional(),
+  incomeTaxRate: z.number().min(0).max(1).optional(),
 });
 
 const propertyConfigSchema = z.object({

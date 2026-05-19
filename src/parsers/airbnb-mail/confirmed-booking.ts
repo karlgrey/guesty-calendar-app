@@ -28,6 +28,8 @@ const GUESTS_RE = /G[äa]ste\s*(\d+)\s*Erwachsene/i;
 const CLEANING_RE = /Reinigungsgeb[üu]hr\s*([\d.,]+)\s*€/i;
 // Guest-side service fee — usually 0 € for hosts charged via Airbnb's split.
 const SERVICE_RE = /Servicegeb[üa]hr\s+für\s+G[äa]ste\s*([\d.,]+)\s*€/i;
+// "Belegungssteuern 30,00 €" — Airbnb passes through to the host but is not host revenue.
+const OCCUPANCY_TAX_RE = /Belegungssteuern\s*([\d.,]+)\s*€/i;
 // "Du verdienst 1.043,90 €" — host payout net of Airbnb's host fee.
 const HOST_PAYOUT_RE = /Du\s+verdienst\s*([\d.,]+)\s*€/i;
 // "Gesamt (EUR) 1.310,00 €"
@@ -110,6 +112,7 @@ export function parseConfirmedBooking(raw: RawMail): ParsedAirbnbMail | null {
   const guestsMatch = body.match(GUESTS_RE);
   const cleaningMatch = body.match(CLEANING_RE);
   const serviceMatch = body.match(SERVICE_RE);
+  const occupancyTaxMatch = body.match(OCCUPANCY_TAX_RE);
   const hostPayoutMatch = body.match(HOST_PAYOUT_RE);
   const totalMatch = body.match(TOTAL_RE);
 
@@ -122,6 +125,7 @@ export function parseConfirmedBooking(raw: RawMail): ParsedAirbnbMail | null {
     numberOfGuests: guestsMatch ? parseInt(guestsMatch[1], 10) : undefined,
     cleaningFee: cleaningMatch ? parseAmount(cleaningMatch[1]) : undefined,
     serviceFee: serviceMatch ? parseAmount(serviceMatch[1]) : undefined,
+    occupancyTax: occupancyTaxMatch ? parseAmount(occupancyTaxMatch[1]) : undefined,
     hostPayout: hostPayoutMatch ? parseAmount(hostPayoutMatch[1]) : undefined,
     totalPrice: totalMatch ? parseAmount(totalMatch[1]) : undefined,
     receivedAt: raw.receivedAt,

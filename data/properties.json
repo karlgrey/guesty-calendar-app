@@ -161,7 +161,9 @@
         "guestsIncluded": 2,
         "weeklyPriceFactor": 0.95,
         "monthlyPriceFactor": 0.9,
-        "taxes": []
+        "taxes": [],
+        "coHostShareRate": 0.15,
+        "incomeTaxRate": 0.21
       }
     }
   ]
