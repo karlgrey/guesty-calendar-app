@@ -65,6 +65,7 @@ export async function syncAirbnbMail(property: PropertyConfig): Promise<SyncMail
     port: config.airbnbMailPort,
     user: config.airbnbMailUser,
     password: config.airbnbMailPassword,
+    mailbox: property.airbnbMailLabel ?? 'INBOX',
   });
 
   let fetched = 0;

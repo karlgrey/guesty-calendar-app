@@ -166,7 +166,7 @@ Dritter Booking-Provider für Properties, die nur über Airbnb laufen. Daten kom
 - **IMAP-Inbox** (z.B. dedizierter Bot-Account `airbnb-bot@…`) — Buchungs-Mails
 - **iCal-URL** (Airbnb Listing → Calendar Settings → Export) — Verfügbarkeit
 
-**Property-Discriminator**: `provider: 'airbnb-mail'` in `properties.json`, plus `airbnbListingId`, `airbnbIcalUrl`, `static`-Block.
+**Property-Discriminator**: `provider: 'airbnb-mail'` in `properties.json`, plus `airbnbListingId`, `airbnbIcalUrl`, `airbnbMailLabel` (Gmail-Label, optional), `static`-Block.
 
 **Mail-Typen**: confirmed, inquiry, cancellation, modification. Subject-Patterns sind initial Schätzungen — werden nach Live-Daten kalibriert.
 
@@ -184,7 +184,7 @@ Dritter Booking-Provider für Properties, die nur über Airbnb laufen. Daten kom
 1. Google-Workspace-User `airbnb-bot@…` anlegen, App-Passwort generieren
 2. Bot-Adresse zum Google-Groups-Verteiler hinzufügen (empfängt alle Airbnb-Mails)
 3. `AIRBNB_MAIL_HOST=imap.gmail.com`, `AIRBNB_MAIL_PORT=993`, `AIRBNB_MAIL_USER=…`, `AIRBNB_MAIL_PASSWORD=…` in `/opt/guesty-calendar-app/.env`
-4. Property mit `provider: 'airbnb-mail'` in `data/properties.json` ergänzen (inkl. `airbnbListingId`, `airbnbIcalUrl`, `static`)
+4. Property mit `provider: 'airbnb-mail'` in `data/properties.json` ergänzen (inkl. `airbnbListingId`, `airbnbIcalUrl`, `airbnbMailLabel` für den Gmail-Label-Filter, `static`)
 5. `git pull && npm install && npm run build && pm2 restart guesty-calendar`
 6. Logs prüfen: Migration 013 applied, kein Zod-Error
 7. Manueller Sync: `npx tsx src/scripts/test-airbnb-mail-sync.ts <slug>`

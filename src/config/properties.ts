@@ -81,6 +81,7 @@ export interface PropertyConfig {
   hostexPropertyId?: string;
   airbnbListingId?: string;
   airbnbIcalUrl?: string;
+  airbnbMailLabel?: string;
   name: string;
   timezone: string;
   currency: string;
@@ -148,6 +149,7 @@ const propertyConfigSchema = z.object({
   hostexPropertyId: z.string().optional(),
   airbnbListingId: z.string().optional(),
   airbnbIcalUrl: z.string().url().optional(),
+  airbnbMailLabel: z.string().optional(),
   name: z.string().min(1),
   timezone: z.string().default('Europe/Berlin'),
   currency: z.string().length(3).toUpperCase().default('EUR'),
