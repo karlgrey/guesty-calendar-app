@@ -31,6 +31,7 @@ export interface SyncMailResult {
   success: boolean;
   fetched: number;
   parsedOk: number;
+  confirmedCount: number;  // bookings that resulted in an active reservation row
   parsedError: number;
   prunedArchive: number;
   error?: string;
@@ -50,7 +51,7 @@ export async function syncAirbnbMail(property: PropertyConfig): Promise<SyncMail
   const slug = property.slug;
   const airbnbListingId = property.airbnbListingId!;
   if (!config.airbnbMailHost || !config.airbnbMailUser || !config.airbnbMailPassword) {
-    return { success: false, fetched: 0, parsedOk: 0, parsedError: 0, prunedArchive: 0,
+    return { success: false, fetched: 0, parsedOk: 0, confirmedCount: 0, parsedError: 0, prunedArchive: 0,
              error: 'AIRBNB_MAIL_* env-vars not configured' };
   }
 
@@ -68,6 +69,7 @@ export async function syncAirbnbMail(property: PropertyConfig): Promise<SyncMail
 
   let fetched = 0;
   let parsedOk = 0;
+  let confirmedCount = 0;
   let parsedError = 0;
 
   try {
@@ -148,6 +150,7 @@ export async function syncAirbnbMail(property: PropertyConfig): Promise<SyncMail
 
         if (asReservation) {
           upsertReservation(asReservation);
+          confirmedCount++;
         } else if (type === 'cancellation') {
           // Cancellation mail → remove any existing reservation row
           deleteReservation.run(parsed.reservationCode);
@@ -171,11 +174,11 @@ export async function syncAirbnbMail(property: PropertyConfig): Promise<SyncMail
 
     const prunedArchive = pruneOldMails(90);
 
-    return { success: true, fetched, parsedOk, parsedError, prunedArchive };
+    return { success: true, fetched, parsedOk, confirmedCount, parsedError, prunedArchive };
   } catch (error) {
     logger.error({ slug, error }, 'Airbnb mail sync failed');
     return {
-      success: false, fetched, parsedOk, parsedError, prunedArchive: 0,
+      success: false, fetched, parsedOk, confirmedCount, parsedError, prunedArchive: 0,
       error: error instanceof Error ? error.message : 'Unknown error',
     };
   } finally {

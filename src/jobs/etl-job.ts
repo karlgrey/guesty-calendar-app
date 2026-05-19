@@ -63,7 +63,7 @@ async function runAirbnbMailETL(property: PropertyConfig, force: boolean): Promi
   // Step 2: mail sync (reservations + inquiries)
   const mailResult = propertyResult.success
     ? await syncAirbnbMail(property)
-    : { success: false, fetched: 0, parsedOk: 0, parsedError: 0, prunedArchive: 0, error: 'Skipped: property sync failed' };
+    : { success: false, fetched: 0, parsedOk: 0, confirmedCount: 0, parsedError: 0, prunedArchive: 0, error: 'Skipped: property sync failed' };
 
   // Step 3: iCal sync (availability)
   const icalResult = propertyResult.success
@@ -102,7 +102,7 @@ async function runAirbnbMailETL(property: PropertyConfig, force: boolean): Promi
     inquiries: {
       success: mailResult.success,
       inquiriesCount: mailResult.parsedOk,
-      confirmedCount: mailResult.parsedOk,
+      confirmedCount: mailResult.confirmedCount,
       error: mailResult.error,
     },
     duration,
