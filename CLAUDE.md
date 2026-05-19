@@ -160,6 +160,41 @@ Zweiter Booking-Provider neben Guesty. Parallel-Modul-Architektur, ETL-Dispatch 
 
 **Rollback**: 3 Hostex-Property-Einträge aus `properties.json` entfernen, Server-Restart. DB-Rows können stehenbleiben oder via SQL gelöscht werden.
 
+### Airbnb-Mail Integration (Migration 013)
+
+Dritter Booking-Provider für Properties, die nur über Airbnb laufen. Daten kommen aus:
+- **IMAP-Inbox** (z.B. dedizierter Bot-Account `airbnb-bot@…`) — Buchungs-Mails
+- **iCal-URL** (Airbnb Listing → Calendar Settings → Export) — Verfügbarkeit
+
+**Property-Discriminator**: `provider: 'airbnb-mail'` in `properties.json`, plus `airbnbListingId`, `airbnbIcalUrl`, `static`-Block.
+
+**Mail-Typen**: confirmed, inquiry, cancellation, modification. Subject-Patterns sind initial Schätzungen — werden nach Live-Daten kalibriert.
+
+**Storage**:
+- `reservations` / `inquiries` / `availability`: bestehende Tabellen, `source='airbnb'`
+- `airbnb_mail_archive`: rohe Mail-Bodies + Parse-Status, 90 Tage Retention
+- `airbnb_mail_state`: per-Property last-IMAP-UID für inkrementellen Poll
+
+**Scripts**:
+- `npx tsx src/scripts/test-airbnb-mail-sync.ts <slug>` — manueller ETL-Test
+- `npx tsx src/scripts/reparse-airbnb-mail.ts <message_id> [--force]` — einzelne Mail neu parsen
+- `npx tsx src/scripts/reparse-airbnb-mail.ts --all-errors [--slug=X]` — alle Fehler-Mails neu parsen (nach Parser-Update)
+
+**Deployment-Reihenfolge:**
+1. Google-Workspace-User `airbnb-bot@…` anlegen, App-Passwort generieren
+2. Bot-Adresse zum Google-Groups-Verteiler hinzufügen (empfängt alle Airbnb-Mails)
+3. `AIRBNB_MAIL_HOST=imap.gmail.com`, `AIRBNB_MAIL_PORT=993`, `AIRBNB_MAIL_USER=…`, `AIRBNB_MAIL_PASSWORD=…` in `/opt/guesty-calendar-app/.env`
+4. Property mit `provider: 'airbnb-mail'` in `data/properties.json` ergänzen (inkl. `airbnbListingId`, `airbnbIcalUrl`, `static`)
+5. `git pull && npm install && npm run build && pm2 restart guesty-calendar`
+6. Logs prüfen: Migration 013 applied, kein Zod-Error
+7. Manueller Sync: `npx tsx src/scripts/test-airbnb-mail-sync.ts <slug>`
+8. **Live-Daten-Kalibrierung**:
+   - Nach 1-2 echten Mails: `SELECT subject, parse_status, parse_error FROM airbnb_mail_archive ORDER BY received_at DESC` ansehen
+   - Subject-Patterns (`src/parsers/airbnb-mail/index.ts`) und Body-Regex (`confirmed-booking.ts` etc.) anhand der echten Mails justieren
+   - `npx tsx src/scripts/reparse-airbnb-mail.ts --all-errors --slug=X` zum Backfill
+
+**Rollback**: Property aus `properties.json` entfernen, restart. DB-Rows können bleiben, Migration ist additive.
+
 ### Authentication
 - Google OAuth 2.0 via Passport.js (`src/config/auth.ts`)
 - Email whitelist: `ADMIN_ALLOWED_EMAILS` env var
