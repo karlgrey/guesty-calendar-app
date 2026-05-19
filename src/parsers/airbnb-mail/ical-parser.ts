@@ -4,7 +4,8 @@
  * Wraps node-ical to normalise events for downstream availability mapping.
  */
 
-import * as ical from 'node-ical';
+import ical from 'node-ical';
+import type { VEvent } from 'node-ical';
 import type { AirbnbIcalEvent } from '../../types/airbnb-mail.js';
 
 function formatDate(d: Date): string {
@@ -23,7 +24,7 @@ export function parseAirbnbIcal(icsBody: string): AirbnbIcalEvent[] {
   for (const key of Object.keys(parsed)) {
     const entry = parsed[key];
     if (!entry || entry.type !== 'VEVENT') continue;
-    const vevent = entry as ical.VEvent;
+    const vevent = entry as VEvent;
     const uid = (vevent.uid ?? key) as string;
     const reservationCode = uid.split('@')[0];
     out.push({

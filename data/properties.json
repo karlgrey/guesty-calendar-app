@@ -11,7 +11,9 @@
       "bookingSenderName": "Farmhouse Prasser",
       "weeklyReport": {
         "enabled": true,
-        "recipients": ["micha@remoterepublic.com"],
+        "recipients": [
+          "micha@remoterepublic.com"
+        ],
         "day": 1,
         "hour": 6
       },
@@ -39,7 +41,9 @@
       "bookingSenderName": "Uferstrasse 19",
       "weeklyReport": {
         "enabled": true,
-        "recipients": ["micha@remoterepublic.com"],
+        "recipients": [
+          "micha@remoterepublic.com"
+        ],
         "day": 1,
         "hour": 6
       },
@@ -61,7 +65,9 @@
       "bookingSenderName": "Remote Republic Schiffmühle",
       "weeklyReport": {
         "enabled": true,
-        "recipients": ["micha@remoterepublic.com"],
+        "recipients": [
+          "micha@remoterepublic.com"
+        ],
         "day": 1,
         "hour": 6
       },
@@ -95,7 +101,9 @@
       "bookingSenderName": "Remote Republic Schiffmühle",
       "weeklyReport": {
         "enabled": true,
-        "recipients": ["micha@remoterepublic.com"],
+        "recipients": [
+          "micha@remoterepublic.com"
+        ],
         "day": 1,
         "hour": 6
       },
@@ -115,6 +123,44 @@
         "guestsIncluded": 2,
         "weeklyPriceFactor": 0.9,
         "monthlyPriceFactor": 0.8,
+        "taxes": []
+      }
+    },
+    {
+      "slug": "firenze-loft",
+      "provider": "airbnb-mail",
+      "airbnbListingId": "1678837365136764301",
+      "airbnbIcalUrl": "https://www.airbnb.de/calendar/ical/1678837365136764301.ics?t=1fe575aca6554d31bf471e9d28a5e708",
+      "airbnbMailLabel": "AirBnB Firenze",
+      "name": "Urban Luxury Loft - Florence",
+      "timezone": "Europe/Rome",
+      "currency": "EUR",
+      "bookingRecipientEmail": "firenze@remoterepublic.com",
+      "bookingSenderName": "Urban Luxury Loft Florence",
+      "weeklyReport": {
+        "enabled": true,
+        "recipients": [
+          "micha@remoterepublic.com"
+        ],
+        "day": 1,
+        "hour": 6
+      },
+      "googleCalendar": {
+        "enabled": true,
+        "calendarId": "c_37c4f2caa89c0c026cd25b24768a9006e7c79f2f3b89d50e43060bf21e6c37a2@group.calendar.google.com",
+        "checkInTime": "15:00",
+        "checkOutTime": "12:00"
+      },
+      "static": {
+        "accommodates": 4,
+        "bedrooms": 2,
+        "bathrooms": 2.5,
+        "propertyType": "Apartment",
+        "cleaningFee": 120,
+        "extraPersonFee": 80,
+        "guestsIncluded": 2,
+        "weeklyPriceFactor": 0.95,
+        "monthlyPriceFactor": 0.9,
         "taxes": []
       }
     }

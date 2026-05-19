@@ -15,14 +15,13 @@ import { initDatabase, getDatabase } from '../db/index.js';
 import { getPropertyBySlug } from '../config/properties.js';
 import {
   getMail,
-  getErrorMails,
+  getReparseCandidates,
   updateParseStatus,
 } from '../repositories/airbnb-mail-archive-repository.js';
 import { detectMailType } from '../parsers/airbnb-mail/index.js';
 import { parseConfirmedBooking } from '../parsers/airbnb-mail/confirmed-booking.js';
 import { parseBookingInquiry } from '../parsers/airbnb-mail/booking-inquiry.js';
 import { parseCancellation } from '../parsers/airbnb-mail/cancellation.js';
-import { parseModification } from '../parsers/airbnb-mail/modification.js';
 import { mapAirbnbReservation } from '../mappers/airbnb-mail/reservation-mapper.js';
 import { upsertReservation } from '../repositories/reservation-repository.js';
 import type { RawMail } from '../types/airbnb-mail.js';
@@ -49,15 +48,19 @@ async function processMail(row: MailRow): Promise<{ ok: boolean; error?: string 
   const raw = rowToRaw(row);
   const type = detectMailType(raw.subject);
   if (type === 'unknown') {
-    updateParseStatus(row.message_id, 'error', `Unknown subject pattern: ${raw.subject}`, null, type);
-    return { ok: false, error: 'Unknown subject pattern' };
+    updateParseStatus(row.message_id, 'ignored', `Unrecognised Subject: ${raw.subject}`, null, type);
+    return { ok: false, error: 'ignored' };
+  }
+  if (type === 'modification') {
+    updateParseStatus(row.message_id, 'ignored', 'modification: handled by iCal reconciliation', null, type);
+    return { ok: false, error: 'ignored' };
   }
 
   const parsed =
     type === 'confirmed' ? parseConfirmedBooking(raw) :
     type === 'inquiry' ? parseBookingInquiry(raw) :
     type === 'cancellation' ? parseCancellation(raw) :
-    parseModification(raw);
+    null;
 
   if (!parsed) {
     updateParseStatus(row.message_id, 'error', 'Parser returned null', null, type);
@@ -103,17 +106,19 @@ async function main() {
   const args = process.argv.slice(2);
   initDatabase();
 
-  if (args.includes('--all-errors')) {
+  if (args.includes('--all-errors') || args.includes('--reclassify')) {
     const slugArg = args.find((a) => a.startsWith('--slug='));
     const slug = slugArg?.split('=')[1];
-    const mails = getErrorMails(slug);
-    console.log(`Reparsing ${mails.length} error mails…`);
-    let ok = 0, fail = 0;
+    const mails = getReparseCandidates(slug);
+    console.log(`Reparsing ${mails.length} mails (status=error|ignored)…`);
+    let ok = 0, ignored = 0, fail = 0;
     for (const m of mails) {
       const r = await processMail(m);
-      if (r.ok) ok++; else fail++;
+      if (r.ok) ok++;
+      else if (r.error === 'ignored') ignored++;
+      else fail++;
     }
-    console.log(`Done. ok=${ok} fail=${fail}`);
+    console.log(`Done. ok=${ok} ignored=${ignored} fail=${fail}`);
     return;
   }
 

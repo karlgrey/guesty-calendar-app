@@ -19,7 +19,7 @@ export interface NewMailRow {
   raw_body: string;
   detected_type: string | null;
   reservation_code: string | null;
-  parse_status: 'pending' | 'ok' | 'error';
+  parse_status: 'pending' | 'ok' | 'error' | 'ignored';
   parse_error: string | null;
 }
 
@@ -51,7 +51,7 @@ export function insertMail(row: NewMailRow): void {
 
 export function updateParseStatus(
   messageId: string,
-  status: 'ok' | 'error',
+  status: 'ok' | 'error' | 'ignored',
   parseError: string | null = null,
   reservationCode: string | null = null,
   detectedType: string | null = null
@@ -134,5 +134,22 @@ export function getErrorMails(propertySlug?: string): MailRow[] {
   } catch (error) {
     logger.error({ error, propertySlug }, 'Failed to get error mails');
     throw new DatabaseError(`Failed to get error mails: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+export function getReparseCandidates(propertySlug?: string): MailRow[] {
+  const db = getDatabase();
+  try {
+    if (propertySlug) {
+      return db.prepare(
+        `SELECT * FROM airbnb_mail_archive WHERE parse_status IN ('error','ignored') AND property_slug = ? ORDER BY received_at DESC`
+      ).all(propertySlug) as MailRow[];
+    }
+    return db.prepare(
+      `SELECT * FROM airbnb_mail_archive WHERE parse_status IN ('error','ignored') ORDER BY received_at DESC`
+    ).all() as MailRow[];
+  } catch (error) {
+    logger.error({ error, propertySlug }, 'Failed to get reparse candidates');
+    throw new DatabaseError(`Failed to get reparse candidates: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }

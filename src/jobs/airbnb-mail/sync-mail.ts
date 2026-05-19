@@ -19,7 +19,6 @@ import { detectMailType } from '../../parsers/airbnb-mail/index.js';
 import { parseConfirmedBooking } from '../../parsers/airbnb-mail/confirmed-booking.js';
 import { parseBookingInquiry } from '../../parsers/airbnb-mail/booking-inquiry.js';
 import { parseCancellation } from '../../parsers/airbnb-mail/cancellation.js';
-import { parseModification } from '../../parsers/airbnb-mail/modification.js';
 import { mapAirbnbReservation } from '../../mappers/airbnb-mail/reservation-mapper.js';
 import { upsertReservation } from '../../repositories/reservation-repository.js';
 import { getDatabase } from '../../db/index.js';
@@ -33,6 +32,7 @@ export interface SyncMailResult {
   parsedOk: number;
   confirmedCount: number;  // bookings that resulted in an active reservation row
   parsedError: number;
+  ignoredCount: number;    // mails with unrecognised Subject (account-mgmt, threads, 2FA, payouts, etc.)
   prunedArchive: number;
   error?: string;
 }
@@ -42,7 +42,8 @@ function dispatchParser(type: AirbnbMailType, raw: RawMail): ParsedAirbnbMail | 
     case 'confirmed': return parseConfirmedBooking(raw);
     case 'inquiry': return parseBookingInquiry(raw);
     case 'cancellation': return parseCancellation(raw);
-    case 'modification': return parseModification(raw);
+    // 'modification' is handled at the dispatcher level (marked ignored), so
+    // it should never reach this switch.
     default: return null;
   }
 }
@@ -51,7 +52,7 @@ export async function syncAirbnbMail(property: PropertyConfig): Promise<SyncMail
   const slug = property.slug;
   const airbnbListingId = property.airbnbListingId!;
   if (!config.airbnbMailHost || !config.airbnbMailUser || !config.airbnbMailPassword) {
-    return { success: false, fetched: 0, parsedOk: 0, confirmedCount: 0, parsedError: 0, prunedArchive: 0,
+    return { success: false, fetched: 0, parsedOk: 0, confirmedCount: 0, parsedError: 0, ignoredCount: 0, prunedArchive: 0,
              error: 'AIRBNB_MAIL_* env-vars not configured' };
   }
 
@@ -72,6 +73,7 @@ export async function syncAirbnbMail(property: PropertyConfig): Promise<SyncMail
   let parsedOk = 0;
   let confirmedCount = 0;
   let parsedError = 0;
+  let ignoredCount = 0;
 
   try {
     await client.connect();
@@ -119,9 +121,19 @@ export async function syncAirbnbMail(property: PropertyConfig): Promise<SyncMail
 
       const type = detectMailType(raw.subject);
       if (type === 'unknown') {
-        updateParseStatus(raw.messageId, 'error', `Unknown subject pattern: ${raw.subject}`, null, type);
-        parsedError++;
-        logger.warn({ slug, messageId: raw.messageId, subject: raw.subject }, 'Airbnb mail: unknown subject pattern');
+        // Not a booking-relevant Subject (account-management, message threads,
+        // 2FA, payouts, etc.). Archive for audit, but do not flag as error.
+        updateParseStatus(raw.messageId, 'ignored', `Unrecognised Subject: ${raw.subject}`, null, type);
+        ignoredCount++;
+        logger.debug({ slug, messageId: raw.messageId, subject: raw.subject }, 'Airbnb mail: ignored (unrecognised subject)');
+        continue;
+      }
+      if (type === 'modification') {
+        // Modification mails (Deine Buchungsänderung wurde bestätigt) carry no
+        // reservation code or dates — the iCal sync reconciles the change.
+        // Archive for audit and skip parsing.
+        updateParseStatus(raw.messageId, 'ignored', 'modification: handled by iCal reconciliation', null, type);
+        ignoredCount++;
         continue;
       }
 
@@ -175,11 +187,11 @@ export async function syncAirbnbMail(property: PropertyConfig): Promise<SyncMail
 
     const prunedArchive = pruneOldMails(90);
 
-    return { success: true, fetched, parsedOk, confirmedCount, parsedError, prunedArchive };
+    return { success: true, fetched, parsedOk, confirmedCount, parsedError, ignoredCount, prunedArchive };
   } catch (error) {
     logger.error({ slug, error }, 'Airbnb mail sync failed');
     return {
-      success: false, fetched, parsedOk, confirmedCount, parsedError, prunedArchive: 0,
+      success: false, fetched, parsedOk, confirmedCount, parsedError, ignoredCount, prunedArchive: 0,
       error: error instanceof Error ? error.message : 'Unknown error',
     };
   } finally {
