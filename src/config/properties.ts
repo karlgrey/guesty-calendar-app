@@ -308,6 +308,10 @@ export function getListingId(property: PropertyConfig): string {
     if (!property.hostexPropertyId) throw new Error(`Hostex property ${property.slug} missing hostexPropertyId`);
     return property.hostexPropertyId;
   }
+  if (property.provider === 'airbnb-mail') {
+    if (!property.airbnbListingId) throw new Error(`Airbnb-mail property ${property.slug} missing airbnbListingId`);
+    return property.airbnbListingId;
+  }
   if (!property.guestyPropertyId) throw new Error(`Guesty property ${property.slug} missing guestyPropertyId`);
   return property.guestyPropertyId;
 }
