@@ -92,26 +92,19 @@ export class DirectEmailClient {
     const out: DirectMail[] = [];
     const searchRange = sinceUid > 0 ? `${sinceUid + 1}:*` : '1:*';
 
+    // Gmail exposes X-GM-THRID via the X-GM-EXT-1 IMAP extension.
+    // ImapFlow surfaces it natively when we request `threadId: true`.
     for await (const msg of this.client.fetch(searchRange, {
       uid: true,
       envelope: true,
       source: true,
-      headers: ['x-gm-thrid', 'in-reply-to', 'references', 'to', 'from'],
+      threadId: true,
     })) {
       try {
         const parsed = await simpleParser(msg.source as Buffer);
         const fromInfo = parseAddress(parsed.from);
-        // mailparser returns .to as AddressObject | AddressObject[] | undefined.
         const firstTo = Array.isArray(parsed.to) ? parsed.to[0] : parsed.to;
         const toInfo = parseAddress(firstTo);
-
-        // X-GM-THRID comes from the raw header buffer
-        let threadId: string | null = null;
-        if (msg.headers) {
-          const headerStr = msg.headers.toString('utf-8');
-          const m = headerStr.match(/^x-gm-thrid:\s*(\d+)/im);
-          if (m) threadId = m[1];
-        }
 
         const referencesRaw = parsed.references;
         const references = Array.isArray(referencesRaw)
@@ -123,7 +116,7 @@ export class DirectEmailClient {
         out.push({
           uid: msg.uid,
           messageId: parsed.messageId ?? `imap-uid-${msg.uid}@unknown`,
-          threadId,
+          threadId: msg.threadId ?? null,
           subject: parsed.subject ?? '',
           fromAddress: parsed.from?.text ?? '',
           fromName: fromInfo.name,

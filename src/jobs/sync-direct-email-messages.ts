@@ -33,25 +33,90 @@ import type {
 export interface DirectEmailSyncResult {
   success: boolean;
   fetched: number;
-  airbnbFiltered: number;
+  platformFiltered: number;
   upserted: number;
   threadsTouched: number;
   durationMs: number;
   error?: string;
 }
 
-// Mails whose From address contains any of these strings are Airbnb-originated
-// and should be skipped — we already capture those via Guesty.
-const AIRBNB_FROM_PATTERNS = [
-  '@airbnb.com',
-  '@reply.airbnb.com',
-  'automated@airbnb',
-  'noreply@airbnb',
+// Mails to skip — these are platform notifications, transactional mails,
+// or messages forwarded via the booking@ distribution list (which redistributes
+// Airbnb/Booking.com/PayPal notifications).
+//
+// We already capture Airbnb conversations via the Guesty /communication/conversations
+// API and Booking.com conversations via the same API. Direct-email sync should
+// only capture genuine off-platform host-guest correspondence.
+
+const SKIP_FROM_EMAILS = new Set<string>([
+  // The booking@ distribution list is a forward-only alias; anything FROM it
+  // is a re-broadcast of a platform notification, never an original guest email.
+  // (Real guest emails sent TO booking@ have the actual guest in the From: header.)
+  'booking@remoterepublic.com',
+]);
+
+const SKIP_FROM_DOMAINS = new Set<string>([
+  // Airbnb — also covered by Guesty conversation API
+  'airbnb.com',
+  'reply.airbnb.com',
+  'reply2.airbnb.com',
+  'mail.airbnb.com',
+  // Booking.com — covered by Guesty
+  'booking.com',
+  'reply.booking.com',
+  // Transactional / financial
+  'paypal.com',
+  'paypal.de',
+  'stripe.com',
+]);
+
+// Subject-pattern based filter for forwarded platform mails where the
+// sender domain is rewritten (e.g. forwarded via booking@distribution-list).
+// These subjects are unmistakably from a booking platform.
+const SKIP_SUBJECT_PATTERNS: RegExp[] = [
+  // Airbnb host notifications (German)
+  /^Buchung\s+best[äa]tigt/i,
+  /^Buchungs?erinnerung/i,
+  /^Anfrage\s+für\s+[„"]/i,
+  /^Deine\s+Buchungs[äa]nderung/i,
+  /^Buchung\s+aktualisiert/i,
+  /^Ausstehend:\s+Buchung/i,
+  /möchte\s+die\s+Buchung\s+ändern/i,
+  /^Neue\s+Nachricht\s+vom\s+Airbnb-Support/i,
+  /^Dein\s+Best[äa]tigungscode/i,
+  /^Wir\s+haben\s+eine\s+Auszahlung/i,
+  /^RE:\s+Buchung\s+für\s+[„"]/i,
+  /^RE:\s+Erkundigung\s+für\s+[„"]/i,
+  // Booking.com
+  /^RE:\s+Buchung\s+der\s+Unterkunft/i,
+  /Know\s+Your\s+Partner/i,
+  /Booking\.com/i,
+  // PayPal
+  /^Beleg\s+für\s+Ihre\s+PayPal-Zahlung/i,
+  // Spam-report / list moderation noise
+  /^Moderator['']?s\s+spam\s+report/i,
+  // Platform marketing
+  /^(No\s+more\s+empty\s+beds|Turn\s+your\s+page|Stand\s+out\s+in\s+search)/i,
 ];
 
-function isFromAirbnb(mail: DirectMail): boolean {
-  const haystacks = [mail.fromEmail, mail.fromAddress].filter(Boolean).map((s) => s!.toLowerCase());
-  return haystacks.some((h) => AIRBNB_FROM_PATTERNS.some((p) => h.includes(p)));
+function isPlatformMail(mail: DirectMail): boolean {
+  const fromEmail = (mail.fromEmail || '').toLowerCase();
+  if (fromEmail && SKIP_FROM_EMAILS.has(fromEmail)) return true;
+
+  const domain = fromEmail.split('@')[1];
+  if (domain && SKIP_FROM_DOMAINS.has(domain)) return true;
+
+  // Also defensively match fromAddress string for cases where simpleParser
+  // didn't isolate the email but the domain is in the display block.
+  const fromAddr = (mail.fromAddress || '').toLowerCase();
+  for (const d of SKIP_FROM_DOMAINS) {
+    if (fromAddr.includes('@' + d + '>') || fromAddr.endsWith('@' + d)) return true;
+  }
+
+  const subject = mail.subject || '';
+  if (SKIP_SUBJECT_PATTERNS.some((re) => re.test(subject))) return true;
+
+  return false;
 }
 
 // Host emails — outbound direction. Anything else → inbound.
@@ -140,7 +205,7 @@ export async function syncDirectEmailMessagesForProperty(
     return {
       success: false,
       fetched: 0,
-      airbnbFiltered: 0,
+      platformFiltered: 0,
       upserted: 0,
       threadsTouched: 0,
       durationMs: 0,
@@ -151,7 +216,7 @@ export async function syncDirectEmailMessagesForProperty(
     return {
       success: false,
       fetched: 0,
-      airbnbFiltered: 0,
+      platformFiltered: 0,
       upserted: 0,
       threadsTouched: 0,
       durationMs: 0,
@@ -165,7 +230,7 @@ export async function syncDirectEmailMessagesForProperty(
     return {
       success: false,
       fetched: 0,
-      airbnbFiltered: 0,
+      platformFiltered: 0,
       upserted: 0,
       threadsTouched: 0,
       durationMs: 0,
@@ -187,8 +252,8 @@ export async function syncDirectEmailMessagesForProperty(
     const all = await client.fetchNewMails(sinceUid);
     logger.info({ slug, label, sinceUid, fetched: all.length }, 'Direct-email: fetched mails');
 
-    const airbnbFiltered = all.filter(isFromAirbnb).length;
-    const relevant = all.filter((m) => !isFromAirbnb(m));
+    const platformFiltered = all.filter(isPlatformMail).length;
+    const relevant = all.filter((m) => !isPlatformMail(m));
 
     let maxUid = sinceUid;
     let upserted = 0;
@@ -296,7 +361,7 @@ export async function syncDirectEmailMessagesForProperty(
         slug,
         label,
         fetched: all.length,
-        airbnbFiltered,
+        platformFiltered,
         upserted,
         threadsTouched: buckets.length,
         duration,
@@ -307,7 +372,7 @@ export async function syncDirectEmailMessagesForProperty(
     return {
       success: true,
       fetched: all.length,
-      airbnbFiltered,
+      platformFiltered,
       upserted,
       threadsTouched: buckets.length,
       durationMs: duration,
@@ -318,7 +383,7 @@ export async function syncDirectEmailMessagesForProperty(
     return {
       success: false,
       fetched: 0,
-      airbnbFiltered: 0,
+      platformFiltered: 0,
       upserted: 0,
       threadsTouched: 0,
       durationMs: Date.now() - start,
