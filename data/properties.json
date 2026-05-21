@@ -4,6 +4,7 @@
       "slug": "farmhouse",
       "provider": "guesty",
       "guestyPropertyId": "686d1e927ae7af00234115ad",
+      "directEmailLabel": "Booking-Farmhouse",
       "name": "Farmhouse Prasser",
       "timezone": "Europe/Berlin",
       "currency": "EUR",

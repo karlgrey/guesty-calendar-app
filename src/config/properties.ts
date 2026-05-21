@@ -87,6 +87,10 @@ export interface PropertyConfig {
   airbnbListingId?: string;
   airbnbIcalUrl?: string;
   airbnbMailLabel?: string;
+  // Gmail label that collects ALL direct-booking correspondence for this property
+  // (booking@…, mic@…). Filter out Airbnb at sync time. Optional — only properties
+  // with this set will have direct-email sync.
+  directEmailLabel?: string;
   name: string;
   timezone: string;
   currency: string;
@@ -157,6 +161,7 @@ const propertyConfigSchema = z.object({
   airbnbListingId: z.string().optional(),
   airbnbIcalUrl: z.string().url().optional(),
   airbnbMailLabel: z.string().optional(),
+  directEmailLabel: z.string().optional(),
   name: z.string().min(1),
   timezone: z.string().default('Europe/Berlin'),
   currency: z.string().length(3).toUpperCase().default('EUR'),

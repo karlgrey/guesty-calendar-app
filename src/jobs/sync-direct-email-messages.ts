@@ -1,0 +1,347 @@
+/**
+ * Sync direct-booking emails from a Gmail label into message_threads/messages.
+ *
+ * Strategy:
+ * 1. Open the property's configured Gmail label via IMAP
+ * 2. Fetch all messages with UID > last_synced_uid
+ * 3. Filter out Airbnb-originated mails (sender domain check) — those come from Guesty
+ * 4. Group by Gmail X-GM-THRID for threading; fall back to In-Reply-To / Subject
+ * 5. Determine direction from sender: host email → outbound, anything else → inbound
+ * 6. Upsert threads + messages; (re-)classify per thread on each sync
+ *
+ * Idempotent. UID watermark stored in direct_email_state.
+ */
+
+import { config } from '../config/index.js';
+import { DirectEmailClient, type DirectMail } from '../services/direct-email-client.js';
+import {
+  upsertThread,
+  upsertMessage,
+  getLastEmailUid,
+  setLastEmailUid,
+  getMessagesByThread,
+} from '../repositories/message-repository.js';
+import { classifyThread } from '../utils/message-classifier.js';
+import logger from '../utils/logger.js';
+import type { PropertyConfig } from '../config/properties.js';
+import type {
+  Message,
+  NewMessage,
+  NewMessageThread,
+} from '../types/messages.js';
+
+export interface DirectEmailSyncResult {
+  success: boolean;
+  fetched: number;
+  airbnbFiltered: number;
+  upserted: number;
+  threadsTouched: number;
+  durationMs: number;
+  error?: string;
+}
+
+// Mails whose From address contains any of these strings are Airbnb-originated
+// and should be skipped — we already capture those via Guesty.
+const AIRBNB_FROM_PATTERNS = [
+  '@airbnb.com',
+  '@reply.airbnb.com',
+  'automated@airbnb',
+  'noreply@airbnb',
+];
+
+function isFromAirbnb(mail: DirectMail): boolean {
+  const haystacks = [mail.fromEmail, mail.fromAddress].filter(Boolean).map((s) => s!.toLowerCase());
+  return haystacks.some((h) => AIRBNB_FROM_PATTERNS.some((p) => h.includes(p)));
+}
+
+// Host emails — outbound direction. Anything else → inbound.
+// Each property has booking@… (recipient) AND mic@dynamicdudes.com (your personal).
+// We treat both as host. Extend the list if other team members reply.
+function isFromHost(mail: DirectMail, property: PropertyConfig): boolean {
+  const hostEmails = new Set<string>(
+    [
+      property.bookingRecipientEmail,
+      'mic@dynamicdudes.com',
+      'micha@remoterepublic.com',
+    ]
+      .filter(Boolean)
+      .map((s) => s!.toLowerCase()),
+  );
+  if (mail.fromEmail && hostEmails.has(mail.fromEmail.toLowerCase())) return true;
+  // Fallback: From contains domain
+  const hostDomains = ['remoterepublic.com', 'dynamicdudes.com', 'farmhouse-prasser.de'];
+  if (mail.fromAddress) {
+    const lower = mail.fromAddress.toLowerCase();
+    if (hostDomains.some((d) => lower.includes(`@${d}>`) || lower.endsWith(`@${d}`))) return true;
+  }
+  return false;
+}
+
+function deriveThreadId(mail: DirectMail): string {
+  if (mail.threadId) return `gmail:${mail.threadId}`;
+  // Fall back: use earliest reference (root of thread) or message-id itself
+  const root = mail.references[0] ?? mail.inReplyTo ?? mail.messageId;
+  return `gmail-thr:${root}`;
+}
+
+interface ThreadBucket {
+  threadId: string;
+  listingId: string;
+  guestName: string | null;
+  guestEmail: string | null;
+  channel: 'direct_email';
+  mails: DirectMail[];
+}
+
+function buildBuckets(mails: DirectMail[], property: PropertyConfig): ThreadBucket[] {
+  const byThread = new Map<string, ThreadBucket>();
+  for (const mail of mails) {
+    const tid = deriveThreadId(mail);
+    let bucket = byThread.get(tid);
+    if (!bucket) {
+      bucket = {
+        threadId: tid,
+        listingId: property.guestyPropertyId ?? property.hostexPropertyId ?? property.airbnbListingId!,
+        guestName: null,
+        guestEmail: null,
+        channel: 'direct_email',
+        mails: [],
+      };
+      byThread.set(tid, bucket);
+    }
+    bucket.mails.push(mail);
+  }
+
+  // Determine guest name/email per thread = the first inbound participant
+  for (const bucket of byThread.values()) {
+    const sorted = [...bucket.mails].sort((a, b) =>
+      a.receivedAt.localeCompare(b.receivedAt),
+    );
+    for (const mail of sorted) {
+      if (!isFromHost(mail, property)) {
+        bucket.guestName = mail.fromName;
+        bucket.guestEmail = mail.fromEmail;
+        break;
+      }
+    }
+  }
+
+  return [...byThread.values()];
+}
+
+export async function syncDirectEmailMessagesForProperty(
+  property: PropertyConfig,
+): Promise<DirectEmailSyncResult> {
+  const start = Date.now();
+  const slug = property.slug;
+  const label = property.directEmailLabel;
+
+  if (!label) {
+    return {
+      success: false,
+      fetched: 0,
+      airbnbFiltered: 0,
+      upserted: 0,
+      threadsTouched: 0,
+      durationMs: 0,
+      error: 'No directEmailLabel configured for property',
+    };
+  }
+  if (!config.airbnbMailHost || !config.airbnbMailUser || !config.airbnbMailPassword) {
+    return {
+      success: false,
+      fetched: 0,
+      airbnbFiltered: 0,
+      upserted: 0,
+      threadsTouched: 0,
+      durationMs: 0,
+      error: 'AIRBNB_MAIL_* env vars not configured (shared IMAP credentials)',
+    };
+  }
+
+  const listingId =
+    property.guestyPropertyId ?? property.hostexPropertyId ?? property.airbnbListingId;
+  if (!listingId) {
+    return {
+      success: false,
+      fetched: 0,
+      airbnbFiltered: 0,
+      upserted: 0,
+      threadsTouched: 0,
+      durationMs: 0,
+      error: 'No listing id resolvable for property',
+    };
+  }
+
+  const client = new DirectEmailClient({
+    host: config.airbnbMailHost,
+    port: config.airbnbMailPort,
+    user: config.airbnbMailUser,
+    password: config.airbnbMailPassword,
+    mailbox: label,
+  });
+
+  try {
+    await client.connect();
+    const sinceUid = getLastEmailUid(slug);
+    const all = await client.fetchNewMails(sinceUid);
+    logger.info({ slug, label, sinceUid, fetched: all.length }, 'Direct-email: fetched mails');
+
+    const airbnbFiltered = all.filter(isFromAirbnb).length;
+    const relevant = all.filter((m) => !isFromAirbnb(m));
+
+    let maxUid = sinceUid;
+    let upserted = 0;
+    const now = new Date().toISOString();
+
+    const buckets = buildBuckets(relevant, property);
+
+    for (const bucket of buckets) {
+      // Step 1: Upsert thread shell first (FK target for messages)
+      const sortedMails = [...bucket.mails].sort((a, b) =>
+        a.receivedAt.localeCompare(b.receivedAt),
+      );
+      const placeholderThread: NewMessageThread = {
+        id: bucket.threadId,
+        listing_id: listingId,
+        source: 'gmail',
+        channel: 'direct_email',
+        guest_name: bucket.guestName,
+        guest_email: bucket.guestEmail,
+        first_message_at: sortedMails[0].receivedAt,
+        last_message_at: sortedMails[sortedMails.length - 1].receivedAt,
+        message_count: bucket.mails.length,
+        reservation_id: null,
+        inquiry_id: null,
+        reservation_status: null,
+        conversion_category: null,
+        classification_confidence: null,
+        classification_keywords: null,
+        raw_meta: null,
+        last_synced_at: now,
+      };
+      upsertThread(placeholderThread);
+
+      // Step 2: Upsert each mail
+      for (const mail of bucket.mails) {
+        maxUid = Math.max(maxUid, mail.uid);
+        const direction = isFromHost(mail, property) ? 'outbound' : 'inbound';
+        const msg: NewMessage = {
+          id: `gmail:${mail.messageId}`,
+          thread_id: bucket.threadId,
+          direction,
+          sent_at: mail.receivedAt,
+          from_name: mail.fromName,
+          from_address: mail.fromEmail ?? mail.fromAddress,
+          to_address: mail.toEmail ?? mail.toAddress,
+          subject: mail.subject,
+          body: mail.textBody || stripHtml(mail.htmlBody),
+          body_html: mail.htmlBody || null,
+          source: 'gmail',
+          raw_meta: JSON.stringify({
+            uid: mail.uid,
+            inReplyTo: mail.inReplyTo,
+            references: mail.references,
+            gmailThreadId: mail.threadId,
+          }),
+        };
+        upsertMessage(msg);
+        upserted++;
+      }
+
+      // Step 3: Re-upsert thread with classification computed over full thread
+      const existing = getMessagesByThread(bucket.threadId);
+      const allBodies = existing.map((m: Message) => ({
+        direction: m.direction,
+        body: m.body || '',
+      }));
+
+      const classification = classifyThread({
+        reservationStatus: null, // direct emails are unlinked to reservations until linking is added
+        channel: 'direct_email',
+        messages: allBodies,
+      });
+
+      const sorted = [...existing].sort((a, b) => a.sent_at.localeCompare(b.sent_at));
+      const firstAt = sorted[0]?.sent_at ?? bucket.mails[0].receivedAt;
+      const lastAt = sorted[sorted.length - 1]?.sent_at ?? bucket.mails[bucket.mails.length - 1].receivedAt;
+
+      const thread: NewMessageThread = {
+        id: bucket.threadId,
+        listing_id: listingId,
+        source: 'gmail',
+        channel: 'direct_email',
+        guest_name: bucket.guestName,
+        guest_email: bucket.guestEmail,
+        first_message_at: firstAt,
+        last_message_at: lastAt,
+        message_count: existing.length,
+        reservation_id: null,
+        inquiry_id: null,
+        reservation_status: null,
+        conversion_category: classification.category,
+        classification_confidence: classification.confidence,
+        classification_keywords: JSON.stringify(classification.matchedKeywords),
+        raw_meta: JSON.stringify({ label, lastSubject: bucket.mails[bucket.mails.length - 1].subject }),
+        last_synced_at: now,
+      };
+      upsertThread(thread);
+    }
+
+    if (maxUid > sinceUid) setLastEmailUid(slug, maxUid);
+
+    const duration = Date.now() - start;
+    logger.info(
+      {
+        slug,
+        label,
+        fetched: all.length,
+        airbnbFiltered,
+        upserted,
+        threadsTouched: buckets.length,
+        duration,
+      },
+      'Direct-email: sync completed',
+    );
+
+    return {
+      success: true,
+      fetched: all.length,
+      airbnbFiltered,
+      upserted,
+      threadsTouched: buckets.length,
+      durationMs: duration,
+    };
+  } catch (error) {
+    const errMsg = error instanceof Error ? error.message : 'unknown';
+    logger.error({ slug, error: errMsg }, 'Direct-email: sync failed');
+    return {
+      success: false,
+      fetched: 0,
+      airbnbFiltered: 0,
+      upserted: 0,
+      threadsTouched: 0,
+      durationMs: Date.now() - start,
+      error: errMsg,
+    };
+  } finally {
+    await client.disconnect();
+  }
+}
+
+// Cheap HTML strip — used only if textBody is missing.
+function stripHtml(html: string): string {
+  if (!html) return '';
+  return html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\s+/g, ' ')
+    .trim();
+}

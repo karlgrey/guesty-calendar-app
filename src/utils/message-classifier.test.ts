@@ -1,0 +1,200 @@
+import { describe, it, expect } from 'vitest';
+import { classifyThread } from './message-classifier.js';
+
+function msg(direction: 'inbound' | 'outbound', body: string) {
+  return { direction, body };
+}
+
+describe('classifyThread', () => {
+  // ── CONFIRMED priority
+  it('returns CONFIRMED when reservation_status is confirmed (regardless of body)', () => {
+    const out = classifyThread({
+      reservationStatus: 'confirmed',
+      channel: 'airbnb',
+      messages: [msg('inbound', 'wir planen unsere Hochzeit hier zu feiern')],
+    });
+    expect(out.category).toBe('CONFIRMED');
+    expect(out.confidence).toBe(1.0);
+  });
+
+  // ── WEDDING
+  it('detects WEDDING from real Yuval-style inquiry', () => {
+    const out = classifyThread({
+      reservationStatus: 'declined',
+      channel: 'airbnb',
+      messages: [
+        msg('inbound', 'Wir planen aktuell eine kleine Hochzeit in Berlin im Juni 2027…'),
+      ],
+    });
+    expect(out.category).toBe('WEDDING');
+    expect(out.matchedKeywords).toContain('hochzeit');
+  });
+
+  it('detects WEDDING-via-event-keyword (Ottavia: baptism celebration)', () => {
+    const out = classifyThread({
+      reservationStatus: 'declined',
+      channel: 'airbnb',
+      messages: [
+        msg(
+          'inbound',
+          'organizing a small family gathering — a baptism celebration — for around 30 close friends',
+        ),
+      ],
+    });
+    expect(out.category).toBe('WEDDING');
+  });
+
+  it('detects WEDDING from photo-shoot / drehort even without "hochzeit"', () => {
+    const out = classifyThread({
+      reservationStatus: 'inquiry',
+      channel: 'airbnb',
+      messages: [msg('inbound', 'Ich suche derzeit nach einem geeigneten Drehort.')],
+    });
+    expect(out.category).toBe('WEDDING');
+  });
+
+  // ── DIRECT_DRIFT
+  it('detects DIRECT_DRIFT from guest sharing WhatsApp (Airbnb channel)', () => {
+    const out = classifyThread({
+      reservationStatus: 'inquiry',
+      channel: 'airbnb',
+      messages: [msg('inbound', 'Können wir das per WhatsApp besprechen?')],
+    });
+    expect(out.category).toBe('DIRECT_DRIFT');
+    expect(out.matchedKeywords).toContain('whatsapp');
+  });
+
+  it('detects DIRECT_DRIFT from host pulling guest back to Airbnb', () => {
+    const out = classifyThread({
+      reservationStatus: 'inquiry',
+      channel: 'airbnb',
+      messages: [
+        msg('inbound', 'Hi can we agree on a price?'),
+        msg('outbound', 'Bitte bucht regulär hier über Airbnb, dann passt das.'),
+      ],
+    });
+    expect(out.category).toBe('DIRECT_DRIFT');
+    expect(out.confidence).toBeGreaterThanOrEqual(0.85);
+  });
+
+  it('boosts DIRECT_DRIFT confidence when guest hands out contact AND host pulls back', () => {
+    const out = classifyThread({
+      reservationStatus: 'inquiry',
+      channel: 'airbnb',
+      messages: [
+        msg('inbound', 'My email is foo@bar.com, write me there.'),
+        msg('outbound', 'Bitte regulär über Airbnb buchen, das passt.'),
+      ],
+    });
+    expect(out.category).toBe('DIRECT_DRIFT');
+    expect(out.confidence).toBeGreaterThanOrEqual(0.9);
+  });
+
+  it('does NOT apply DIRECT_DRIFT to direct-email channel (would be circular)', () => {
+    // Direct emails are already off-platform; drift on thread-level is meaningless.
+    // Drift detection happens via cross-referencing Airbnb + email threads at dashboard level.
+    const out = classifyThread({
+      reservationStatus: 'inquiry',
+      channel: 'direct_email',
+      messages: [msg('inbound', 'Können wir das per WhatsApp besprechen?')],
+    });
+    expect(out.category).not.toBe('DIRECT_DRIFT');
+  });
+
+  // ── GROUP_EVENT
+  it('detects GROUP_EVENT for corporate offsite', () => {
+    const out = classifyThread({
+      reservationStatus: 'inquiry',
+      channel: 'airbnb',
+      messages: [
+        msg(
+          'inbound',
+          'Mein Team und ich würden gerne bei euch ein Offsite machen für 12 Personen.',
+        ),
+      ],
+    });
+    expect(out.category).toBe('GROUP_EVENT');
+  });
+
+  // ── PRICE
+  it('detects PRICE with budget number (Shavana-style)', () => {
+    const out = classifyThread({
+      reservationStatus: 'inquiry',
+      channel: 'airbnb',
+      messages: [
+        msg(
+          'inbound',
+          'We have a maximum budget of 3000€ for the two nights. Would you accommodate?',
+        ),
+      ],
+    });
+    expect(out.category).toBe('PRICE');
+    expect(out.confidence).toBeGreaterThanOrEqual(0.8);
+  });
+
+  it('detects PRICE with general negotiation keyword, lower confidence', () => {
+    const out = classifyThread({
+      reservationStatus: 'inquiry',
+      channel: 'airbnb',
+      messages: [msg('inbound', 'Geht es etwas günstiger? Sind Studenten.')],
+    });
+    expect(out.category).toBe('PRICE');
+    expect(out.confidence).toBeLessThan(0.8);
+  });
+
+  // ── OTHER
+  it('returns OTHER for generic question about dog policy', () => {
+    const out = classifyThread({
+      reservationStatus: 'inquiry',
+      channel: 'airbnb',
+      messages: [msg('inbound', 'Do you accept a large well-behaved dog?')],
+    });
+    expect(out.category).toBe('OTHER');
+  });
+
+  it('returns OTHER for empty thread', () => {
+    const out = classifyThread({
+      reservationStatus: 'inquiry',
+      channel: 'airbnb',
+      messages: [],
+    });
+    expect(out.category).toBe('OTHER');
+  });
+
+  // ── Priority order verification
+  it('priority: WEDDING beats PRICE when both keywords present', () => {
+    const out = classifyThread({
+      reservationStatus: 'inquiry',
+      channel: 'airbnb',
+      messages: [
+        msg(
+          'inbound',
+          'Wir möchten unsere Hochzeit feiern, Budget ist 5000€ für eine Nacht.',
+        ),
+      ],
+    });
+    expect(out.category).toBe('WEDDING');
+  });
+
+  it('priority: WEDDING beats DIRECT_DRIFT when both present', () => {
+    const out = classifyThread({
+      reservationStatus: 'inquiry',
+      channel: 'airbnb',
+      messages: [
+        msg('inbound', 'Wir möchten unsere Hochzeit feiern, schreib mir per WhatsApp.'),
+      ],
+    });
+    expect(out.category).toBe('WEDDING');
+  });
+
+  it('priority: DIRECT_DRIFT beats PRICE when both present (Airbnb channel)', () => {
+    const out = classifyThread({
+      reservationStatus: 'inquiry',
+      channel: 'airbnb',
+      messages: [
+        msg('inbound', 'Budget 2000€. Können wir das per WhatsApp besprechen?'),
+      ],
+    });
+    expect(out.category).toBe('DIRECT_DRIFT');
+  });
+});

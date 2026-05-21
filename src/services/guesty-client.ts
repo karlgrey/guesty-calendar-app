@@ -704,6 +704,39 @@ export class GuestyClient {
   }
 
   /**
+   * Conversations: paginated list.
+   * The Open-API endpoint uses cursor pagination via ?cursorAfter=BASE64.
+   * Each call returns at most ~50 conversations plus the cursor for the next page.
+   */
+  async listConversations(params: { limit?: number; cursorAfter?: string } = {}): Promise<{
+    count: number;
+    conversations: any[];
+    nextCursor: string;
+  }> {
+    const search = new URLSearchParams();
+    search.set('limit', String(params.limit ?? 50));
+    if (params.cursorAfter) search.set('cursorAfter', params.cursorAfter);
+    const res = await this.request<{ data: { count: number; conversations: any[]; cursor: { after: string; before: string } } }>(
+      `/communication/conversations?${search.toString()}`,
+    );
+    return {
+      count: res.data?.count ?? 0,
+      conversations: res.data?.conversations ?? [],
+      nextCursor: res.data?.cursor?.after ?? '',
+    };
+  }
+
+  /**
+   * Conversation posts (messages within a single conversation).
+   */
+  async listConversationPosts(conversationId: string, limit: number = 200): Promise<any[]> {
+    const res = await this.request<{ data: { posts: any[] } }>(
+      `/communication/conversations/${conversationId}/posts?limit=${limit}`,
+    );
+    return res.data?.posts ?? [];
+  }
+
+  /**
    * Health check: verify API credentials and connectivity
    */
   async healthCheck(): Promise<boolean> {

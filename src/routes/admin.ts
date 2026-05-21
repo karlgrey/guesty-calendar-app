@@ -3199,4 +3199,125 @@ router.post('/api/document-sequence', express.json(), (req, res, next) => {
   }
 });
 
+/**
+ * GET /admin/conversions/:slug
+ * Returns classified message threads for the conversion dashboard.
+ * Sources: Guesty conversations + direct-email (when configured).
+ *
+ * Query params:
+ *   ?category=PRICE|WEDDING|DIRECT_DRIFT|GROUP_EVENT|OTHER|CONFIRMED  (optional filter)
+ *   ?source=guesty|gmail  (optional filter)
+ *   ?limit=50  (default 200, max 500)
+ */
+router.get('/conversions/:slug', (req, res, next) => {
+  try {
+    const property = getPropertyBySlug(req.params.slug);
+    if (!property) {
+      res.status(404).json({ error: `Property '${req.params.slug}' not found` });
+      return;
+    }
+    const listingId = getListingId(property);
+    if (!listingId) {
+      res.status(400).json({ error: 'No listing id resolvable for property' });
+      return;
+    }
+
+    const db = getDatabase();
+    const category = typeof req.query.category === 'string' ? req.query.category : null;
+    const source = typeof req.query.source === 'string' ? req.query.source : null;
+    const limit = Math.min(parseInt(String(req.query.limit ?? '200'), 10) || 200, 500);
+
+    const whereParts: string[] = ['listing_id = ?'];
+    const params: Array<string | number> = [listingId];
+    if (category) {
+      whereParts.push('conversion_category = ?');
+      params.push(category);
+    }
+    if (source) {
+      whereParts.push('source = ?');
+      params.push(source);
+    }
+    params.push(limit);
+
+    const threads = db
+      .prepare(
+        `SELECT id, source, channel, guest_name, guest_email,
+                first_message_at, last_message_at, message_count,
+                reservation_status, conversion_category,
+                classification_confidence, classification_keywords
+         FROM message_threads
+         WHERE ${whereParts.join(' AND ')}
+         ORDER BY last_message_at DESC
+         LIMIT ?`,
+      )
+      .all(...params);
+
+    // Aggregate stats
+    const stats = db
+      .prepare(
+        `SELECT
+           COALESCE(conversion_category, 'UNCATEGORIZED') AS category,
+           source,
+           COUNT(*) AS n
+         FROM message_threads
+         WHERE listing_id = ?
+         GROUP BY category, source`,
+      )
+      .all(listingId);
+
+    res.json({
+      success: true,
+      property: { slug: property.slug, name: property.name, listingId },
+      filters: { category, source, limit },
+      stats,
+      threads,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /admin/conversions/:slug/thread/:threadId
+ * Returns full message history for one thread (for drill-down view).
+ */
+router.get('/conversions/:slug/thread/:threadId(*)', (req, res, next) => {
+  try {
+    const property = getPropertyBySlug(req.params.slug);
+    if (!property) {
+      res.status(404).json({ error: `Property '${req.params.slug}' not found` });
+      return;
+    }
+    const listingId = getListingId(property);
+    if (!listingId) {
+      res.status(400).json({ error: 'No listing id resolvable for property' });
+      return;
+    }
+
+    const db = getDatabase();
+    const thread = db
+      .prepare(`SELECT * FROM message_threads WHERE id = ? AND listing_id = ?`)
+      .get(req.params.threadId, listingId);
+
+    if (!thread) {
+      res.status(404).json({ error: 'Thread not found' });
+      return;
+    }
+
+    const messages = db
+      .prepare(
+        `SELECT id, direction, sent_at, from_name, from_address, to_address,
+                subject, body, source
+         FROM messages
+         WHERE thread_id = ?
+         ORDER BY sent_at ASC`,
+      )
+      .all(req.params.threadId);
+
+    res.json({ success: true, thread, messages });
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default router;
