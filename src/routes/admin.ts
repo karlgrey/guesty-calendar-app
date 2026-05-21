@@ -714,6 +714,7 @@ router.get('/', (_req, res) => {
         </select>
       </div>
       <div style="display: flex; gap: 10px;">
+        <a href="/admin/conversions"><button class="secondary">🔍 Conversions</button></a>
         <a href="/admin/system"><button class="secondary">System</button></a>
         <a href="/auth/logout"><button class="secondary">Logout</button></a>
       </div>
@@ -3197,6 +3198,553 @@ router.post('/api/document-sequence', express.json(), (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+/**
+ * GET /admin/conversions
+ * HTML conversion dashboard page. Loads property list + lets user filter
+ * by category. JSON data fetched from /admin/conversions/:slug.
+ */
+router.get('/conversions', (_req, res) => {
+  res.send(`<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Conversion Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;0,9..144,700;1,9..144,300&family=Manrope:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --color-cream: #faf8f5;
+      --color-sand: #f4f1ed;
+      --color-stone: #e8e4df;
+      --color-charcoal: #2a2a2a;
+      --color-warm-gray: #6b6560;
+      --color-forest: #2d5a3d;
+      --color-forest-light: #3d7a52;
+      --color-terracotta: #c75b3c;
+      --color-amber: #d4a574;
+      --color-sage: #8a9a7b;
+      --font-display: 'Fraunces', serif;
+      --font-body: 'Manrope', sans-serif;
+      --shadow-sm: 0 2px 8px rgba(42, 42, 42, 0.04);
+      --shadow-md: 0 4px 16px rgba(42, 42, 42, 0.08);
+      --shadow-lg: 0 8px 32px rgba(42, 42, 42, 0.12);
+      --radius-md: 12px;
+      --radius-lg: 16px;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: var(--font-body);
+      background: var(--color-cream);
+      padding: clamp(20px, 4vw, 48px);
+      line-height: 1.65;
+      color: var(--color-charcoal);
+      -webkit-font-smoothing: antialiased;
+    }
+    .container { max-width: 1400px; margin: 0 auto; }
+    .header {
+      display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 20px; margin-bottom: 48px;
+    }
+    h1 {
+      font-family: var(--font-display); font-weight: 700;
+      font-size: clamp(32px, 5vw, 56px); line-height: 1.1;
+      letter-spacing: -0.02em;
+    }
+    h2 {
+      font-family: var(--font-display); font-weight: 600;
+      font-size: clamp(22px, 3vw, 30px); margin: 0 0 24px;
+      position: relative; padding-bottom: 12px;
+    }
+    h2::after {
+      content: ''; position: absolute; bottom: 0; left: 0;
+      width: 60px; height: 3px;
+      background: linear-gradient(90deg, var(--color-forest), var(--color-terracotta));
+      border-radius: 2px;
+    }
+    .property-selector {
+      font-family: var(--font-body); font-size: 14px; font-weight: 500;
+      padding: 10px 16px; border: 1px solid var(--color-stone);
+      background: white; border-radius: var(--radius-md);
+      color: var(--color-charcoal); cursor: pointer;
+    }
+    a.btn, button.btn {
+      font-family: var(--font-body); font-size: 14px; font-weight: 500;
+      padding: 10px 16px; border: 1px solid var(--color-stone);
+      background: white; border-radius: var(--radius-md);
+      color: var(--color-charcoal); cursor: pointer; text-decoration: none;
+      display: inline-block;
+    }
+    a.btn:hover, button.btn:hover { background: var(--color-sand); }
+    .section {
+      background: white; padding: clamp(20px, 3vw, 32px);
+      margin-bottom: 24px; border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-md); border: 1px solid var(--color-stone);
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 16px;
+    }
+    .stat {
+      background: var(--color-sand); padding: 20px;
+      border-radius: var(--radius-md);
+    }
+    .stat .label {
+      font-size: 12px; font-weight: 600;
+      color: var(--color-warm-gray); text-transform: uppercase;
+      letter-spacing: 0.06em; margin-bottom: 8px;
+    }
+    .stat .value {
+      font-family: var(--font-display); font-weight: 600;
+      font-size: 36px; line-height: 1; color: var(--color-charcoal);
+    }
+    .stat .sub { font-size: 13px; color: var(--color-warm-gray); margin-top: 4px; }
+
+    /* Category bars */
+    .bar-row {
+      display: grid; grid-template-columns: 140px 1fr 80px;
+      gap: 12px; align-items: center; margin-bottom: 10px;
+      cursor: pointer; padding: 6px 8px;
+      border-radius: 6px; transition: background 0.15s;
+    }
+    .bar-row:hover { background: var(--color-sand); }
+    .bar-row.active { background: var(--color-sand); font-weight: 600; }
+    .bar-row .cat { font-size: 13px; font-weight: 500; }
+    .bar-track {
+      background: var(--color-sand); height: 24px;
+      border-radius: 6px; overflow: hidden;
+    }
+    .bar-fill {
+      height: 100%; border-radius: 6px;
+      display: flex; align-items: center; padding: 0 10px;
+      color: white; font-size: 12px; font-weight: 600;
+    }
+    .bar-CONFIRMED   .bar-fill { background: var(--color-forest); }
+    .bar-PRICE       .bar-fill { background: var(--color-amber); color: var(--color-charcoal); }
+    .bar-WEDDING     .bar-fill { background: var(--color-terracotta); }
+    .bar-DIRECT_DRIFT .bar-fill { background: #b03f7a; }
+    .bar-GROUP_EVENT .bar-fill { background: var(--color-sage); }
+    .bar-OTHER       .bar-fill { background: var(--color-warm-gray); }
+    .bar-row .count {
+      text-align: right; font-variant-numeric: tabular-nums;
+      font-size: 13px; color: var(--color-warm-gray);
+    }
+
+    /* Channel breakdown */
+    .channel-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+    }
+    .channel-box {
+      background: var(--color-sand); padding: 16px;
+      border-radius: var(--radius-md);
+    }
+    .channel-box h3 {
+      font-family: var(--font-body); font-size: 13px;
+      font-weight: 600; color: var(--color-warm-gray);
+      text-transform: uppercase; letter-spacing: 0.06em;
+      margin-bottom: 12px;
+    }
+    .channel-row {
+      display: flex; justify-content: space-between;
+      font-size: 13px; padding: 4px 0;
+    }
+    .channel-row .n { font-variant-numeric: tabular-nums; }
+
+    /* Threads table */
+    .filters {
+      display: flex; flex-wrap: wrap; gap: 8px;
+      margin-bottom: 16px;
+    }
+    .filter-chip {
+      font-size: 12px; font-weight: 500;
+      padding: 6px 12px; border-radius: 999px;
+      border: 1px solid var(--color-stone); background: white;
+      cursor: pointer; transition: all 0.15s;
+    }
+    .filter-chip:hover { background: var(--color-sand); }
+    .filter-chip.active {
+      background: var(--color-charcoal); color: white;
+      border-color: var(--color-charcoal);
+    }
+    table {
+      width: 100%; border-collapse: collapse; font-size: 13px;
+    }
+    th {
+      text-align: left; padding: 12px 8px;
+      font-weight: 600; color: var(--color-warm-gray);
+      text-transform: uppercase; letter-spacing: 0.04em;
+      font-size: 11px; border-bottom: 1px solid var(--color-stone);
+    }
+    td {
+      padding: 10px 8px; border-bottom: 1px solid var(--color-sand);
+      vertical-align: top;
+    }
+    tr.thread-row { cursor: pointer; transition: background 0.1s; }
+    tr.thread-row:hover { background: var(--color-sand); }
+    .badge {
+      display: inline-block; padding: 2px 8px; border-radius: 999px;
+      font-size: 11px; font-weight: 600;
+    }
+    .badge-CONFIRMED   { background: #d8e8df; color: #2d5a3d; }
+    .badge-PRICE       { background: #f2e3c4; color: #8a6515; }
+    .badge-WEDDING     { background: #f1d0c5; color: #8a3015; }
+    .badge-DIRECT_DRIFT { background: #f1c4d8; color: #7a1546; }
+    .badge-GROUP_EVENT { background: #d8e0d0; color: #4a5a3a; }
+    .badge-OTHER       { background: var(--color-stone); color: var(--color-warm-gray); }
+    .channel-tag {
+      font-size: 10px; padding: 2px 6px; border-radius: 4px;
+      background: var(--color-sand); color: var(--color-warm-gray);
+      text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    .keywords {
+      font-size: 11px; color: var(--color-warm-gray);
+      font-family: var(--font-body);
+    }
+
+    /* Drill-down modal */
+    .modal-overlay {
+      position: fixed; inset: 0;
+      background: rgba(42, 42, 42, 0.55);
+      display: none; align-items: flex-start; justify-content: center;
+      z-index: 50; padding: 40px 20px;
+      overflow-y: auto;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: var(--color-cream); border-radius: var(--radius-lg);
+      max-width: 800px; width: 100%; padding: 32px;
+      box-shadow: var(--shadow-lg);
+      max-height: calc(100vh - 80px); overflow-y: auto;
+    }
+    .modal-header {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      margin-bottom: 24px; padding-bottom: 16px;
+      border-bottom: 1px solid var(--color-stone);
+    }
+    .modal-header h3 {
+      font-family: var(--font-display); font-size: 24px; font-weight: 600;
+      color: var(--color-charcoal); margin: 0;
+    }
+    .modal-meta {
+      font-size: 12px; color: var(--color-warm-gray);
+      margin-top: 4px;
+    }
+    .close-btn {
+      font-size: 24px; background: none; border: none;
+      cursor: pointer; color: var(--color-warm-gray); padding: 4px 8px;
+    }
+    .close-btn:hover { color: var(--color-charcoal); }
+    .msg {
+      padding: 12px 16px; border-radius: var(--radius-md);
+      margin-bottom: 12px; font-size: 13px; line-height: 1.6;
+      border-left: 3px solid var(--color-stone);
+    }
+    .msg-inbound  { background: white; border-left-color: var(--color-amber); }
+    .msg-outbound { background: var(--color-sand); border-left-color: var(--color-forest); }
+    .msg-system   { background: var(--color-stone); border-left-color: var(--color-warm-gray); font-style: italic; font-size: 12px; }
+    .msg-meta {
+      display: flex; justify-content: space-between;
+      font-size: 11px; font-weight: 600;
+      color: var(--color-warm-gray); margin-bottom: 8px;
+    }
+    .msg-body {
+      white-space: pre-wrap; word-break: break-word;
+      color: var(--color-charcoal);
+    }
+    .loading { color: var(--color-warm-gray); font-style: italic; }
+    .empty   { color: var(--color-warm-gray); text-align: center; padding: 24px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div style="display: flex; align-items: center; gap: 16px;">
+        <h1 style="margin-bottom: 0;">🔍 Conversions</h1>
+        <select id="propertySelector" class="property-selector" onchange="onPropertyChange(this.value)">
+          <option value="">Loading…</option>
+        </select>
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <a href="/admin" class="btn">← Dashboard</a>
+        <a href="/admin/system" class="btn">System</a>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Übersicht</h2>
+      <div class="stats" id="stats"><div class="loading">Lade…</div></div>
+    </div>
+
+    <div class="section">
+      <h2>Kategorien</h2>
+      <p style="font-size: 13px; color: var(--color-warm-gray); margin: -12px 0 16px;">
+        Klick eine Kategorie an, um die Threads unten zu filtern.
+      </p>
+      <div id="categories"><div class="loading">Lade…</div></div>
+    </div>
+
+    <div class="section">
+      <h2>Nach Channel</h2>
+      <div class="channel-grid" id="channels"><div class="loading">Lade…</div></div>
+    </div>
+
+    <div class="section">
+      <h2>Threads</h2>
+      <div class="filters" id="filters">
+        <button class="filter-chip active" data-category="">Alle</button>
+      </div>
+      <div id="threadsTable"><div class="loading">Lade…</div></div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="modal">
+    <div class="modal">
+      <div class="modal-header">
+        <div>
+          <h3 id="modalTitle">Thread</h3>
+          <div class="modal-meta" id="modalMeta"></div>
+        </div>
+        <button class="close-btn" onclick="closeModal()">×</button>
+      </div>
+      <div id="modalBody"><div class="loading">Lade Messages…</div></div>
+    </div>
+  </div>
+
+  <script>
+    const CATEGORY_LABELS = {
+      CONFIRMED:    { label: 'Bestätigt',         emoji: '✅' },
+      WEDDING:      { label: 'Hochzeit / Event',  emoji: '💍' },
+      PRICE:        { label: 'Preisverhandlung',  emoji: '€'  },
+      DIRECT_DRIFT: { label: 'Direct-Drift',      emoji: '↗'  },
+      GROUP_EVENT:  { label: 'Gruppe / Offsite',  emoji: '🤝' },
+      OTHER:        { label: 'Sonstiges',         emoji: '◌'  },
+    };
+    const ORDER = ['CONFIRMED', 'WEDDING', 'PRICE', 'DIRECT_DRIFT', 'GROUP_EVENT', 'OTHER'];
+
+    let currentSlug = '';
+    let currentCategory = '';
+
+    async function loadProperties() {
+      const res = await fetch('/admin/properties');
+      const json = await res.json();
+      const select = document.getElementById('propertySelector');
+      select.innerHTML = '';
+      const guestyOnly = (json.properties || []).filter(p => p.provider === 'guesty');
+      if (guestyOnly.length === 0) {
+        select.innerHTML = '<option value="">Keine Properties</option>';
+        return;
+      }
+      for (const p of guestyOnly) {
+        const opt = document.createElement('option');
+        opt.value = p.slug;
+        opt.textContent = p.name;
+        select.appendChild(opt);
+      }
+      currentSlug = guestyOnly[0].slug;
+      select.value = currentSlug;
+      await loadData();
+    }
+
+    function onPropertyChange(slug) {
+      currentSlug = slug;
+      currentCategory = '';
+      loadData();
+    }
+
+    async function loadData() {
+      if (!currentSlug) return;
+      const res = await fetch('/admin/conversions/' + currentSlug + '?limit=500' +
+        (currentCategory ? '&category=' + currentCategory : ''));
+      const json = await res.json();
+      if (!json.success) {
+        document.getElementById('stats').innerHTML = '<div class="empty">Fehler: ' + (json.error || 'unbekannt') + '</div>';
+        return;
+      }
+      renderStats(json);
+      renderCategories(json.stats);
+      renderChannels(json.stats);
+      renderFilters(json.stats);
+      renderThreads(json.threads);
+    }
+
+    function renderStats(json) {
+      const stats = json.stats || [];
+      const total = stats.reduce((s, r) => s + r.n, 0);
+      const confirmed = stats.filter(r => r.category === 'CONFIRMED').reduce((s, r) => s + r.n, 0);
+      const guestyTotal = stats.filter(r => r.source === 'guesty').reduce((s, r) => s + r.n, 0);
+      const gmailTotal = stats.filter(r => r.source === 'gmail').reduce((s, r) => s + r.n, 0);
+
+      // Conversion rate among Guesty (the only source with reservation status)
+      const guestyConfirmed = stats.filter(r => r.source === 'guesty' && r.category === 'CONFIRMED').reduce((s, r) => s + r.n, 0);
+      const convRate = guestyTotal > 0 ? Math.round((guestyConfirmed / guestyTotal) * 100) : 0;
+
+      document.getElementById('stats').innerHTML = [
+        statCard('Threads gesamt', total, 'aus allen Quellen'),
+        statCard('Bestätigt', confirmed, guestyConfirmed + ' davon aus Guesty'),
+        statCard('Conversion-Rate', convRate + '%', 'Guesty: ' + guestyConfirmed + '/' + guestyTotal),
+        statCard('Direct-Email Threads', gmailTotal, 'eigenes Postfach'),
+      ].join('');
+    }
+
+    function statCard(label, value, sub) {
+      return '<div class="stat"><div class="label">' + label + '</div>' +
+             '<div class="value">' + value + '</div>' +
+             '<div class="sub">' + (sub || '') + '</div></div>';
+    }
+
+    function renderCategories(stats) {
+      // Aggregate by category across sources
+      const agg = {};
+      let total = 0;
+      for (const r of stats) {
+        agg[r.category] = (agg[r.category] || 0) + r.n;
+        total += r.n;
+      }
+      const max = Math.max(...Object.values(agg), 1);
+      const html = ORDER.filter(k => agg[k]).map(cat => {
+        const n = agg[cat];
+        const pct = total > 0 ? (n / total * 100).toFixed(1) : '0.0';
+        const w = (n / max * 100).toFixed(0);
+        const def = CATEGORY_LABELS[cat] || { label: cat, emoji: '?' };
+        return '<div class="bar-row bar-' + cat + (currentCategory === cat ? ' active' : '') + '" onclick="filterByCategory(\\'' + cat + '\\')">' +
+          '<div class="cat">' + def.emoji + ' ' + def.label + '</div>' +
+          '<div class="bar-track"><div class="bar-fill" style="width: ' + w + '%">' + (w > 15 ? n : '') + '</div></div>' +
+          '<div class="count">' + n + ' · ' + pct + '%</div>' +
+        '</div>';
+      }).join('');
+      document.getElementById('categories').innerHTML = html || '<div class="empty">Keine Daten</div>';
+    }
+
+    function renderChannels(stats) {
+      // Group by source + channel — but stats only has source not channel.
+      // Show source-level summary with per-category breakdown.
+      const bySource = {};
+      for (const r of stats) {
+        if (!bySource[r.source]) bySource[r.source] = {};
+        bySource[r.source][r.category] = r.n;
+      }
+      const html = Object.keys(bySource).sort().map(src => {
+        const counts = bySource[src];
+        const total = Object.values(counts).reduce((s, n) => s + n, 0);
+        const lines = ORDER.filter(k => counts[k]).map(cat => {
+          const def = CATEGORY_LABELS[cat] || { label: cat, emoji: '?' };
+          return '<div class="channel-row"><span>' + def.emoji + ' ' + def.label + '</span><span class="n">' + counts[cat] + '</span></div>';
+        }).join('');
+        const title = src === 'guesty' ? 'Guesty (Airbnb/Booking/…)' : src === 'gmail' ? 'Direct Email' : src;
+        return '<div class="channel-box"><h3>' + title + ' · ' + total + ' Threads</h3>' + lines + '</div>';
+      }).join('');
+      document.getElementById('channels').innerHTML = html || '<div class="empty">Keine Daten</div>';
+    }
+
+    function renderFilters(stats) {
+      const agg = {};
+      for (const r of stats) agg[r.category] = (agg[r.category] || 0) + r.n;
+      const filtersDiv = document.getElementById('filters');
+      const chips = ['<button class="filter-chip ' + (currentCategory === '' ? 'active' : '') + '" onclick="filterByCategory(\\'\\')">Alle</button>'];
+      for (const cat of ORDER) {
+        if (!agg[cat]) continue;
+        const def = CATEGORY_LABELS[cat] || { label: cat, emoji: '?' };
+        chips.push('<button class="filter-chip ' + (currentCategory === cat ? 'active' : '') + '" onclick="filterByCategory(\\'' + cat + '\\')">' +
+          def.emoji + ' ' + def.label + ' (' + agg[cat] + ')</button>');
+      }
+      filtersDiv.innerHTML = chips.join('');
+    }
+
+    function filterByCategory(cat) {
+      currentCategory = cat;
+      loadData();
+    }
+
+    function renderThreads(threads) {
+      if (!threads || threads.length === 0) {
+        document.getElementById('threadsTable').innerHTML = '<div class="empty">Keine Threads in dieser Auswahl.</div>';
+        return;
+      }
+      const rows = threads.map(t => {
+        const def = CATEGORY_LABELS[t.conversion_category] || { label: t.conversion_category || 'unkat.', emoji: '?' };
+        const kw = (() => {
+          try { return (JSON.parse(t.classification_keywords || '[]') || []).slice(0, 4).join(', '); }
+          catch { return ''; }
+        })();
+        const lastAt = (t.last_message_at || '').slice(0, 10);
+        const guest = t.guest_name || (t.guest_email || '—');
+        return '<tr class="thread-row" onclick="openThread(\\'' + t.id.replace(/\\\\/g,'\\\\\\\\').replace(/\\'/g,"\\\\'") + '\\')">' +
+          '<td>' + lastAt + '</td>' +
+          '<td>' + escapeHtml(guest) + '</td>' +
+          '<td><span class="channel-tag">' + (t.channel || '?') + '</span></td>' +
+          '<td><span class="badge badge-' + (t.conversion_category || 'OTHER') + '">' + def.emoji + ' ' + def.label + '</span></td>' +
+          '<td class="keywords">' + escapeHtml(kw) + '</td>' +
+          '<td style="text-align:right; color: var(--color-warm-gray); font-size: 12px;">' + (t.message_count || 0) + ' Msg</td>' +
+        '</tr>';
+      }).join('');
+      document.getElementById('threadsTable').innerHTML =
+        '<table><thead><tr><th>Datum</th><th>Gast</th><th>Channel</th><th>Kategorie</th><th>Keywords</th><th style="text-align:right">#</th></tr></thead><tbody>' +
+        rows + '</tbody></table>';
+    }
+
+    async function openThread(threadId) {
+      document.getElementById('modal').classList.add('open');
+      document.getElementById('modalTitle').textContent = 'Thread';
+      document.getElementById('modalMeta').textContent = '';
+      document.getElementById('modalBody').innerHTML = '<div class="loading">Lade…</div>';
+      try {
+        const url = '/admin/conversions/' + currentSlug + '/thread/' + encodeURIComponent(threadId);
+        const res = await fetch(url);
+        const json = await res.json();
+        if (!json.success) {
+          document.getElementById('modalBody').innerHTML = '<div class="empty">Fehler: ' + (json.error || '?') + '</div>';
+          return;
+        }
+        const t = json.thread;
+        const def = CATEGORY_LABELS[t.conversion_category] || { label: t.conversion_category, emoji: '?' };
+        document.getElementById('modalTitle').textContent =
+          (t.guest_name || t.guest_email || 'Thread') + ' · ' + def.emoji + ' ' + def.label;
+        document.getElementById('modalMeta').innerHTML =
+          (t.channel || '?') + ' · ' + (t.source || '?') + ' · ' +
+          (t.first_message_at || '').slice(0, 10) + ' → ' + (t.last_message_at || '').slice(0, 10) +
+          ' · ' + json.messages.length + ' Messages';
+        const html = json.messages.map(m => {
+          const sent = (m.sent_at || '').slice(0, 16).replace('T', ' ');
+          return '<div class="msg msg-' + m.direction + '">' +
+            '<div class="msg-meta"><span>' + (m.direction === 'inbound' ? '← ' : m.direction === 'outbound' ? '→ ' : '· ') +
+              escapeHtml(m.from_name || m.from_address || 'unknown') + '</span><span>' + sent + '</span></div>' +
+            '<div class="msg-body">' + escapeHtml(m.body || '').slice(0, 5000) + '</div>' +
+          '</div>';
+        }).join('');
+        document.getElementById('modalBody').innerHTML = html;
+      } catch (e) {
+        document.getElementById('modalBody').innerHTML = '<div class="empty">Fehler: ' + escapeHtml(String(e)) + '</div>';
+      }
+    }
+
+    function closeModal() {
+      document.getElementById('modal').classList.remove('open');
+    }
+    document.getElementById('modal').addEventListener('click', e => {
+      if (e.target.id === 'modal') closeModal();
+    });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') closeModal();
+    });
+
+    function escapeHtml(s) {
+      if (s == null) return '';
+      return String(s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    loadProperties();
+  </script>
+</body>
+</html>`);
 });
 
 /**
