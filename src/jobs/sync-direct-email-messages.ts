@@ -39,6 +39,7 @@ export interface DirectEmailSyncResult {
   success: boolean;
   fetched: number;
   platformFiltered: number;
+  hostInitiatedFiltered: number;
   upserted: number;
   threadsTouched: number;
   durationMs: number;
@@ -273,6 +274,7 @@ export async function syncDirectEmailMessagesForProperty(
       success: false,
       fetched: 0,
       platformFiltered: 0,
+      hostInitiatedFiltered: 0,
       upserted: 0,
       threadsTouched: 0,
       durationMs: 0,
@@ -284,6 +286,7 @@ export async function syncDirectEmailMessagesForProperty(
       success: false,
       fetched: 0,
       platformFiltered: 0,
+      hostInitiatedFiltered: 0,
       upserted: 0,
       threadsTouched: 0,
       durationMs: 0,
@@ -298,6 +301,7 @@ export async function syncDirectEmailMessagesForProperty(
       success: false,
       fetched: 0,
       platformFiltered: 0,
+      hostInitiatedFiltered: 0,
       upserted: 0,
       threadsTouched: 0,
       durationMs: 0,
@@ -335,11 +339,40 @@ export async function syncDirectEmailMessagesForProperty(
       logger.info({ slug, platformFiltered, reasons: skipReasons }, 'Direct-email: skip-filter breakdown');
     }
 
+    // Advance the UID watermark past EVERYTHING we fetched, including filtered
+    // mails. Otherwise the next poll would re-process them indefinitely.
     let maxUid = sinceUid;
+    for (const m of all) maxUid = Math.max(maxUid, m.uid);
+
     let upserted = 0;
     const now = new Date().toISOString();
 
-    const buckets = buildBuckets(relevant, property);
+    const rawBuckets = buildBuckets(relevant, property);
+
+    // Thread-level filter for host-initiated outreach (cold pitches, journalist
+    // outreach, forwarded marketing). Only skip threads where the host is
+    // clearly the initiator AND there's no substantial conversation back:
+    //   • All messages from host (pure monologue, no reply received), OR
+    //   • Earliest message from host AND total ≤ 2 messages (pitch + nothing
+    //     or pitch + brief decline).
+    // Threads with 3+ messages get a pass — Gmail sometimes back-threads an
+    // old pitch with a much later genuine inquiry; the conversation is real.
+    let hostInitiatedFiltered = 0;
+    const buckets: typeof rawBuckets = [];
+    for (const b of rawBuckets) {
+      const sorted = [...b.mails].sort((a, b2) => a.receivedAt.localeCompare(b2.receivedAt));
+      const earliestIsHost = isFromHost(sorted[0], property);
+      const allHost = sorted.every((m) => isFromHost(m, property));
+      const shortPitch = earliestIsHost && sorted.length <= 2;
+      if (allHost || shortPitch) {
+        hostInitiatedFiltered++;
+        continue;
+      }
+      buckets.push(b);
+    }
+    if (hostInitiatedFiltered > 0) {
+      logger.info({ slug, hostInitiatedFiltered }, 'Direct-email: skipped host-initiated threads');
+    }
 
     for (const bucket of buckets) {
       // Step 1: Upsert thread shell first (FK target for messages)
@@ -478,6 +511,7 @@ export async function syncDirectEmailMessagesForProperty(
       success: true,
       fetched: all.length,
       platformFiltered,
+      hostInitiatedFiltered,
       upserted,
       threadsTouched: buckets.length,
       durationMs: duration,
@@ -489,6 +523,7 @@ export async function syncDirectEmailMessagesForProperty(
       success: false,
       fetched: 0,
       platformFiltered: 0,
+      hostInitiatedFiltered: 0,
       upserted: 0,
       threadsTouched: 0,
       durationMs: Date.now() - start,
