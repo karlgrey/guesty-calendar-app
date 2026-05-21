@@ -23,6 +23,7 @@ export type MessageDirection = 'inbound' | 'outbound' | 'system';
 
 export type ConversionCategory =
   | 'CONFIRMED'
+  | 'REPEAT'
   | 'PRICE'
   | 'WEDDING'
   | 'DIRECT_DRIFT'

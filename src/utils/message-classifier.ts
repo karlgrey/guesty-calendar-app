@@ -6,6 +6,7 @@
  *
  * Categories (priority order — first match wins):
  *   CONFIRMED      — reservation_status indicates a booking happened
+ *   REPEAT         — returning guest (manually set, no auto-rule yet)
  *   WEDDING        — guest asks for wedding/event/day-use venue (host typically declines)
  *   DIRECT_DRIFT   — explicit attempt to take the conversation off-platform
  *                    (guest hands out email/phone/website OR host pulls the guest back to Airbnb)
@@ -18,6 +19,7 @@
 
 export type ConversionCategory =
   | 'CONFIRMED'
+  | 'REPEAT'         // Wiederbucher (Stammgast, returning guest). Manually-set for now.
   | 'PRICE'
   | 'WEDDING'
   | 'DIRECT_DRIFT'

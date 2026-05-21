@@ -3327,6 +3327,7 @@ router.get('/conversions', (_req, res) => {
       color: white; font-size: 12px; font-weight: 600;
     }
     .bar-CONFIRMED   .bar-fill { background: var(--color-forest); }
+    .bar-REPEAT      .bar-fill { background: var(--color-forest-light); }
     .bar-PRICE       .bar-fill { background: var(--color-amber); color: var(--color-charcoal); }
     .bar-WEDDING     .bar-fill { background: var(--color-terracotta); }
     .bar-DIRECT_DRIFT .bar-fill { background: #b03f7a; }
@@ -3394,6 +3395,7 @@ router.get('/conversions', (_req, res) => {
       font-size: 11px; font-weight: 600;
     }
     .badge-CONFIRMED   { background: #d8e8df; color: #2d5a3d; }
+    .badge-REPEAT      { background: #c8e0d0; color: #1d4a2d; }
     .badge-PRICE       { background: #f2e3c4; color: #8a6515; }
     .badge-WEDDING     { background: #f1d0c5; color: #8a3015; }
     .badge-DIRECT_DRIFT { background: #f1c4d8; color: #7a1546; }
@@ -3547,6 +3549,7 @@ router.get('/conversions', (_req, res) => {
           <select id="recatSelect">
             <option value="">— auto —</option>
             <option value="CONFIRMED">✅ Bestätigt</option>
+            <option value="REPEAT">🔁 Wiederbucher</option>
             <option value="WEDDING">💍 Hochzeit / Event</option>
             <option value="PRICE">€ Preisverhandlung</option>
             <option value="DIRECT_DRIFT">↗ Direct-Drift</option>
@@ -3564,12 +3567,13 @@ router.get('/conversions', (_req, res) => {
   <script>
     const CATEGORY_LABELS = {
       CONFIRMED:    { label: 'Bestätigt',         emoji: '✅' },
+      REPEAT:       { label: 'Wiederbucher',      emoji: '🔁' },
       WEDDING:      { label: 'Hochzeit / Event',  emoji: '💍' },
       PRICE:        { label: 'Preisverhandlung',  emoji: '€'  },
       DIRECT_DRIFT: { label: 'Direct-Drift',      emoji: '↗'  },
       OTHER:        { label: 'Sonstiges',         emoji: '◌'  },
     };
-    const ORDER = ['CONFIRMED', 'WEDDING', 'PRICE', 'DIRECT_DRIFT', 'OTHER'];
+    const ORDER = ['CONFIRMED', 'REPEAT', 'WEDDING', 'PRICE', 'DIRECT_DRIFT', 'OTHER'];
 
     let currentSlug = '';
     let currentCategory = '';
@@ -3860,7 +3864,7 @@ router.get('/conversions', (_req, res) => {
  * Sources: Guesty conversations + direct-email (when configured).
  *
  * Query params:
- *   ?category=PRICE|WEDDING|DIRECT_DRIFT|OTHER|CONFIRMED  (optional filter)
+ *   ?category=PRICE|WEDDING|DIRECT_DRIFT|OTHER|CONFIRMED|REPEAT  (optional filter)
  *   ?source=guesty|gmail  (optional filter)
  *   ?limit=50  (default 200, max 500)
  */
@@ -3994,7 +3998,7 @@ router.get('/conversions/:slug/thread/:threadId(*)', (req, res, next) => {
  * Passing category=null clears the override (back to auto-classify).
  */
 const ALLOWED_CATEGORIES = new Set([
-  'CONFIRMED', 'PRICE', 'WEDDING', 'DIRECT_DRIFT', 'OTHER',
+  'CONFIRMED', 'REPEAT', 'PRICE', 'WEDDING', 'DIRECT_DRIFT', 'OTHER',
 ]);
 
 router.patch('/conversions/:slug/thread/:threadId(*)/category', express.json(), (req, res, next) => {
