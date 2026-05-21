@@ -3407,6 +3407,11 @@ router.get('/conversions', (_req, res) => {
       background: var(--color-sand); color: var(--color-warm-gray);
       text-transform: uppercase; letter-spacing: 0.04em;
     }
+    .extra-tag {
+      display: inline-block; margin-left: 6px;
+      font-size: 10px; padding: 1px 6px; border-radius: 999px;
+      background: var(--color-forest); color: white; font-weight: 600;
+    }
     .keywords {
       font-size: 11px; color: var(--color-warm-gray);
       font-family: var(--font-body);
@@ -3725,35 +3730,67 @@ router.get('/conversions', (_req, res) => {
       loadData();
     }
 
+    // Cluster threads that share a linked_thread_id (or are pointed to by one)
+    // into a single "lead group". Returns one synthetic row per group with the
+    // representative chosen as: the Guesty/meetreet anchor if present (carries
+    // the canonical company name), otherwise the thread with most messages.
+    function groupThreadsIntoLeads(threads) {
+      const byCanonical = new Map();
+      for (const t of threads) {
+        const canonical = t.linked_thread_id || t.id;
+        if (!byCanonical.has(canonical)) byCanonical.set(canonical, []);
+        byCanonical.get(canonical).push(t);
+      }
+      const groups = [];
+      for (const [canonical, members] of byCanonical) {
+        // Pick representative: prefer Guesty anchor (meetreet etc.), else most messages
+        const guestyAnchor = members.find(m => m.id === canonical && m.source === 'guesty');
+        const rep = guestyAnchor || [...members].sort((a, b) => (b.message_count || 0) - (a.message_count || 0))[0];
+        // Aggregate stats across the group
+        const totalMsgs = members.reduce((s, m) => s + (m.message_count || 0), 0);
+        const lastAt = members.reduce((m, x) => (x.last_message_at > m ? x.last_message_at : m), '');
+        groups.push({
+          rep, members, canonical,
+          extraCount: members.length - 1,
+          totalMsgs, lastAt,
+        });
+      }
+      // Sort groups by last activity desc
+      groups.sort((a, b) => (b.lastAt || '').localeCompare(a.lastAt || ''));
+      return groups;
+    }
+
     function renderThreads(threads) {
       const container = document.getElementById('threadsTable');
       if (!threads || threads.length === 0) {
         container.innerHTML = '<div class="empty">Keine Threads in dieser Auswahl.</div>';
         return;
       }
-      const rows = threads.map(t => {
+      const groups = groupThreadsIntoLeads(threads);
+      const rows = groups.map(g => {
+        const t = g.rep;
         const def = CATEGORY_LABELS[t.conversion_category] || { label: t.conversion_category || 'unkat.', emoji: '?' };
         const kw = (() => {
           try { return (JSON.parse(t.classification_keywords || '[]') || []).slice(0, 4).join(', '); }
           catch { return ''; }
         })();
-        const lastAt = (t.last_message_at || '').slice(0, 10);
+        const lastAt = (g.lastAt || '').slice(0, 10);
         const guest = t.guest_name || (t.guest_email || '—');
-        // Use data-* attribute (safely escaped) instead of onclick — some Gmail
-        // thread IDs contain '<' / '>' which break inline-handler attributes.
+        const extraBadge = g.extraCount > 0
+          ? ' <span class="extra-tag">+' + g.extraCount + '</span>'
+          : '';
         return '<tr class="thread-row" data-thread-id="' + escapeHtml(t.id) + '">' +
           '<td>' + lastAt + '</td>' +
-          '<td>' + escapeHtml(guest) + '</td>' +
+          '<td>' + escapeHtml(guest) + extraBadge + '</td>' +
           '<td><span class="channel-tag">' + escapeHtml(t.channel || '?') + '</span></td>' +
           '<td><span class="badge badge-' + (t.conversion_category || 'OTHER') + '">' + def.emoji + ' ' + escapeHtml(def.label) + '</span></td>' +
           '<td class="keywords">' + escapeHtml(kw) + '</td>' +
-          '<td style="text-align:right; color: var(--color-warm-gray); font-size: 12px;">' + (t.message_count || 0) + ' Msg</td>' +
+          '<td style="text-align:right; color: var(--color-warm-gray); font-size: 12px;">' + g.totalMsgs + ' Msg</td>' +
         '</tr>';
       }).join('');
       container.innerHTML =
         '<table><thead><tr><th>Datum</th><th>Gast</th><th>Channel</th><th>Kategorie</th><th>Keywords</th><th style="text-align:right">#</th></tr></thead><tbody>' +
         rows + '</tbody></table>';
-      // Delegated click handler
       container.querySelectorAll('tr.thread-row').forEach(row => {
         row.addEventListener('click', () => {
           const id = row.getAttribute('data-thread-id');
@@ -3782,26 +3819,23 @@ router.get('/conversions', (_req, res) => {
           return;
         }
         const t = json.thread;
+        const group = json.group || [t];
         const def = CATEGORY_LABELS[t.conversion_category] || { label: t.conversion_category, emoji: '?' };
+        // Display name: pick the best one from the group (prefer Guesty anchor's name)
+        const guestyInGroup = group.find(g => g.source === 'guesty' && g.guest_name);
+        const displayName = (guestyInGroup ? guestyInGroup.guest_name : (t.guest_name || t.guest_email || 'Thread'));
         document.getElementById('modalTitle').textContent =
-          (t.guest_name || t.guest_email || 'Thread') + ' · ' + def.emoji + ' ' + def.label;
-        let meta = (t.channel || '?') + ' · ' + (t.source || '?') + ' · ' +
-          (t.first_message_at || '').slice(0, 10) + ' → ' + (t.last_message_at || '').slice(0, 10) +
+          displayName + ' · ' + def.emoji + ' ' + def.label;
+        const earliest = group.map(g => g.first_message_at).filter(Boolean).sort()[0] || t.first_message_at;
+        const latest = group.map(g => g.last_message_at).filter(Boolean).sort().reverse()[0] || t.last_message_at;
+        const channels = [...new Set(group.map(g => g.channel))].join(' + ');
+        let meta = channels + ' · ' +
+          (earliest || '').slice(0, 10) + ' → ' + (latest || '').slice(0, 10) +
           ' · ' + json.messages.length + ' Messages';
-        if (t.linked_thread_id) {
-          // Make the linked thread id clickable to jump there
-          meta += ' · <a href="#" data-jump-thread="' + escapeHtml(t.linked_thread_id) + '" class="link-jump">↔ verknüpfter Thread</a>';
+        if (group.length > 1) {
+          meta += ' · <span style="color: var(--color-forest); font-weight: 600;">' + group.length + ' verknüpfte Threads</span>';
         }
         document.getElementById('modalMeta').innerHTML = meta;
-        // Wire click-to-jump on the linked-thread link
-        const linkEl = document.querySelector('#modalMeta [data-jump-thread]');
-        if (linkEl) {
-          linkEl.addEventListener('click', e => {
-            e.preventDefault();
-            const target = linkEl.getAttribute('data-jump-thread');
-            if (target) openThread(target);
-          });
-        }
 
         // Pre-fill manual override form
         if (t.manually_categorized) {
@@ -3993,24 +4027,42 @@ router.get('/conversions/:slug/thread/:threadId(*)', (req, res, next) => {
     const db = getDatabase();
     const thread = db
       .prepare(`SELECT * FROM message_threads WHERE id = ? AND listing_id = ?`)
-      .get(req.params.threadId, listingId);
+      .get(req.params.threadId, listingId) as
+      | (typeof req.params & { linked_thread_id: string | null })
+      | undefined;
 
     if (!thread) {
       res.status(404).json({ error: 'Thread not found' });
       return;
     }
 
+    // Build the lead group: the requested thread + everything that links to it
+    // + the thread it points to. Then collect all messages from the group sorted
+    // chronologically — surfaces the FULL Meetreet lead (Guesty placeholder +
+    // Gmail relay mails) as one continuous timeline.
+    const root = (thread as { linked_thread_id: string | null }).linked_thread_id ?? req.params.threadId;
+    const groupThreads = db
+      .prepare(
+        `SELECT * FROM message_threads
+         WHERE listing_id = ?
+           AND (id = ? OR linked_thread_id = ?)
+         ORDER BY first_message_at ASC`,
+      )
+      .all(listingId, root, root) as Array<{ id: string }>;
+    const groupIds = groupThreads.map((t) => t.id);
+
+    const placeholders = groupIds.map(() => '?').join(',');
     const messages = db
       .prepare(
-        `SELECT id, direction, sent_at, from_name, from_address, to_address,
+        `SELECT id, thread_id, direction, sent_at, from_name, from_address, to_address,
                 subject, body, source
          FROM messages
-         WHERE thread_id = ?
+         WHERE thread_id IN (${placeholders})
          ORDER BY sent_at ASC`,
       )
-      .all(req.params.threadId);
+      .all(...groupIds);
 
-    res.json({ success: true, thread, messages });
+    res.json({ success: true, thread, group: groupThreads, messages });
   } catch (error) {
     next(error);
   }
