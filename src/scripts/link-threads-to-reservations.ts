@@ -1,8 +1,12 @@
 /**
- * Backfill: link Gmail message_threads to manual Guesty reservations.
+ * Backfill: link Gmail message_threads to corresponding Guesty entities.
  *
- * Reads all gmail threads + manual reservations for a property, runs the
- * matcher, persists thread.reservation_id when a confident match is found.
+ * Two passes:
+ *  1. Match Gmail threads against manual / meetreet *reservations* and persist
+ *     thread.reservation_id (booked direct-email leads → CONFIRMED).
+ *  2. Match remaining Gmail threads against meetreet *conversations* (placeholder
+ *     threads with company name) and persist thread.linked_thread_id (non-booked
+ *     direct-email leads that came in via Meetreet).
  *
  * Usage:
  *   npx tsx src/scripts/link-threads-to-reservations.ts <slug>
@@ -22,6 +26,7 @@ interface ThreadRow {
   guest_email: string | null;
   last_message_at: string;
   reservation_id: string | null;
+  linked_thread_id: string | null;
   channel: string;
   reservation_status: string | null;
 }
@@ -56,7 +61,7 @@ async function main() {
 
   const threads = db
     .prepare(
-      `SELECT id, guest_name, guest_email, last_message_at, reservation_id, channel, reservation_status
+      `SELECT id, guest_name, guest_email, last_message_at, reservation_id, linked_thread_id, channel, reservation_status
        FROM message_threads
        WHERE listing_id = ? AND source = 'gmail'`,
     )
@@ -138,7 +143,140 @@ async function main() {
     );
   }
 
-  console.log(`\nDone. matched=${matched}, alreadyLinked=${alreadyLinked}, unmatched=${threads.length - matched - alreadyLinked}`);
+  console.log(`\nPass 1 (reservations). matched=${matched}, alreadyLinked=${alreadyLinked}, unmatched=${threads.length - matched - alreadyLinked}`);
+
+  // ── Pass 2: link remaining Gmail threads to Meetreet placeholder threads ──
+  // Meetreet inquiries carry the company name in guest_name (e.g. "Oatly Germany GmbH").
+  // Match the same way as reservations — the matcher treats the candidates generically.
+  const meetreetConvs = db
+    .prepare(
+      `SELECT id, guest_name, first_message_at
+       FROM message_threads
+       WHERE listing_id = ? AND source = 'guesty' AND channel = 'meetreet'`,
+    )
+    .all(listingId) as Array<{ id: string; guest_name: string | null; first_message_at: string }>;
+
+  const linkThreadStmt = db.prepare(
+    `UPDATE message_threads SET linked_thread_id = ? WHERE id = ?`,
+  );
+
+  // Refresh the threads list — Pass 1 updated some of them
+  const threadsAfterPass1 = db
+    .prepare(
+      `SELECT id, guest_name, guest_email, last_message_at, reservation_id, linked_thread_id, channel, reservation_status
+       FROM message_threads
+       WHERE listing_id = ? AND source = 'gmail'`,
+    )
+    .all(listingId) as ThreadRow[];
+
+  // Meetreet relays the inquiry from locations@meetreet.com — the guest name
+  // is generic "meetreet" and the actual company is in the message subjects:
+  //   "Erinnerung:  fritz kola wartet auf dein Angebot (Farmhouse Prasser)"
+  //   "⏰ Erinnerung:  Teamhero GmbH wartet auf dein Angebot"
+  //   "Noch 24h für dein Angebot an fritz kola"
+  //   "1 neue Nachricht von Juliane (Farmhouse Prasser)"
+  // Extract the company name from these subject patterns and use it for matching.
+  const getSubjectsStmt = db.prepare(
+    `SELECT subject FROM messages WHERE thread_id = ? AND direction = 'inbound' ORDER BY sent_at`,
+  );
+  const SUBJECT_PATTERNS: RegExp[] = [
+    /Erinnerung:\s+(.+?)\s+wartet\s+auf/i,
+    /Angebot\s+an\s+([^(]+?)(?:\s*\(|$)/i,
+    /neue\s+Nachricht\s+von\s+([^(]+?)(?:\s*\(|$)/i,
+  ];
+
+  function extractMeetreetCompany(threadId: string): string | null {
+    const rows = getSubjectsStmt.all(threadId) as Array<{ subject: string | null }>;
+    for (const row of rows) {
+      const subj = (row.subject || '').trim();
+      if (!subj) continue;
+      for (const re of SUBJECT_PATTERNS) {
+        const m = subj.match(re);
+        if (m && m[1]) return m[1].trim();
+      }
+    }
+    return null;
+  }
+
+  // Lightweight Meetreet matcher: at least one distinctive (≥4 char, non-noise)
+  // token from the lookup name appears in the candidate name. Higher overlap = higher score.
+  // Handles cases the strict generic matcher misses ("Juliane" → "idalab GmbH Juliane").
+  const NOISE_TOKENS = new Set(['gmbh', 'ag', 'kg', 'gbr', 'ug', 'mbh', 'co', 'ltd', 'inc']);
+  function tokenize(s: string): string[] {
+    return (s || '')
+      .toLowerCase()
+      .replace(/[,.()&]/g, ' ')
+      .split(/\s+/)
+      .filter((t) => t.length >= 3 && !NOISE_TOKENS.has(t));
+  }
+  function matchMeetreet(
+    lookup: string,
+    candidates: Array<{ id: string; name: string | null; date: string }>,
+    lastMessageAt: string,
+  ): { id: string; score: number } | null {
+    const lt = tokenize(lookup);
+    if (lt.length === 0) return null;
+
+    let best: { id: string; score: number; date: string } | null = null;
+    for (const c of candidates) {
+      const ct = tokenize(c.name || '');
+      if (ct.length === 0) continue;
+      const overlap = lt.filter((t) => ct.includes(t)).length;
+      if (overlap === 0) continue;
+      // Require either: full lookup contained in candidate, or distinctive (≥4 char) token match
+      const allLookupTokensFound = lt.every((t) => ct.includes(t));
+      const hasDistinctive = lt.some((t) => t.length >= 4 && ct.includes(t));
+      if (!allLookupTokensFound && !hasDistinctive) continue;
+
+      const score = overlap + (allLookupTokensFound ? 1 : 0);
+      if (
+        !best ||
+        score > best.score ||
+        (score === best.score &&
+          Math.abs(new Date(c.date).getTime() - new Date(lastMessageAt).getTime()) <
+            Math.abs(new Date(best.date).getTime() - new Date(lastMessageAt).getTime()))
+      ) {
+        best = { id: c.id, score, date: c.date };
+      }
+    }
+    return best ? { id: best.id, score: best.score } : null;
+  }
+
+  const meetreetMatchCandidates = meetreetConvs.map((c) => ({
+    id: c.id,
+    name: c.guest_name,
+    date: c.first_message_at,
+  }));
+
+  let meetreetMatched = 0;
+  let meetreetAlready = 0;
+  let meetreetNoCompany = 0;
+  for (const t of threadsAfterPass1) {
+    if (t.reservation_id) continue;
+    if (t.linked_thread_id) { meetreetAlready++; continue; }
+
+    // For Meetreet-relayed threads (guest_name='meetreet'), extract company
+    // from message subjects. For other threads, use the existing guest_name.
+    const isMeetreetRelay = (t.guest_name || '').toLowerCase().trim() === 'meetreet';
+    let lookupName = t.guest_name;
+    if (isMeetreetRelay) {
+      const company = extractMeetreetCompany(t.id);
+      if (!company) { meetreetNoCompany++; continue; }
+      lookupName = company;
+    }
+
+    const match = matchMeetreet(lookupName ?? '', meetreetMatchCandidates, t.last_message_at);
+    if (!match) continue;
+    linkThreadStmt.run(match.id, t.id);
+    meetreetMatched++;
+    const cand = meetreetConvs.find((c) => c.id === match.id);
+    console.log(
+      `  ↔ ${lookupName} ↔ ${cand?.guest_name} (Meetreet, score ${match.score})`,
+    );
+  }
+  console.log(
+    `\nPass 2 (meetreet). matched=${meetreetMatched}, alreadyLinked=${meetreetAlready}, no-company=${meetreetNoCompany}`,
+  );
 }
 
 main().catch((e) => {

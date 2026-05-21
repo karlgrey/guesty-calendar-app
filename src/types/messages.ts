@@ -49,6 +49,7 @@ export interface MessageThread {
   raw_meta: string | null;                 // JSON
   manually_categorized: number;            // 0 | 1
   manual_note: string | null;
+  linked_thread_id: string | null;         // cross-link to another thread (e.g. Gmail ↔ Meetreet)
   last_synced_at: string;
   created_at?: string;
 }
@@ -69,9 +70,10 @@ export interface Message {
   created_at?: string;
 }
 
-export type NewMessageThread = Omit<MessageThread, 'created_at' | 'manually_categorized' | 'manual_note'> & {
+export type NewMessageThread = Omit<MessageThread, 'created_at' | 'manually_categorized' | 'manual_note' | 'linked_thread_id'> & {
   // DB has DEFAULT 0 / NULL; sync jobs don't need to set these.
   manually_categorized?: number;
   manual_note?: string | null;
+  linked_thread_id?: string | null;
 };
 export type NewMessage = Omit<Message, 'created_at'>;

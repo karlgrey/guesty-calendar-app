@@ -95,6 +95,11 @@ export function upsertMessage(msg: NewMessage): void {
   }
 }
 
+export function setLinkedThreadId(threadId: string, linkedId: string | null): void {
+  const db = getDatabase();
+  db.prepare(`UPDATE message_threads SET linked_thread_id = ? WHERE id = ?`).run(linkedId, threadId);
+}
+
 export function setManualCategory(
   threadId: string,
   category: string | null,

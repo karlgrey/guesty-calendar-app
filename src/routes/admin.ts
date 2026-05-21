@@ -3440,6 +3440,10 @@ router.get('/conversions', (_req, res) => {
       font-size: 12px; color: var(--color-warm-gray);
       margin-top: 4px;
     }
+    .link-jump {
+      color: var(--color-forest); text-decoration: underline; cursor: pointer;
+    }
+    .link-jump:hover { color: var(--color-terracotta); }
     .close-btn {
       font-size: 24px; background: none; border: none;
       cursor: pointer; color: var(--color-warm-gray); padding: 4px 8px;
@@ -3781,10 +3785,23 @@ router.get('/conversions', (_req, res) => {
         const def = CATEGORY_LABELS[t.conversion_category] || { label: t.conversion_category, emoji: '?' };
         document.getElementById('modalTitle').textContent =
           (t.guest_name || t.guest_email || 'Thread') + ' · ' + def.emoji + ' ' + def.label;
-        document.getElementById('modalMeta').innerHTML =
-          (t.channel || '?') + ' · ' + (t.source || '?') + ' · ' +
+        let meta = (t.channel || '?') + ' · ' + (t.source || '?') + ' · ' +
           (t.first_message_at || '').slice(0, 10) + ' → ' + (t.last_message_at || '').slice(0, 10) +
           ' · ' + json.messages.length + ' Messages';
+        if (t.linked_thread_id) {
+          // Make the linked thread id clickable to jump there
+          meta += ' · <a href="#" data-jump-thread="' + escapeHtml(t.linked_thread_id) + '" class="link-jump">↔ verknüpfter Thread</a>';
+        }
+        document.getElementById('modalMeta').innerHTML = meta;
+        // Wire click-to-jump on the linked-thread link
+        const linkEl = document.querySelector('#modalMeta [data-jump-thread]');
+        if (linkEl) {
+          linkEl.addEventListener('click', e => {
+            e.preventDefault();
+            const target = linkEl.getAttribute('data-jump-thread');
+            if (target) openThread(target);
+          });
+        }
 
         // Pre-fill manual override form
         if (t.manually_categorized) {
@@ -3922,7 +3939,8 @@ router.get('/conversions/:slug', (req, res, next) => {
         `SELECT id, source, channel, guest_name, guest_email,
                 first_message_at, last_message_at, message_count,
                 reservation_id, reservation_status, conversion_category,
-                classification_confidence, classification_keywords
+                classification_confidence, classification_keywords,
+                linked_thread_id
          FROM message_threads
          WHERE ${whereParts.join(' AND ')}
          ORDER BY last_message_at DESC
