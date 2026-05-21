@@ -170,23 +170,44 @@ async function main() {
     .all(listingId) as ThreadRow[];
 
   // Meetreet relays the inquiry from locations@meetreet.com — the guest name
-  // is generic "meetreet" and the actual company is in the message subjects:
+  // is generic "meetreet" and the actual company is in the subject or body.
+  // Subject patterns (when company appears in the heading):
   //   "Erinnerung:  fritz kola wartet auf dein Angebot (Farmhouse Prasser)"
   //   "⏰ Erinnerung:  Teamhero GmbH wartet auf dein Angebot"
   //   "Noch 24h für dein Angebot an fritz kola"
   //   "1 neue Nachricht von Juliane (Farmhouse Prasser)"
-  // Extract the company name from these subject patterns and use it for matching.
-  const getSubjectsStmt = db.prepare(
-    `SELECT subject FROM messages WHERE thread_id = ? AND direction = 'inbound' ORDER BY sent_at`,
+  // Body patterns (Meetreet's templated booking-request body — always present):
+  //   "####Neue Buchungsanfrage von fritz kola für Farmhouse Prasser"
+  //   "Für die Anfrage von fritz kola wurde folgende Nachricht …"
+  const getInboundStmt = db.prepare(
+    `SELECT subject, body FROM messages WHERE thread_id = ? AND direction = 'inbound' ORDER BY sent_at`,
   );
   const SUBJECT_PATTERNS: RegExp[] = [
     /Erinnerung:\s+(.+?)\s+wartet\s+auf/i,
     /Angebot\s+an\s+([^(]+?)(?:\s*\(|$)/i,
     /neue\s+Nachricht\s+von\s+([^(]+?)(?:\s*\(|$)/i,
   ];
+  const BODY_PATTERNS: RegExp[] = [
+    // Initial inquiry blast — Meetreet's templated body always contains this line
+    /Neue\s+Buchungsanfrage\s+von\s+(.+?)\s+für\s+Farmhouse/i,
+    // Message notification for an ongoing inquiry
+    /Für\s+die\s+Anfrage\s+von\s+(.+?)\s+wurde\s+folgende/i,
+  ];
 
   function extractMeetreetCompany(threadId: string): string | null {
-    const rows = getSubjectsStmt.all(threadId) as Array<{ subject: string | null }>;
+    const rows = getInboundStmt.all(threadId) as Array<{ subject: string | null; body: string | null }>;
+    // 1) Body patterns first — Meetreet's templated body always carries the
+    //    canonical company, while subjects often name the Meetreet operator
+    //    ("1 neue Nachricht von Laura") instead of the inquiring company.
+    for (const row of rows) {
+      const body = (row.body || '').replace(/\s+/g, ' ').trim();
+      if (!body) continue;
+      for (const re of BODY_PATTERNS) {
+        const m = body.match(re);
+        if (m && m[1]) return m[1].trim();
+      }
+    }
+    // 2) Fallback to subject patterns
     for (const row of rows) {
       const subj = (row.subject || '').trim();
       if (!subj) continue;
@@ -221,11 +242,23 @@ async function main() {
     for (const c of candidates) {
       const ct = tokenize(c.name || '');
       if (ct.length === 0) continue;
-      const overlap = lt.filter((t) => ct.includes(t)).length;
+
+      // Token overlap — exact match OR prefix match (≥5 chars) to absorb typos
+      // like "AnalyticaA" ↔ "Analytica" or "Reweee" ↔ "Rewe".
+      const tokenMatches = (lookupTok: string) =>
+        ct.some(
+          (cTok) =>
+            cTok === lookupTok ||
+            (lookupTok.length >= 5 && cTok.length >= 5 &&
+              (cTok.startsWith(lookupTok.slice(0, 5)) || lookupTok.startsWith(cTok.slice(0, 5)))),
+        );
+
+      const matchingTokens = lt.filter(tokenMatches);
+      const overlap = matchingTokens.length;
       if (overlap === 0) continue;
-      // Require either: full lookup contained in candidate, or distinctive (≥4 char) token match
-      const allLookupTokensFound = lt.every((t) => ct.includes(t));
-      const hasDistinctive = lt.some((t) => t.length >= 4 && ct.includes(t));
+
+      const allLookupTokensFound = lt.every(tokenMatches);
+      const hasDistinctive = matchingTokens.some((t) => t.length >= 4);
       if (!allLookupTokensFound && !hasDistinctive) continue;
 
       const score = overlap + (allLookupTokensFound ? 1 : 0);
