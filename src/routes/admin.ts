@@ -3894,7 +3894,10 @@ router.get('/conversions/:slug', (req, res, next) => {
     // Placeholder channels carry only Guesty system-log posts (no real
     // conversation content) — hide from default threads view but keep them
     // in the stats aggregates so totals stay accurate.
-    const PLACEHOLDER_CHANNELS = ['manual', 'meetreet', 'vrbo', 'landfolk'];
+    // NOTE: meetreet is NOT here — those conversations carry meaningful
+    // company info in guest_name (Fritz Cola, idalab, Oatly, …) and represent
+    // real declined/expired inquiries worth seeing.
+    const PLACEHOLDER_CHANNELS = ['manual', 'vrbo', 'landfolk'];
 
     const whereParts: string[] = ['listing_id = ?'];
     const params: Array<string | number> = [listingId];
