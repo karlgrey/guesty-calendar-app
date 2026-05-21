@@ -22,6 +22,11 @@ import {
   getMessagesByThread,
 } from '../repositories/message-repository.js';
 import { classifyThread } from '../utils/message-classifier.js';
+import {
+  matchThreadToReservation,
+  type ReservationMatcherCandidate,
+} from '../utils/thread-reservation-matcher.js';
+import { getDatabase } from '../db/index.js';
 import logger from '../utils/logger.js';
 import type { PropertyConfig } from '../config/properties.js';
 import type {
@@ -314,22 +319,47 @@ export async function syncDirectEmailMessagesForProperty(
         upserted++;
       }
 
-      // Step 3: Re-upsert thread with classification computed over full thread
+      // Step 3: Re-upsert thread with classification computed over full thread.
+      // Try to link the thread to a manual reservation by name/email match.
       const existing = getMessagesByThread(bucket.threadId);
       const allBodies = existing.map((m: Message) => ({
         direction: m.direction,
         body: m.body || '',
       }));
 
-      const classification = classifyThread({
-        reservationStatus: null, // direct emails are unlinked to reservations until linking is added
-        channel: 'direct_email',
-        messages: allBodies,
-      });
-
       const sorted = [...existing].sort((a, b) => a.sent_at.localeCompare(b.sent_at));
       const firstAt = sorted[0]?.sent_at ?? bucket.mails[0].receivedAt;
       const lastAt = sorted[sorted.length - 1]?.sent_at ?? bucket.mails[bucket.mails.length - 1].receivedAt;
+
+      // Look up potential matching manual reservations for this property
+      const candidates = getDatabase()
+        .prepare(
+          `SELECT reservation_id AS reservationId, guest_name AS guestName, check_in AS checkIn, status
+           FROM reservations
+           WHERE listing_id = ? AND source IN ('manual', 'meetreet')
+             AND status IN ('confirmed', 'reserved', 'active')`,
+        )
+        .all(listingId) as Array<ReservationMatcherCandidate & { status: string }>;
+
+      const match = matchThreadToReservation(
+        {
+          guestName: bucket.guestName,
+          guestEmail: bucket.guestEmail,
+          lastMessageAt: lastAt,
+        },
+        candidates,
+      );
+
+      const linkedRes = match
+        ? candidates.find((c) => c.reservationId === match.reservationId)
+        : null;
+      const linkedStatus = linkedRes?.status ?? null;
+
+      const classification = classifyThread({
+        reservationStatus: linkedStatus,
+        channel: 'direct_email',
+        messages: allBodies,
+      });
 
       const thread: NewMessageThread = {
         id: bucket.threadId,
@@ -341,9 +371,9 @@ export async function syncDirectEmailMessagesForProperty(
         first_message_at: firstAt,
         last_message_at: lastAt,
         message_count: existing.length,
-        reservation_id: null,
+        reservation_id: match?.reservationId ?? null,
         inquiry_id: null,
-        reservation_status: null,
+        reservation_status: linkedStatus,
         conversion_category: classification.category,
         classification_confidence: classification.confidence,
         classification_keywords: JSON.stringify(classification.matchedKeywords),

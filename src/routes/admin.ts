@@ -3794,6 +3794,12 @@ router.get('/conversions/:slug', (req, res, next) => {
     const category = typeof req.query.category === 'string' ? req.query.category : null;
     const source = typeof req.query.source === 'string' ? req.query.source : null;
     const limit = Math.min(parseInt(String(req.query.limit ?? '200'), 10) || 200, 500);
+    const includePlaceholders = req.query.includePlaceholders === '1';
+
+    // Placeholder channels carry only Guesty system-log posts (no real
+    // conversation content) — hide from default threads view but keep them
+    // in the stats aggregates so totals stay accurate.
+    const PLACEHOLDER_CHANNELS = ['manual', 'meetreet', 'vrbo', 'landfolk'];
 
     const whereParts: string[] = ['listing_id = ?'];
     const params: Array<string | number> = [listingId];
@@ -3805,13 +3811,19 @@ router.get('/conversions/:slug', (req, res, next) => {
       whereParts.push('source = ?');
       params.push(source);
     }
+    if (!includePlaceholders) {
+      whereParts.push(
+        `NOT (source = 'guesty' AND channel IN (${PLACEHOLDER_CHANNELS.map(() => '?').join(',')}))`,
+      );
+      params.push(...PLACEHOLDER_CHANNELS);
+    }
     params.push(limit);
 
     const threads = db
       .prepare(
         `SELECT id, source, channel, guest_name, guest_email,
                 first_message_at, last_message_at, message_count,
-                reservation_status, conversion_category,
+                reservation_id, reservation_status, conversion_category,
                 classification_confidence, classification_keywords
          FROM message_threads
          WHERE ${whereParts.join(' AND ')}
