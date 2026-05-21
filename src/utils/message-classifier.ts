@@ -9,7 +9,6 @@
  *   WEDDING        — guest asks for wedding/event/day-use venue (host typically declines)
  *   DIRECT_DRIFT   — explicit attempt to take the conversation off-platform
  *                    (guest hands out email/phone/website OR host pulls the guest back to Airbnb)
- *   GROUP_EVENT    — corporate offsite / team event keywords (often book, but kept separate)
  *   PRICE          — explicit price negotiation (budget < listing price, "günstiger", "discount")
  *   OTHER          — none of the above
  *
@@ -22,7 +21,6 @@ export type ConversionCategory =
   | 'PRICE'
   | 'WEDDING'
   | 'DIRECT_DRIFT'
-  | 'GROUP_EVENT'
   | 'OTHER';
 
 export interface ClassifierInput {
@@ -62,9 +60,6 @@ const GUEST_DRIFT_RE =
 const HOST_PULLBACK_RE =
   /(über\s+airbnb\s+(buchen|laufen|abwickeln|mieten)|bitte\s+(bucht\s+)?(regul[äa]r|einfach)\s+[^.\n]{0,30}airbnb|regul[äa]r\s+[^.\n]{0,30}airbnb\s+(buchen|mieten)|please\s+book\s+(via|through)\s+airbnb|use\s+the\s+airbnb\s+platform|kann\s+nur\s+über\s+airbnb|nur\s+über\s+(die\s+)?plattform|einfach\s+(hier\s+)?(regul[äa]r\s+)?über\s+airbnb|über\s+(diese|die)\s+plattform\s+(nicht|laufen|abwickeln))/i;
 
-const GROUP_EVENT_RE =
-  /\b(offsite|off-?site|teamevent|company\s+retreat|company\s+offsite|corporate\s+retreat|workshop|workation|kick-?off|seminar|tagung|incentive|firmenfeier|gesch[äa]fts(reise|treffen)|workshop|business\s+trip|company\s+trip|team\s+retreat|firm[ae]nausflug)\b/i;
-
 // ── Keyword extraction (for transparency in dashboard) ──────────────────────
 
 const KEYWORD_INDEX: Array<{ name: string; re: RegExp }> = [
@@ -92,11 +87,6 @@ const KEYWORD_INDEX: Array<{ name: string; re: RegExp }> = [
   { name: 'günstiger', re: /\bg[üu]nstig(er)?\b/i },
   { name: 'verhandeln', re: /\b(verhandeln|negoti)/i },
   { name: 'price-number', re: /(€\s*\d{2,5}|\d{2,5}\s*€)/ },
-  // group
-  { name: 'offsite', re: /\b(offsite|off-?site)\b/i },
-  { name: 'team-event', re: /\b(teamevent|company\s+(retreat|offsite|trip))\b/i },
-  { name: 'workshop', re: /\bworkshop\b/i },
-  { name: 'workation', re: /\bworkation\b/i },
 ];
 
 function extractKeywords(text: string): string[] {
@@ -162,16 +152,7 @@ export function classifyThread(input: ClassifierInput): ClassifierResult {
     }
   }
 
-  // 4) GROUP_EVENT — corporate / team / workation. Often books but flagged separately.
-  if (GROUP_EVENT_RE.test(all)) {
-    return {
-      category: 'GROUP_EVENT',
-      confidence: 0.7,
-      matchedKeywords: extractKeywords(all),
-    };
-  }
-
-  // 5) PRICE — explicit price negotiation.
+  // 4) PRICE — explicit price negotiation.
   if (PRICE_RE.test(all) && PRICE_NUMBER_RE.test(all)) {
     return {
       category: 'PRICE',
@@ -187,6 +168,6 @@ export function classifyThread(input: ClassifierInput): ClassifierResult {
     };
   }
 
-  // 6) Fall-through
+  // 5) Fall-through
   return { category: 'OTHER', confidence: 0.3, matchedKeywords: [] };
 }

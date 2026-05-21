@@ -101,8 +101,7 @@ describe('classifyThread', () => {
     expect(out.category).not.toBe('DIRECT_DRIFT');
   });
 
-  // ── GROUP_EVENT
-  it('detects GROUP_EVENT for corporate offsite', () => {
+  it('does not flag corporate offsite as separate category — those tend to book and fall through to OTHER', () => {
     const out = classifyThread({
       reservationStatus: 'inquiry',
       channel: 'airbnb',
@@ -113,7 +112,7 @@ describe('classifyThread', () => {
         ),
       ],
     });
-    expect(out.category).toBe('GROUP_EVENT');
+    expect(out.category).toBe('OTHER');
   });
 
   // ── PRICE

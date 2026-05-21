@@ -3329,7 +3329,6 @@ router.get('/conversions', (_req, res) => {
     .bar-PRICE       .bar-fill { background: var(--color-amber); color: var(--color-charcoal); }
     .bar-WEDDING     .bar-fill { background: var(--color-terracotta); }
     .bar-DIRECT_DRIFT .bar-fill { background: #b03f7a; }
-    .bar-GROUP_EVENT .bar-fill { background: var(--color-sage); }
     .bar-OTHER       .bar-fill { background: var(--color-warm-gray); }
     .bar-row .count {
       text-align: right; font-variant-numeric: tabular-nums;
@@ -3397,7 +3396,6 @@ router.get('/conversions', (_req, res) => {
     .badge-PRICE       { background: #f2e3c4; color: #8a6515; }
     .badge-WEDDING     { background: #f1d0c5; color: #8a3015; }
     .badge-DIRECT_DRIFT { background: #f1c4d8; color: #7a1546; }
-    .badge-GROUP_EVENT { background: #d8e0d0; color: #4a5a3a; }
     .badge-OTHER       { background: var(--color-stone); color: var(--color-warm-gray); }
     .channel-tag {
       font-size: 10px; padding: 2px 6px; border-radius: 4px;
@@ -3524,10 +3522,9 @@ router.get('/conversions', (_req, res) => {
       WEDDING:      { label: 'Hochzeit / Event',  emoji: '💍' },
       PRICE:        { label: 'Preisverhandlung',  emoji: '€'  },
       DIRECT_DRIFT: { label: 'Direct-Drift',      emoji: '↗'  },
-      GROUP_EVENT:  { label: 'Gruppe / Offsite',  emoji: '🤝' },
       OTHER:        { label: 'Sonstiges',         emoji: '◌'  },
     };
-    const ORDER = ['CONFIRMED', 'WEDDING', 'PRICE', 'DIRECT_DRIFT', 'GROUP_EVENT', 'OTHER'];
+    const ORDER = ['CONFIRMED', 'WEDDING', 'PRICE', 'DIRECT_DRIFT', 'OTHER'];
 
     let currentSlug = '';
     let currentCategory = '';
@@ -3773,7 +3770,7 @@ router.get('/conversions', (_req, res) => {
  * Sources: Guesty conversations + direct-email (when configured).
  *
  * Query params:
- *   ?category=PRICE|WEDDING|DIRECT_DRIFT|GROUP_EVENT|OTHER|CONFIRMED  (optional filter)
+ *   ?category=PRICE|WEDDING|DIRECT_DRIFT|OTHER|CONFIRMED  (optional filter)
  *   ?source=guesty|gmail  (optional filter)
  *   ?limit=50  (default 200, max 500)
  */
