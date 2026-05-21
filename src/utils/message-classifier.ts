@@ -11,6 +11,7 @@
  *   DIRECT_DRIFT   — explicit attempt to take the conversation off-platform
  *                    (guest hands out email/phone/website OR host pulls the guest back to Airbnb)
  *   PRICE          — explicit price negotiation (budget < listing price, "günstiger", "discount")
+ *   PLAN_CHANGE    — guest's plans change (date conflict, travel cancelled). Manually set.
  *   OTHER          — none of the above
  *
  * The thresholds are conservative: when in doubt, return OTHER with low confidence
@@ -23,6 +24,7 @@ export type ConversionCategory =
   | 'PRICE'
   | 'WEDDING'
   | 'DIRECT_DRIFT'
+  | 'PLAN_CHANGE'    // Planänderung (Datum-/Personenzahl-Konflikt, sich ändernde Reise). Manually-set.
   | 'OTHER';
 
 export interface ClassifierInput {

@@ -27,6 +27,7 @@ export type ConversionCategory =
   | 'PRICE'
   | 'WEDDING'
   | 'DIRECT_DRIFT'
+  | 'PLAN_CHANGE'
   | 'OTHER';
 
 export interface MessageThread {
