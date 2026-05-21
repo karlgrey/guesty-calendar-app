@@ -2216,8 +2216,10 @@ router.get('/properties', (_req, res) => {
     properties: properties.map(p => ({
       slug: p.slug,
       name: p.name,
+      provider: p.provider,
       isDefault: p.slug === defaultProperty?.slug,
       ga4Enabled: p.ga4?.enabled || false,
+      hasDirectEmail: !!p.directEmailLabel,
     })),
     defaultSlug: defaultProperty?.slug || null,
   });
@@ -3535,18 +3537,26 @@ router.get('/conversions', (_req, res) => {
       const json = await res.json();
       const select = document.getElementById('propertySelector');
       select.innerHTML = '';
-      const guestyOnly = (json.properties || []).filter(p => p.provider === 'guesty');
-      if (guestyOnly.length === 0) {
-        select.innerHTML = '<option value="">Keine Properties</option>';
+      // Show only properties that can have message threads: Guesty (conversations API)
+      // OR any property with a directEmailLabel configured (direct-email sync).
+      const eligible = (json.properties || []).filter(p =>
+        p.provider === 'guesty' || p.hasDirectEmail
+      );
+      if (eligible.length === 0) {
+        select.innerHTML = '<option value="">Keine Properties verfügbar</option>';
         return;
       }
-      for (const p of guestyOnly) {
+      for (const p of eligible) {
         const opt = document.createElement('option');
         opt.value = p.slug;
-        opt.textContent = p.name;
+        opt.textContent = p.name +
+          (p.provider !== 'guesty' ? ' (' + p.provider + ')' : '');
         select.appendChild(opt);
       }
-      currentSlug = guestyOnly[0].slug;
+      const defaultSlug = json.defaultSlug && eligible.find(p => p.slug === json.defaultSlug)
+        ? json.defaultSlug
+        : eligible[0].slug;
+      currentSlug = defaultSlug;
       select.value = currentSlug;
       await loadData();
     }
@@ -3662,8 +3672,9 @@ router.get('/conversions', (_req, res) => {
     }
 
     function renderThreads(threads) {
+      const container = document.getElementById('threadsTable');
       if (!threads || threads.length === 0) {
-        document.getElementById('threadsTable').innerHTML = '<div class="empty">Keine Threads in dieser Auswahl.</div>';
+        container.innerHTML = '<div class="empty">Keine Threads in dieser Auswahl.</div>';
         return;
       }
       const rows = threads.map(t => {
@@ -3674,18 +3685,27 @@ router.get('/conversions', (_req, res) => {
         })();
         const lastAt = (t.last_message_at || '').slice(0, 10);
         const guest = t.guest_name || (t.guest_email || '—');
-        return '<tr class="thread-row" onclick="openThread(\\'' + t.id.replace(/\\\\/g,'\\\\\\\\').replace(/\\'/g,"\\\\'") + '\\')">' +
+        // Use data-* attribute (safely escaped) instead of onclick — some Gmail
+        // thread IDs contain '<' / '>' which break inline-handler attributes.
+        return '<tr class="thread-row" data-thread-id="' + escapeHtml(t.id) + '">' +
           '<td>' + lastAt + '</td>' +
           '<td>' + escapeHtml(guest) + '</td>' +
-          '<td><span class="channel-tag">' + (t.channel || '?') + '</span></td>' +
-          '<td><span class="badge badge-' + (t.conversion_category || 'OTHER') + '">' + def.emoji + ' ' + def.label + '</span></td>' +
+          '<td><span class="channel-tag">' + escapeHtml(t.channel || '?') + '</span></td>' +
+          '<td><span class="badge badge-' + (t.conversion_category || 'OTHER') + '">' + def.emoji + ' ' + escapeHtml(def.label) + '</span></td>' +
           '<td class="keywords">' + escapeHtml(kw) + '</td>' +
           '<td style="text-align:right; color: var(--color-warm-gray); font-size: 12px;">' + (t.message_count || 0) + ' Msg</td>' +
         '</tr>';
       }).join('');
-      document.getElementById('threadsTable').innerHTML =
+      container.innerHTML =
         '<table><thead><tr><th>Datum</th><th>Gast</th><th>Channel</th><th>Kategorie</th><th>Keywords</th><th style="text-align:right">#</th></tr></thead><tbody>' +
         rows + '</tbody></table>';
+      // Delegated click handler
+      container.querySelectorAll('tr.thread-row').forEach(row => {
+        row.addEventListener('click', () => {
+          const id = row.getAttribute('data-thread-id');
+          if (id) openThread(id);
+        });
+      });
     }
 
     async function openThread(threadId) {
