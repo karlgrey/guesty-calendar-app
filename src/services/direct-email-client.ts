@@ -40,6 +40,10 @@ export interface DirectMail {
   receivedAt: string;             // ISO 8601
   htmlBody: string;
   textBody: string;
+  // Bulk-mail indicators (set by any ESP / mailing-list system)
+  listUnsubscribe: string | null; // value of List-Unsubscribe header
+  precedence: string | null;      // 'bulk' | 'list' | 'junk' | …
+  autoSubmitted: string | null;   // 'auto-replied' | 'auto-generated' | …
 }
 
 function parseAddress(addr: any): { name: string | null; email: string | null } {
@@ -113,6 +117,18 @@ export class DirectEmailClient {
             ? referencesRaw.split(/\s+/).filter(Boolean)
             : [];
 
+        // mailparser exposes all parsed headers via parsed.headers Map (lowercase keys)
+        const headers = parsed.headers ?? new Map<string, unknown>();
+        const headerStr = (key: string): string | null => {
+          const v = headers.get(key);
+          if (v == null) return null;
+          if (typeof v === 'string') return v;
+          if (Array.isArray(v)) return v.join(' ');
+          // Some headers (e.g. List-Unsubscribe) come back as object with .text
+          if (typeof v === 'object' && 'value' in v) return String((v as { value: unknown }).value);
+          return String(v);
+        };
+
         out.push({
           uid: msg.uid,
           messageId: parsed.messageId ?? `imap-uid-${msg.uid}@unknown`,
@@ -128,6 +144,9 @@ export class DirectEmailClient {
           receivedAt: (parsed.date ?? new Date()).toISOString(),
           htmlBody: typeof parsed.html === 'string' ? parsed.html : '',
           textBody: parsed.text ?? '',
+          listUnsubscribe: headerStr('list-unsubscribe'),
+          precedence: headerStr('precedence'),
+          autoSubmitted: headerStr('auto-submitted'),
         });
       } catch (error) {
         logger.warn({ error, uid: msg.uid }, 'Direct-email: failed to parse mail, skipping');

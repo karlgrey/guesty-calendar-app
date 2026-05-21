@@ -104,24 +104,86 @@ const SKIP_SUBJECT_PATTERNS: RegExp[] = [
   /^(No\s+more\s+empty\s+beds|Turn\s+your\s+page|Stand\s+out\s+in\s+search)/i,
 ];
 
-function isPlatformMail(mail: DirectMail): boolean {
+// Marketing / transactional / bulk patterns — non-conversational noise.
+const SKIP_BULK_SUBJECT_PATTERNS: RegExp[] = [
+  // Order / shipping / invoice
+  /^Deine\s+Bestellung/i,
+  /^Danke\s+für\s+deine\s+Bestellung/i,
+  /^Versandbest[äa]tigung/i,
+  /^Deine\s+Rechnung/i,
+  /Bestellnummer/i,
+  // Review requests
+  /^Hilf\s+uns\s+mit\s+deiner\s+Bewertung/i,
+  /^Bitte\s+bewerte/i,
+  /Bewertung\s+abgeben/i,
+  // Newsletters / marketing campaigns
+  /^Newsletter\b/i,
+  /^\[Newsletter\]/i,
+  /^Update\s+(von|aus|für)/i,
+  /^News\s+(von|aus)/i,
+  // System / account
+  /^Airbnb-Account\s+von/i,
+  /^Smoobu-Account/i,
+  // Emoji-leading subjects are a very strong marketing signal
+  // (legit business mails almost never start with an emoji)
+  /^[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u,
+];
+
+// Sender local-parts that indicate transactional / marketing / no-reply.
+// Conservative list — only patterns that are basically never used by real guests.
+const SKIP_LOCAL_PARTS = new Set<string>([
+  'shop', 'store', 'sales',
+  'noreply', 'no-reply', 'do-not-reply', 'donotreply',
+  'notifications', 'notification', 'notify', 'alerts',
+  'newsletter', 'news',
+  'marketing', 'mailings', 'campaigns',
+]);
+
+// True if the mail should be skipped (platform notification, transactional,
+// marketing, newsletter, automated bulk). Conservative — only filters when
+// at least one strong signal is present, so real conversations are never lost.
+function shouldSkipMail(mail: DirectMail): { skip: boolean; reason: string | null } {
   const fromEmail = (mail.fromEmail || '').toLowerCase();
-  if (fromEmail && SKIP_FROM_EMAILS.has(fromEmail)) return true;
-
-  const domain = fromEmail.split('@')[1];
-  if (domain && SKIP_FROM_DOMAINS.has(domain)) return true;
-
-  // Also defensively match fromAddress string for cases where simpleParser
-  // didn't isolate the email but the domain is in the display block.
   const fromAddr = (mail.fromAddress || '').toLowerCase();
+  const subject = mail.subject || '';
+
+  // (1) Known platform forwards (booking@-list, airbnb/booking/paypal domains)
+  if (fromEmail && SKIP_FROM_EMAILS.has(fromEmail)) return { skip: true, reason: 'platform-list' };
+  const domain = fromEmail.split('@')[1];
+  if (domain && SKIP_FROM_DOMAINS.has(domain)) return { skip: true, reason: 'platform-domain' };
   for (const d of SKIP_FROM_DOMAINS) {
-    if (fromAddr.includes('@' + d + '>') || fromAddr.endsWith('@' + d)) return true;
+    if (fromAddr.includes('@' + d + '>') || fromAddr.endsWith('@' + d)) {
+      return { skip: true, reason: 'platform-domain' };
+    }
   }
 
-  const subject = mail.subject || '';
-  if (SKIP_SUBJECT_PATTERNS.some((re) => re.test(subject))) return true;
+  // (2) Bulk-mail headers — the universal signal for newsletters & marketing
+  // (set by every ESP: Mailchimp, Resend, Sendgrid, Klaviyo, etc.)
+  if (mail.listUnsubscribe) return { skip: true, reason: 'list-unsubscribe-header' };
+  if (mail.precedence && /^(bulk|list|junk)$/i.test(mail.precedence.trim())) {
+    return { skip: true, reason: 'precedence-bulk' };
+  }
+  if (mail.autoSubmitted && !/^no$/i.test(mail.autoSubmitted.trim())) {
+    return { skip: true, reason: 'auto-submitted' };
+  }
 
-  return false;
+  // (3) Sender local-part patterns — shop@, noreply@, newsletter@, etc.
+  const localPart = fromEmail.split('@')[0];
+  if (localPart && SKIP_LOCAL_PARTS.has(localPart)) {
+    return { skip: true, reason: 'sender-local-part' };
+  }
+
+  // (4) Platform-notification subjects (forwarded with rewritten sender)
+  if (SKIP_SUBJECT_PATTERNS.some((re) => re.test(subject))) {
+    return { skip: true, reason: 'platform-subject' };
+  }
+
+  // (5) Bulk / transactional / marketing subjects
+  if (SKIP_BULK_SUBJECT_PATTERNS.some((re) => re.test(subject))) {
+    return { skip: true, reason: 'bulk-subject' };
+  }
+
+  return { skip: false, reason: null };
 }
 
 // Host emails — outbound direction. Anything else → inbound.
@@ -257,8 +319,21 @@ export async function syncDirectEmailMessagesForProperty(
     const all = await client.fetchNewMails(sinceUid);
     logger.info({ slug, label, sinceUid, fetched: all.length }, 'Direct-email: fetched mails');
 
-    const platformFiltered = all.filter(isPlatformMail).length;
-    const relevant = all.filter((m) => !isPlatformMail(m));
+    // Apply skip filter once per mail; collect per-reason stats for transparency.
+    const skipReasons: Record<string, number> = {};
+    const relevant: DirectMail[] = [];
+    for (const m of all) {
+      const decision = shouldSkipMail(m);
+      if (decision.skip) {
+        skipReasons[decision.reason ?? 'unknown'] = (skipReasons[decision.reason ?? 'unknown'] ?? 0) + 1;
+      } else {
+        relevant.push(m);
+      }
+    }
+    const platformFiltered = all.length - relevant.length;
+    if (platformFiltered > 0) {
+      logger.info({ slug, platformFiltered, reasons: skipReasons }, 'Direct-email: skip-filter breakdown');
+    }
 
     let maxUid = sinceUid;
     let upserted = 0;
