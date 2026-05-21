@@ -21,6 +21,7 @@ import { syncAnalytics } from '../jobs/sync-analytics.js';
 import { ga4Client } from '../services/ga4-client.js';
 import { createOrGetDocument, refreshDocument } from '../services/document-service.js';
 import { getDocumentsByReservation, getDocumentByReservation, listDocuments, getDocumentSequenceInfo, setDocumentSequenceNumber } from '../repositories/document-repository.js';
+import { setManualCategory } from '../repositories/message-repository.js';
 
 const router = express.Router();
 
@@ -3448,6 +3449,32 @@ router.get('/conversions', (_req, res) => {
     .msg-inbound  { background: white; border-left-color: var(--color-amber); }
     .msg-outbound { background: var(--color-sand); border-left-color: var(--color-forest); }
     .msg-system   { background: var(--color-stone); border-left-color: var(--color-warm-gray); font-style: italic; font-size: 12px; }
+    .recat-box {
+      background: var(--color-sand); padding: 14px 16px;
+      border-radius: var(--radius-md); margin-bottom: 20px;
+    }
+    .recat-label {
+      font-size: 11px; font-weight: 600;
+      color: var(--color-warm-gray);
+      text-transform: uppercase; letter-spacing: 0.06em;
+      margin-bottom: 8px;
+    }
+    .recat-label .manual-tag {
+      display: inline-block; margin-left: 6px;
+      background: var(--color-forest); color: white;
+      padding: 1px 6px; border-radius: 4px;
+      text-transform: none; letter-spacing: 0;
+    }
+    .recat-form {
+      display: flex; gap: 8px; align-items: stretch; flex-wrap: wrap;
+    }
+    .recat-form select, .recat-form input {
+      font-family: var(--font-body); font-size: 13px;
+      padding: 8px 10px; border: 1px solid var(--color-stone);
+      border-radius: 6px; background: white;
+    }
+    .recat-form input { flex: 1; min-width: 200px; }
+    .recat-form select { min-width: 180px; }
     .msg-meta {
       display: flex; justify-content: space-between;
       font-size: 11px; font-weight: 600;
@@ -3512,6 +3539,24 @@ router.get('/conversions', (_req, res) => {
         </div>
         <button class="close-btn" onclick="closeModal()">×</button>
       </div>
+
+      <!-- Manual category override -->
+      <div class="recat-box" id="recatBox">
+        <div class="recat-label">Kategorie manuell setzen <span id="recatStatus"></span></div>
+        <div class="recat-form">
+          <select id="recatSelect">
+            <option value="">— auto —</option>
+            <option value="CONFIRMED">✅ Bestätigt</option>
+            <option value="WEDDING">💍 Hochzeit / Event</option>
+            <option value="PRICE">€ Preisverhandlung</option>
+            <option value="DIRECT_DRIFT">↗ Direct-Drift</option>
+            <option value="OTHER">◌ Sonstiges</option>
+          </select>
+          <input type="text" id="recatNote" placeholder="Notiz (optional, z.B. 'per Telefon gebucht')" maxlength="200">
+          <button class="btn" id="recatSave">Speichern</button>
+        </div>
+      </div>
+
       <div id="modalBody"><div class="loading">Lade Messages…</div></div>
     </div>
   </div>
@@ -3705,10 +3750,16 @@ router.get('/conversions', (_req, res) => {
       });
     }
 
+    let currentThreadId = null;
+
     async function openThread(threadId) {
+      currentThreadId = threadId;
       document.getElementById('modal').classList.add('open');
       document.getElementById('modalTitle').textContent = 'Thread';
       document.getElementById('modalMeta').textContent = '';
+      document.getElementById('recatStatus').innerHTML = '';
+      document.getElementById('recatSelect').value = '';
+      document.getElementById('recatNote').value = '';
       document.getElementById('modalBody').innerHTML = '<div class="loading">Lade…</div>';
       try {
         const url = '/admin/conversions/' + currentSlug + '/thread/' + encodeURIComponent(threadId);
@@ -3726,6 +3777,15 @@ router.get('/conversions', (_req, res) => {
           (t.channel || '?') + ' · ' + (t.source || '?') + ' · ' +
           (t.first_message_at || '').slice(0, 10) + ' → ' + (t.last_message_at || '').slice(0, 10) +
           ' · ' + json.messages.length + ' Messages';
+
+        // Pre-fill manual override form
+        if (t.manually_categorized) {
+          document.getElementById('recatSelect').value = t.conversion_category || '';
+          document.getElementById('recatNote').value = t.manual_note || '';
+          document.getElementById('recatStatus').innerHTML =
+            '<span class="manual-tag">manuell' + (t.manual_note ? ' — ' + escapeHtml(t.manual_note) : '') + '</span>';
+        }
+
         const html = json.messages.map(m => {
           const sent = (m.sent_at || '').slice(0, 16).replace('T', ' ');
           return '<div class="msg msg-' + m.direction + '">' +
@@ -3739,6 +3799,36 @@ router.get('/conversions', (_req, res) => {
         document.getElementById('modalBody').innerHTML = '<div class="empty">Fehler: ' + escapeHtml(String(e)) + '</div>';
       }
     }
+
+    async function saveRecategorization() {
+      if (!currentThreadId) return;
+      const sel = document.getElementById('recatSelect').value;
+      const note = document.getElementById('recatNote').value.trim() || null;
+      const category = sel === '' ? null : sel;  // empty = clear override (back to auto)
+      const statusEl = document.getElementById('recatStatus');
+      statusEl.innerHTML = '<span class="manual-tag">speichere…</span>';
+      try {
+        const url = '/admin/conversions/' + currentSlug + '/thread/' + encodeURIComponent(currentThreadId) + '/category';
+        const res = await fetch(url, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ category, note }),
+        });
+        const json = await res.json();
+        if (json.success) {
+          statusEl.innerHTML = category
+            ? '<span class="manual-tag">manuell gespeichert' + (note ? ' — ' + escapeHtml(note) : '') + '</span>'
+            : '<span class="manual-tag">auto wiederhergestellt</span>';
+          // Refresh underlying threads list (counts + filter)
+          loadData();
+        } else {
+          statusEl.innerHTML = '<span class="manual-tag">Fehler: ' + escapeHtml(json.error || '?') + '</span>';
+        }
+      } catch (e) {
+        statusEl.innerHTML = '<span class="manual-tag">Netzwerkfehler</span>';
+      }
+    }
+    document.getElementById('recatSave').addEventListener('click', saveRecategorization);
 
     function closeModal() {
       document.getElementById('modal').classList.remove('open');
@@ -3892,6 +3982,52 @@ router.get('/conversions/:slug/thread/:threadId(*)', (req, res, next) => {
       .all(req.params.threadId);
 
     res.json({ success: true, thread, messages });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * PATCH /admin/conversions/:slug/thread/:threadId/category
+ * Manual override of a thread's category. Survives subsequent syncs.
+ * Body: { category: 'CONFIRMED'|'PRICE'|'WEDDING'|'DIRECT_DRIFT'|'OTHER'|null, note?: string }
+ * Passing category=null clears the override (back to auto-classify).
+ */
+const ALLOWED_CATEGORIES = new Set([
+  'CONFIRMED', 'PRICE', 'WEDDING', 'DIRECT_DRIFT', 'OTHER',
+]);
+
+router.patch('/conversions/:slug/thread/:threadId(*)/category', express.json(), (req, res, next) => {
+  try {
+    const property = getPropertyBySlug(req.params.slug);
+    if (!property) {
+      res.status(404).json({ error: `Property '${req.params.slug}' not found` });
+      return;
+    }
+    const listingId = getListingId(property);
+    if (!listingId) {
+      res.status(400).json({ error: 'No listing id resolvable for property' });
+      return;
+    }
+
+    const { category, note } = req.body ?? {};
+    if (category !== null && !ALLOWED_CATEGORIES.has(category)) {
+      res.status(400).json({ error: `Invalid category. Allowed: ${[...ALLOWED_CATEGORIES].join(', ')} or null to clear` });
+      return;
+    }
+
+    const db = getDatabase();
+    // Verify thread belongs to this listing before allowing the update
+    const exists = db
+      .prepare(`SELECT 1 FROM message_threads WHERE id = ? AND listing_id = ?`)
+      .get(req.params.threadId, listingId);
+    if (!exists) {
+      res.status(404).json({ error: 'Thread not found' });
+      return;
+    }
+
+    setManualCategory(req.params.threadId, category, typeof note === 'string' ? note : null);
+    res.json({ success: true });
   } catch (error) {
     next(error);
   }

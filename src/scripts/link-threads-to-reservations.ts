@@ -79,9 +79,13 @@ async function main() {
 
   console.log(`Threads (gmail): ${threads.length}, Reservation candidates: ${candidates.length}`);
 
+  // Preserve manual category overrides — only re-classify auto-categorized threads.
   const updateStmt = db.prepare(
     `UPDATE message_threads
-     SET reservation_id = ?, reservation_status = ?, conversion_category = ?, classification_confidence = ?
+     SET reservation_id = ?,
+         reservation_status = ?,
+         conversion_category = CASE WHEN manually_categorized = 1 THEN conversion_category ELSE ? END,
+         classification_confidence = CASE WHEN manually_categorized = 1 THEN classification_confidence ELSE ? END
      WHERE id = ?`,
   );
 

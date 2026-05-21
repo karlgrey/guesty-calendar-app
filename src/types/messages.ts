@@ -45,6 +45,8 @@ export interface MessageThread {
   classification_confidence: number | null;
   classification_keywords: string | null; // JSON array
   raw_meta: string | null;                 // JSON
+  manually_categorized: number;            // 0 | 1
+  manual_note: string | null;
   last_synced_at: string;
   created_at?: string;
 }
@@ -65,5 +67,9 @@ export interface Message {
   created_at?: string;
 }
 
-export type NewMessageThread = Omit<MessageThread, 'created_at'>;
+export type NewMessageThread = Omit<MessageThread, 'created_at' | 'manually_categorized' | 'manual_note'> & {
+  // DB has DEFAULT 0 / NULL; sync jobs don't need to set these.
+  manually_categorized?: number;
+  manual_note?: string | null;
+};
 export type NewMessage = Omit<Message, 'created_at'>;

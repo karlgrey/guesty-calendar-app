@@ -44,9 +44,16 @@ export function upsertThread(thread: NewMessageThread): void {
         reservation_id = excluded.reservation_id,
         inquiry_id = excluded.inquiry_id,
         reservation_status = excluded.reservation_status,
-        conversion_category = excluded.conversion_category,
-        classification_confidence = excluded.classification_confidence,
-        classification_keywords = excluded.classification_keywords,
+        -- Preserve manual category overrides: only overwrite auto-classified threads
+        conversion_category = CASE WHEN manually_categorized = 1
+                                   THEN conversion_category
+                                   ELSE excluded.conversion_category END,
+        classification_confidence = CASE WHEN manually_categorized = 1
+                                         THEN classification_confidence
+                                         ELSE excluded.classification_confidence END,
+        classification_keywords = CASE WHEN manually_categorized = 1
+                                       THEN classification_keywords
+                                       ELSE excluded.classification_keywords END,
         raw_meta = excluded.raw_meta,
         last_synced_at = excluded.last_synced_at`,
     ).run(thread);
@@ -86,6 +93,26 @@ export function upsertMessage(msg: NewMessage): void {
       `Failed to upsert message: ${error instanceof Error ? error.message : 'Unknown error'}`,
     );
   }
+}
+
+export function setManualCategory(
+  threadId: string,
+  category: string | null,
+  note: string | null,
+): boolean {
+  const db = getDatabase();
+  // Setting category=null clears the override (back to auto-classify)
+  const manual = category === null ? 0 : 1;
+  const result = db
+    .prepare(
+      `UPDATE message_threads
+       SET conversion_category = COALESCE(?, conversion_category),
+           manually_categorized = ?,
+           manual_note = ?
+       WHERE id = ?`,
+    )
+    .run(category, manual, note, threadId);
+  return result.changes > 0;
 }
 
 export function getThreadById(id: string): MessageThread | null {
