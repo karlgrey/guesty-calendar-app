@@ -32,13 +32,19 @@ function main() {
   }
 
   initDatabase();
-  const listingId = getListingId(property);
-  if (!listingId) {
-    console.error(`No listing id resolvable for '${slug}'`);
+  let listingId: string;
+  try {
+    listingId = getListingId(property);
+  } catch (e) {
+    console.error(
+      `No listing id resolvable for '${slug}':`,
+      e instanceof Error ? e.message : e,
+    );
     process.exit(1);
   }
 
   const before = getCategoryCounts(listingId);
+  // limit: fetch all threads — no pagination needed for a one-shot CLI
   const threads = getThreadsByListing(listingId, { limit: 100000 });
 
   let updated = 0;
@@ -75,4 +81,9 @@ function main() {
   console.log('after: ', after);
 }
 
-main();
+try {
+  main();
+} catch (e) {
+  console.error(e);
+  process.exit(1);
+}
