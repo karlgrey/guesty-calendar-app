@@ -170,6 +170,7 @@ describe('classifyThread', () => {
       ],
     });
     expect(out.category).toBe('SPAM');
+    expect(out.confidence).toBe(0.85);
   });
 
   it('detects SPAM from "360° Rundgang" service offer (Leon-style)', () => {
@@ -192,6 +193,7 @@ describe('classifyThread', () => {
       ],
     });
     expect(out.category).toBe('SPAM');
+    expect(out.confidence).toBe(0.8);
   });
 
   it('priority: SPAM beats PRICE when a pitch mentions a price', () => {

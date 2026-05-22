@@ -7,6 +7,8 @@
  * Categories (priority order — first match wins):
  *   CONFIRMED      — reservation_status indicates a booking happened
  *   REPEAT         — returning guest (manually set, no auto-rule yet)
+ *   SPAM           — host-directed cold pitch (property management, listing
+ *                    services, review boosting). Not a real guest inquiry.
  *   PARTY          — guest asks for wedding/event/day-use venue (host typically declines)
  *   DIRECT_DRIFT   — explicit attempt to take the conversation off-platform
  *                    (guest hands out email/phone/website OR host pulls the guest back to Airbnb)
@@ -61,7 +63,7 @@ const HOST_PULLBACK_RE =
 // ── SPAM: host-directed cold pitch — someone selling the HOST a service
 // (property management, listing photography, review boosting). Not a guest.
 const SPAM_STRONG_RE =
-  /(ich unterst[üu]tze\s+(hosts?|gastgeber|vermieter)|auslastung[^.\n]{0,40}steiger|umsatz[^.\n]{0,40}steiger|bewertungs(score|management)|feedback-?l[öo]sung|360[^a-z0-9]{0,4}rundgang|channel\s?manager|kanalmanager|mehr buchungen[^.\n]{0,40}(generier|erziel|bekomm)|kostenlos[^.\n]{0,15}(test|ausprobier))/i;
+  /(ich unterst[üu]tze\s+(hosts?|gastgeber|vermieter)|auslastung[^.\n]{0,40}steiger|umsatz[^.\n]{0,40}steiger|bewertungs(score|management)|feedback-?l[öo]sung|360[^a-z0-9]{0,4}rundgang|mehr buchungen[^.\n]{0,40}(generier|erziel|bekomm))/i;
 
 // host-directed possessive ...
 const SPAM_TARGET_RE =
@@ -142,7 +144,7 @@ export function classifyThread(input: ClassifierInput): ClassifierResult {
   if (spamStrong || spamCombo) {
     return {
       category: 'SPAM',
-      confidence: spamCombo ? 0.85 : 0.8,
+      confidence: spamCombo ? 0.8 : 0.85,
       matchedKeywords: extractKeywords(all),
     };
   }
