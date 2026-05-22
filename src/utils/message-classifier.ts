@@ -58,6 +58,18 @@ const GUEST_DRIFT_RE =
 const HOST_PULLBACK_RE =
   /(über\s+airbnb\s+(buchen|laufen|abwickeln|mieten)|bitte\s+(bucht\s+)?(regul[äa]r|einfach)\s+[^.\n]{0,30}airbnb|regul[äa]r\s+[^.\n]{0,30}airbnb\s+(buchen|mieten)|please\s+book\s+(via|through)\s+airbnb|use\s+the\s+airbnb\s+platform|kann\s+nur\s+über\s+airbnb|nur\s+über\s+(die\s+)?plattform|einfach\s+(hier\s+)?(regul[äa]r\s+)?über\s+airbnb|über\s+(diese|die)\s+plattform\s+(nicht|laufen|abwickeln))/i;
 
+// ── SPAM: host-directed cold pitch — someone selling the HOST a service
+// (property management, listing photography, review boosting). Not a guest.
+const SPAM_STRONG_RE =
+  /(ich unterst[üu]tze\s+(hosts?|gastgeber|vermieter)|auslastung[^.\n]{0,40}steiger|umsatz[^.\n]{0,40}steiger|bewertungs(score|management)|feedback-?l[öo]sung|360[^a-z0-9]{0,4}rundgang|channel\s?manager|kanalmanager|mehr buchungen[^.\n]{0,40}(generier|erziel|bekomm)|kostenlos[^.\n]{0,15}(test|ausprobier))/i;
+
+// host-directed possessive ...
+const SPAM_TARGET_RE =
+  /\b(dein|deine|deiner|ihr|ihre|ihrer|eure?|euer)\s+(inserat|unterkunft|ferienwohnung|fewo|objekt|vermietung|listing|immobilie)/i;
+// ... combined with a service/offer verb
+const SPAM_OFFER_RE =
+  /(biete|anbieten|unterst[üu]tz|optimier|steiger|verwalt|pr[äa]sentier|vorstellen|helfe\s+(dir|ihnen|euch)|dienstleistung)/i;
+
 // ── Keyword extraction (for transparency in dashboard) ──────────────────────
 
 const KEYWORD_INDEX: Array<{ name: string; re: RegExp }> = [
@@ -77,6 +89,10 @@ const KEYWORD_INDEX: Array<{ name: string; re: RegExp }> = [
   { name: 'direct-booking', re: /\b(direkt(buchung| buchen)|direct booking|book direct)\b/i },
   { name: 'website-shared', re: /\b(meine\s+website|farmhouse-?prasser\.de|webseite)\b/i },
   { name: 'host-pullback-airbnb', re: /\büber\s+airbnb\b/i },
+  // spam
+  { name: 'host-pitch', re: /\bich unterst[üu]tze\s+(hosts?|gastgeber|vermieter)\b/i },
+  { name: 'auslastung-steigern', re: /auslastung[^.\n]{0,40}steiger/i },
+  { name: 'bewertungsscore', re: /bewertungs(score|management)/i },
   // price
   { name: 'budget', re: /\bbudget\b/i },
   { name: 'preis', re: /\b(preis|preisanfrage|preisnachlass)\b/i },
@@ -118,6 +134,18 @@ export function classifyThread(input: ClassifierInput): ClassifierResult {
   const guestText = joinByDirection(messages, 'inbound');
   const hostText = joinByDirection(messages, 'outbound');
   const all = `${guestText}\n${hostText}`;
+
+  // SPAM — host-directed cold pitch. Checked early so a pitch mentioning
+  //   "Budget"/"Event" can't be mis-tagged as PRICE/PARTY.
+  const spamStrong = SPAM_STRONG_RE.test(guestText);
+  const spamCombo = SPAM_TARGET_RE.test(guestText) && SPAM_OFFER_RE.test(guestText);
+  if (spamStrong || spamCombo) {
+    return {
+      category: 'SPAM',
+      confidence: spamCombo ? 0.85 : 0.8,
+      matchedKeywords: extractKeywords(all),
+    };
+  }
 
   // PARTY / DAY-USE — strongly correlated with declined-by-host.
   const partyHit = PARTY_RE.test(all) || EVENT_DAY_USE_RE.test(all);

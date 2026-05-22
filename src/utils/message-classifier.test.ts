@@ -160,6 +160,51 @@ describe('classifyThread', () => {
     expect(out.category).toBe('OTHER');
   });
 
+  // ── SPAM
+  it('detects SPAM from "ich unterstütze Hosts" pitch (Tamsir-style)', () => {
+    const out = classifyThread({
+      reservationStatus: 'inquiry',
+      channel: 'airbnb',
+      messages: [
+        msg('inbound', 'Ich unterstütze Hosts dabei, Auslastung und Bewertungsscore gezielt zu steigern.'),
+      ],
+    });
+    expect(out.category).toBe('SPAM');
+  });
+
+  it('detects SPAM from "360° Rundgang" service offer (Leon-style)', () => {
+    const out = classifyThread({
+      reservationStatus: 'inquiry',
+      channel: 'airbnb',
+      messages: [
+        msg('inbound', 'dein Inserat wirkt ansprechend – mit einem professionellen 360° Rundgang noch stärker.'),
+      ],
+    });
+    expect(out.category).toBe('SPAM');
+  });
+
+  it('detects SPAM via possessive+offer combo (Sophia-style property-management pitch)', () => {
+    const out = classifyThread({
+      reservationStatus: 'inquiry',
+      channel: 'airbnb',
+      messages: [
+        msg('inbound', 'Ich biete dir treue Unterstützung bei der Verwaltung deiner Ferienwohnung.'),
+      ],
+    });
+    expect(out.category).toBe('SPAM');
+  });
+
+  it('priority: SPAM beats PRICE when a pitch mentions a price', () => {
+    const out = classifyThread({
+      reservationStatus: 'inquiry',
+      channel: 'airbnb',
+      messages: [
+        msg('inbound', 'Ich unterstütze Hosts dabei, mehr Buchungen zu generieren — schon ab 99€ im Monat.'),
+      ],
+    });
+    expect(out.category).toBe('SPAM');
+  });
+
   // ── Priority order verification
   it('priority: PARTY beats PRICE when both keywords present', () => {
     const out = classifyThread({

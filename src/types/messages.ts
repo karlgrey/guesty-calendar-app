@@ -24,6 +24,7 @@ export type MessageDirection = 'inbound' | 'outbound' | 'system';
 export type ConversionCategory =
   | 'CONFIRMED'
   | 'REPEAT'
+  | 'SPAM'
   | 'PRICE'
   | 'PARTY'
   | 'DIRECT_DRIFT'
