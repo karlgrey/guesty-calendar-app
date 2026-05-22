@@ -9,6 +9,8 @@
  *   REPEAT         — returning guest (manually set, no auto-rule yet)
  *   SPAM           — host-directed cold pitch (property management, listing
  *                    services, review boosting). Not a real guest inquiry.
+ *   COMMERCIAL     — guest wants to use the property commercially (photo/video
+ *                    shoot, brand/influencer collaboration)
  *   PARTY          — guest asks for wedding/event/day-use venue (host typically declines)
  *   DIRECT_DRIFT   — explicit attempt to take the conversation off-platform
  *                    (guest hands out email/phone/website OR host pulls the guest back to Airbnb)
