@@ -3330,6 +3330,10 @@ router.get('/conversions', (_req, res) => {
     .bar-REPEAT      .bar-fill { background: var(--color-forest-light); }
     .bar-PRICE       .bar-fill { background: var(--color-amber); color: var(--color-charcoal); }
     .bar-PARTY       .bar-fill { background: var(--color-terracotta); }
+    .bar-SPAM        .bar-fill { background: #8b7d8f; }
+    .bar-COMMERCIAL  .bar-fill { background: #5b6bb0; }
+    .bar-NO_AVAILABILITY .bar-fill { background: #9a6b5e; }
+    .bar-INFO        .bar-fill { background: var(--color-sage); }
     .bar-DIRECT_DRIFT .bar-fill { background: #b03f7a; }
     .bar-PLAN_CHANGE .bar-fill { background: #6b8caf; }
     .bar-OTHER       .bar-fill { background: var(--color-warm-gray); }
@@ -3399,6 +3403,10 @@ router.get('/conversions', (_req, res) => {
     .badge-REPEAT      { background: #c8e0d0; color: #1d4a2d; }
     .badge-PRICE       { background: #f2e3c4; color: #8a6515; }
     .badge-PARTY       { background: #f1d0c5; color: #8a3015; }
+    .badge-SPAM        { background: #e6dfe8; color: #5a4d5e; }
+    .badge-COMMERCIAL  { background: #dadef0; color: #2e3a78; }
+    .badge-NO_AVAILABILITY { background: #ecd9d3; color: #6a4036; }
+    .badge-INFO        { background: #dde4d3; color: #4a5a3b; }
     .badge-DIRECT_DRIFT { background: #f1c4d8; color: #7a1546; }
     .badge-PLAN_CHANGE { background: #d8e2ec; color: #2a4660; }
     .badge-OTHER       { background: var(--color-stone); color: var(--color-warm-gray); }
@@ -3562,6 +3570,10 @@ router.get('/conversions', (_req, res) => {
             <option value="CONFIRMED">✅ Bestätigt</option>
             <option value="REPEAT">🔁 Wiederbucher</option>
             <option value="PARTY">🎉 Party / Hochzeit</option>
+            <option value="SPAM">📣 Werbung</option>
+            <option value="COMMERCIAL">🎬 Dreh &amp; Kooperation</option>
+            <option value="NO_AVAILABILITY">🚫 Kein Termin</option>
+            <option value="INFO">❓ Vorab-Frage</option>
             <option value="PRICE">€ Preisverhandlung</option>
             <option value="DIRECT_DRIFT">↗ Direct-Drift</option>
             <option value="PLAN_CHANGE">📅 Planänderung</option>
@@ -3580,13 +3592,17 @@ router.get('/conversions', (_req, res) => {
     const CATEGORY_LABELS = {
       CONFIRMED:    { label: 'Bestätigt',         emoji: '✅' },
       REPEAT:       { label: 'Wiederbucher',      emoji: '🔁' },
+      SPAM:         { label: 'Werbung',           emoji: '📣' },
+      COMMERCIAL:   { label: 'Dreh & Kooperation', emoji: '🎬' },
       PARTY:        { label: 'Party / Hochzeit',  emoji: '🎉' },
       PRICE:        { label: 'Preisverhandlung',  emoji: '€'  },
       DIRECT_DRIFT: { label: 'Direct-Drift',      emoji: '↗'  },
+      NO_AVAILABILITY: { label: 'Kein Termin',    emoji: '🚫' },
+      INFO:         { label: 'Vorab-Frage',       emoji: '❓' },
       PLAN_CHANGE:  { label: 'Planänderung',      emoji: '📅' },
       OTHER:        { label: 'Sonstiges',         emoji: '◌'  },
     };
-    const ORDER = ['CONFIRMED', 'REPEAT', 'PARTY', 'PRICE', 'DIRECT_DRIFT', 'PLAN_CHANGE', 'OTHER'];
+    const ORDER = ['CONFIRMED', 'REPEAT', 'SPAM', 'COMMERCIAL', 'PARTY', 'DIRECT_DRIFT', 'PRICE', 'NO_AVAILABILITY', 'INFO', 'PLAN_CHANGE', 'OTHER'];
 
     let currentSlug = '';
     let currentCategory = '';
@@ -4075,7 +4091,8 @@ router.get('/conversions/:slug/thread/:threadId(*)', (req, res, next) => {
  * Passing category=null clears the override (back to auto-classify).
  */
 const ALLOWED_CATEGORIES = new Set([
-  'CONFIRMED', 'REPEAT', 'PRICE', 'PARTY', 'DIRECT_DRIFT', 'PLAN_CHANGE', 'OTHER',
+  'CONFIRMED', 'REPEAT', 'SPAM', 'COMMERCIAL', 'PARTY', 'DIRECT_DRIFT',
+  'PRICE', 'NO_AVAILABILITY', 'INFO', 'PLAN_CHANGE', 'OTHER',
 ]);
 
 router.patch('/conversions/:slug/thread/:threadId(*)/category', express.json(), (req, res, next) => {
