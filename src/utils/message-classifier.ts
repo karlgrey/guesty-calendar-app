@@ -41,7 +41,15 @@ const PARTY_RE =
   /\b(hochzeit|wedding|heirat|trauung|junggesellinnen|jga|polter|hochzeitsfeier|wedding-?party|bachelor[a-z]*party|geburtstagsparty|taufe|baptism|jubil[äa]um)\b/i;
 
 const EVENT_DAY_USE_RE =
-  /\b(tages?vermietung|day-?use|day rate|tagesnutzung|feier|veranstaltung|event location|location for our event|drehort|fotoshoot|photo[-\s]?shoot|musikvideo|video shoot|reception|ceremony|catering)\b/i;
+  /\b(tages?vermietung|day-?use|day rate|tagesnutzung|feier|veranstaltung|event location|location for our event|reception|ceremony|catering)\b/i;
+
+// ── COMMERCIAL: guest wants to USE the property commercially — photo/video
+// shoot, brand/influencer collaboration. Checked after SPAM (host-directed
+// pitches are already out) and before PARTY.
+const COMMERCIAL_RE =
+  /\b(foto-?shooting|foto-?shoot|photo\s?shoot|fotograf(in)?|videograf(in)?|foto-?dreh|videodreh|filmdreh|dreharbeiten|drehort|drehgenehmigung|musikvideo|video\s?shoot|content\s?creator|content\s?creation|influencer|marken?kooperation)\b/i;
+const COMMERCIAL_LOCATION_RE =
+  /\b(als location f[üu]r|location f[üu]r (ein|eine|einen|unser|unsere|mein|meine)\s+\w*\s*(shoot|shooting|dreh|video|projekt|kampagne))/i;
 
 const PRICE_RE =
   /\b(budget|preisanfrage|preisnachlass|verhandeln|negoti[a-z]+|cheaper|g[üu]nstig(er)?|reduzieren|reduce|discount|rabatt|deal|niedriger|too expensive|zu teuer|teuer|expensive|afford|leisten|sonderpreis|cost|kosten|under (the )?budget|over (the )?budget)\b/i;
@@ -95,6 +103,10 @@ const KEYWORD_INDEX: Array<{ name: string; re: RegExp }> = [
   { name: 'host-pitch', re: /\bich unterst[üu]tze\s+(hosts?|gastgeber|vermieter)\b/i },
   { name: 'auslastung-steigern', re: /auslastung[^.\n]{0,40}steiger/i },
   { name: 'bewertungsscore', re: /bewertungs(score|management)/i },
+  // commercial
+  { name: 'fotograf', re: /\bfotograf(in)?\b/i },
+  { name: 'dreh', re: /\b(dreh(ort|arbeiten|genehmigung)?|videodreh|filmdreh)\b/i },
+  { name: 'content-creator', re: /\b(content\s?creator|influencer)\b/i },
   // price
   { name: 'budget', re: /\bbudget\b/i },
   { name: 'preis', re: /\b(preis|preisanfrage|preisnachlass)\b/i },
@@ -145,6 +157,15 @@ export function classifyThread(input: ClassifierInput): ClassifierResult {
     return {
       category: 'SPAM',
       confidence: spamCombo ? 0.8 : 0.85,
+      matchedKeywords: extractKeywords(all),
+    };
+  }
+
+  // COMMERCIAL — commercial use of the property (shoots, collaborations).
+  if (COMMERCIAL_RE.test(guestText) || COMMERCIAL_LOCATION_RE.test(guestText)) {
+    return {
+      category: 'COMMERCIAL',
+      confidence: 0.8,
       matchedKeywords: extractKeywords(all),
     };
   }

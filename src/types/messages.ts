@@ -25,6 +25,7 @@ export type ConversionCategory =
   | 'CONFIRMED'
   | 'REPEAT'
   | 'SPAM'
+  | 'COMMERCIAL'
   | 'PRICE'
   | 'PARTY'
   | 'DIRECT_DRIFT'

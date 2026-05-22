@@ -44,13 +44,13 @@ describe('classifyThread', () => {
     expect(out.category).toBe('PARTY');
   });
 
-  it('detects PARTY from photo-shoot / drehort even without "hochzeit"', () => {
+  it('detects COMMERCIAL from drehort even without "hochzeit"', () => {
     const out = classifyThread({
       reservationStatus: 'inquiry',
       channel: 'airbnb',
       messages: [msg('inbound', 'Ich suche derzeit nach einem geeigneten Drehort.')],
     });
-    expect(out.category).toBe('PARTY');
+    expect(out.category).toBe('COMMERCIAL');
   });
 
   // ── DIRECT_DRIFT
@@ -205,6 +205,29 @@ describe('classifyThread', () => {
       ],
     });
     expect(out.category).toBe('SPAM');
+  });
+
+  // ── COMMERCIAL
+  it('detects COMMERCIAL from photographer requesting the property as a location (Lea-style)', () => {
+    const out = classifyThread({
+      reservationStatus: 'inquiry',
+      channel: 'airbnb',
+      messages: [
+        msg('inbound', 'Lieber Christian, ich bin Fotograf/in und bin auf deine schöne Unterkunft aufmerksam geworden.'),
+      ],
+    });
+    expect(out.category).toBe('COMMERCIAL');
+  });
+
+  it('priority: COMMERCIAL beats PARTY when a shoot request also mentions a Feier', () => {
+    const out = classifyThread({
+      reservationStatus: 'inquiry',
+      channel: 'airbnb',
+      messages: [
+        msg('inbound', 'Ich bin Fotografin und würde die Unterkunft gerne für ein Shooting und eine kleine Feier nutzen.'),
+      ],
+    });
+    expect(out.category).toBe('COMMERCIAL');
   });
 
   // ── Priority order verification
