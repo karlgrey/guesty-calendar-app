@@ -49,7 +49,7 @@ const EVENT_DAY_USE_RE =
 // shoot, brand/influencer collaboration. Checked after SPAM (host-directed
 // pitches are already out) and before PARTY.
 const COMMERCIAL_RE =
-  /\b(foto-?shooting|foto-?shoot|photo\s?shoot|fotograf(in)?|videograf(in)?|foto-?dreh|videodreh|filmdreh|dreharbeiten|drehort|drehgenehmigung|musikvideo|video\s?shoot|content\s?creator|content\s?creation|influencer|marken?kooperation)\b/i;
+  /\b(foto-?shooting|foto-?shoot|photo\s?shoot|shootings?|fotograf(in)?|videograf(in)?|foto-?dreh|videodreh|filmdreh|dreharbeiten|drehort|drehgenehmigung|musikvideo|video\s?shoot|content\s?creator|content\s?creation|influencer|marken[-\s]?kooperation)\b/i;
 const COMMERCIAL_LOCATION_RE =
   /\b(als location f[üu]r|location f[üu]r (ein|eine|einen|unser|unsere|mein|meine)\s+\w*\s*(shoot|shooting|dreh|video|projekt|kampagne))/i;
 
@@ -85,14 +85,13 @@ const SPAM_OFFER_RE =
 // ── Keyword extraction (for transparency in dashboard) ──────────────────────
 
 const KEYWORD_INDEX: Array<{ name: string; re: RegExp }> = [
-  // wedding
+  // party
   { name: 'hochzeit', re: /\bhochzeit/i },
   { name: 'wedding', re: /\bwedding/i },
   { name: 'tagesvermietung', re: /\btagesvermietung/i },
   { name: 'feier', re: /\bfeier\w*/i },
   { name: 'taufe', re: /\b(taufe|baptism)\b/i },
   { name: 'event', re: /\bevent\b/i },
-  { name: 'fotoshoot', re: /\b(fotoshoot|photo-?shoot|drehort)\b/i },
   // drift
   { name: 'whatsapp', re: /\bwhatsapp\b/i },
   { name: 'phone-number-shared', re: /\b(telefon|phone)\s*(nummer|number|ist|is)/i },
@@ -106,6 +105,7 @@ const KEYWORD_INDEX: Array<{ name: string; re: RegExp }> = [
   { name: 'auslastung-steigern', re: /auslastung[^.\n]{0,40}steiger/i },
   { name: 'bewertungsscore', re: /bewertungs(score|management)/i },
   // commercial
+  { name: 'fotoshoot', re: /\b(fotoshoot|photo-?shoot|drehort)\b/i },
   { name: 'fotograf', re: /\bfotograf(in)?\b/i },
   { name: 'dreh', re: /\b(dreh(ort|arbeiten|genehmigung)?|videodreh|filmdreh)\b/i },
   { name: 'content-creator', re: /\b(content\s?creator|influencer)\b/i },

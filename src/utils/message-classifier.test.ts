@@ -230,6 +230,17 @@ describe('classifyThread', () => {
     expect(out.category).toBe('COMMERCIAL');
   });
 
+  it('detects COMMERCIAL from a location request for a standalone "Shooting"', () => {
+    const out = classifyThread({
+      reservationStatus: 'inquiry',
+      channel: 'airbnb',
+      messages: [
+        msg('inbound', 'Hallo, wir suchen eine Location für ein zweitägiges Shooting im Frühjahr.'),
+      ],
+    });
+    expect(out.category).toBe('COMMERCIAL');
+  });
+
   // ── Priority order verification
   it('priority: PARTY beats PRICE when both keywords present', () => {
     const out = classifyThread({
