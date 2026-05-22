@@ -3935,7 +3935,7 @@ router.get('/conversions', (_req, res) => {
  * Sources: Guesty conversations + direct-email (when configured).
  *
  * Query params:
- *   ?category=PRICE|PARTY|DIRECT_DRIFT|OTHER|CONFIRMED|REPEAT|PLAN_CHANGE  (optional filter)
+ *   ?category=CONFIRMED|REPEAT|SPAM|COMMERCIAL|PARTY|DIRECT_DRIFT|PRICE|NO_AVAILABILITY|INFO|PLAN_CHANGE|OTHER  (optional filter)
  *   ?source=guesty|gmail  (optional filter)
  *   ?limit=50  (default 200, max 500)
  */
@@ -4087,7 +4087,7 @@ router.get('/conversions/:slug/thread/:threadId(*)', (req, res, next) => {
 /**
  * PATCH /admin/conversions/:slug/thread/:threadId/category
  * Manual override of a thread's category. Survives subsequent syncs.
- * Body: { category: 'CONFIRMED'|'PRICE'|'PARTY'|'DIRECT_DRIFT'|'OTHER'|null, note?: string }
+ * Body: { category: <one of ALLOWED_CATEGORIES below>|null, note?: string }
  * Passing category=null clears the override (back to auto-classify).
  */
 const ALLOWED_CATEGORIES = new Set([

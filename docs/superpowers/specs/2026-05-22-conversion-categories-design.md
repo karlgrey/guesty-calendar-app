@@ -61,12 +61,19 @@ PARTY-Regex hierher.
 ### SPAM (neu) — Cold-Pitch an den Host
 Quelle: **Inbound**-Text. Erkennt host-gerichtete Dienstleistungs-/Marketing-Angebote.
 - Starke Einzelphrasen: `ich unterstütze (hosts|gastgeber|vermieter)`, `auslastung
-  steigern`, `bewertungsscore`, `feedback-lösung`, `360°[ -]?rundgang`,
-  `channel ?manager`, `kanalmanager`, `kostenlos testen`, `umsatz steigern`
+  steigern`, `umsatz steigern`, `bewertungsscore`, `feedback-lösung`,
+  `360°[ -]?rundgang`, `mehr buchungen … generieren`
+  - *Hinweis (Code-Review Task 2):* `channel ?manager`/`kanalmanager` und
+    `kostenlos testen` wurden bewusst **nicht** aufgenommen — sie produzieren
+    False Positives auf echte Gast-Anfragen (Gast mit Berufsbezeichnung „Channel
+    Manager"; Gast fragt „kann ich kostenlos …"). Der Cold-Pitch-Korpus wird auch
+    ohne sie zuverlässig erkannt.
 - Kombi-Signal: host-gerichtetes Possessivum (`dein|deine|Ihr|Ihre|eure` +
-  `inserat|unterkunft|ferienwohnung|objekt|vermietung|airbnb-listing`) + Angebots-/
+  `inserat|unterkunft|ferienwohnung|objekt|vermietung|listing`) + Angebots-/
   Service-Verb (`biete|unterstütze|optimiere|steigere|verwalte|vorstellen|helfe`)
-- Confidence: 0.85 (Kombi-Signal), 0.8 (Einzelphrase)
+- Confidence: 0.85 (Einzelphrase — präzise, eindeutig), 0.8 (Kombi-Signal — weicher).
+  *Korrigiert ggü. erster Spec-Fassung: die starke Einzelphrase ist sicherer als
+  das Possessiv+Verb-Kombi und bekommt daher die höhere Confidence.*
 
 ### COMMERCIAL (neu) — kommerzielle Nutzung der Unterkunft
 Quelle: **Inbound**-Text. Läuft nach SPAM.
