@@ -3330,10 +3330,10 @@ router.get('/conversions', (_req, res) => {
     .bar-REPEAT      .bar-fill { background: var(--color-forest-light); }
     .bar-PRICE       .bar-fill { background: var(--color-amber); color: var(--color-charcoal); }
     .bar-PARTY       .bar-fill { background: var(--color-terracotta); }
-    .bar-SPAM        .bar-fill { background: #8b7d8f; }
+    .bar-SPAM        .bar-fill { background: #6d5f72; }
     .bar-COMMERCIAL  .bar-fill { background: #5b6bb0; }
     .bar-NO_AVAILABILITY .bar-fill { background: #9a6b5e; }
-    .bar-INFO        .bar-fill { background: var(--color-sage); }
+    .bar-INFO        .bar-fill { background: var(--color-sage); color: var(--color-charcoal); }
     .bar-DIRECT_DRIFT .bar-fill { background: #b03f7a; }
     .bar-PLAN_CHANGE .bar-fill { background: #6b8caf; }
     .bar-OTHER       .bar-fill { background: var(--color-warm-gray); }
