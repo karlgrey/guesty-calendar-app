@@ -17,8 +17,8 @@ describe('classifyThread', () => {
     expect(out.confidence).toBe(1.0);
   });
 
-  // ── WEDDING
-  it('detects WEDDING from real Yuval-style inquiry', () => {
+  // ── PARTY
+  it('detects PARTY from real Yuval-style inquiry', () => {
     const out = classifyThread({
       reservationStatus: 'declined',
       channel: 'airbnb',
@@ -26,11 +26,11 @@ describe('classifyThread', () => {
         msg('inbound', 'Wir planen aktuell eine kleine Hochzeit in Berlin im Juni 2027…'),
       ],
     });
-    expect(out.category).toBe('WEDDING');
+    expect(out.category).toBe('PARTY');
     expect(out.matchedKeywords).toContain('hochzeit');
   });
 
-  it('detects WEDDING-via-event-keyword (Ottavia: baptism celebration)', () => {
+  it('detects PARTY-via-event-keyword (Ottavia: baptism celebration)', () => {
     const out = classifyThread({
       reservationStatus: 'declined',
       channel: 'airbnb',
@@ -41,16 +41,16 @@ describe('classifyThread', () => {
         ),
       ],
     });
-    expect(out.category).toBe('WEDDING');
+    expect(out.category).toBe('PARTY');
   });
 
-  it('detects WEDDING from photo-shoot / drehort even without "hochzeit"', () => {
+  it('detects PARTY from photo-shoot / drehort even without "hochzeit"', () => {
     const out = classifyThread({
       reservationStatus: 'inquiry',
       channel: 'airbnb',
       messages: [msg('inbound', 'Ich suche derzeit nach einem geeigneten Drehort.')],
     });
-    expect(out.category).toBe('WEDDING');
+    expect(out.category).toBe('PARTY');
   });
 
   // ── DIRECT_DRIFT
@@ -161,7 +161,7 @@ describe('classifyThread', () => {
   });
 
   // ── Priority order verification
-  it('priority: WEDDING beats PRICE when both keywords present', () => {
+  it('priority: PARTY beats PRICE when both keywords present', () => {
     const out = classifyThread({
       reservationStatus: 'inquiry',
       channel: 'airbnb',
@@ -172,10 +172,10 @@ describe('classifyThread', () => {
         ),
       ],
     });
-    expect(out.category).toBe('WEDDING');
+    expect(out.category).toBe('PARTY');
   });
 
-  it('priority: WEDDING beats DIRECT_DRIFT when both present', () => {
+  it('priority: PARTY beats DIRECT_DRIFT when both present', () => {
     const out = classifyThread({
       reservationStatus: 'inquiry',
       channel: 'airbnb',
@@ -183,7 +183,7 @@ describe('classifyThread', () => {
         msg('inbound', 'Wir möchten unsere Hochzeit feiern, schreib mir per WhatsApp.'),
       ],
     });
-    expect(out.category).toBe('WEDDING');
+    expect(out.category).toBe('PARTY');
   });
 
   it('priority: DIRECT_DRIFT beats PRICE when both present (Airbnb channel)', () => {

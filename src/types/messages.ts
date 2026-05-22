@@ -25,7 +25,7 @@ export type ConversionCategory =
   | 'CONFIRMED'
   | 'REPEAT'
   | 'PRICE'
-  | 'WEDDING'
+  | 'PARTY'
   | 'DIRECT_DRIFT'
   | 'PLAN_CHANGE'
   | 'OTHER';

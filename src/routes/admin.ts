@@ -3329,7 +3329,7 @@ router.get('/conversions', (_req, res) => {
     .bar-CONFIRMED   .bar-fill { background: var(--color-forest); }
     .bar-REPEAT      .bar-fill { background: var(--color-forest-light); }
     .bar-PRICE       .bar-fill { background: var(--color-amber); color: var(--color-charcoal); }
-    .bar-WEDDING     .bar-fill { background: var(--color-terracotta); }
+    .bar-PARTY       .bar-fill { background: var(--color-terracotta); }
     .bar-DIRECT_DRIFT .bar-fill { background: #b03f7a; }
     .bar-PLAN_CHANGE .bar-fill { background: #6b8caf; }
     .bar-OTHER       .bar-fill { background: var(--color-warm-gray); }
@@ -3398,7 +3398,7 @@ router.get('/conversions', (_req, res) => {
     .badge-CONFIRMED   { background: #d8e8df; color: #2d5a3d; }
     .badge-REPEAT      { background: #c8e0d0; color: #1d4a2d; }
     .badge-PRICE       { background: #f2e3c4; color: #8a6515; }
-    .badge-WEDDING     { background: #f1d0c5; color: #8a3015; }
+    .badge-PARTY       { background: #f1d0c5; color: #8a3015; }
     .badge-DIRECT_DRIFT { background: #f1c4d8; color: #7a1546; }
     .badge-PLAN_CHANGE { background: #d8e2ec; color: #2a4660; }
     .badge-OTHER       { background: var(--color-stone); color: var(--color-warm-gray); }
@@ -3561,7 +3561,7 @@ router.get('/conversions', (_req, res) => {
             <option value="">— auto —</option>
             <option value="CONFIRMED">✅ Bestätigt</option>
             <option value="REPEAT">🔁 Wiederbucher</option>
-            <option value="WEDDING">💍 Hochzeit / Event</option>
+            <option value="PARTY">🎉 Party / Hochzeit</option>
             <option value="PRICE">€ Preisverhandlung</option>
             <option value="DIRECT_DRIFT">↗ Direct-Drift</option>
             <option value="PLAN_CHANGE">📅 Planänderung</option>
@@ -3580,13 +3580,13 @@ router.get('/conversions', (_req, res) => {
     const CATEGORY_LABELS = {
       CONFIRMED:    { label: 'Bestätigt',         emoji: '✅' },
       REPEAT:       { label: 'Wiederbucher',      emoji: '🔁' },
-      WEDDING:      { label: 'Hochzeit / Event',  emoji: '💍' },
+      PARTY:        { label: 'Party / Hochzeit',  emoji: '🎉' },
       PRICE:        { label: 'Preisverhandlung',  emoji: '€'  },
       DIRECT_DRIFT: { label: 'Direct-Drift',      emoji: '↗'  },
       PLAN_CHANGE:  { label: 'Planänderung',      emoji: '📅' },
       OTHER:        { label: 'Sonstiges',         emoji: '◌'  },
     };
-    const ORDER = ['CONFIRMED', 'REPEAT', 'WEDDING', 'PRICE', 'DIRECT_DRIFT', 'PLAN_CHANGE', 'OTHER'];
+    const ORDER = ['CONFIRMED', 'REPEAT', 'PARTY', 'PRICE', 'DIRECT_DRIFT', 'PLAN_CHANGE', 'OTHER'];
 
     let currentSlug = '';
     let currentCategory = '';
@@ -3919,7 +3919,7 @@ router.get('/conversions', (_req, res) => {
  * Sources: Guesty conversations + direct-email (when configured).
  *
  * Query params:
- *   ?category=PRICE|WEDDING|DIRECT_DRIFT|OTHER|CONFIRMED|REPEAT|PLAN_CHANGE  (optional filter)
+ *   ?category=PRICE|PARTY|DIRECT_DRIFT|OTHER|CONFIRMED|REPEAT|PLAN_CHANGE  (optional filter)
  *   ?source=guesty|gmail  (optional filter)
  *   ?limit=50  (default 200, max 500)
  */
@@ -4071,11 +4071,11 @@ router.get('/conversions/:slug/thread/:threadId(*)', (req, res, next) => {
 /**
  * PATCH /admin/conversions/:slug/thread/:threadId/category
  * Manual override of a thread's category. Survives subsequent syncs.
- * Body: { category: 'CONFIRMED'|'PRICE'|'WEDDING'|'DIRECT_DRIFT'|'OTHER'|null, note?: string }
+ * Body: { category: 'CONFIRMED'|'PRICE'|'PARTY'|'DIRECT_DRIFT'|'OTHER'|null, note?: string }
  * Passing category=null clears the override (back to auto-classify).
  */
 const ALLOWED_CATEGORIES = new Set([
-  'CONFIRMED', 'REPEAT', 'PRICE', 'WEDDING', 'DIRECT_DRIFT', 'PLAN_CHANGE', 'OTHER',
+  'CONFIRMED', 'REPEAT', 'PRICE', 'PARTY', 'DIRECT_DRIFT', 'PLAN_CHANGE', 'OTHER',
 ]);
 
 router.patch('/conversions/:slug/thread/:threadId(*)/category', express.json(), (req, res, next) => {

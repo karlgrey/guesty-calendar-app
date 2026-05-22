@@ -7,7 +7,7 @@
  * Categories (priority order — first match wins):
  *   CONFIRMED      — reservation_status indicates a booking happened
  *   REPEAT         — returning guest (manually set, no auto-rule yet)
- *   WEDDING        — guest asks for wedding/event/day-use venue (host typically declines)
+ *   PARTY          — guest asks for wedding/event/day-use venue (host typically declines)
  *   DIRECT_DRIFT   — explicit attempt to take the conversation off-platform
  *                    (guest hands out email/phone/website OR host pulls the guest back to Airbnb)
  *   PRICE          — explicit price negotiation (budget < listing price, "günstiger", "discount")
@@ -18,14 +18,8 @@
  * rather than mis-categorizing. The dashboard surfaces low-confidence picks for review.
  */
 
-export type ConversionCategory =
-  | 'CONFIRMED'
-  | 'REPEAT'         // Wiederbucher (Stammgast, returning guest). Manually-set for now.
-  | 'PRICE'
-  | 'WEDDING'
-  | 'DIRECT_DRIFT'
-  | 'PLAN_CHANGE'    // Planänderung (Datum-/Personenzahl-Konflikt, sich ändernde Reise). Manually-set.
-  | 'OTHER';
+import type { ConversionCategory } from '../types/messages.js';
+export type { ConversionCategory };
 
 export interface ClassifierInput {
   reservationStatus?: string | null;
@@ -41,7 +35,7 @@ export interface ClassifierResult {
 
 // ── Patterns ────────────────────────────────────────────────────────────────
 
-const WEDDING_RE =
+const PARTY_RE =
   /\b(hochzeit|wedding|heirat|trauung|junggesellinnen|jga|polter|hochzeitsfeier|wedding-?party|bachelor[a-z]*party|geburtstagsparty|taufe|baptism|jubil[äa]um)\b/i;
 
 const EVENT_DAY_USE_RE =
@@ -112,7 +106,7 @@ function joinByDirection(
 export function classifyThread(input: ClassifierInput): ClassifierResult {
   const { reservationStatus, messages, channel } = input;
 
-  // 1) CONFIRMED — booking actually happened. Highest priority, no further matching.
+  // CONFIRMED — booking actually happened. Highest priority, no further matching.
   if (
     reservationStatus === 'confirmed' ||
     reservationStatus === 'reserved' ||
@@ -125,17 +119,17 @@ export function classifyThread(input: ClassifierInput): ClassifierResult {
   const hostText = joinByDirection(messages, 'outbound');
   const all = `${guestText}\n${hostText}`;
 
-  // 2) WEDDING / DAY-USE — strongly correlated with declined-by-host.
-  const weddingHit = WEDDING_RE.test(all) || EVENT_DAY_USE_RE.test(all);
-  if (weddingHit) {
+  // PARTY / DAY-USE — strongly correlated with declined-by-host.
+  const partyHit = PARTY_RE.test(all) || EVENT_DAY_USE_RE.test(all);
+  if (partyHit) {
     return {
-      category: 'WEDDING',
+      category: 'PARTY',
       confidence: 0.85,
       matchedKeywords: extractKeywords(all),
     };
   }
 
-  // 3) DIRECT_DRIFT — only meaningful for Airbnb conversations.
+  // DIRECT_DRIFT — only meaningful for Airbnb conversations.
   //    Direct-email threads are already off-platform by definition; drift detection
   //    on the thread-level can't tell you whether it ORIGINATED on Airbnb. Cross-
   //    referencing Airbnb threads with direct-email threads of the same guest is
@@ -156,7 +150,7 @@ export function classifyThread(input: ClassifierInput): ClassifierResult {
     }
   }
 
-  // 4) PRICE — explicit price negotiation.
+  // PRICE — explicit price negotiation.
   if (PRICE_RE.test(all) && PRICE_NUMBER_RE.test(all)) {
     return {
       category: 'PRICE',
@@ -172,6 +166,6 @@ export function classifyThread(input: ClassifierInput): ClassifierResult {
     };
   }
 
-  // 5) Fall-through
+  // Fall-through
   return { category: 'OTHER', confidence: 0.3, matchedKeywords: [] };
 }
