@@ -116,7 +116,7 @@ const KEYWORD_INDEX: Array<{ name: string; re: RegExp }> = [
   { name: 'dreh', re: /\b(dreh(ort|arbeiten|genehmigung)?|videodreh|filmdreh)\b/i },
   { name: 'content-creator', re: /\b(content\s?creator|influencer)\b/i },
   // availability
-  { name: 'no-availability', re: /\b(ausgebucht|belegt|vergeben|fully booked)\b/i },
+  { name: 'no-availability', re: /\b(ausgebucht|belegt|vergeben|fully booked|already booked|not available|no availability)\b|\bnicht\s+(mehr\s+)?(verf[üu]gbar|frei)\b/i },
   // price
   { name: 'budget', re: /\bbudget\b/i },
   { name: 'preis', re: /\b(preis|preisanfrage|preisnachlass)\b/i },
