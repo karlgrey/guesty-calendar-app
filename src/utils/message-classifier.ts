@@ -16,6 +16,7 @@
  *                    (guest hands out email/phone/website OR host pulls the guest back to Airbnb)
  *   PRICE          — explicit price negotiation (budget < listing price, "günstiger", "discount")
  *   NO_AVAILABILITY — host declines only because the dates are already taken
+ *   INFO           — guest asked a question, no other signal (low confidence)
  *   PLAN_CHANGE    — guest's plans change (date conflict, travel cancelled). Manually set.
  *   OTHER          — none of the above
  *
@@ -75,6 +76,11 @@ const HOST_PULLBACK_RE =
 // Host-side (outbound) signal.
 const NO_AVAILABILITY_RE =
   /\b(ausgebucht|fully booked|already booked|not available|no availability)\b|\b(bereits|schon|leider)\s+(belegt|vergeben|ausgebucht)\b|\bnicht\s+(mehr\s+)?(verf[üu]gbar|frei)\b/i;
+
+// ── INFO: guest asked a genuine question but nothing else matched. Weakest
+// signal — last auto-stage before OTHER.
+const INFO_RE =
+  /\?|\b(wie|was|wann|wo|warum|wieviel|wie\s+viele?|ist es m[öo]glich|kann ich|kann man|k[öo]nnt ihr|k[öo]nnte ich|gibt es|habt ihr|is it possible|can i|can we|do you|could you|how much|how many)\b/i;
 
 // ── SPAM: host-directed cold pitch — someone selling the HOST a service
 // (property management, listing photography, review boosting). Not a guest.
@@ -233,6 +239,16 @@ export function classifyThread(input: ClassifierInput): ClassifierResult {
     return {
       category: 'NO_AVAILABILITY',
       confidence: 0.8,
+      matchedKeywords: extractKeywords(all),
+    };
+  }
+
+  // INFO — guest asked a question, nothing else matched. Low confidence;
+  //   the dashboard surfaces low-confidence picks for review.
+  if (guestText.trim() && INFO_RE.test(guestText)) {
+    return {
+      category: 'INFO',
+      confidence: 0.4,
       matchedKeywords: extractKeywords(all),
     };
   }

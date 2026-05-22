@@ -30,6 +30,7 @@ export type ConversionCategory =
   | 'PARTY'
   | 'DIRECT_DRIFT'
   | 'NO_AVAILABILITY'
+  | 'INFO'
   | 'PLAN_CHANGE'
   | 'OTHER';
 

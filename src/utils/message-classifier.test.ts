@@ -142,13 +142,13 @@ describe('classifyThread', () => {
   });
 
   // ── OTHER
-  it('returns OTHER for generic question about dog policy', () => {
+  it('classifies a generic pre-booking question as INFO', () => {
     const out = classifyThread({
       reservationStatus: 'inquiry',
       channel: 'airbnb',
       messages: [msg('inbound', 'Do you accept a large well-behaved dog?')],
     });
-    expect(out.category).toBe('OTHER');
+    expect(out.category).toBe('INFO');
   });
 
   it('returns OTHER for empty thread', () => {
@@ -249,6 +249,28 @@ describe('classifyThread', () => {
       messages: [
         msg('inbound', 'Hallo, hättet ihr am ersten Juni-Wochenende frei?'),
         msg('outbound', 'Leider sind wir an dem Wochenende schon ausgebucht.'),
+      ],
+    });
+    expect(out.category).toBe('NO_AVAILABILITY');
+  });
+
+  // ── INFO
+  it('detects INFO from a public-transport question (Matilde-style)', () => {
+    const out = classifyThread({
+      reservationStatus: 'inquiry',
+      channel: 'airbnb',
+      messages: [msg('inbound', 'Hello there, is it possible to arrive there with public transport?')],
+    });
+    expect(out.category).toBe('INFO');
+  });
+
+  it('priority: NO_AVAILABILITY beats INFO when guest asks AND host says booked', () => {
+    const out = classifyThread({
+      reservationStatus: 'declined',
+      channel: 'airbnb',
+      messages: [
+        msg('inbound', 'Habt ihr am Wochenende noch frei?'),
+        msg('outbound', 'Leider schon vergeben.'),
       ],
     });
     expect(out.category).toBe('NO_AVAILABILITY');
