@@ -29,6 +29,7 @@ export type ConversionCategory =
   | 'PRICE'
   | 'PARTY'
   | 'DIRECT_DRIFT'
+  | 'NO_AVAILABILITY'
   | 'PLAN_CHANGE'
   | 'OTHER';
 

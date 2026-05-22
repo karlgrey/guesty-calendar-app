@@ -15,6 +15,7 @@
  *   DIRECT_DRIFT   — explicit attempt to take the conversation off-platform
  *                    (guest hands out email/phone/website OR host pulls the guest back to Airbnb)
  *   PRICE          — explicit price negotiation (budget < listing price, "günstiger", "discount")
+ *   NO_AVAILABILITY — host declines only because the dates are already taken
  *   PLAN_CHANGE    — guest's plans change (date conflict, travel cancelled). Manually set.
  *   OTHER          — none of the above
  *
@@ -70,6 +71,11 @@ const GUEST_DRIFT_RE =
 const HOST_PULLBACK_RE =
   /(über\s+airbnb\s+(buchen|laufen|abwickeln|mieten)|bitte\s+(bucht\s+)?(regul[äa]r|einfach)\s+[^.\n]{0,30}airbnb|regul[äa]r\s+[^.\n]{0,30}airbnb\s+(buchen|mieten)|please\s+book\s+(via|through)\s+airbnb|use\s+the\s+airbnb\s+platform|kann\s+nur\s+über\s+airbnb|nur\s+über\s+(die\s+)?plattform|einfach\s+(hier\s+)?(regul[äa]r\s+)?über\s+airbnb|über\s+(diese|die)\s+plattform\s+(nicht|laufen|abwickeln))/i;
 
+// ── NO_AVAILABILITY: host declines purely because the dates are taken.
+// Host-side (outbound) signal.
+const NO_AVAILABILITY_RE =
+  /\b(ausgebucht|fully booked|already booked|not available|no availability)\b|\b(bereits|schon|leider)\s+(belegt|vergeben|ausgebucht)\b|\bnicht\s+(mehr\s+)?(verf[üu]gbar|frei)\b/i;
+
 // ── SPAM: host-directed cold pitch — someone selling the HOST a service
 // (property management, listing photography, review boosting). Not a guest.
 const SPAM_STRONG_RE =
@@ -109,6 +115,8 @@ const KEYWORD_INDEX: Array<{ name: string; re: RegExp }> = [
   { name: 'fotograf', re: /\bfotograf(in)?\b/i },
   { name: 'dreh', re: /\b(dreh(ort|arbeiten|genehmigung)?|videodreh|filmdreh)\b/i },
   { name: 'content-creator', re: /\b(content\s?creator|influencer)\b/i },
+  // availability
+  { name: 'no-availability', re: /\b(ausgebucht|belegt|vergeben|fully booked)\b/i },
   // price
   { name: 'budget', re: /\bbudget\b/i },
   { name: 'preis', re: /\b(preis|preisanfrage|preisnachlass)\b/i },
@@ -215,6 +223,16 @@ export function classifyThread(input: ClassifierInput): ClassifierResult {
     return {
       category: 'PRICE',
       confidence: 0.6,
+      matchedKeywords: extractKeywords(all),
+    };
+  }
+
+  // NO_AVAILABILITY — host turned the guest down only because the dates
+  //   were taken. Host-side signal; not a real funnel loss.
+  if (NO_AVAILABILITY_RE.test(hostText)) {
+    return {
+      category: 'NO_AVAILABILITY',
+      confidence: 0.8,
       matchedKeywords: extractKeywords(all),
     };
   }

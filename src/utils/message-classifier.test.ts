@@ -241,6 +241,19 @@ describe('classifyThread', () => {
     expect(out.category).toBe('COMMERCIAL');
   });
 
+  // ── NO_AVAILABILITY
+  it('detects NO_AVAILABILITY when host declines because dates are booked', () => {
+    const out = classifyThread({
+      reservationStatus: 'declined',
+      channel: 'airbnb',
+      messages: [
+        msg('inbound', 'Hallo, hättet ihr am ersten Juni-Wochenende frei?'),
+        msg('outbound', 'Leider sind wir an dem Wochenende schon ausgebucht.'),
+      ],
+    });
+    expect(out.category).toBe('NO_AVAILABILITY');
+  });
+
   // ── Priority order verification
   it('priority: PARTY beats PRICE when both keywords present', () => {
     const out = classifyThread({
