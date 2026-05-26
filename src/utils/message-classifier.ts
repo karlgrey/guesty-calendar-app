@@ -64,7 +64,7 @@ export async function classifyThread(
   });
 
   if (!raw || typeof raw !== 'object') {
-    throw new Error(`Classifier: tool input was not an object: ${JSON.stringify(raw)}`);
+    throw new Error(`Classifier: LLM tool response was not an object: ${JSON.stringify(raw)}`);
   }
   const obj = raw as Record<string, unknown>;
   const category = obj.category;
@@ -77,7 +77,7 @@ export async function classifyThread(
   if (typeof confidence !== 'number' || confidence < 0 || confidence > 1 || Number.isNaN(confidence)) {
     throw new Error(`Classifier: invalid confidence from LLM: ${JSON.stringify(confidence)}`);
   }
-  if (typeof reasoning !== 'string' || reasoning.length === 0) {
+  if (typeof reasoning !== 'string' || reasoning.trim().length === 0) {
     throw new Error(`Classifier: invalid reasoning from LLM: ${JSON.stringify(reasoning)}`);
   }
 
