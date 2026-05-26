@@ -3852,6 +3852,10 @@ router.get('/conversions', (_req, res) => {
           meta += ' · <span style="color: var(--color-forest); font-weight: 600;">' + group.length + ' verknüpfte Threads</span>';
         }
         document.getElementById('modalMeta').innerHTML = meta;
+        if (t.classification_reasoning) {
+          document.getElementById('modalMeta').innerHTML +=
+            '<div class="modal-meta" style="margin-top: 8px; font-size: 12px; color: var(--color-warm-gray);">💡 ' + escapeHtml(t.classification_reasoning) + '</div>';
+        }
 
         // Pre-fill manual override form
         if (t.manually_categorized) {
