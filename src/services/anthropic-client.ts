@@ -17,8 +17,7 @@ import logger from '../utils/logger.js';
 const DEFAULT_MODEL = 'claude-sonnet-4-6';
 const DEFAULT_MAX_TOKENS = 512;
 const MAX_RETRIES = 5;
-// Use a tiny backoff in test mode so retry tests run fast; full backoff in production.
-const BASE_BACKOFF_MS = process.env.NODE_ENV === 'test' ? 0 : 500;
+const BASE_BACKOFF_MS = 500;
 
 export interface ClaudeToolDefinition {
   name: string;
@@ -68,7 +67,6 @@ export async function callClaudeTool({
   maxTokens = DEFAULT_MAX_TOKENS,
 }: CallClaudeToolInput): Promise<unknown> {
   const client = getClient();
-  let lastError: unknown;
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
       const response = await client.messages.create({
@@ -89,7 +87,6 @@ export async function callClaudeTool({
       }
       return block.input;
     } catch (err) {
-      lastError = err;
       if (!isRetryable(err) || attempt === MAX_RETRIES - 1) throw err;
       const delay = BASE_BACKOFF_MS * 2 ** attempt + Math.floor(Math.random() * 250);
       logger.warn(
@@ -99,5 +96,5 @@ export async function callClaudeTool({
       await sleep(delay);
     }
   }
-  throw lastError;
+  throw new Error('unreachable: retry loop completed without returning or throwing');
 }
