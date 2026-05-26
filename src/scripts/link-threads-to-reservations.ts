@@ -18,7 +18,6 @@ import {
   matchThreadToReservation,
   type ReservationMatcherCandidate,
 } from '../utils/thread-reservation-matcher.js';
-import { classifyThread } from '../utils/message-classifier.js';
 
 interface ThreadRow {
   id: string;
@@ -84,18 +83,11 @@ async function main() {
 
   console.log(`Threads (gmail): ${threads.length}, Reservation candidates: ${candidates.length}`);
 
-  // Preserve manual category overrides — only re-classify auto-categorized threads.
   const updateStmt = db.prepare(
     `UPDATE message_threads
      SET reservation_id = ?,
-         reservation_status = ?,
-         conversion_category = CASE WHEN manually_categorized = 1 THEN conversion_category ELSE ? END,
-         classification_confidence = CASE WHEN manually_categorized = 1 THEN classification_confidence ELSE ? END
+         reservation_status = ?
      WHERE id = ?`,
-  );
-
-  const getMessagesStmt = db.prepare(
-    `SELECT direction, body FROM messages WHERE thread_id = ? ORDER BY sent_at`,
   );
 
   let matched = 0;
@@ -115,31 +107,18 @@ async function main() {
     );
     if (!match) continue;
 
-    // Re-classify with the new reservation_status so CONFIRMED is detected.
     const linkedRes = reservations.find((r) => r.reservation_id === match.reservationId);
     const newStatus = linkedRes?.status ?? null;
-
-    const msgs = getMessagesStmt.all(t.id) as Array<{ direction: string; body: string }>;
-    const classification = classifyThread({
-      reservationStatus: newStatus,
-      channel: t.channel,
-      messages: msgs.map((m) => ({
-        direction: m.direction as 'inbound' | 'outbound' | 'system',
-        body: m.body,
-      })),
-    });
 
     updateStmt.run(
       match.reservationId,
       newStatus,
-      classification.category,
-      classification.confidence,
       t.id,
     );
     matched++;
     console.log(
       `  → ${t.guest_name || t.guest_email} → ${match.reservationId}` +
-        ` (score ${match.score.toFixed(1)}, cat ${classification.category})`,
+        ` (score ${match.score.toFixed(1)})`,
     );
   }
 

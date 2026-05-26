@@ -14,10 +14,6 @@ import {
   upsertThread,
   upsertMessage,
 } from '../repositories/message-repository.js';
-import {
-  classifyThread,
-  type ConversionCategory,
-} from '../utils/message-classifier.js';
 import logger from '../utils/logger.js';
 import type { PropertyConfig } from '../config/properties.js';
 import type {
@@ -113,21 +109,9 @@ export async function syncGuestyMessagesForProperty(
 
       const posts = await guestyClient.listConversationPosts(convId, 200);
 
-      // Build classifier input
-      const messages = posts.map((p: any) => ({
-        direction: mapDirection(p.sentBy),
-        body: p.body ?? '',
-      }));
-
       const reservations = conv.meta?.reservations ?? [];
       const primaryRes = reservations[0] ?? null;
       const reservationStatus = primaryRes?.status ?? null;
-
-      const classification = classifyThread({
-        reservationStatus,
-        channel: mapChannel(primaryRes?.source),
-        messages,
-      });
 
       // Date bounds — fall back to conv.createdAt
       const sortedTimes = posts
@@ -150,9 +134,9 @@ export async function syncGuestyMessagesForProperty(
         reservation_id: primaryRes?._id ?? null,
         inquiry_id: primaryRes?._id ?? null,
         reservation_status: reservationStatus,
-        conversion_category: classification.category as ConversionCategory,
-        classification_confidence: classification.confidence,
-        classification_keywords: JSON.stringify(classification.matchedKeywords),
+        conversion_category: null,
+        classification_confidence: null,
+        classification_keywords: null,
         raw_meta: JSON.stringify({
           assignee: conv.assignee,
           priority: conv.priority,
