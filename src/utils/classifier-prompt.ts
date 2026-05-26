@@ -99,8 +99,9 @@ Thread:
   Channel: airbnb
   Reservation status: inquiry
   Messages:
-    [inbound] Mein Team und ich würden gerne bei euch ein Offsite machen für 12 Personen.
-Tool call: { "category": "OTHER", "confidence": 0.5, "reasoning": "Statement of intent only — no question, no negotiation, no off-platform attempt." }`;
+    [outbound] Hi, gerne. Die Daten sind frei, ich blockiere dir einen Slot.
+    [inbound] Super, danke für die schnelle Rückmeldung — dann bis bald!
+Tool call: { "category": "OTHER", "confidence": 0.85, "reasoning": "Pure acknowledgement after a host reply — no inquiry, negotiation, or other classifiable signal." }`;
 
 export const CLASSIFIER_TOOL: ClaudeToolDefinition = {
   name: 'classify_thread',
@@ -121,8 +122,8 @@ export const CLASSIFIER_TOOL: ClaudeToolDefinition = {
       },
       reasoning: {
         type: 'string',
-        maxLength: 200,
-        description: 'One sentence naming the key signal you observed.',
+        maxLength: 150,
+        description: 'One sentence (max ~25 words) naming the key signal you observed.',
       },
     },
     required: ['category', 'confidence', 'reasoning'],
