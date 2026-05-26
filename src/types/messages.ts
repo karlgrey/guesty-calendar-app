@@ -24,9 +24,13 @@ export type MessageDirection = 'inbound' | 'outbound' | 'system';
 export type ConversionCategory =
   | 'CONFIRMED'
   | 'REPEAT'
+  | 'SPAM'
+  | 'COMMERCIAL'
   | 'PRICE'
-  | 'WEDDING'
+  | 'PARTY'
   | 'DIRECT_DRIFT'
+  | 'NO_AVAILABILITY'
+  | 'INFO'
   | 'PLAN_CHANGE'
   | 'OTHER';
 

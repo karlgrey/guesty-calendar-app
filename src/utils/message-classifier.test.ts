@@ -17,8 +17,8 @@ describe('classifyThread', () => {
     expect(out.confidence).toBe(1.0);
   });
 
-  // ── WEDDING
-  it('detects WEDDING from real Yuval-style inquiry', () => {
+  // ── PARTY
+  it('detects PARTY from real Yuval-style inquiry', () => {
     const out = classifyThread({
       reservationStatus: 'declined',
       channel: 'airbnb',
@@ -26,11 +26,11 @@ describe('classifyThread', () => {
         msg('inbound', 'Wir planen aktuell eine kleine Hochzeit in Berlin im Juni 2027…'),
       ],
     });
-    expect(out.category).toBe('WEDDING');
+    expect(out.category).toBe('PARTY');
     expect(out.matchedKeywords).toContain('hochzeit');
   });
 
-  it('detects WEDDING-via-event-keyword (Ottavia: baptism celebration)', () => {
+  it('detects PARTY-via-event-keyword (Ottavia: baptism celebration)', () => {
     const out = classifyThread({
       reservationStatus: 'declined',
       channel: 'airbnb',
@@ -41,16 +41,16 @@ describe('classifyThread', () => {
         ),
       ],
     });
-    expect(out.category).toBe('WEDDING');
+    expect(out.category).toBe('PARTY');
   });
 
-  it('detects WEDDING from photo-shoot / drehort even without "hochzeit"', () => {
+  it('detects COMMERCIAL from drehort even without "hochzeit"', () => {
     const out = classifyThread({
       reservationStatus: 'inquiry',
       channel: 'airbnb',
       messages: [msg('inbound', 'Ich suche derzeit nach einem geeigneten Drehort.')],
     });
-    expect(out.category).toBe('WEDDING');
+    expect(out.category).toBe('COMMERCIAL');
   });
 
   // ── DIRECT_DRIFT
@@ -142,13 +142,13 @@ describe('classifyThread', () => {
   });
 
   // ── OTHER
-  it('returns OTHER for generic question about dog policy', () => {
+  it('classifies a generic pre-booking question as INFO', () => {
     const out = classifyThread({
       reservationStatus: 'inquiry',
       channel: 'airbnb',
       messages: [msg('inbound', 'Do you accept a large well-behaved dog?')],
     });
-    expect(out.category).toBe('OTHER');
+    expect(out.category).toBe('INFO');
   });
 
   it('returns OTHER for empty thread', () => {
@@ -160,8 +160,124 @@ describe('classifyThread', () => {
     expect(out.category).toBe('OTHER');
   });
 
+  // ── SPAM
+  it('detects SPAM from "ich unterstütze Hosts" pitch (Tamsir-style)', () => {
+    const out = classifyThread({
+      reservationStatus: 'inquiry',
+      channel: 'airbnb',
+      messages: [
+        msg('inbound', 'Ich unterstütze Hosts dabei, Auslastung und Bewertungsscore gezielt zu steigern.'),
+      ],
+    });
+    expect(out.category).toBe('SPAM');
+    expect(out.confidence).toBe(0.85);
+  });
+
+  it('detects SPAM from "360° Rundgang" service offer (Leon-style)', () => {
+    const out = classifyThread({
+      reservationStatus: 'inquiry',
+      channel: 'airbnb',
+      messages: [
+        msg('inbound', 'dein Inserat wirkt ansprechend – mit einem professionellen 360° Rundgang noch stärker.'),
+      ],
+    });
+    expect(out.category).toBe('SPAM');
+  });
+
+  it('detects SPAM via possessive+offer combo (Sophia-style property-management pitch)', () => {
+    const out = classifyThread({
+      reservationStatus: 'inquiry',
+      channel: 'airbnb',
+      messages: [
+        msg('inbound', 'Ich biete dir treue Unterstützung bei der Verwaltung deiner Ferienwohnung.'),
+      ],
+    });
+    expect(out.category).toBe('SPAM');
+    expect(out.confidence).toBe(0.8);
+  });
+
+  it('priority: SPAM beats PRICE when a pitch mentions a price', () => {
+    const out = classifyThread({
+      reservationStatus: 'inquiry',
+      channel: 'airbnb',
+      messages: [
+        msg('inbound', 'Ich unterstütze Hosts dabei, mehr Buchungen zu generieren — schon ab 99€ im Monat.'),
+      ],
+    });
+    expect(out.category).toBe('SPAM');
+  });
+
+  // ── COMMERCIAL
+  it('detects COMMERCIAL from photographer requesting the property as a location (Lea-style)', () => {
+    const out = classifyThread({
+      reservationStatus: 'inquiry',
+      channel: 'airbnb',
+      messages: [
+        msg('inbound', 'Lieber Christian, ich bin Fotograf/in und bin auf deine schöne Unterkunft aufmerksam geworden.'),
+      ],
+    });
+    expect(out.category).toBe('COMMERCIAL');
+  });
+
+  it('priority: COMMERCIAL beats PARTY when a shoot request also mentions a Feier', () => {
+    const out = classifyThread({
+      reservationStatus: 'inquiry',
+      channel: 'airbnb',
+      messages: [
+        msg('inbound', 'Ich bin Fotografin und würde die Unterkunft gerne für ein Shooting und eine kleine Feier nutzen.'),
+      ],
+    });
+    expect(out.category).toBe('COMMERCIAL');
+  });
+
+  it('detects COMMERCIAL from a location request for a standalone "Shooting"', () => {
+    const out = classifyThread({
+      reservationStatus: 'inquiry',
+      channel: 'airbnb',
+      messages: [
+        msg('inbound', 'Hallo, wir suchen eine Location für ein zweitägiges Shooting im Frühjahr.'),
+      ],
+    });
+    expect(out.category).toBe('COMMERCIAL');
+  });
+
+  // ── NO_AVAILABILITY
+  it('detects NO_AVAILABILITY when host declines because dates are booked', () => {
+    const out = classifyThread({
+      reservationStatus: 'declined',
+      channel: 'airbnb',
+      messages: [
+        msg('inbound', 'Hallo, hättet ihr am ersten Juni-Wochenende frei?'),
+        msg('outbound', 'Leider sind wir an dem Wochenende schon ausgebucht.'),
+      ],
+    });
+    expect(out.category).toBe('NO_AVAILABILITY');
+  });
+
+  // ── INFO
+  it('detects INFO from a public-transport question (Matilde-style)', () => {
+    const out = classifyThread({
+      reservationStatus: 'inquiry',
+      channel: 'airbnb',
+      messages: [msg('inbound', 'Hello there, is it possible to arrive there with public transport?')],
+    });
+    expect(out.category).toBe('INFO');
+  });
+
+  it('priority: NO_AVAILABILITY beats INFO when guest asks AND host says booked', () => {
+    const out = classifyThread({
+      reservationStatus: 'declined',
+      channel: 'airbnb',
+      messages: [
+        msg('inbound', 'Habt ihr am Wochenende noch frei?'),
+        msg('outbound', 'Leider schon vergeben.'),
+      ],
+    });
+    expect(out.category).toBe('NO_AVAILABILITY');
+  });
+
   // ── Priority order verification
-  it('priority: WEDDING beats PRICE when both keywords present', () => {
+  it('priority: PARTY beats PRICE when both keywords present', () => {
     const out = classifyThread({
       reservationStatus: 'inquiry',
       channel: 'airbnb',
@@ -172,10 +288,10 @@ describe('classifyThread', () => {
         ),
       ],
     });
-    expect(out.category).toBe('WEDDING');
+    expect(out.category).toBe('PARTY');
   });
 
-  it('priority: WEDDING beats DIRECT_DRIFT when both present', () => {
+  it('priority: PARTY beats DIRECT_DRIFT when both present', () => {
     const out = classifyThread({
       reservationStatus: 'inquiry',
       channel: 'airbnb',
@@ -183,7 +299,7 @@ describe('classifyThread', () => {
         msg('inbound', 'Wir möchten unsere Hochzeit feiern, schreib mir per WhatsApp.'),
       ],
     });
-    expect(out.category).toBe('WEDDING');
+    expect(out.category).toBe('PARTY');
   });
 
   it('priority: DIRECT_DRIFT beats PRICE when both present (Airbnb channel)', () => {

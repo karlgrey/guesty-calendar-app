@@ -120,6 +120,26 @@ export function setManualCategory(
   return result.changes > 0;
 }
 
+/**
+ * Overwrite a thread's auto-classification. Used by the reclassify script.
+ * Guards on manually_categorized = 0 so manual overrides are never touched.
+ */
+export function updateThreadClassification(
+  threadId: string,
+  category: string,
+  confidence: number,
+  keywordsJson: string,
+): void {
+  const db = getDatabase();
+  db.prepare(
+    `UPDATE message_threads
+     SET conversion_category = ?,
+         classification_confidence = ?,
+         classification_keywords = ?
+     WHERE id = ? AND manually_categorized = 0`,
+  ).run(category, confidence, keywordsJson, threadId);
+}
+
 export function getThreadById(id: string): MessageThread | null {
   const db = getDatabase();
   const row = db.prepare(`SELECT * FROM message_threads WHERE id = ?`).get(id) as
