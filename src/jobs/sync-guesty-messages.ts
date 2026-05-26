@@ -4,7 +4,7 @@
  * Strategy:
  * 1. Paginate /v1/communication/conversations until exhausted
  * 2. Filter to conversations where any reservation has listing_id == this property
- * 3. For each: fetch /posts, map to our schema, classify, upsert
+ * 3. For each: fetch /posts, map to our schema, upsert (classification deferred to classify-threads.ts)
  *
  * Idempotent: re-runs are safe (upsert by id).
  */

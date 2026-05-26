@@ -7,7 +7,7 @@
  * 3. Filter out Airbnb-originated mails (sender domain check) — those come from Guesty
  * 4. Group by Gmail X-GM-THRID for threading; fall back to In-Reply-To / Subject
  * 5. Determine direction from sender: host email → outbound, anything else → inbound
- * 6. Upsert threads + messages; (re-)classify per thread on each sync
+ * 6. Upsert threads + messages (classification deferred to classify-threads.ts)
  *
  * Idempotent. UID watermark stored in direct_email_state.
  */
