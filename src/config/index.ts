@@ -111,6 +111,9 @@ const configSchema = z.object({
     return lower === 'true' || lower === '1' || lower === 'yes';
   }),
   ga4SyncHour: z.coerce.number().int().min(0).max(23).default(3), // 3 AM daily sync
+
+  // Anthropic API (optional — only required when running the LLM classify script)
+  anthropicApiKey: z.string().optional(),
 });
 
 /**
@@ -164,6 +167,7 @@ function parseConfig() {
     ga4KeyFilePath: process.env.GA4_KEY_FILE_PATH,
     ga4Enabled: process.env.GA4_ENABLED,
     ga4SyncHour: process.env.GA4_SYNC_HOUR,
+    anthropicApiKey: process.env.ANTHROPIC_API_KEY,
   };
 
   try {
