@@ -56,6 +56,11 @@ async function main() {
   let failed = 0;
   for (let i = 0; i < threads.length; i++) {
     const thread = threads[i];
+    // Progress log lives above the manual-skip so it fires reliably even when a
+    // multiple-of-25 position lands on a manually-categorized thread.
+    if (i > 0 && i % 25 === 0) {
+      console.log(`  ... ${i}/${threads.length} processed (${updated} ok, ${failed} fail, ${skippedManual} manual)`);
+    }
     if (thread.manually_categorized === 1) {
       skippedManual++;
       continue;
@@ -83,9 +88,6 @@ async function main() {
         `  ✗ thread ${thread.id}: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
-    if ((i + 1) % 25 === 0) {
-      console.log(`  ... ${i + 1}/${threads.length} processed (${updated} ok, ${failed} fail, ${skippedManual} manual)`);
-    }
   }
 
   const after = getCategoryCounts(listingId);
@@ -96,6 +98,15 @@ async function main() {
   console.log(`failed:           ${failed}`);
   console.log('\nbefore:', before);
   console.log('after: ', after);
+
+  // Exit non-zero if there were classifiable threads but NONE succeeded — that
+  // signals a real outage (e.g. Anthropic API down) to CI/cron, while partial
+  // failures still exit 0 with a non-empty `failed:` count in the summary.
+  const eligible = threads.length - skippedManual;
+  if (eligible > 0 && updated === 0) {
+    console.error(`\nAll ${eligible} classifiable thread(s) failed. Exiting non-zero.`);
+    process.exit(1);
+  }
 }
 
 main().catch((e) => {
