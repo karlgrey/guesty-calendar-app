@@ -121,23 +121,23 @@ export function setManualCategory(
 }
 
 /**
- * Overwrite a thread's auto-classification. Used by the reclassify script.
+ * Overwrite a thread's auto-classification with LLM output.
  * Guards on manually_categorized = 0 so manual overrides are never touched.
  */
 export function updateThreadClassification(
   threadId: string,
   category: string,
   confidence: number,
-  keywordsJson: string,
+  reasoning: string,
 ): void {
   const db = getDatabase();
   db.prepare(
     `UPDATE message_threads
      SET conversion_category = ?,
          classification_confidence = ?,
-         classification_keywords = ?
+         classification_reasoning = ?
      WHERE id = ? AND manually_categorized = 0`,
-  ).run(category, confidence, keywordsJson, threadId);
+  ).run(category, confidence, reasoning, threadId);
 }
 
 export function getThreadById(id: string): MessageThread | null {
