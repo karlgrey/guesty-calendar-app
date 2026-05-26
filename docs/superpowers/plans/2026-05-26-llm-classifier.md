@@ -16,7 +16,7 @@
 
 | Datei | Rolle | Aktion |
 |---|---|---|
-| `src/db/migrations/015_add_classification_reasoning.sql` | Spalte `classification_reasoning TEXT` | Create |
+| `src/db/migrations/017_add_classification_reasoning.sql` | Spalte `classification_reasoning TEXT` | Create |
 | `src/types/messages.ts` | `MessageThread` um Feld erweitert | Modify |
 | `package.json` | Dependency `@anthropic-ai/sdk` | Modify |
 | `.env.example` | `ANTHROPIC_API_KEY` dokumentiert | Modify |
@@ -37,17 +37,17 @@
 ## Task 1: Migration 015 + Type extension
 
 **Files:**
-- Create: `src/db/migrations/015_add_classification_reasoning.sql`
+- Create: `src/db/migrations/017_add_classification_reasoning.sql`
 - Modify: `src/types/messages.ts`
 
 Migrations laufen automatisch beim Serverstart (`runMigrations()` in `src/index.ts:32`), und auch via `npx tsx src/scripts/run-migrations.ts`.
 
 - [ ] **Step 1: Create the migration SQL file**
 
-Create `src/db/migrations/015_add_classification_reasoning.sql`:
+Create `src/db/migrations/017_add_classification_reasoning.sql`:
 
 ```sql
--- Migration 015: add classification_reasoning column for LLM-based classifier.
+-- Migration 017: add classification_reasoning column for LLM-based classifier.
 -- The LLM emits a one-sentence reasoning alongside category + confidence,
 -- replacing the regex-era classification_keywords transparency channel.
 -- The classification_keywords column is intentionally kept to preserve
@@ -68,7 +68,7 @@ In `src/types/messages.ts` add the new field to `MessageThread` after `classific
 - [ ] **Step 3: Apply the migration locally**
 
 Run: `npx tsx src/scripts/run-migrations.ts`
-Expected: output mentions migration 015 applied. Verify via:
+Expected: output mentions migration 017 applied. Verify via:
 `sqlite3 data/calendar.db ".schema message_threads"` → output contains `classification_reasoning TEXT`.
 
 - [ ] **Step 4: Verify the build**
@@ -79,7 +79,7 @@ Expected: clean.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/db/migrations/015_add_classification_reasoning.sql src/types/messages.ts
+git add src/db/migrations/017_add_classification_reasoning.sql src/types/messages.ts
 git commit -m "feat(db): add classification_reasoning column for LLM classifier"
 ```
 
@@ -1148,7 +1148,7 @@ Open `http://localhost:3099/admin/conversions` (dev server should already be run
 
 1. Push `feat/llm-classifier` to `origin` and merge to `main`.
 2. Set `ANTHROPIC_API_KEY=...` in `/opt/guesty-calendar-app/.env` on the server.
-3. `git pull && npm install && npm run build && pm2 restart guesty-calendar` — `runMigrations()` will apply migration 015 automatically on restart.
+3. `git pull && npm install && npm run build && pm2 restart guesty-calendar` — `runMigrations()` will apply migration 017 automatically on restart.
 4. Run on the server:
    ```bash
    npx tsx src/scripts/classify-threads.ts farmhouse
