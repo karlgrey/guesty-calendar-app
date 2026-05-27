@@ -3567,17 +3567,6 @@ router.get('/conversions', (_req, res) => {
         <div class="recat-form">
           <select id="recatSelect">
             <option value="">— auto —</option>
-            <option value="CONFIRMED">✅ Bestätigt</option>
-            <option value="REPEAT">🔁 Wiederbucher</option>
-            <option value="PARTY">🎉 Party / Hochzeit</option>
-            <option value="SPAM">📣 Werbung</option>
-            <option value="COMMERCIAL">🎬 Dreh &amp; Kooperation</option>
-            <option value="NO_AVAILABILITY">🚫 Kein Termin</option>
-            <option value="INFO">❓ Vorab-Frage</option>
-            <option value="PRICE">€ Preisverhandlung</option>
-            <option value="DIRECT_DRIFT">↗ Direct-Drift</option>
-            <option value="PLAN_CHANGE">📅 Planänderung</option>
-            <option value="OTHER">◌ Sonstiges</option>
           </select>
           <input type="text" id="recatNote" placeholder="Notiz (optional, z.B. 'per Telefon gebucht')" maxlength="200">
           <button class="btn" id="recatSave">Speichern</button>
@@ -3652,6 +3641,22 @@ router.get('/conversions', (_req, res) => {
       const ex = (def.examples || []).map(function(e) { return '• ' + e; }).join('\\n');
       return def.description + (ex ? '\\n\\nBeispiele:\\n' + ex : '');
     }
+    function populateRecatOptions() {
+      const select = document.getElementById('recatSelect');
+      if (!select) return;
+      // Wipe everything except the "— auto —" placeholder option at index 0.
+      while (select.options.length > 1) select.remove(1);
+      for (const cat of ORDER) {
+        const def = CATEGORY_LABELS[cat];
+        if (!def) continue;
+        const opt = document.createElement('option');
+        opt.value = cat;
+        opt.textContent = def.emoji + ' ' + def.label;
+        opt.title = categoryTooltip(def);
+        select.appendChild(opt);
+      }
+    }
+    populateRecatOptions();
 
     let currentSlug = '';
     let currentCategory = '';
