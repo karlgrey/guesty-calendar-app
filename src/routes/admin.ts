@@ -3746,7 +3746,8 @@ router.get('/conversions', (_req, res) => {
         const pct = total > 0 ? (n / total * 100).toFixed(1) : '0.0';
         const w = (n / max * 100).toFixed(0);
         const def = CATEGORY_LABELS[cat] || { label: cat, emoji: '?' };
-        return '<div class="bar-row bar-' + cat + (currentCategory === cat ? ' active' : '') + '" onclick="filterByCategory(\\'' + cat + '\\')">' +
+        const tip = escapeHtml(categoryTooltip(def));
+        return '<div class="bar-row bar-' + cat + (currentCategory === cat ? ' active' : '') + '" title="' + tip + '" onclick="filterByCategory(\\'' + cat + '\\')">' +
           '<div class="cat">' + def.emoji + ' ' + def.label + '</div>' +
           '<div class="bar-track"><div class="bar-fill" style="width: ' + w + '%">' + (w > 15 ? n : '') + '</div></div>' +
           '<div class="count">' + n + ' · ' + pct + '%</div>' +
@@ -3768,7 +3769,8 @@ router.get('/conversions', (_req, res) => {
         const total = Object.values(counts).reduce((s, n) => s + n, 0);
         const lines = ORDER.filter(k => counts[k]).map(cat => {
           const def = CATEGORY_LABELS[cat] || { label: cat, emoji: '?' };
-          return '<div class="channel-row"><span>' + def.emoji + ' ' + def.label + '</span><span class="n">' + counts[cat] + '</span></div>';
+          const tip = escapeHtml(categoryTooltip(def));
+          return '<div class="channel-row" title="' + tip + '"><span>' + def.emoji + ' ' + def.label + '</span><span class="n">' + counts[cat] + '</span></div>';
         }).join('');
         const title = src === 'guesty' ? 'Guesty (Airbnb/Booking/…)' : src === 'gmail' ? 'Direct Email' : src;
         return '<div class="channel-box"><h3>' + title + ' · ' + total + ' Threads</h3>' + lines + '</div>';
@@ -3784,7 +3786,8 @@ router.get('/conversions', (_req, res) => {
       for (const cat of ORDER) {
         if (!agg[cat]) continue;
         const def = CATEGORY_LABELS[cat] || { label: cat, emoji: '?' };
-        chips.push('<button class="filter-chip ' + (currentCategory === cat ? 'active' : '') + '" onclick="filterByCategory(\\'' + cat + '\\')">' +
+        const tip = escapeHtml(categoryTooltip(def));
+        chips.push('<button class="filter-chip ' + (currentCategory === cat ? 'active' : '') + '" title="' + tip + '" onclick="filterByCategory(\\'' + cat + '\\')">' +
           def.emoji + ' ' + def.label + ' (' + agg[cat] + ')</button>');
       }
       filtersDiv.innerHTML = chips.join('');
@@ -3835,6 +3838,7 @@ router.get('/conversions', (_req, res) => {
       const rows = groups.map(g => {
         const t = g.rep;
         const def = CATEGORY_LABELS[t.conversion_category] || { label: t.conversion_category || 'unkat.', emoji: '?' };
+        const badgeTip = escapeHtml(categoryTooltip(def));
         const kw = (() => {
           try { return (JSON.parse(t.classification_keywords || '[]') || []).slice(0, 4).join(', '); }
           catch { return ''; }
@@ -3848,7 +3852,7 @@ router.get('/conversions', (_req, res) => {
           '<td>' + lastAt + '</td>' +
           '<td>' + escapeHtml(guest) + extraBadge + '</td>' +
           '<td><span class="channel-tag">' + escapeHtml(t.channel || '?') + '</span></td>' +
-          '<td><span class="badge badge-' + (t.conversion_category || 'OTHER') + '">' + def.emoji + ' ' + escapeHtml(def.label) + '</span></td>' +
+          '<td><span class="badge badge-' + (t.conversion_category || 'OTHER') + '" title="' + badgeTip + '">' + def.emoji + ' ' + escapeHtml(def.label) + '</span></td>' +
           '<td class="keywords">' + escapeHtml(kw) + '</td>' +
           '<td style="text-align:right; color: var(--color-warm-gray); font-size: 12px;">' + g.totalMsgs + ' Msg</td>' +
         '</tr>';
