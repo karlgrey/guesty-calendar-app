@@ -3590,19 +3590,68 @@ router.get('/conversions', (_req, res) => {
 
   <script>
     const CATEGORY_LABELS = {
-      CONFIRMED:    { label: 'Bestätigt',         emoji: '✅' },
-      REPEAT:       { label: 'Wiederbucher',      emoji: '🔁' },
-      SPAM:         { label: 'Werbung',           emoji: '📣' },
-      COMMERCIAL:   { label: 'Dreh & Kooperation', emoji: '🎬' },
-      PARTY:        { label: 'Party / Hochzeit',  emoji: '🎉' },
-      PRICE:        { label: 'Preisverhandlung',  emoji: '€'  },
-      DIRECT_DRIFT: { label: 'Direct-Drift',      emoji: '↗'  },
-      NO_AVAILABILITY: { label: 'Kein Termin',    emoji: '🚫' },
-      INFO:         { label: 'Vorab-Frage',       emoji: '❓' },
-      PLAN_CHANGE:  { label: 'Planänderung',      emoji: '📅' },
-      OTHER:        { label: 'Sonstiges',         emoji: '◌'  },
+      CONFIRMED:    {
+        label: 'Bestätigt', emoji: '✅',
+        description: 'Buchung ist zustande gekommen.',
+        examples: ['Reservierungs-Status confirmed/reserved/active'],
+      },
+      REPEAT:       {
+        label: 'Wiederbucher', emoji: '🔁',
+        description: 'Wiederbucher / Stammgast (nur manuell setzbar).',
+        examples: ['Manuelle Markierung im Thread-Drilldown'],
+      },
+      SPAM:         {
+        label: 'Werbung', emoji: '📣',
+        description: 'Cold-Pitch an den Host — jemand verkauft dir eine Dienstleistung.',
+        examples: ['Andre — QR-Code-Bewertungstool', 'Tamsir — Auslastungs-Coaching'],
+      },
+      COMMERCIAL:   {
+        label: 'Dreh & Kooperation', emoji: '🎬',
+        description: 'Gast will die Property kommerziell nutzen (Dreh, Workshop, Influencer).',
+        examples: ['Redseven — TV-Drehort', 'Lara — Foto-Shoot'],
+      },
+      PARTY:        {
+        label: 'Party / Hochzeit', emoji: '🎉',
+        description: 'Privates Event: Hochzeit, Geburtstag, Feier, Day-Use.',
+        examples: ['Yuval — Hochzeit', 'Melanie — 30. Geburtstag'],
+      },
+      PRICE:        {
+        label: 'Preisverhandlung', emoji: '€',
+        description: 'Explizite Preisverhandlung, Budget unter Listingspreis.',
+        examples: ['Shavana — Budget-Cap 3000€', 'Marion — Langzeit-Miete €950/Monat'],
+      },
+      DIRECT_DRIFT: {
+        label: 'Direct-Drift', emoji: '↗',
+        description: 'Versuch, das Gespräch off-platform zu verlagern.',
+        examples: ['Carina — Handynummer geteilt', 'Kayla — LinkedIn vorgeschlagen'],
+      },
+      NO_AVAILABILITY: {
+        label: 'Kein Termin', emoji: '🚫',
+        description: 'Host lehnt nur wegen belegtem Datum ab.',
+        examples: ['Thomas — Cleaning-Slot zu eng', 'Tatsiana — gerade gebucht'],
+      },
+      INFO:         {
+        label: 'Vorab-Frage', emoji: '❓',
+        description: 'Gast stellt eine echte Vorab-Frage, kein anderes Signal.',
+        examples: ['Matilde — ÖPNV-Anbindung', 'Denise — Silvester-Lärm'],
+      },
+      PLAN_CHANGE:  {
+        label: 'Planänderung', emoji: '📅',
+        description: 'Reise-Plan des Gasts hat sich geändert (nur manuell setzbar).',
+        examples: ['Manuelle Markierung im Thread-Drilldown'],
+      },
+      OTHER:        {
+        label: 'Sonstiges', emoji: '◌',
+        description: 'Kein klassifizierbares Signal — meist System-Nachrichten oder reine Acks.',
+        examples: ['Reservation-Lifecycle-Threads ohne Gast-Text'],
+      },
     };
     const ORDER = ['CONFIRMED', 'REPEAT', 'SPAM', 'COMMERCIAL', 'PARTY', 'DIRECT_DRIFT', 'PRICE', 'NO_AVAILABILITY', 'INFO', 'PLAN_CHANGE', 'OTHER'];
+    function categoryTooltip(def) {
+      if (!def || !def.description) return '';
+      const ex = (def.examples || []).map(function(e) { return '• ' + e; }).join('\\n');
+      return def.description + (ex ? '\\n\\nBeispiele:\\n' + ex : '');
+    }
 
     let currentSlug = '';
     let currentCategory = '';
