@@ -49,7 +49,8 @@ export interface MessageThread {
   reservation_status: string | null;
   conversion_category: ConversionCategory | null;
   classification_confidence: number | null;
-  classification_keywords: string | null; // JSON array
+  classification_keywords: string | null; // JSON array — legacy from regex era, NULL for LLM-classified rows
+  classification_reasoning: string | null; // LLM-emitted 1-sentence reasoning; NULL for legacy regex rows
   raw_meta: string | null;                 // JSON
   manually_categorized: number;            // 0 | 1
   manual_note: string | null;
@@ -74,10 +75,11 @@ export interface Message {
   created_at?: string;
 }
 
-export type NewMessageThread = Omit<MessageThread, 'created_at' | 'manually_categorized' | 'manual_note' | 'linked_thread_id'> & {
+export type NewMessageThread = Omit<MessageThread, 'created_at' | 'manually_categorized' | 'manual_note' | 'linked_thread_id' | 'classification_reasoning'> & {
   // DB has DEFAULT 0 / NULL; sync jobs don't need to set these.
   manually_categorized?: number;
   manual_note?: string | null;
   linked_thread_id?: string | null;
+  classification_reasoning?: string | null; // set only by LLM classifier, not sync jobs
 };
 export type NewMessage = Omit<Message, 'created_at'>;

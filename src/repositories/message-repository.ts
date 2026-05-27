@@ -44,16 +44,18 @@ export function upsertThread(thread: NewMessageThread): void {
         reservation_id = excluded.reservation_id,
         inquiry_id = excluded.inquiry_id,
         reservation_status = excluded.reservation_status,
-        -- Preserve manual category overrides: only overwrite auto-classified threads
+        -- Manual override always wins. Otherwise: if sync provides a value, use
+        -- it; if it passes NULL (the post-decoupling default), keep the existing
+        -- classification so a re-sync doesn't erase what classify-threads.ts set.
         conversion_category = CASE WHEN manually_categorized = 1
                                    THEN conversion_category
-                                   ELSE excluded.conversion_category END,
+                                   ELSE COALESCE(excluded.conversion_category, conversion_category) END,
         classification_confidence = CASE WHEN manually_categorized = 1
                                          THEN classification_confidence
-                                         ELSE excluded.classification_confidence END,
+                                         ELSE COALESCE(excluded.classification_confidence, classification_confidence) END,
         classification_keywords = CASE WHEN manually_categorized = 1
                                        THEN classification_keywords
-                                       ELSE excluded.classification_keywords END,
+                                       ELSE COALESCE(excluded.classification_keywords, classification_keywords) END,
         raw_meta = excluded.raw_meta,
         last_synced_at = excluded.last_synced_at`,
     ).run(thread);
@@ -121,23 +123,23 @@ export function setManualCategory(
 }
 
 /**
- * Overwrite a thread's auto-classification. Used by the reclassify script.
+ * Overwrite a thread's auto-classification with LLM output.
  * Guards on manually_categorized = 0 so manual overrides are never touched.
  */
 export function updateThreadClassification(
   threadId: string,
   category: string,
   confidence: number,
-  keywordsJson: string,
+  reasoning: string,
 ): void {
   const db = getDatabase();
   db.prepare(
     `UPDATE message_threads
      SET conversion_category = ?,
          classification_confidence = ?,
-         classification_keywords = ?
+         classification_reasoning = ?
      WHERE id = ? AND manually_categorized = 0`,
-  ).run(category, confidence, keywordsJson, threadId);
+  ).run(category, confidence, reasoning, threadId);
 }
 
 export function getThreadById(id: string): MessageThread | null {

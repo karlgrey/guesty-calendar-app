@@ -7,7 +7,7 @@
  * 3. Filter out Airbnb-originated mails (sender domain check) — those come from Guesty
  * 4. Group by Gmail X-GM-THRID for threading; fall back to In-Reply-To / Subject
  * 5. Determine direction from sender: host email → outbound, anything else → inbound
- * 6. Upsert threads + messages; (re-)classify per thread on each sync
+ * 6. Upsert threads + messages (classification deferred to classify-threads.ts)
  *
  * Idempotent. UID watermark stored in direct_email_state.
  */
@@ -21,7 +21,6 @@ import {
   setLastEmailUid,
   getMessagesByThread,
 } from '../repositories/message-repository.js';
-import { classifyThread } from '../utils/message-classifier.js';
 import {
   matchThreadToReservation,
   type ReservationMatcherCandidate,
@@ -30,7 +29,6 @@ import { getDatabase } from '../db/index.js';
 import logger from '../utils/logger.js';
 import type { PropertyConfig } from '../config/properties.js';
 import type {
-  Message,
   NewMessage,
   NewMessageThread,
 } from '../types/messages.js';
@@ -427,13 +425,9 @@ export async function syncDirectEmailMessagesForProperty(
         upserted++;
       }
 
-      // Step 3: Re-upsert thread with classification computed over full thread.
+      // Step 3: Re-upsert thread with updated timestamps and reservation link.
       // Try to link the thread to a manual reservation by name/email match.
       const existing = getMessagesByThread(bucket.threadId);
-      const allBodies = existing.map((m: Message) => ({
-        direction: m.direction,
-        body: m.body || '',
-      }));
 
       const sorted = [...existing].sort((a, b) => a.sent_at.localeCompare(b.sent_at));
       const firstAt = sorted[0]?.sent_at ?? bucket.mails[0].receivedAt;
@@ -463,12 +457,6 @@ export async function syncDirectEmailMessagesForProperty(
         : null;
       const linkedStatus = linkedRes?.status ?? null;
 
-      const classification = classifyThread({
-        reservationStatus: linkedStatus,
-        channel: 'direct_email',
-        messages: allBodies,
-      });
-
       const thread: NewMessageThread = {
         id: bucket.threadId,
         listing_id: listingId,
@@ -482,9 +470,9 @@ export async function syncDirectEmailMessagesForProperty(
         reservation_id: match?.reservationId ?? null,
         inquiry_id: null,
         reservation_status: linkedStatus,
-        conversion_category: classification.category,
-        classification_confidence: classification.confidence,
-        classification_keywords: JSON.stringify(classification.matchedKeywords),
+        conversion_category: null,
+        classification_confidence: null,
+        classification_keywords: null,
         raw_meta: JSON.stringify({ label, lastSubject: bucket.mails[bucket.mails.length - 1].subject }),
         last_synced_at: now,
       };

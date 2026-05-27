@@ -3567,17 +3567,6 @@ router.get('/conversions', (_req, res) => {
         <div class="recat-form">
           <select id="recatSelect">
             <option value="">— auto —</option>
-            <option value="CONFIRMED">✅ Bestätigt</option>
-            <option value="REPEAT">🔁 Wiederbucher</option>
-            <option value="PARTY">🎉 Party / Hochzeit</option>
-            <option value="SPAM">📣 Werbung</option>
-            <option value="COMMERCIAL">🎬 Dreh &amp; Kooperation</option>
-            <option value="NO_AVAILABILITY">🚫 Kein Termin</option>
-            <option value="INFO">❓ Vorab-Frage</option>
-            <option value="PRICE">€ Preisverhandlung</option>
-            <option value="DIRECT_DRIFT">↗ Direct-Drift</option>
-            <option value="PLAN_CHANGE">📅 Planänderung</option>
-            <option value="OTHER">◌ Sonstiges</option>
           </select>
           <input type="text" id="recatNote" placeholder="Notiz (optional, z.B. 'per Telefon gebucht')" maxlength="200">
           <button class="btn" id="recatSave">Speichern</button>
@@ -3590,19 +3579,84 @@ router.get('/conversions', (_req, res) => {
 
   <script>
     const CATEGORY_LABELS = {
-      CONFIRMED:    { label: 'Bestätigt',         emoji: '✅' },
-      REPEAT:       { label: 'Wiederbucher',      emoji: '🔁' },
-      SPAM:         { label: 'Werbung',           emoji: '📣' },
-      COMMERCIAL:   { label: 'Dreh & Kooperation', emoji: '🎬' },
-      PARTY:        { label: 'Party / Hochzeit',  emoji: '🎉' },
-      PRICE:        { label: 'Preisverhandlung',  emoji: '€'  },
-      DIRECT_DRIFT: { label: 'Direct-Drift',      emoji: '↗'  },
-      NO_AVAILABILITY: { label: 'Kein Termin',    emoji: '🚫' },
-      INFO:         { label: 'Vorab-Frage',       emoji: '❓' },
-      PLAN_CHANGE:  { label: 'Planänderung',      emoji: '📅' },
-      OTHER:        { label: 'Sonstiges',         emoji: '◌'  },
+      CONFIRMED:    {
+        label: 'Bestätigt', emoji: '✅',
+        description: 'Buchung ist zustande gekommen.',
+        examples: ['Reservierungs-Status confirmed/reserved/active'],
+      },
+      REPEAT:       {
+        label: 'Wiederbucher', emoji: '🔁',
+        description: 'Wiederbucher / Stammgast (nur manuell setzbar).',
+        examples: ['Manuelle Markierung im Thread-Drilldown'],
+      },
+      SPAM:         {
+        label: 'Werbung', emoji: '📣',
+        description: 'Cold-Pitch an den Host — jemand verkauft dir eine Dienstleistung.',
+        examples: ['Andre — QR-Code-Bewertungstool', 'Tamsir — Auslastungs-Coaching'],
+      },
+      COMMERCIAL:   {
+        label: 'Dreh & Kooperation', emoji: '🎬',
+        description: 'Gast will die Property kommerziell nutzen (Dreh, Workshop, Influencer).',
+        examples: ['Redseven — TV-Drehort', 'Lara — Foto-Shoot'],
+      },
+      PARTY:        {
+        label: 'Party / Hochzeit', emoji: '🎉',
+        description: 'Privates Event: Hochzeit, Geburtstag, Feier, Day-Use.',
+        examples: ['Yuval — Hochzeit', 'Melanie — 30. Geburtstag'],
+      },
+      PRICE:        {
+        label: 'Preisverhandlung', emoji: '€',
+        description: 'Explizite Preisverhandlung, Budget unter Listingspreis.',
+        examples: ['Shavana — Budget-Cap 3000€', 'Marion — Langzeit-Miete €950/Monat'],
+      },
+      DIRECT_DRIFT: {
+        label: 'Direct-Drift', emoji: '↗',
+        description: 'Versuch, das Gespräch off-platform zu verlagern.',
+        examples: ['Carina — Handynummer geteilt', 'Kayla — LinkedIn vorgeschlagen'],
+      },
+      NO_AVAILABILITY: {
+        label: 'Kein Termin', emoji: '🚫',
+        description: 'Host lehnt nur wegen belegtem Datum ab.',
+        examples: ['Thomas — Cleaning-Slot zu eng', 'Tatsiana — gerade gebucht'],
+      },
+      INFO:         {
+        label: 'Vorab-Frage', emoji: '❓',
+        description: 'Gast stellt eine echte Vorab-Frage, kein anderes Signal.',
+        examples: ['Matilde — ÖPNV-Anbindung', 'Denise — Silvester-Lärm'],
+      },
+      PLAN_CHANGE:  {
+        label: 'Planänderung', emoji: '📅',
+        description: 'Reise-Plan des Gasts hat sich geändert (nur manuell setzbar).',
+        examples: ['Manuelle Markierung im Thread-Drilldown'],
+      },
+      OTHER:        {
+        label: 'Sonstiges', emoji: '◌',
+        description: 'Kein klassifizierbares Signal — meist System-Nachrichten oder reine Acks.',
+        examples: ['Reservation-Lifecycle-Threads ohne Gast-Text'],
+      },
     };
     const ORDER = ['CONFIRMED', 'REPEAT', 'SPAM', 'COMMERCIAL', 'PARTY', 'DIRECT_DRIFT', 'PRICE', 'NO_AVAILABILITY', 'INFO', 'PLAN_CHANGE', 'OTHER'];
+    function categoryTooltip(def) {
+      if (!def || !def.description) return '';
+      const ex = (def.examples || []).map(function(e) { return '• ' + e; }).join('\\n');
+      return def.description + (ex ? '\\n\\nBeispiele:\\n' + ex : '');
+    }
+    function populateRecatOptions() {
+      const select = document.getElementById('recatSelect');
+      if (!select) return;
+      // Wipe everything except the "— auto —" placeholder option at index 0.
+      while (select.options.length > 1) select.remove(1);
+      for (const cat of ORDER) {
+        const def = CATEGORY_LABELS[cat];
+        if (!def) continue;
+        const opt = document.createElement('option');
+        opt.value = cat;
+        opt.textContent = def.emoji + ' ' + def.label;
+        opt.title = categoryTooltip(def);
+        select.appendChild(opt);
+      }
+    }
+    populateRecatOptions();
 
     let currentSlug = '';
     let currentCategory = '';
@@ -3697,7 +3751,8 @@ router.get('/conversions', (_req, res) => {
         const pct = total > 0 ? (n / total * 100).toFixed(1) : '0.0';
         const w = (n / max * 100).toFixed(0);
         const def = CATEGORY_LABELS[cat] || { label: cat, emoji: '?' };
-        return '<div class="bar-row bar-' + cat + (currentCategory === cat ? ' active' : '') + '" onclick="filterByCategory(\\'' + cat + '\\')">' +
+        const tip = escapeHtml(categoryTooltip(def));
+        return '<div class="bar-row bar-' + cat + (currentCategory === cat ? ' active' : '') + '" title="' + tip + '" onclick="filterByCategory(\\'' + cat + '\\')">' +
           '<div class="cat">' + def.emoji + ' ' + def.label + '</div>' +
           '<div class="bar-track"><div class="bar-fill" style="width: ' + w + '%">' + (w > 15 ? n : '') + '</div></div>' +
           '<div class="count">' + n + ' · ' + pct + '%</div>' +
@@ -3719,7 +3774,8 @@ router.get('/conversions', (_req, res) => {
         const total = Object.values(counts).reduce((s, n) => s + n, 0);
         const lines = ORDER.filter(k => counts[k]).map(cat => {
           const def = CATEGORY_LABELS[cat] || { label: cat, emoji: '?' };
-          return '<div class="channel-row"><span>' + def.emoji + ' ' + def.label + '</span><span class="n">' + counts[cat] + '</span></div>';
+          const tip = escapeHtml(categoryTooltip(def));
+          return '<div class="channel-row" title="' + tip + '"><span>' + def.emoji + ' ' + def.label + '</span><span class="n">' + counts[cat] + '</span></div>';
         }).join('');
         const title = src === 'guesty' ? 'Guesty (Airbnb/Booking/…)' : src === 'gmail' ? 'Direct Email' : src;
         return '<div class="channel-box"><h3>' + title + ' · ' + total + ' Threads</h3>' + lines + '</div>';
@@ -3735,7 +3791,8 @@ router.get('/conversions', (_req, res) => {
       for (const cat of ORDER) {
         if (!agg[cat]) continue;
         const def = CATEGORY_LABELS[cat] || { label: cat, emoji: '?' };
-        chips.push('<button class="filter-chip ' + (currentCategory === cat ? 'active' : '') + '" onclick="filterByCategory(\\'' + cat + '\\')">' +
+        const tip = escapeHtml(categoryTooltip(def));
+        chips.push('<button class="filter-chip ' + (currentCategory === cat ? 'active' : '') + '" title="' + tip + '" onclick="filterByCategory(\\'' + cat + '\\')">' +
           def.emoji + ' ' + def.label + ' (' + agg[cat] + ')</button>');
       }
       filtersDiv.innerHTML = chips.join('');
@@ -3786,6 +3843,7 @@ router.get('/conversions', (_req, res) => {
       const rows = groups.map(g => {
         const t = g.rep;
         const def = CATEGORY_LABELS[t.conversion_category] || { label: t.conversion_category || 'unkat.', emoji: '?' };
+        const badgeTip = escapeHtml(categoryTooltip(def));
         const kw = (() => {
           try { return (JSON.parse(t.classification_keywords || '[]') || []).slice(0, 4).join(', '); }
           catch { return ''; }
@@ -3799,7 +3857,7 @@ router.get('/conversions', (_req, res) => {
           '<td>' + lastAt + '</td>' +
           '<td>' + escapeHtml(guest) + extraBadge + '</td>' +
           '<td><span class="channel-tag">' + escapeHtml(t.channel || '?') + '</span></td>' +
-          '<td><span class="badge badge-' + (t.conversion_category || 'OTHER') + '">' + def.emoji + ' ' + escapeHtml(def.label) + '</span></td>' +
+          '<td><span class="badge badge-' + (t.conversion_category || 'OTHER') + '" title="' + badgeTip + '">' + def.emoji + ' ' + escapeHtml(def.label) + '</span></td>' +
           '<td class="keywords">' + escapeHtml(kw) + '</td>' +
           '<td style="text-align:right; color: var(--color-warm-gray); font-size: 12px;">' + g.totalMsgs + ' Msg</td>' +
         '</tr>';
@@ -3852,6 +3910,10 @@ router.get('/conversions', (_req, res) => {
           meta += ' · <span style="color: var(--color-forest); font-weight: 600;">' + group.length + ' verknüpfte Threads</span>';
         }
         document.getElementById('modalMeta').innerHTML = meta;
+        if (t.classification_reasoning) {
+          document.getElementById('modalMeta').innerHTML +=
+            '<div class="modal-meta" style="margin-top: 8px; font-size: 12px; color: var(--color-warm-gray);">💡 ' + escapeHtml(t.classification_reasoning) + '</div>';
+        }
 
         // Pre-fill manual override form
         if (t.manually_categorized) {
