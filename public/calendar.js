@@ -649,6 +649,27 @@ class BookingCalendar {
   }
 
   /**
+   * Wie formatCurrency, aber mit 2 Nachkommastellen (Cent).
+   * Für Preis-Aufschlüsselung, Steuerzeilen, Summen und die Anfragemail —
+   * NICHT für die Kalender-Tageskacheln (die bleiben auf ganze Euro gerundet).
+   */
+  formatCurrencyExact(amount, currency) {
+    const locale = this.language === 'de' ? 'de-DE' : 'en-US';
+    const currencyCode = currency || 'EUR';
+    try {
+      return new Intl.NumberFormat(locale, {
+        style: 'currency',
+        currency: currencyCode,
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      }).format(amount);
+    } catch (error) {
+      const symbol = currencyCode === 'EUR' ? '€' : currencyCode === 'USD' ? '$' : currencyCode;
+      return `${symbol}${(Math.round(amount * 100) / 100).toFixed(2)}`;
+    }
+  }
+
+  /**
    * Get total savings from all discounts (weekly/monthly + promotions)
    */
   getTotalSavings(quote) {
@@ -1025,7 +1046,7 @@ class BookingCalendar {
         breakdownHtml += `
           <div class="breakdown-row">
             <span class="breakdown-label">Extra guest fee</span>
-            <span class="breakdown-value">${this.formatCurrency(quote.pricing.extraGuestFee, quote.currency)}</span>
+            <span class="breakdown-value">${this.formatCurrencyExact(quote.pricing.extraGuestFee, quote.currency)}</span>
           </div>
         `;
       }
@@ -1035,7 +1056,7 @@ class BookingCalendar {
         breakdownHtml += `
           <div class="breakdown-row discount">
             <span class="breakdown-label">${quote.discount.type === 'weekly' ? 'Weekly' : 'Monthly'} discount</span>
-            <span class="breakdown-value">-${this.formatCurrency(quote.discount.savings, quote.currency)}</span>
+            <span class="breakdown-value">-${this.formatCurrencyExact(quote.discount.savings, quote.currency)}</span>
           </div>
         `;
       }
@@ -1047,7 +1068,7 @@ class BookingCalendar {
             breakdownHtml += `
               <div class="breakdown-row discount">
                 <span class="breakdown-label">${this.getPromotionLabel(promo)} −${Math.round(promo.discountPercent)}%</span>
-                <span class="breakdown-value">−${this.formatCurrency(promo.savings, quote.currency)}</span>
+                <span class="breakdown-value">−${this.formatCurrencyExact(promo.savings, quote.currency)}</span>
               </div>
             `;
           }
@@ -1060,7 +1081,7 @@ class BookingCalendar {
           breakdownHtml += `
             <div class="breakdown-row">
               <span class="breakdown-label">${this.translateTaxDescription(tax.description, false)}</span>
-              <span class="breakdown-value">${this.formatCurrency(tax.amount, quote.currency)}</span>
+              <span class="breakdown-value">${this.formatCurrencyExact(tax.amount, quote.currency)}</span>
             </div>
           `;
         });
@@ -1998,7 +2019,7 @@ class BookingCalendar {
 
     // Extra guest fee
     if (quote.pricing.extraGuestFee > 0) {
-      emailBody += ` •  ${this.t('emailExtraGuests')}: ${this.formatCurrency(quote.pricing.extraGuestFee, quote.currency)}\n`;
+      emailBody += ` •  ${this.t('emailExtraGuests')}: ${this.formatCurrencyExact(quote.pricing.extraGuestFee, quote.currency)}\n`;
     }
 
     // Discount (weekly/monthly)
@@ -2006,24 +2027,24 @@ class BookingCalendar {
       const discountLabel = quote.discount.type === 'weekly'
         ? this.t('weeklyDiscount')
         : this.t('monthlyDiscount');
-      emailBody += ` •  ${discountLabel}: –${this.formatCurrency(quote.discount.savings, quote.currency)}\n`;
+      emailBody += ` •  ${discountLabel}: –${this.formatCurrencyExact(quote.discount.savings, quote.currency)}\n`;
     }
 
     // Promotions (LOS, Last-Minute, Early Bird)
     if (quote.promotions && quote.promotions.length > 0) {
       quote.promotions.forEach(promo => {
         if (promo.savings > 0) {
-          emailBody += ` •  ${this.getPromotionLabel(promo)} −${Math.round(promo.discountPercent)}%: –${this.formatCurrency(promo.savings, quote.currency)}\n`;
+          emailBody += ` •  ${this.getPromotionLabel(promo)} −${Math.round(promo.discountPercent)}%: –${this.formatCurrencyExact(promo.savings, quote.currency)}\n`;
         }
       });
     }
 
     // Cleaning fee
     if (quote.pricing.cleaningFee > 0) {
-      emailBody += ` •  ${this.t('emailCleaning')}: ${this.formatCurrency(quote.pricing.cleaningFee, quote.currency)}\n`;
+      emailBody += ` •  ${this.t('emailCleaning')}: ${this.formatCurrencyExact(quote.pricing.cleaningFee, quote.currency)}\n`;
     }
 
-    emailBody += `\n${this.t('emailSubtotal')}: ${this.formatCurrency(quote.pricing.subtotal, quote.currency)}\n\n`;
+    emailBody += `\n${this.t('emailSubtotal')}: ${this.formatCurrencyExact(quote.pricing.subtotal, quote.currency)}\n\n`;
 
     // Taxes
     if (quote.breakdown.taxes && quote.breakdown.taxes.length > 0) {
@@ -2031,10 +2052,10 @@ class BookingCalendar {
       const totalTaxRate = subtotalBeforeTax > 0
         ? Math.round((quote.pricing.totalTaxes / subtotalBeforeTax) * 100)
         : 0;
-      emailBody += `${this.t('emailTaxes')} (${totalTaxRate}%): ${this.formatCurrency(quote.pricing.totalTaxes, quote.currency)}\n\n`;
+      emailBody += `${this.t('emailTaxes')} (${totalTaxRate}%): ${this.formatCurrencyExact(quote.pricing.totalTaxes, quote.currency)}\n\n`;
     }
 
-    emailBody += `${this.t('emailTotalPrice')}: ${this.formatCurrency(quote.pricing.totalPrice, quote.currency)}\n\n`;
+    emailBody += `${this.t('emailTotalPrice')}: ${this.formatCurrencyExact(quote.pricing.totalPrice, quote.currency)}\n\n`;
 
     emailBody += `${this.t('emailPropertyLink')}: ${window.location.origin}\n\n`;
     emailBody += `${this.t('emailConfirmRequest')}\n\n`;
