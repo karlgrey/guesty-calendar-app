@@ -1031,13 +1031,22 @@ class BookingCalendar {
       // Build pricing breakdown
       let breakdownHtml = '';
 
-      // Accommodation fare (base rate before discounts)
-      const baseNightlyRateSummary = quote.breakdown.nightlyRates[0]?.basePrice || 0;
-      const baseTotalSummary = baseNightlyRateSummary * quote.nights;
+      // Accommodation fare (base rate before discounts) — summiere die tatsächlichen
+      // Pro-Nacht-Preise, damit Sonderpreise einzelner Nächte (z.B. Weihnachten/Silvester)
+      // korrekt enthalten sind statt erste-Nacht-Rate × Nächte.
+      const nightly = quote.breakdown.nightlyRates || [];
+      const baseTotalSummary = nightly.length
+        ? nightly.reduce((sum, nr) => sum + (nr.basePrice || 0), 0)
+        : (quote.breakdown.nightlyRates[0]?.basePrice || 0) * quote.nights;
+      const firstNightRate = nightly[0]?.basePrice || 0;
+      const allNightsEqual = nightly.length > 0 && nightly.every((nr) => (nr.basePrice || 0) === firstNightRate);
+      const accommodationLabel = allNightsEqual
+        ? `${this.formatCurrencyExact(firstNightRate, quote.currency)} × ${quote.nights} night${quote.nights > 1 ? 's' : ''}`
+        : `Accommodation (${quote.nights} night${quote.nights > 1 ? 's' : ''})`;
       breakdownHtml += `
         <div class="breakdown-row">
-          <span class="breakdown-label">${this.formatCurrency(baseNightlyRateSummary, quote.currency)} × ${quote.nights} night${quote.nights > 1 ? 's' : ''}</span>
-          <span class="breakdown-value">${this.formatCurrency(baseTotalSummary, quote.currency)}</span>
+          <span class="breakdown-label">${accommodationLabel}</span>
+          <span class="breakdown-value">${this.formatCurrencyExact(baseTotalSummary, quote.currency)}</span>
         </div>
       `;
 
@@ -2012,10 +2021,18 @@ class BookingCalendar {
 
     emailBody += `${this.t('emailPriceOverview')}:\n`;
 
-    // Accommodation (base rate before discounts)
-    const emailBaseRate = quote.breakdown.nightlyRates[0]?.basePrice || 0;
-    const emailBaseTotal = emailBaseRate * quote.nights;
-    emailBody += ` •  ${this.t('emailAccommodation')}: ${this.formatCurrency(emailBaseRate, quote.currency)} × ${quote.nights} ${this.t('nightsLowercase')(quote.nights)} = ${this.formatCurrency(emailBaseTotal, quote.currency)}\n`;
+    // Accommodation (base rate before discounts) — summiere echte Pro-Nacht-Preise
+    const emailNightly = quote.breakdown.nightlyRates || [];
+    const emailBaseTotal = emailNightly.length
+      ? emailNightly.reduce((sum, nr) => sum + (nr.basePrice || 0), 0)
+      : (quote.breakdown.nightlyRates[0]?.basePrice || 0) * quote.nights;
+    const emailFirstRate = emailNightly[0]?.basePrice || 0;
+    const emailAllEqual = emailNightly.length > 0 && emailNightly.every((nr) => (nr.basePrice || 0) === emailFirstRate);
+    if (emailAllEqual) {
+      emailBody += ` •  ${this.t('emailAccommodation')}: ${this.formatCurrencyExact(emailFirstRate, quote.currency)} × ${quote.nights} ${this.t('nightsLowercase')(quote.nights)} = ${this.formatCurrencyExact(emailBaseTotal, quote.currency)}\n`;
+    } else {
+      emailBody += ` •  ${this.t('emailAccommodation')} (${this.t('emailNights')(quote.nights)}): ${this.formatCurrencyExact(emailBaseTotal, quote.currency)}\n`;
+    }
 
     // Extra guest fee
     if (quote.pricing.extraGuestFee > 0) {
