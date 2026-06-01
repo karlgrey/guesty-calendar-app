@@ -80,6 +80,9 @@ const configSchema = z.object({
   resendApiKey: z.string().optional(),
   emailFromAddress: z.string().email().optional(),
   emailFromName: z.string().default('Guesty Calendar'),
+  // Dev-only safety net: when set and NODE_ENV !== production, ALL outgoing mail is
+  // redirected to this single address (so local test/report sends never reach real recipients).
+  devEmailOverride: z.string().email().optional(),
 
   // SMTP (fallback if Resend not configured)
   smtpHost: z.string().optional(),
@@ -154,6 +157,7 @@ function parseConfig() {
     resendApiKey: process.env.RESEND_API_KEY,
     emailFromAddress: process.env.EMAIL_FROM_ADDRESS,
     emailFromName: process.env.EMAIL_FROM_NAME,
+    devEmailOverride: process.env.DEV_EMAIL_OVERRIDE,
     smtpHost: process.env.SMTP_HOST,
     smtpPort: process.env.SMTP_PORT,
     smtpSecure: process.env.SMTP_SECURE,

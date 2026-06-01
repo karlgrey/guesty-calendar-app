@@ -75,7 +75,21 @@ export async function sendEmail(options: {
   html: string;
   text?: string;
 }): Promise<boolean> {
-  const recipients = Array.isArray(options.to) ? options.to : [options.to];
+  let recipients = Array.isArray(options.to) ? options.to : [options.to];
+  let subject = options.subject;
+
+  // Dev safety net: outside production, redirect ALL outgoing mail to a single
+  // override address (DEV_EMAIL_OVERRIDE) so local test/report sends can never
+  // reach real recipients. No-op in production or when the override is unset.
+  if (config.nodeEnv !== 'production' && config.devEmailOverride) {
+    const originalRecipients = recipients.join(', ');
+    logger.warn(
+      { override: config.devEmailOverride, originalRecipients: recipients },
+      'DEV_EMAIL_OVERRIDE active — redirecting email to dev address'
+    );
+    recipients = [config.devEmailOverride];
+    subject = `[DEV→${originalRecipients}] ${options.subject}`;
+  }
 
   // Check if from email is configured
   if (!config.emailFromAddress) {
@@ -90,7 +104,7 @@ export async function sendEmail(options: {
       const { data, error } = await resend.emails.send({
         from: `${config.emailFromName} <${config.emailFromAddress}>`,
         to: recipients,
-        subject: options.subject,
+        subject,
         html: options.html,
         text: options.text,
       });
@@ -135,7 +149,7 @@ export async function sendEmail(options: {
     const info = await transport.sendMail({
       from: `"${config.emailFromName}" <${config.emailFromAddress}>`,
       to: recipients.join(', '),
-      subject: options.subject,
+      subject,
       text: options.text,
       html: options.html,
     });
