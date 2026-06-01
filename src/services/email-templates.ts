@@ -352,14 +352,14 @@ export function generateWeeklySummaryEmail(data: WeeklySummaryData): { html: str
 
     ${currentYearStats ? `
     <!-- CURRENT YEAR SECTION -->
-    <h2 style="margin-top: 40px; border-bottom: 2px solid #27ae60; padding-bottom: 8px;">📅 ${currentYearStats.year} Expected Revenue</h2>
+    <h2 style="margin-top: 40px; border-bottom: 2px solid #27ae60; padding-bottom: 8px;">📅 ${currentYearStats.year} Revenue</h2>
     <div class="stats-grid">
       <div class="stat-card" style="border-left-color: #27ae60;">
         <div class="stat-label">Bookings ${currentYearStats.year}</div>
         <div class="stat-value">${currentYearStats.total_bookings}</div>
       </div>
       <div class="stat-card" style="border-left-color: #27ae60;">
-        <div class="stat-label">Expected Revenue ${currentYearStats.year}</div>
+        <div class="stat-label">Revenue ${currentYearStats.year}</div>
         <div class="stat-value revenue">${formatCurrency(currentYearStats.total_revenue, currency)}</div>
       </div>
       <div class="stat-card" style="border-left-color: #27ae60;">
@@ -542,11 +542,11 @@ export function generateWeeklySummaryEmail(data: WeeklySummaryData): { html: str
 Weekly Property Summary - ${propertyTitle}
 ${'='.repeat(60)}
 
-${currentYearStats ? `${currentYearStats.year} EXPECTED REVENUE
+${currentYearStats ? `${currentYearStats.year} REVENUE
 ${'='.repeat(60)}
 
 - Bookings: ${currentYearStats.total_bookings}
-- Expected Revenue: ${formatCurrency(currentYearStats.total_revenue, currency)}
+- Revenue: ${formatCurrency(currentYearStats.total_revenue, currency)}
 - Booked Days: ${currentYearStats.total_booked_days}
 
 ` : ''}${bookingComparison ? `BOOKINGS: ${bookingComparison.currentMonth.label} vs ${bookingComparison.previousMonth.label}

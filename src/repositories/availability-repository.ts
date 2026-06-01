@@ -9,6 +9,7 @@ import { DatabaseError } from '../utils/errors.js';
 import logger from '../utils/logger.js';
 import type { Availability, AvailabilityRow } from '../types/models.js';
 import { rowToAvailability } from '../types/models.js';
+import { getYearRange } from '../utils/year-range.js';
 
 /**
  * Insert or update a single availability record
@@ -651,8 +652,7 @@ export interface CurrentYearStats {
 export function getCurrentYearStats(listingId: string): CurrentYearStats {
   const db = getDatabase();
   const currentYear = new Date().getFullYear();
-  const yearStart = `${currentYear}-01-01`;
-  const yearEnd = `${currentYear}-12-31`;
+  const { start: yearStart, endExclusive: yearEndExclusive } = getYearRange(currentYear);
 
   try {
     const result = db
@@ -664,9 +664,9 @@ export function getCurrentYearStats(listingId: string): CurrentYearStats {
         FROM reservations
         WHERE listing_id = ?
           AND check_in >= ?
-          AND check_in <= ?`
+          AND check_in < ?`
       )
-      .get(listingId, yearStart, yearEnd) as {
+      .get(listingId, yearStart, yearEndExclusive) as {
         total_bookings: number;
         total_revenue: number;
         total_booked_days: number;
