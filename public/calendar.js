@@ -171,6 +171,7 @@ class BookingCalendar {
         dayHeaders: ['Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa', 'So'],
         total: 'Gesamt',
         baseNights: (rate, nights) => `${rate} × ${nights} ${nights === 1 ? 'Nacht' : 'Nächte'}`,
+        baseNightsVaried: (nights) => `Unterkunft (${nights} ${nights === 1 ? 'Nacht' : 'Nächte'})`,
         extraGuests: 'Zusätzliche Gäste',
         cleaningFee: 'Endreinigung',
         weeklyDiscount: 'Wochenrabatt',
@@ -232,6 +233,7 @@ class BookingCalendar {
         dayHeaders: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
         total: 'Total',
         baseNights: (rate, nights) => `${rate} × ${nights} ${nights === 1 ? 'night' : 'nights'}`,
+        baseNightsVaried: (nights) => `Accommodation (${nights} ${nights === 1 ? 'night' : 'nights'})`,
         extraGuests: 'Extra guests',
         cleaningFee: 'Cleaning fee',
         weeklyDiscount: 'Weekly discount',
@@ -1274,12 +1276,21 @@ class BookingCalendar {
     let breakdownHtml = '';
 
     // 1. Base nights (use basePrice, not adjustedPrice, to show discount separately)
-    const baseNightlyRate = quote.breakdown.nightlyRates[0]?.basePrice || 0;
-    const baseTotal = baseNightlyRate * quote.nights;
+    //    Summiere echte Pro-Nacht-Preise, damit Sonderpreise einzelner Nächte korrekt
+    //    enthalten sind; bei variierenden Preisen ohne irreführende Einzelrate.
+    const overlayNightly = quote.breakdown.nightlyRates || [];
+    const baseTotal = overlayNightly.length
+      ? overlayNightly.reduce((sum, nr) => sum + (nr.basePrice || 0), 0)
+      : (quote.breakdown.nightlyRates[0]?.basePrice || 0) * quote.nights;
+    const overlayFirstRate = overlayNightly[0]?.basePrice || 0;
+    const overlayAllEqual = overlayNightly.length > 0 && overlayNightly.every((nr) => (nr.basePrice || 0) === overlayFirstRate);
+    const overlayBaseLabel = overlayAllEqual
+      ? this.t('baseNights')(this.formatCurrencyExact(overlayFirstRate, quote.currency), quote.nights)
+      : this.t('baseNightsVaried')(quote.nights);
     breakdownHtml += `
       <div class="breakdown-row">
-        <span class="breakdown-label">${this.t('baseNights')(this.formatCurrency(baseNightlyRate, quote.currency), quote.nights)}</span>
-        <span class="breakdown-value">${this.formatCurrency(baseTotal, quote.currency)}</span>
+        <span class="breakdown-label">${overlayBaseLabel}</span>
+        <span class="breakdown-value">${this.formatCurrencyExact(baseTotal, quote.currency)}</span>
       </div>
     `;
 
@@ -1288,7 +1299,7 @@ class BookingCalendar {
       breakdownHtml += `
         <div class="breakdown-row">
           <span class="breakdown-label">${this.t('extraGuests')}</span>
-          <span class="breakdown-value">${this.formatCurrency(quote.pricing.extraGuestFee, quote.currency)}</span>
+          <span class="breakdown-value">${this.formatCurrencyExact(quote.pricing.extraGuestFee, quote.currency)}</span>
         </div>
       `;
     }
@@ -1307,7 +1318,7 @@ class BookingCalendar {
       breakdownHtml += `
         <div class="breakdown-row discount">
           <span class="breakdown-label">${discountLabel}${percentageStr}</span>
-          <span class="breakdown-value">−${this.formatCurrency(quote.discount.savings, quote.currency)}</span>
+          <span class="breakdown-value">−${this.formatCurrencyExact(quote.discount.savings, quote.currency)}</span>
         </div>
       `;
     }
@@ -1319,7 +1330,7 @@ class BookingCalendar {
           breakdownHtml += `
             <div class="breakdown-row discount">
               <span class="breakdown-label">${this.getPromotionLabel(promo)} −${Math.round(promo.discountPercent)}%</span>
-              <span class="breakdown-value">−${this.formatCurrency(promo.savings, quote.currency)}</span>
+              <span class="breakdown-value">−${this.formatCurrencyExact(promo.savings, quote.currency)}</span>
             </div>
           `;
         }
@@ -1332,7 +1343,7 @@ class BookingCalendar {
         breakdownHtml += `
           <div class="breakdown-row">
             <span class="breakdown-label">${this.translateTaxDescription(tax.description, false)}</span>
-            <span class="breakdown-value">${this.formatCurrency(tax.amount, quote.currency)}</span>
+            <span class="breakdown-value">${this.formatCurrencyExact(tax.amount, quote.currency)}</span>
           </div>
         `;
       });
@@ -1345,8 +1356,8 @@ class BookingCalendar {
       <div class="breakdown-row total">
         <span class="breakdown-label">${this.t('total')}</span>
         <span class="breakdown-value">${overlayTotalSavings > 0
-          ? `<span class="price-original">${this.formatCurrency(totalWithoutCleaning + overlayTotalSavings, quote.currency)}</span> <span class="price-discounted">${this.formatCurrency(totalWithoutCleaning, quote.currency)}</span>`
-          : this.formatCurrency(totalWithoutCleaning, quote.currency)}</span>
+          ? `<span class="price-original">${this.formatCurrencyExact(totalWithoutCleaning + overlayTotalSavings, quote.currency)}</span> <span class="price-discounted">${this.formatCurrencyExact(totalWithoutCleaning, quote.currency)}</span>`
+          : this.formatCurrencyExact(totalWithoutCleaning, quote.currency)}</span>
       </div>
     `;
 
