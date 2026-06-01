@@ -76,7 +76,7 @@ router.get('/:slug', resolveProperty, (req: Request, res: Response, next: NextFu
 
     // Inject property context into the HTML
     // Add a script tag to set the property slug before calendar.js loads
-    const propertyScript = `<script>window.__PROPERTY_SLUG__ = "${property.slug}"; window.__PROPERTY_NAME__ = "${property.name}"; window.__BOOKING_EMAIL__ = "${property.bookingRecipientEmail}";</script>`;
+    const propertyScript = `<script>window.__PROPERTY_SLUG__ = "${property.slug}"; window.__PROPERTY_NAME__ = "${property.name}"; window.__BOOKING_EMAIL__ = "${property.bookingRecipientEmail}"; window.__PROPERTY_WEBSITE__ = "${property.website || ''}";</script>`;
     html = html.replace('</head>', `${propertyScript}\n</head>`);
 
     // Update the title

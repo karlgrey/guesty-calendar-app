@@ -105,6 +105,7 @@ class BookingCalendar {
     this.propertySlug = options.propertySlug || window.__PROPERTY_SLUG__ || this.detectPropertyFromUrl();
     this.propertyName = options.propertyName || window.__PROPERTY_NAME__ || 'Property';
     this.bookingEmail = options.bookingEmail || window.__BOOKING_EMAIL__ || 'booking@farmhouse-prasser.de';
+    this.propertyWebsite = options.propertyWebsite || window.__PROPERTY_WEBSITE__ || '';
 
     // Build API base URL based on property context
     this.apiBaseUrl = this.propertySlug ? `/p/${this.propertySlug}` : '';
@@ -2074,7 +2075,7 @@ class BookingCalendar {
 
     emailBody += `${this.t('emailTotalPrice')}: ${this.formatCurrencyExact(quote.pricing.totalPrice, quote.currency)}\n\n`;
 
-    emailBody += `${this.t('emailPropertyLink')}: ${window.location.origin}\n\n`;
+    emailBody += `${this.t('emailPropertyLink')}: ${this.propertyWebsite || window.location.origin}\n\n`;
     emailBody += `${this.t('emailConfirmRequest')}\n\n`;
     emailBody += `${this.t('emailThankYou')}\n`;
 

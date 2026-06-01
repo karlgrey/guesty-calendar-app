@@ -96,6 +96,9 @@ export interface PropertyConfig {
   currency: string;
   bookingRecipientEmail: string;
   bookingSenderName: string;
+  /** Kanonische öffentliche Website der Unterkunft, z.B. "https://farmhouse-prasser.de".
+   *  Wird in der generierten Anfragemail als Absender-/Unterkunfts-Link verwendet. */
+  website?: string;
   weeklyReport: WeeklyReportConfig;
   ga4?: GA4Config;
   googleCalendar?: GoogleCalendarConfig;
@@ -167,6 +170,7 @@ const propertyConfigSchema = z.object({
   currency: z.string().length(3).toUpperCase().default('EUR'),
   bookingRecipientEmail: z.string().email(),
   bookingSenderName: z.string().min(1),
+  website: z.string().url().optional(),
   weeklyReport: weeklyReportConfigSchema,
   ga4: ga4ConfigSchema.optional().default({ enabled: false }),
   googleCalendar: googleCalendarConfigSchema.optional().default({ enabled: false }),

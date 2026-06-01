@@ -10,6 +10,7 @@
       "currency": "EUR",
       "bookingRecipientEmail": "booking@farmhouse-prasser.de",
       "bookingSenderName": "Farmhouse Prasser",
+      "website": "https://farmhouse-prasser.de",
       "weeklyReport": {
         "enabled": true,
         "recipients": [
