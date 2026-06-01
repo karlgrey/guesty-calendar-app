@@ -367,25 +367,11 @@ export async function calculateQuoteWithGuesty(request: QuoteRequest): Promise<Q
     // Determine discount from local listing data (Guesty doesn't expose this separately)
     const { factor, type } = listing ? getDiscountFactor(nights, listing) : { factor: 1.0, type: null as 'weekly' | 'monthly' | null };
 
-    // Calculate discount savings from local calculation
-    // Use fareAccommodationBase (excludes extra guest fee) since baseTotal is pure accommodation
+    // Weekly/monthly discount savings are derived from authoritative Guesty figures
+    // (gross nightly accommodation, promotions, final fare) further below — NOT from the
+    // cached availability table, which can be stale for date-overridden nights and made the
+    // savings come out null/0 ("Wochenrabatt −0,00 €"). Computed after those values exist.
     let discountSavings: number | null = null;
-    if (type && listing) {
-      const availability = getAvailability(listing.id, checkIn, checkOut);
-      const priceMap = new Map<string, number>();
-      availability.forEach((day) => priceMap.set(day.date, day.price));
-
-      let baseTotal = 0;
-      const checkInDate = new Date(checkIn);
-      for (let i = 0; i < nights; i++) {
-        const currentDate = new Date(checkInDate);
-        currentDate.setDate(currentDate.getDate() + i);
-        const dateStr = currentDate.toISOString().split('T')[0];
-        baseTotal += priceMap.get(dateStr) || listing.base_price;
-      }
-      discountSavings = baseTotal - guestyQuote.fareAccommodationBase;
-      if (discountSavings < 0) discountSavings = null;
-    }
 
     // Build promotions from Guesty response
     const promotions: PromotionInfo[] = guestyQuote.promotions
@@ -406,6 +392,18 @@ export async function calculateQuoteWithGuesty(request: QuoteRequest): Promise<Q
     const totalTaxes = guestyQuote.totalTaxes;
     const subtotal = accommodationFare + cleaningFee;
     const totalPrice = guestyQuote.hostPayout;
+
+    // Weekly/monthly long-stay discount savings, by reconciliation with Guesty's own numbers:
+    //   accommodationFare = grossAccommodation + extraGuestFee − promotionSavings − weeklySavings
+    // (fareAccommodationAdjusted already bundles the extra-guest fee). So the long-stay portion is
+    // the residual reduction not explained by promotions. Only reported when it is a real saving,
+    // which keeps the breakdown reconciling and avoids a spurious "−0,00 €" discount line.
+    if (type) {
+      const grossAccommodation = guestyQuote.nightlyRates.reduce((sum, nr) => sum + (nr.price || 0), 0);
+      const promotionSavings = promotions.reduce((sum, p) => sum + p.savings, 0);
+      const computed = grossAccommodation + extraGuestFee - promotionSavings - accommodationFare;
+      discountSavings = computed > 0.005 ? Math.round(computed * 100) / 100 : null;
+    }
 
     // Build breakdown from Guesty data
     const nightlyRates = guestyQuote.nightlyRates.map(nr => ({
@@ -453,8 +451,8 @@ export async function calculateQuoteWithGuesty(request: QuoteRequest): Promise<Q
       subtotal,
       totalTaxes,
       totalPrice,
-      discountApplied: type,
-      discountFactor: type ? factor : null,
+      discountApplied: discountSavings != null ? type : null,
+      discountFactor: discountSavings != null ? factor : null,
       discountSavings,
       promotions,
       breakdown,
