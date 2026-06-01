@@ -13,7 +13,7 @@
     "db:init": "tsx src/scripts/init-db.ts",
     "db:migrate": "tsx src/scripts/run-migrations.ts",
     "db:reset": "tsx src/scripts/reset-db.ts",
-    "lint": "eslint src --ext .ts",
+    "lint": "eslint src",
     "test": "vitest"
   },
   "keywords": [

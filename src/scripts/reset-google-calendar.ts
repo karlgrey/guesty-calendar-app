@@ -43,7 +43,7 @@ async function main() {
       try {
         await googleCalendarClient.deleteEvent(calendarId, event.id);
         deleted++;
-      } catch (e) {
+      } catch {
         // ignore
       }
     }

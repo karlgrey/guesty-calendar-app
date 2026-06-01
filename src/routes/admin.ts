@@ -2090,14 +2090,14 @@ router.get('/db/:table', (req, res, next) => {
       if (table === 'listings' && row.taxes) {
         try {
           row.taxes = JSON.parse(row.taxes);
-        } catch (e) {
+        } catch {
           // Keep as string if parsing fails
         }
       }
       if (table === 'quotes_cache' && row.breakdown) {
         try {
           row.breakdown = JSON.parse(row.breakdown);
-        } catch (e) {
+        } catch {
           // Keep as string if parsing fails
         }
       }
