@@ -3,7 +3,7 @@
  * rendered by `bi-email-templates.ts`.
  */
 import type { GanttGrid } from '../services/bi-calendar.js';
-import type { MonthForecast } from '../services/forecast.js';
+import type { RevenueForecast, ForecastConfidence } from '../services/forecast.js';
 
 export interface PropertyKpi {
   slug: string;
@@ -32,8 +32,12 @@ export interface UpcomingArrival {
 export interface PropertyForecast {
   slug: string;
   name: string;
-  lowData: boolean;
-  months: MonthForecast[];
+  committedTotal: number;
+  expectedTotal: number;
+  highTotal: number;
+  confidence: ForecastConfidence;
+  methodLabel: string; // e.g. "Vorjahr", "überw. Vorjahr", "Buchungsvorlauf", "Ramp-up (Anlauf)"
+  months: RevenueForecast[];
 }
 
 export interface BiReportModel {
@@ -49,6 +53,6 @@ export interface BiReportModel {
   calendar: GanttGrid;
   arrivals: UpcomingArrival[];
   kpis: PropertyKpi[];
-  portfolioForecast: MonthForecast[];
+  portfolioForecast: RevenueForecast[];
   propertyForecasts: PropertyForecast[];
 }
