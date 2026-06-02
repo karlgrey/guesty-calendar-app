@@ -4,7 +4,7 @@
  * Gathers data across ALL properties, builds a BiReportModel and sends one
  * consolidated weekly email. Complements the per-property weekly reports.
  */
-import { addDays, addMonths, format, getDay, getHours, startOfMonth, endOfMonth, differenceInCalendarDays } from 'date-fns';
+import { addDays, addMonths, format, getDay, getHours, startOfMonth, differenceInCalendarDays, differenceInCalendarMonths, getDaysInMonth } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
 import {
   getAllProperties,
@@ -17,7 +17,6 @@ import {
   getAllTimeStats,
   getCurrentYearStats,
   getOccupancyRate,
-  getOccupancyCounts,
   getAvailability,
 } from '../repositories/availability-repository.js';
 import {
@@ -27,7 +26,7 @@ import {
   getRevenueForCheckInMonth,
 } from '../repositories/reservation-repository.js';
 import { buildGanttGrid } from '../services/bi-calendar.js';
-import { buildLeadTimeCurve, forecastMonth, type MonthForecast } from '../services/forecast.js';
+import { buildLeadTimeCurve, forecastMonthRevenue, type RevenueForecast, type ForecastConfidence } from '../services/forecast.js';
 import { generateBiReportEmail } from '../services/bi-email-templates.js';
 import { sendEmail } from '../services/email-service.js';
 import type { BiReportModel, PropertyKpi, UpcomingArrival, PropertyForecast } from '../types/bi-report.js';
@@ -44,6 +43,7 @@ interface PropertyData {
   // checked in BEFORE today, so same-day turnovers on `today` are detected.
   windowReservations: ReturnType<typeof getReservationsInRange>;
   sampleN: number;
+  listingStart: string | null;
   kpi: PropertyKpi;
 }
 
@@ -95,6 +95,7 @@ export function buildBiReportModel(
         futureReservations,
         windowReservations,
         sampleN: allTime.totalBookings,
+        listingStart: allTime.startDate,
         kpi: {
           slug: property.slug,
           name: property.name,
@@ -145,19 +146,72 @@ export function buildBiReportModel(
     .sort((a, b) => a.date.localeCompare(b.date))
     .slice(0, 5);
 
-  // Forecast per month (portfolio + per property)
+  // ----- Forecast v2 (revenue, layered: historical > pickup > rampup) -----
+  const biForecast = getBiReportConfig()?.forecast ?? { rampMonths: 12, steadyOccupancyPct: 0.6 };
+  const adrs = collected.map((c) => c.kpi.adr).filter((a) => a > 0);
+  const portfolioAvgAdr = adrs.length ? adrs.reduce((s, a) => s + a, 0) / adrs.length : 100;
   const months = Array.from({ length: horizonMonths }, (_, i) => addMonths(now, i));
 
-  const portfolioForecast = months.map((m) =>
-    forecastMonthAcross(collected.map((c) => c.listingId), m, now, curve, sumSampleN(collected))
-  );
+  // per property: a RevenueForecast per month
+  const perProperty = collected.map((c) => {
+    const listingStart = c.listingStart ? new Date(c.listingStart) : null;
+    const rampMonths = c.property.static?.rampMonths ?? biForecast.rampMonths;
+    const steadyOccupancyPct = c.property.static?.steadyOccupancyPct ?? biForecast.steadyOccupancyPct;
+    const adr = c.kpi.adr > 0 ? c.kpi.adr : c.property.static?.basePrice ?? portfolioAvgAdr;
 
-  const propertyForecasts: PropertyForecast[] = collected.map((c) => ({
+    const monthsFc: RevenueForecast[] = months.map((m) => {
+      const mStart = startOfMonth(m);
+      const committed = getRevenueForCheckInMonth(c.listingId, format(mStart, 'yyyy-MM'));
+      const priorStart = startOfMonth(addMonths(mStart, -12));
+      const active = listingStart !== null && listingStart.getTime() <= priorStart.getTime();
+      const priorYearRevenue = active ? getRevenueForCheckInMonth(c.listingId, format(priorStart, 'yyyy-MM')) : null;
+      const priorYearsAvailable =
+        priorYearRevenue !== null ? Math.max(1, mStart.getFullYear() - (listingStart as Date).getFullYear()) : 0;
+      const monthsSinceStart = listingStart ? differenceInCalendarMonths(mStart, listingStart) : null;
+      return forecastMonthRevenue({
+        monthLabel: format(m, 'MMM'),
+        committedRevenue: committed,
+        daysUntilMidpoint: daysUntilMidpoint(m, now),
+        daysInMonth: getDaysInMonth(m),
+        monthsSinceStart,
+        priorYearRevenue,
+        priorYearsAvailable,
+        growth: 1.0, // YoY growth not yet computable (<13 months history); flat baseline
+        adr,
+        rampMonths,
+        steadyOccupancyPct,
+        curve,
+        propertySampleN: c.sampleN,
+      });
+    });
+    return { c, monthsFc };
+  });
+
+  const propertyForecasts: PropertyForecast[] = perProperty.map(({ c, monthsFc }) => ({
     slug: c.property.slug,
     name: c.property.name,
-    lowData: c.sampleN < 15 || curve.n < 20,
-    months: months.map((m) => forecastMonthForListing(c.listingId, m, now, curve, c.sampleN)),
+    committedTotal: Math.round(monthsFc.reduce((s, m) => s + m.committedRevenue, 0)),
+    expectedTotal: Math.round(monthsFc.reduce((s, m) => s + m.expectedRevenue, 0)),
+    highTotal: Math.round(monthsFc.reduce((s, m) => s + m.highRevenue, 0)),
+    confidence: worstConfidence(monthsFc),
+    methodLabel: dominantMethodLabel(monthsFc),
+    months: monthsFc,
   }));
+
+  const portfolioForecast: RevenueForecast[] = months.map((m, idx) => {
+    const col = perProperty.map((pp) => pp.monthsFc[idx]);
+    const expected = col.reduce((s, x) => s + x.expectedRevenue, 0);
+    return {
+      monthLabel: format(m, 'MMM'),
+      committedRevenue: Math.round(col.reduce((s, x) => s + x.committedRevenue, 0)),
+      expectedRevenue: Math.round(expected),
+      lowRevenue: Math.round(col.reduce((s, x) => s + x.lowRevenue, 0)),
+      highRevenue: Math.round(col.reduce((s, x) => s + x.highRevenue, 0)),
+      confidence: portfolioMonthConfidence(col),
+      method: dominantMethod(col),
+      isOpen: expected < 1,
+    };
+  });
 
   const committedRevenueHorizon = portfolioForecast.reduce((s, m) => s + m.committedRevenue, 0);
   const avgOccupancy6wk = collected.length
@@ -182,21 +236,9 @@ export function buildBiReportModel(
   };
 }
 
-function sumSampleN(collected: PropertyData[]): number {
-  return collected.reduce((s, c) => s + c.sampleN, 0);
-}
-
 function getAvailabilitySafe(listingId: string, start: string, end: string) {
   // getAvailability returns full Availability rows; the grid only needs date+status.
   return getAvailability(listingId, start, end).map((a) => ({ date: a.date, status: a.status }));
-}
-
-function monthOccAndRevenue(listingId: string, monthDate: Date) {
-  const start = ymd(startOfMonth(monthDate));
-  const endExclusive = ymd(addDays(endOfMonth(monthDate), 1));
-  const counts = getOccupancyCounts(listingId, start, endExclusive);
-  const revenue = getRevenueForCheckInMonth(listingId, format(monthDate, 'yyyy-MM'));
-  return { counts, revenue };
 }
 
 function daysUntilMidpoint(monthDate: Date, now: Date): number {
@@ -204,50 +246,44 @@ function daysUntilMidpoint(monthDate: Date, now: Date): number {
   return Math.max(0, differenceInCalendarDays(mid, now));
 }
 
-function forecastMonthForListing(
-  listingId: string,
-  monthDate: Date,
-  now: Date,
-  curve: ReturnType<typeof buildLeadTimeCurve>,
-  sampleN: number
-): MonthForecast {
-  const { counts, revenue } = monthOccAndRevenue(listingId, monthDate);
-  return forecastMonth({
-    monthLabel: format(monthDate, 'MMM'),
-    otbNights: counts.occupiedDays,
-    capacityNights: counts.totalDays,
-    otbRevenue: revenue,
-    daysUntilMidpoint: daysUntilMidpoint(monthDate, now),
-    curve,
-    propertySampleN: sampleN,
-  });
+const METHOD_LABELS: Record<RevenueForecast['method'], string> = {
+  historical: 'Vorjahr',
+  pickup: 'Buchungsvorlauf',
+  rampup: 'Ramp-up (Anlauf)',
+};
+const CONF_RANK: Record<ForecastConfidence, number> = { niedrig: 0, mittel: 1, hoch: 2 };
+
+function worstConfidence(months: RevenueForecast[]): ForecastConfidence {
+  return months.reduce<ForecastConfidence>(
+    (worst, m) => (CONF_RANK[m.confidence] < CONF_RANK[worst] ? m.confidence : worst),
+    'hoch'
+  );
 }
 
-function forecastMonthAcross(
-  listingIds: string[],
-  monthDate: Date,
-  now: Date,
-  curve: ReturnType<typeof buildLeadTimeCurve>,
-  sampleN: number
-): MonthForecast {
-  let otbNights = 0;
-  let capacityNights = 0;
-  let otbRevenue = 0;
-  for (const id of listingIds) {
-    const { counts, revenue } = monthOccAndRevenue(id, monthDate);
-    otbNights += counts.occupiedDays;
-    capacityNights += counts.totalDays;
-    otbRevenue += revenue;
-  }
-  return forecastMonth({
-    monthLabel: format(monthDate, 'MMM'),
-    otbNights,
-    capacityNights,
-    otbRevenue,
-    daysUntilMidpoint: daysUntilMidpoint(monthDate, now),
-    curve,
-    propertySampleN: sampleN,
-  });
+function dominantMethod(months: RevenueForecast[]): RevenueForecast['method'] {
+  const byMethod = new Map<RevenueForecast['method'], number>();
+  for (const m of months) byMethod.set(m.method, (byMethod.get(m.method) ?? 0) + m.expectedRevenue);
+  let best: RevenueForecast['method'] = 'pickup';
+  let bestVal = -1;
+  for (const [method, val] of byMethod) if (val > bestVal) { best = method; bestVal = val; }
+  return best;
+}
+
+function dominantMethodLabel(months: RevenueForecast[]): string {
+  const dom = dominantMethod(months);
+  const label = METHOD_LABELS[dom];
+  return months.every((m) => m.method === dom) ? label : `überw. ${label}`;
+}
+
+function portfolioMonthConfidence(col: RevenueForecast[]): ForecastConfidence {
+  const total = col.reduce((s, x) => s + x.expectedRevenue, 0);
+  if (total <= 0) return 'niedrig';
+  const hochShare = col.filter((x) => x.confidence === 'hoch').reduce((s, x) => s + x.expectedRevenue, 0) / total;
+  const hochMittelShare =
+    col.filter((x) => x.confidence === 'hoch' || x.confidence === 'mittel').reduce((s, x) => s + x.expectedRevenue, 0) / total;
+  if (hochShare >= 0.6) return 'hoch';
+  if (hochMittelShare >= 0.6) return 'mittel';
+  return 'niedrig';
 }
 
 /** Send the consolidated BI report email. */

@@ -39,11 +39,19 @@ describe('buildBiReportModel', () => {
     expect(model.kpis).toHaveLength(2);
     expect(model.calendar.rows).toHaveLength(2);
     expect(model.calendar.dayCount).toBe(42);
-    expect(model.portfolio.bookingsYtd).toBe(40); // 20 + 20 current-year bookings
-    expect(model.arrivals.length).toBeGreaterThan(0);
+    expect(model.portfolio.bookingsYtd).toBe(40);
     expect(model.arrivals[0].guestName).toBe('Max M.');
     expect(model.portfolioForecast).toHaveLength(6);
     expect(model.propertyForecasts).toHaveLength(2);
+    // new forecast shape
+    const pf = model.propertyForecasts[0];
+    expect(pf).toHaveProperty('committedTotal');
+    expect(pf).toHaveProperty('expectedTotal');
+    expect(pf).toHaveProperty('methodLabel');
+    expect(typeof pf.methodLabel).toBe('string');
+    expect(['hoch', 'mittel', 'niedrig']).toContain(pf.confidence);
+    expect(model.portfolioForecast[0]).toHaveProperty('expectedRevenue');
+    expect(['historical', 'pickup', 'rampup']).toContain(model.portfolioForecast[0].method);
   });
 
   it('isolates a failing property without throwing', () => {
