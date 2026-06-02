@@ -56,4 +56,4 @@ temp/
 *.tmp
 
 # Local Claude Code config (deployment secrets)
-.claude/deploy.local
+.claude/deploy.local.superpowers/
