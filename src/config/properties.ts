@@ -46,6 +46,18 @@ export interface WeeklyReportConfig {
 }
 
 /**
+ * Portfolio BI report configuration (top-level, not per-property).
+ */
+export interface BiReportConfig {
+  enabled: boolean;
+  recipients: string[];
+  day: number;   // 0 = Sunday, 1 = Monday, ...
+  hour: number;  // 0-23
+  timezone: string;
+  forecastHorizonMonths: number;
+}
+
+/**
  * Static config for hostex providers — fills fields Hostex API doesn't expose.
  */
 export interface PropertyStaticConfig {
@@ -129,6 +141,24 @@ const weeklyReportConfigSchema = z.object({
   hour: z.number().int().min(0).max(23),
 });
 
+const biReportConfigSchema = z.object({
+  enabled: z.boolean(),
+  recipients: z.array(z.string().email()),
+  day: z.number().int().min(0).max(6),
+  hour: z.number().int().min(0).max(23),
+  timezone: z.string().default('Europe/Berlin'),
+  forecastHorizonMonths: z.number().int().min(1).max(12).default(6),
+});
+
+/**
+ * Validate a raw biReport block. Returns undefined when the block is absent.
+ * Exported for unit testing.
+ */
+export function parseBiReportConfig(raw: unknown): BiReportConfig | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  return biReportConfigSchema.parse(raw);
+}
+
 const taxConfigSchema = z.object({
   type: z.string(),
   amount: z.number(),
@@ -199,12 +229,14 @@ const propertyConfigSchema = z.object({
 
 const propertiesFileSchema = z.object({
   properties: z.array(propertyConfigSchema).min(1, 'At least one property is required'),
+  biReport: biReportConfigSchema.optional(),
 });
 
 /**
  * Cached properties configuration
  */
 let cachedProperties: PropertyConfig[] | null = null;
+let cachedBiReport: BiReportConfig | null | undefined = undefined; // undefined = not loaded yet
 
 /**
  * Get the path to the properties config file
@@ -247,6 +279,7 @@ export function loadPropertiesConfig(): PropertyConfig[] {
     const validatedConfig = propertiesFileSchema.parse(rawConfig);
 
     cachedProperties = validatedConfig.properties;
+    cachedBiReport = validatedConfig.biReport ?? null;
 
     logger.info(
       {
@@ -350,6 +383,14 @@ export function getDefaultProperty(): PropertyConfig | undefined {
 }
 
 /**
+ * Get the portfolio BI report config, or undefined if not configured.
+ */
+export function getBiReportConfig(): BiReportConfig | undefined {
+  loadPropertiesConfig();
+  return cachedBiReport ?? undefined;
+}
+
+/**
  * Get property slugs as an array
  */
 export function getPropertySlugs(): string[] {
@@ -370,4 +411,5 @@ export function isMultiPropertyMode(): boolean {
  */
 export function clearPropertiesCache(): void {
   cachedProperties = null;
+  cachedBiReport = undefined;
 }
