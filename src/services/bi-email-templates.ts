@@ -19,6 +19,15 @@ function pct(n: number): string {
   return `${Math.round(n)}%`;
 }
 
+/** Escape data-derived strings (guest names, sources, property names) for HTML. */
+function h(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 function deltaCell(changePct: number): string {
   const color = changePct >= 0 ? '#3d8b5f' : '#c0573f';
   const sign = changePct >= 0 ? '+' : '−';
@@ -34,7 +43,7 @@ function renderCalendar(cal: GanttGrid): string {
       const cells = row.days
         .map((d) => `<td style="width:13px;height:18px;border:1px solid #fff;background:${COLORS[d]}"></td>`)
         .join('');
-      return `<tr><td style="font:600 11px sans-serif;padding:3px 8px 3px 0;white-space:nowrap">${row.name}</td>${cells}</tr>`;
+      return `<tr><td style="font:600 11px sans-serif;padding:3px 8px 3px 0;white-space:nowrap">${h(row.name)}</td>${cells}</tr>`;
     })
     .join('');
   return `
@@ -58,10 +67,10 @@ function renderArrivals(arrivals: UpcomingArrival[]): string {
         : '';
       return `<tr>
         <td style="padding:5px 10px;font:600 12px sans-serif;border-bottom:1px solid #eee">${a.date}</td>
-        <td style="padding:5px 10px;font:12px sans-serif;border-bottom:1px solid #eee">${a.propertyName}${turn}</td>
-        <td style="padding:5px 10px;font:12px sans-serif;border-bottom:1px solid #eee">${a.guestName}</td>
+        <td style="padding:5px 10px;font:12px sans-serif;border-bottom:1px solid #eee">${h(a.propertyName)}${turn}</td>
+        <td style="padding:5px 10px;font:12px sans-serif;border-bottom:1px solid #eee">${h(a.guestName)}</td>
         <td style="padding:5px 10px;font:12px sans-serif;border-bottom:1px solid #eee;text-align:right">${a.nights} N · ${a.guests} P</td>
-        <td style="padding:5px 10px;font:12px sans-serif;border-bottom:1px solid #eee">${a.source}</td>
+        <td style="padding:5px 10px;font:12px sans-serif;border-bottom:1px solid #eee">${h(a.source)}</td>
       </tr>`;
     })
     .join('');
@@ -76,7 +85,7 @@ function renderKpiTable(kpis: PropertyKpi[], portfolio: BiReportModel['portfolio
   const body = kpis
     .map(
       (k) => `<tr>
-        ${td(k.name, 'left')}${td(pct(k.occupancy6wk))}${td(pct(k.occupancy30d))}
+        ${td(h(k.name), 'left')}${td(pct(k.occupancy6wk))}${td(pct(k.occupancy30d))}
         ${td(eur(k.revenueYtd))}${td(eur(k.revenueMonth))}${td(deltaCell(k.revenueChangePct))}
         ${td(String(k.bookingsYtd))}${td(eur(k.adr))}
       </tr>`
@@ -119,7 +128,7 @@ function renderPropertyForecasts(forecasts: BiReportModel['propertyForecasts']):
         ? ' <span style="font:600 9px sans-serif;color:#b4543a">(dünne Datenbasis)</span>'
         : '';
       return `<div style="margin-top:14px">
-        <div style="font:600 12px sans-serif;margin-bottom:4px">${f.name}${flag}</div>
+        <div style="font:600 12px sans-serif;margin-bottom:4px">${h(f.name)}${flag}</div>
         ${renderForecastBars(f.months)}
       </div>`;
     })

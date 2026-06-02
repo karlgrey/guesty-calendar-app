@@ -22,6 +22,7 @@ import {
 } from '../repositories/availability-repository.js';
 import {
   getReservationsByPeriod,
+  getReservationsInRange,
   getLeadTimeSamples,
   getRevenueForCheckInMonth,
 } from '../repositories/reservation-repository.js';
@@ -39,6 +40,9 @@ interface PropertyData {
   property: PropertyConfig;
   listingId: string;
   futureReservations: ReturnType<typeof getReservationsByPeriod>;
+  // Reservations overlapping the 42-day calendar window — includes stays that
+  // checked in BEFORE today, so same-day turnovers on `today` are detected.
+  windowReservations: ReturnType<typeof getReservationsInRange>;
   sampleN: number;
   kpi: PropertyKpi;
 }
@@ -78,12 +82,18 @@ export function buildBiReportModel(
       const changePct = revPrev > 0 ? Math.round(((revMonth - revPrev) / revPrev) * 100) : revMonth > 0 ? 100 : 0;
       const adr = currentYear.totalBookedDays > 0 ? currentYear.totalRevenue / currentYear.totalBookedDays : 0;
 
-      const futureReservations = getReservationsByPeriod(listingId, 365, 'future');
+      // 'future' ignores the days arg (no upper bound) — returns all upcoming
+      // check-ins, used for the next-5 arrivals list.
+      const futureReservations = getReservationsByPeriod(listingId, 0, 'future');
+      // Stays overlapping the calendar window (incl. in-progress) for the Gantt
+      // and same-day turnover detection.
+      const windowReservations = getReservationsInRange(listingId, today, in6Weeks);
 
       collected.push({
         property,
         listingId,
         futureReservations,
+        windowReservations,
         sampleN: allTime.totalBookings,
         kpi: {
           slug: property.slug,
@@ -111,14 +121,16 @@ export function buildBiReportModel(
       slug: c.property.slug,
       name: c.property.name,
       availability: getAvailabilitySafe(c.listingId, today, in6Weeks),
-      reservations: c.futureReservations.map((r) => ({ check_in: r.check_in, check_out: r.check_out })),
+      reservations: c.windowReservations.map((r) => ({ check_in: r.check_in, check_out: r.check_out })),
     })),
   });
 
   // Next 5 arrivals portfolio-wide
   const arrivals: UpcomingArrival[] = collected
     .flatMap((c) => {
-      const checkOuts = new Set(c.futureReservations.map((r) => r.check_out.slice(0, 10)));
+      // Checkouts from window stays (incl. in-progress) so an arrival on a day
+      // that also has a departure is flagged as a turnover.
+      const checkOuts = new Set(c.windowReservations.map((r) => r.check_out.slice(0, 10)));
       return c.futureReservations.map((r) => ({
         date: r.check_in.slice(0, 10),
         propertySlug: c.property.slug,

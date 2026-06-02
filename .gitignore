@@ -56,4 +56,7 @@ temp/
 *.tmp
 
 # Local Claude Code config (deployment secrets)
-.claude/deploy.local.superpowers/
+.claude/deploy.local
+
+# Brainstorming visual-companion scratch
+.superpowers/
