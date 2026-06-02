@@ -55,6 +55,7 @@ export interface BiReportConfig {
   hour: number;  // 0-23
   timezone: string;
   forecastHorizonMonths: number;
+  forecast: { rampMonths: number; steadyOccupancyPct: number };
 }
 
 /**
@@ -86,6 +87,9 @@ export interface PropertyStaticConfig {
   // Income tax applies to (total_price − occupancy_tax).
   coHostShareRate?: number;
   incomeTaxRate?: number;
+  // Per-property overrides for forecast ramp-up defaults.
+  steadyOccupancyPct?: number;
+  rampMonths?: number;
 }
 
 /**
@@ -148,6 +152,12 @@ const biReportConfigSchema = z.object({
   hour: z.number().int().min(0).max(23),
   timezone: z.string().default('Europe/Berlin'),
   forecastHorizonMonths: z.number().int().min(1).max(12).default(6),
+  forecast: z
+    .object({
+      rampMonths: z.number().int().min(1).default(12),
+      steadyOccupancyPct: z.number().min(0).max(1).default(0.6),
+    })
+    .default({ rampMonths: 12, steadyOccupancyPct: 0.6 }),
 });
 
 /**
@@ -184,6 +194,8 @@ const propertyStaticConfigSchema = z.object({
   maxNights: z.number().int().min(1).nullable().optional(),
   coHostShareRate: z.number().min(0).max(1).optional(),
   incomeTaxRate: z.number().min(0).max(1).optional(),
+  steadyOccupancyPct: z.number().min(0).max(1).optional(),
+  rampMonths: z.number().int().min(1).optional(),
 });
 
 const propertyConfigSchema = z.object({
