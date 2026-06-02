@@ -110,6 +110,23 @@ Per-property config in `properties.json`: `weeklyReport: { enabled, recipients, 
 - Revenue uses `host_payout` (net after platform fees)
 - Sent via Resend API; sender name configured via `EMAIL_FROM_NAME` env var
 
+### Portfolio BI Report (alle Properties)
+
+Eine wöchentliche, konsolidierte Mail über alle Properties — ergänzt die per-Property-Weekly-Reports.
+Konfiguration als **Top-Level-Block** `biReport` in `data/properties.json` (Geschwister von `properties`):
+`{ enabled, recipients[], day (0-6), hour (0-23), timezone, forecastHorizonMonths }`.
+
+- Scheduler prüft stündlich (timezone-aware), sendet einmal pro Slot (`shouldSendBiReport()`).
+- Inhalt: Portfolio-Summenband · 6-Wochen-Belegungskalender (belegt/frei/Turnover) · nächste 5
+  Anreisen & Turnovers · KPI-Tabelle pro Property (Belegung 6Wo/30Tg, Umsatz YTD/Monat/Δ, Buchungen, ADR) ·
+  6-Monats-Forecast (OTB + portfolioweit gepoolter Pickup, pro Property mit „dünne Datenbasis"-Flag).
+- Forecast: `src/services/forecast.ts` (Lead-Time-Kurve aus `reservations.reserved_at`), Kalender:
+  `src/services/bi-calendar.ts`, Orchestrierung: `src/jobs/bi-email.ts`, Renderer: `src/services/bi-email-templates.ts`.
+- Manueller Test: `npx tsx src/scripts/test-bi-email.ts` (respektiert `DEV_EMAIL_OVERRIDE`).
+- **Deploy-Hinweis:** Prod-`properties.json` hat divergierende Recipient-Edits → Deploy muss `git stash`/`pop`
+  um den `git pull`. Der neue `biReport`-Top-Level-Key ist additiv.
+- Spec: `docs/superpowers/specs/2026-06-02-portfolio-bi-email-design.md`
+
 ### Google Analytics 4
 Optional per property. Configured in `properties.json` `ga4` field (or omit for disabled).
 - Syncs daily at configured hour via `src/jobs/sync-analytics.ts`

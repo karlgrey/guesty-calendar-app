@@ -168,5 +168,13 @@
         "incomeTaxRate": 0.21
       }
     }
-  ]
+  ],
+  "biReport": {
+    "enabled": true,
+    "recipients": ["mic@dynamicdudes.com"],
+    "day": 1,
+    "hour": 6,
+    "timezone": "Europe/Berlin",
+    "forecastHorizonMonths": 6
+  }
 }
