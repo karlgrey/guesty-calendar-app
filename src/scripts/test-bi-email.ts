@@ -5,9 +5,11 @@
  * Usage: npx tsx src/scripts/test-bi-email.ts
  */
 import { sendBiReportEmail } from '../jobs/bi-email.js';
+import { initDatabase } from '../db/index.js';
 import logger from '../utils/logger.js';
 
 async function main() {
+  initDatabase();
   logger.info('📊 Sending test portfolio BI report...');
   const result = await sendBiReportEmail();
   if (result.sent) {
