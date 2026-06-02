@@ -39,6 +39,26 @@ describe('generateBiReportEmail', () => {
     expect(text).toContain('Farmhouse');
   });
 
+  it('uses the AirBnB Portfolio Report title and lists property names', () => {
+    const { html } = generateBiReportEmail(model);
+    expect(html).toContain('AirBnB Portfolio Report');
+    expect(html).toContain('1 Properties: Farmhouse'); // enumerates names
+  });
+
+  it('labels yearly revenue with the actual year (not "YTD") and explains it', () => {
+    const { html } = generateBiReportEmail(model); // generatedAt 2026 -> "Umsatz 2026"
+    expect(html).toContain('Umsatz 2026');
+    expect(html).not.toContain('Umsatz YTD');
+    expect(html.toLowerCase()).toContain('kalenderjahr');
+  });
+
+  it('renders arrival dates in German DD.MM.YYYY format', () => {
+    const { html, text } = generateBiReportEmail(model); // arrival 2026-06-03
+    expect(html).toContain('03.06.2026');
+    expect(text).toContain('03.06.2026');
+    expect(html).not.toContain('2026-06-03');
+  });
+
   it('renders a low-data marker when a property forecast is flagged', () => {
     const flagged: BiReportModel = {
       ...model,

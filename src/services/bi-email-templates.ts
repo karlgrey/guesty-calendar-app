@@ -28,6 +28,12 @@ function h(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
+/** Format an ISO date (YYYY-MM-DD) as German DD.MM.YYYY. */
+function deDate(iso: string): string {
+  const [y, m, d] = iso.slice(0, 10).split('-');
+  return `${d}.${m}.${y}`;
+}
+
 function deltaCell(changePct: number): string {
   const color = changePct >= 0 ? '#3d8b5f' : '#c0573f';
   const sign = changePct >= 0 ? '+' : '−';
@@ -66,7 +72,7 @@ function renderArrivals(arrivals: UpcomingArrival[]): string {
         ? ' <span style="background:#3d5a80;color:#fff;font:600 9px sans-serif;padding:1px 5px;border-radius:8px">Turnover</span>'
         : '';
       return `<tr>
-        <td style="padding:5px 10px;font:600 12px sans-serif;border-bottom:1px solid #eee">${a.date}</td>
+        <td style="padding:5px 10px;font:600 12px sans-serif;border-bottom:1px solid #eee">${deDate(a.date)}</td>
         <td style="padding:5px 10px;font:12px sans-serif;border-bottom:1px solid #eee">${h(a.propertyName)}${turn}</td>
         <td style="padding:5px 10px;font:12px sans-serif;border-bottom:1px solid #eee">${h(a.guestName)}</td>
         <td style="padding:5px 10px;font:12px sans-serif;border-bottom:1px solid #eee;text-align:right">${a.nights} N · ${a.guests} P</td>
@@ -77,7 +83,7 @@ function renderArrivals(arrivals: UpcomingArrival[]): string {
   return `<table style="border-collapse:collapse;width:100%"><tbody>${rows}</tbody></table>`;
 }
 
-function renderKpiTable(kpis: PropertyKpi[], portfolio: BiReportModel['portfolio']): string {
+function renderKpiTable(kpis: PropertyKpi[], portfolio: BiReportModel['portfolio'], year: number): string {
   const th = (t: string) =>
     `<th style="font:600 11px sans-serif;color:#888;padding:6px 8px;border-bottom:2px solid #ddd;text-align:right">${t}</th>`;
   const td = (t: string, align = 'right') =>
@@ -97,7 +103,7 @@ function renderKpiTable(kpis: PropertyKpi[], portfolio: BiReportModel['portfolio
     </tr>`;
   return `<table style="border-collapse:collapse;width:100%">
       <tr><th style="text-align:left;font:600 11px sans-serif;color:#888;padding:6px 8px;border-bottom:2px solid #ddd">Property</th>
-        ${th('Bel. 6Wo')}${th('Bel. 30Tg')}${th('Umsatz YTD')}${th('Umsatz Monat')}${th('Δ Vormon.')}${th('Buch. YTD')}${th('ADR')}</tr>
+        ${th('Bel. 6Wo')}${th('Bel. 30Tg')}${th(`Umsatz ${year}`)}${th('Umsatz Monat')}${th('Δ Vormon.')}${th(`Buch. ${year}`)}${th('ADR')}</tr>
       ${body}${total}
     </table>`;
 }
@@ -136,6 +142,8 @@ function renderPropertyForecasts(forecasts: BiReportModel['propertyForecasts']):
 }
 
 export function generateBiReportEmail(model: BiReportModel): { html: string; text: string } {
+  const year = new Date(model.generatedAt).getFullYear();
+  const propertyNames = model.kpis.map((k) => h(k.name)).join(', ');
   const stat = (value: string, label: string) =>
     `<td style="background:#f7f8f6;padding:12px;text-align:center">
       <div style="font:700 16px sans-serif">${value}</div>
@@ -146,15 +154,18 @@ export function generateBiReportEmail(model: BiReportModel): { html: string; tex
     <body style="margin:0;background:#fff">
     <div style="max-width:680px;margin:0 auto;border:1px solid #e2e4df;border-radius:10px;overflow:hidden">
       <div style="background:#2f3a33;color:#fff;padding:16px 18px">
-        <div style="font:700 16px sans-serif">📊 Portfolio-Report · ${model.weekLabel}</div>
-        <div style="font:11px sans-serif;opacity:.7;margin-top:2px">${model.kpis.length} Properties</div>
+        <div style="font:700 16px sans-serif">📊 AirBnB Portfolio Report · ${model.weekLabel}</div>
+        <div style="font:11px sans-serif;opacity:.7;margin-top:2px">${model.kpis.length} Properties: ${propertyNames}</div>
       </div>
       <table style="border-collapse:separate;border-spacing:1px;width:100%"><tr>
-        ${stat(eur(model.portfolio.revenueYtd), 'Umsatz YTD')}
+        ${stat(eur(model.portfolio.revenueYtd), `Umsatz ${year}`)}
         ${stat(pct(model.portfolio.avgOccupancy6wk), 'Ø Belegung 6 Wo')}
-        ${stat(String(model.portfolio.bookingsYtd), 'Buchungen YTD')}
+        ${stat(String(model.portfolio.bookingsYtd), `Buchungen ${year}`)}
         ${stat(eur(model.portfolio.committedRevenueHorizon), 'fest gebucht')}
       </tr></table>
+      <div style="padding:8px 18px 0;font:10px sans-serif;color:#999">
+        „Umsatz ${year}" = gesamtes Kalenderjahr ${year} inkl. bereits gebuchter zukünftiger Aufenthalte (nicht nur bis heute). „fest gebucht" = bestätigter Umsatz der kommenden Monate.
+      </div>
       <div style="padding:16px 18px">
         <h3 style="font:700 13px sans-serif;margin:0 0 10px">① Übersichtskalender · 6 Wochen</h3>
         ${renderCalendar(model.calendar)}
@@ -165,7 +176,7 @@ export function generateBiReportEmail(model: BiReportModel): { html: string; tex
       </div>
       <div style="padding:0 18px 16px">
         <h3 style="font:700 13px sans-serif;margin:0 0 10px">③ Kennzahlen pro Property</h3>
-        ${renderKpiTable(model.kpis, model.portfolio)}
+        ${renderKpiTable(model.kpis, model.portfolio, year)}
       </div>
       <div style="padding:0 18px 18px">
         <h3 style="font:700 13px sans-serif;margin:0 0 10px">④ Forecast · 6 Monate</h3>
@@ -180,17 +191,18 @@ export function generateBiReportEmail(model: BiReportModel): { html: string; tex
     </body></html>`;
 
   const textLines = [
-    `Portfolio-Report · ${model.weekLabel}`,
-    `Umsatz YTD: ${eur(model.portfolio.revenueYtd)} · Ø Belegung 6Wo: ${pct(model.portfolio.avgOccupancy6wk)} · Buchungen YTD: ${model.portfolio.bookingsYtd} · fest gebucht: ${eur(model.portfolio.committedRevenueHorizon)}`,
+    `AirBnB Portfolio Report · ${model.weekLabel}`,
+    `${model.kpis.length} Properties: ${model.kpis.map((k) => k.name).join(', ')}`,
+    `Umsatz ${year} (ganzes Kalenderjahr inkl. gebuchter Zukunft): ${eur(model.portfolio.revenueYtd)} · Ø Belegung 6Wo: ${pct(model.portfolio.avgOccupancy6wk)} · Buchungen ${year}: ${model.portfolio.bookingsYtd} · fest gebucht: ${eur(model.portfolio.committedRevenueHorizon)}`,
     '',
     'Kennzahlen:',
     ...model.kpis.map(
-      (k) => `  ${k.name}: Bel ${pct(k.occupancy6wk)}/${pct(k.occupancy30d)}, Umsatz YTD ${eur(k.revenueYtd)} (Monat ${eur(k.revenueMonth)}, ${k.revenueChangePct >= 0 ? '+' : ''}${k.revenueChangePct}%), Buchungen ${k.bookingsYtd}, ADR ${eur(k.adr)}`
+      (k) => `  ${k.name}: Bel ${pct(k.occupancy6wk)}/${pct(k.occupancy30d)}, Umsatz ${year} ${eur(k.revenueYtd)} (Monat ${eur(k.revenueMonth)}, ${k.revenueChangePct >= 0 ? '+' : ''}${k.revenueChangePct}%), Buchungen ${k.bookingsYtd}, ADR ${eur(k.adr)}`
     ),
     '',
     'Nächste Anreisen:',
     ...model.arrivals.map(
-      (a) => `  ${a.date} ${a.propertyName} — ${a.guestName} (${a.nights}N/${a.guests}P, ${a.source})${a.isTurnover ? ' [Turnover]' : ''}`
+      (a) => `  ${deDate(a.date)} ${a.propertyName} — ${a.guestName} (${a.nights}N/${a.guests}P, ${a.source})${a.isTurnover ? ' [Turnover]' : ''}`
     ),
     '',
     'Forecast (Portfolio):',

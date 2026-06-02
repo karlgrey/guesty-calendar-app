@@ -269,7 +269,7 @@ export async function sendBiReportEmail(): Promise<{ success: boolean; sent: boo
 
     const sent = await sendEmail({
       to: biConfig.recipients,
-      subject: `📊 Portfolio-Report · ${model.weekLabel}`,
+      subject: `📊 AirBnB Portfolio Report · ${model.weekLabel}`,
       html,
       text,
     });
