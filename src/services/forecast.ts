@@ -72,10 +72,12 @@ export function forecastMonthRevenue(input: RevenueForecastInput): RevenueForeca
 
   const share = shareOnBooksAt(curve, Math.max(0, daysUntilMidpoint));
 
-  // 1. base from best available method
+  // 1. base from best available method.
+  // A zero prior-year month carries no signal (off-season / no bookings) — fall
+  // back to pickup rather than labelling it "Vorjahr" with a collapsed range.
   let method: ForecastMethod;
   let base: number;
-  if (priorYearRevenue !== null) {
+  if (priorYearRevenue !== null && priorYearRevenue > 0) {
     method = 'historical';
     base = priorYearRevenue * growth;
   } else {

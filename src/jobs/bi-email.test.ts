@@ -7,7 +7,6 @@ vi.mock('../repositories/availability-repository.js', () => ({
   getAllTimeStats: vi.fn(() => ({ totalBookings: 40, totalRevenue: 30000, totalBookedDays: 200, startDate: '2025-07-01', endDate: '2026-06-02' })),
   getCurrentYearStats: vi.fn(() => ({ year: 2026, totalBookings: 20, totalRevenue: 15000, totalBookedDays: 100 })),
   getOccupancyRate: vi.fn(() => 70),
-  getOccupancyCounts: vi.fn(() => ({ occupiedDays: 20, totalDays: 30 })),
   getAvailability: vi.fn(() => []),
 }));
 vi.mock('../repositories/reservation-repository.js', () => ({

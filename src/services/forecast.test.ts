@@ -52,6 +52,11 @@ describe('forecastMonthRevenue — method selection', () => {
     expect(f.highRevenue).toBe(8960);
   });
 
+  it('zero prior-year revenue is no signal -> falls back to pickup, not historical', () => {
+    const f = forecastMonthRevenue(base({ priorYearRevenue: 0, priorYearsAvailable: 1, committedRevenue: 2000, daysUntilMidpoint: 0 }));
+    expect(f.method).toBe('pickup');
+  });
+
   it('pickup fallback: committed / share when no prior year', () => {
     // near month, rich curve -> mittel confidence
     const f = forecastMonthRevenue(base({ priorYearRevenue: null, committedRevenue: 4000, daysUntilMidpoint: 0 }));
