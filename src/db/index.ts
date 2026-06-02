@@ -58,6 +58,15 @@ export function getDatabase(): Database.Database {
   return db;
 }
 
+/** Test seam: inject an in-memory DB. */
+export function setDatabase(testDb: import('better-sqlite3').Database): void {
+  db = testDb;
+}
+/** Test seam: clear the injected DB handle. */
+export function resetDatabase(): void {
+  db = null;
+}
+
 /**
  * Close database connection
  */

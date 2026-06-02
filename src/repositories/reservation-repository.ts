@@ -437,3 +437,39 @@ export function deleteStaleReservationsInRange(
     );
   }
 }
+
+/**
+ * Lead-time samples for the pickup forecast, pooled across ALL listings.
+ * Only rows with a real booking date and a future-relative check_in count.
+ */
+export function getLeadTimeSamples(): Array<{ checkIn: string; reservedAt: string }> {
+  const db = getDatabase();
+  const rows = db
+    .prepare(
+      `SELECT date(check_in) AS checkIn, reserved_at AS reservedAt
+       FROM reservations
+       WHERE reserved_at IS NOT NULL
+         AND status IN ('confirmed','reserved')
+         AND date(check_in) > date(reserved_at)`
+    )
+    .all() as Array<{ checkIn: string; reservedAt: string }>;
+  return rows;
+}
+
+/**
+ * Net revenue (host_payout) for reservations whose check_in falls in the given
+ * YYYY-MM month. Used for the KPI monthly column and the OTB revenue forecast.
+ */
+export function getRevenueForCheckInMonth(listingId: string, yyyymm: string): number {
+  const db = getDatabase();
+  const row = db
+    .prepare(
+      `SELECT SUM(COALESCE(host_payout, total_price, 0)) AS revenue
+       FROM reservations
+       WHERE listing_id = ?
+         AND status IN ('confirmed','reserved')
+         AND strftime('%Y-%m', date(check_in)) = ?`
+    )
+    .get(listingId, yyyymm) as { revenue: number | null };
+  return row.revenue ?? 0;
+}

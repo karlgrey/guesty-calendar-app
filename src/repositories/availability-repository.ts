@@ -792,3 +792,26 @@ export function getMonthlyBookingComparison(listingId: string): MonthlyBookingCo
     );
   }
 }
+
+/**
+ * Raw occupancy counts for [startDate, endDate) — occupied (booked/blocked) and total.
+ * getOccupancyRate rounds to a percentage; this keeps the night counts the
+ * forecast needs.
+ */
+export function getOccupancyCounts(
+  listingId: string,
+  startDate: string,
+  endDate: string
+): { occupiedDays: number; totalDays: number } {
+  const db = getDatabase();
+  const result = db
+    .prepare(
+      `SELECT
+         COUNT(*) AS total_days,
+         SUM(CASE WHEN status IN ('booked','blocked') THEN 1 ELSE 0 END) AS occupied_days
+       FROM availability
+       WHERE listing_id = ? AND date >= ? AND date < ?`
+    )
+    .get(listingId, startDate, endDate) as { total_days: number; occupied_days: number | null };
+  return { occupiedDays: result.occupied_days ?? 0, totalDays: result.total_days ?? 0 };
+}
