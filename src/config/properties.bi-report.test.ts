@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseBiReportConfig, type BiReportConfig } from './properties.js';
+import { parseBiReportConfig } from './properties.js';
 
 describe('parseBiReportConfig', () => {
   it('parses a full valid block', () => {
