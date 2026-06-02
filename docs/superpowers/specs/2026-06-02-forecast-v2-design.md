@@ -89,7 +89,22 @@ Spiegelt Methode + Datentiefe + Horizont; **steigt automatisch mit mehr Historie
 - Portfolio-Monats-Konfidenz: **hoch**, wenn ≥60% des `expected`-€ aus „hoch"-Properties; **mittel**,
   wenn ≥60% aus „hoch"+„mittel"; sonst **niedrig**.
 - Per-Property-Kompakttabelle: Σ `committed/expected/high` über die 6 Monate je Property + die
-  „schlechteste" (konservativste) Monats-Konfidenz dieser Property als Property-Konfidenz.
+  „schlechteste" (konservativste) Monats-Konfidenz dieser Property als Property-Konfidenz + ein
+  **Methoden-Label** (s. u.), damit pro Property erkennbar ist, **wie** die Prognose zustande kommt.
+
+### Methoden-Label pro Property (Pflicht)
+
+Damit transparent ist, worauf die Zahl je Property beruht, wird die **dominante Methode** über die
+6 Monate ausgewiesen (die Methode mit dem größten Anteil an Σ `expected`):
+
+| `method` | Label |
+|---|---|
+| `historical` | „Vorjahr" |
+| `pickup` | „Buchungsvorlauf" |
+| `rampup` | „Ramp-up (Anlauf)" |
+
+Sind nicht alle 6 Monate dieselbe Methode (z. B. Farmhouse: Jun = Buchungsvorlauf, Jul–Nov =
+Vorjahr), wird dem dominanten Label **„überw."** vorangestellt (z. B. „überw. Vorjahr").
 
 ## Darstellung in der Mail (Variante A)
 
@@ -104,7 +119,9 @@ Spiegelt Methode + Datentiefe + Horizont; **steigt automatisch mit mehr Historie
    - „noch offen"-Monate: eine zusammengefasste, kursive Zelle statt Zahlen, Konfidenz „niedrig".
    - **Σ-Zeile** über 6 Monate (fest/erwartet/opt.).
 
-3. **Per-Property-Kompakttabelle**: `Property | fest | erwartet | opt. | Konfidenz` (Σ 6 Monate).
+3. **Per-Property-Kompakttabelle**: `Property | fest | erwartet | opt. | Methode | Konfidenz`
+   (Σ 6 Monate). Die Spalte **Methode** zeigt das Methoden-Label (z. B. „Vorjahr", „überw. Vorjahr",
+   „Buchungsvorlauf", „Ramp-up (Anlauf)") — so steht pro Property dabei, wie die Daten entstehen.
 
 4. **Legende**: fest gebucht · erwartet · Spanne bis optimistisch.
 
@@ -173,9 +190,9 @@ export function forecastMonthRevenue(input: MonthForecastInput): MonthForecast
   `portfolioForecast: MonthForecast[]` bleibt — die Portfolio-Monats-Konfidenz steckt direkt im
   jeweiligen `MonthForecast.confidence` (keine Parallel-Struktur).
 - `PropertyForecast` bekommt eine Σ-Sicht über den Horizont: `committedTotal`, `expectedTotal`,
-  `highTotal` und `confidence` (konservativste Monats-Konfidenz der Property). Das alte
-  `months: MonthForecast[]` bleibt erhalten (für evtl. spätere Detailtiefe), wird in der Mail
-  aber nur als Σ gezeigt.
+  `highTotal`, `confidence` (konservativste Monats-Konfidenz der Property) und `methodLabel`
+  (dominante Methode + ggf. „überw."-Präfix, s. o.). Das alte `months: MonthForecast[]` bleibt
+  erhalten (für evtl. spätere Detailtiefe), wird in der Mail aber nur als Σ gezeigt.
 
 ### `src/services/bi-email-templates.ts`
 - `renderForecastBars` → `renderForecastTable` (Portfolio) + `renderForecastByProperty` (kompakt).
@@ -197,7 +214,9 @@ export function forecastMonthRevenue(input: MonthForecastInput): MonthForecast
 - `bi-email.test.ts`: Methodenwahl-Routing (Farmhouse-Monat mit/ohne Vorjahr), Portfolio-Σ und
   Portfolio-Konfidenz-Aggregation, Per-Property-Σ.
 - `bi-email-templates.test.ts`: Tabelle statt Balken, Konfidenz-Badges, „noch offen"-Zeile,
-  Methoden-Satz vorhanden.
+  Methoden-Satz vorhanden, **Per-Property-Methoden-Label** sichtbar (z. B. „Vorjahr"/„Ramp-up").
+- `bi-email.test.ts` zusätzlich: dominantes `methodLabel` je Property korrekt (inkl. „überw."-Fall
+  bei gemischten Methoden).
 
 ## Bewusst nicht in v2 (YAGNI)
 - Echte Saisonkurven/Glättung über mehrere Vorjahre (sobald ≥2 Jahre da sind, nur `growth`-Mittelung).
