@@ -3,7 +3,7 @@
  */
 import type { BiReportModel, PropertyKpi, UpcomingArrival } from '../types/bi-report.js';
 import type { DayState, GanttGrid } from './bi-calendar.js';
-import type { MonthForecast } from './forecast.js';
+import type { RevenueForecast } from './forecast.js';
 
 const COLORS: Record<DayState, string> = {
   booked: '#e07a5f',
@@ -108,37 +108,72 @@ function renderKpiTable(kpis: PropertyKpi[], portfolio: BiReportModel['portfolio
     </table>`;
 }
 
-function renderForecastBars(months: MonthForecast[]): string {
-  const bars = months
-    .map((m) => {
-      const committedH = Math.round(m.committedPct * 1.4);
-      const pickupH = Math.round(Math.max(0, m.projectedFinalPct - m.committedPct) * 1.4);
-      return `<td style="vertical-align:bottom;text-align:center;padding:0 4px">
-        <div style="font:9px sans-serif;color:#666">${pct(m.projectedFinalPct)}</div>
-        <div style="display:inline-block;width:40px;background:#e8eae6">
-          <div style="height:${pickupH}px;background:#f2c4b6"></div>
-          <div style="height:${committedH}px;background:#e07a5f"></div>
-        </div>
-        <div style="font:600 11px sans-serif;margin-top:4px">${m.monthLabel}</div>
-        <div style="font:9px sans-serif;color:#999">±${m.bandPct}%</div>
-      </td>`;
-    })
-    .join('');
-  return `<table style="border-collapse:collapse"><tr>${bars}</tr></table>`;
+const CONF_BADGE: Record<RevenueForecast['confidence'], string> = {
+  hoch: 'background:#d8ece0;color:#2f7a52',
+  mittel: 'background:#fbeecc;color:#9a7b1e',
+  niedrig: 'background:#eee;color:#888',
+};
+
+function confBadge(c: RevenueForecast['confidence']): string {
+  return `<span style="font:600 10px sans-serif;padding:1px 7px;border-radius:9px;${CONF_BADGE[c]}">${c}</span>`;
 }
 
-function renderPropertyForecasts(forecasts: BiReportModel['propertyForecasts']): string {
-  return forecasts
-    .map((f) => {
-      const flag = f.lowData
-        ? ' <span style="font:600 9px sans-serif;color:#b4543a">(dünne Datenbasis)</span>'
-        : '';
-      return `<div style="margin-top:14px">
-        <div style="font:600 12px sans-serif;margin-bottom:4px">${h(f.name)}${flag}</div>
-        ${renderForecastBars(f.months)}
-      </div>`;
+function rangeBar(m: RevenueForecast, scaleMax: number): string {
+  const max = scaleMax > 0 ? scaleMax : 1;
+  const fstPct = Math.round((m.committedRevenue / max) * 100);
+  const expPct = Math.round((m.expectedRevenue / max) * 100);
+  const rngPct = Math.round((m.highRevenue / max) * 100);
+  return `<div style="position:relative;height:13px;background:#eef0ec;border-radius:7px">
+      <div style="position:absolute;left:0;top:0;height:13px;width:${rngPct}%;background:#f2c4b6;border-radius:7px"></div>
+      <div style="position:absolute;left:0;top:0;height:13px;width:${fstPct}%;background:#e07a5f;border-radius:7px 0 0 7px"></div>
+      <div style="position:absolute;left:${expPct}%;top:-2px;height:17px;width:2px;background:#2f3a33"></div>
+    </div>`;
+}
+
+function renderForecastTable(months: RevenueForecast[]): string {
+  const scaleMax = Math.max(1, ...months.map((m) => m.highRevenue));
+  const td = (t: string, align = 'right') =>
+    `<td style="font:12px sans-serif;padding:6px 9px;border-bottom:1px solid #eee;text-align:${align}">${t}</td>`;
+  const rows = months
+    .map((m) => {
+      if (m.isOpen) {
+        return `<tr>${td(m.monthLabel, 'left')}<td colspan="4" style="font:italic 11px sans-serif;color:#aaa;padding:6px 9px;border-bottom:1px solid #eee">noch offen — kaum Buchungen, keine belastbare Hochrechnung</td>${td(confBadge(m.confidence))}</tr>`;
+      }
+      return `<tr>
+        ${td(m.monthLabel, 'left')}${td(eur(m.committedRevenue))}${td(eur(m.expectedRevenue))}${td(eur(m.highRevenue))}
+        <td style="padding:6px 9px;border-bottom:1px solid #eee;width:30%">${rangeBar(m, scaleMax)}</td>
+        ${td(confBadge(m.confidence))}
+      </tr>`;
     })
     .join('');
+  const sumC = months.reduce((s, m) => s + m.committedRevenue, 0);
+  const sumE = months.reduce((s, m) => s + m.expectedRevenue, 0);
+  const sumH = months.reduce((s, m) => s + m.highRevenue, 0);
+  const total = `<tr style="background:#f7f8f6;font-weight:700">
+      ${td('Σ 6 Mon', 'left')}${td(eur(sumC))}${td(eur(sumE))}${td(eur(sumH))}${td('')}${td('')}</tr>`;
+  const th = (t: string, align = 'right') =>
+    `<th style="font:600 11px sans-serif;color:#888;padding:6px 9px;border-bottom:2px solid #ddd;text-align:${align}">${t}</th>`;
+  return `<table style="border-collapse:collapse;width:100%">
+      <tr>${th('Monat', 'left')}${th('fest')}${th('erwartet')}${th('opt.')}${th('Spanne', 'left')}${th('Konfidenz')}</tr>
+      ${rows}${total}
+    </table>`;
+}
+
+function renderForecastByProperty(forecasts: BiReportModel['propertyForecasts']): string {
+  const td = (t: string, align = 'right') =>
+    `<td style="font:12px sans-serif;padding:6px 9px;border-bottom:1px solid #eee;text-align:${align}">${t}</td>`;
+  const th = (t: string, align = 'right') =>
+    `<th style="font:600 11px sans-serif;color:#888;padding:6px 9px;border-bottom:2px solid #ddd;text-align:${align}">${t}</th>`;
+  const rows = forecasts
+    .map((f) => `<tr>
+      ${td(h(f.name), 'left')}${td(eur(f.committedTotal))}${td(eur(f.expectedTotal))}${td(eur(f.highTotal))}
+      ${td(h(f.methodLabel), 'left')}${td(confBadge(f.confidence))}
+    </tr>`)
+    .join('');
+  return `<table style="border-collapse:collapse;width:100%">
+      <tr>${th('Property', 'left')}${th('fest')}${th('erwartet')}${th('opt.')}${th('Methode', 'left')}${th('Konfidenz')}</tr>
+      ${rows}
+    </table>`;
 }
 
 export function generateBiReportEmail(model: BiReportModel): { html: string; text: string } {
@@ -179,10 +214,21 @@ export function generateBiReportEmail(model: BiReportModel): { html: string; tex
         ${renderKpiTable(model.kpis, model.portfolio, year)}
       </div>
       <div style="padding:0 18px 18px">
-        <h3 style="font:700 13px sans-serif;margin:0 0 10px">④ Forecast · 6 Monate</h3>
-        <div style="font:11px sans-serif;color:#888;margin-bottom:6px">Portfolio (fest gebucht + Pickup-Hochrechnung):</div>
-        ${renderForecastBars(model.portfolioForecast)}
-        ${renderPropertyForecasts(model.propertyForecasts)}
+        <h3 style="font:700 13px sans-serif;margin:0 0 10px">④ Forecast · 6 Monate (Umsatz)</h3>
+        <div style="background:#f7f8f6;border-left:3px solid #e07a5f;padding:8px 12px;font:11px sans-serif;color:#555;border-radius:0 6px 6px 0;margin:0 0 12px">
+          <strong>So entsteht die Prognose:</strong> „fest" = bereits bestätigte Buchungen. „erwartet" nutzt —
+          wenn genug Historie vorliegt — die Vorjahreswerte (auf dieses Jahr hochgerechnet), sonst den typischen
+          Buchungsvorlauf; neue Inserate über eine Ramp-up-Annahme. Die Spanne zeigt konservativ → optimistisch.
+          <em>Die Konfidenz steigt, je mehr Buchungshistorie vorliegt.</em>
+        </div>
+        ${renderForecastTable(model.portfolioForecast)}
+        <p style="font:11px sans-serif;color:#666;margin:8px 0 0">
+          <span style="display:inline-block;width:11px;height:11px;background:#e07a5f;vertical-align:middle"></span> fest gebucht
+          <span style="display:inline-block;width:2px;height:13px;background:#2f3a33;vertical-align:middle;margin-left:14px"></span> erwartet
+          <span style="display:inline-block;width:11px;height:11px;background:#f2c4b6;vertical-align:middle;margin-left:14px"></span> Spanne bis optimistisch
+        </p>
+        <div style="font:600 11px sans-serif;color:#888;margin:16px 0 6px">Pro Property · Σ kommende 6 Monate</div>
+        ${renderForecastByProperty(model.propertyForecasts)}
       </div>
       <div style="background:#f7f8f6;padding:10px 18px;font:10px sans-serif;color:#999;text-align:center">
         Remote Republic · automatischer Portfolio-Report
@@ -205,9 +251,16 @@ export function generateBiReportEmail(model: BiReportModel): { html: string; tex
       (a) => `  ${deDate(a.date)} ${a.propertyName} — ${a.guestName} (${a.nights}N/${a.guests}P, ${a.source})${a.isTurnover ? ' [Turnover]' : ''}`
     ),
     '',
-    'Forecast (Portfolio):',
+    'Forecast (Umsatz, Portfolio):',
     ...model.portfolioForecast.map(
-      (m) => `  ${m.monthLabel}: ${pct(m.committedPct)} fest → ${pct(m.projectedFinalPct)} erwartet (±${m.bandPct}%)`
+      (m) => m.isOpen
+        ? `  ${m.monthLabel}: noch offen (${m.confidence})`
+        : `  ${m.monthLabel}: fest ${eur(m.committedRevenue)} → erwartet ${eur(m.expectedRevenue)} (bis ${eur(m.highRevenue)}, ${m.confidence})`
+    ),
+    '',
+    'Forecast pro Property (Σ 6 Mon):',
+    ...model.propertyForecasts.map(
+      (f) => `  ${f.name}: fest ${eur(f.committedTotal)} → erwartet ${eur(f.expectedTotal)} [${f.methodLabel}, ${f.confidence}]`
     ),
   ];
 

@@ -18,6 +18,7 @@ describe('parseBiReportConfig', () => {
       hour: 6,
       timezone: 'Europe/Berlin',
       forecastHorizonMonths: 6,
+      forecast: { rampMonths: 12, steadyOccupancyPct: 0.6 },
     });
   });
 
