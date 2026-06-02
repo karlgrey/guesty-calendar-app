@@ -6,10 +6,11 @@
 
 import { runETLJob } from './etl-job.js';
 import { sendWeeklySummaryEmailForProperty, shouldSendWeeklyEmailForProperty } from './weekly-email.js';
+import { sendBiReportEmail, shouldSendBiReport } from './bi-email.js';
 import { syncAnalytics, shouldSyncAnalytics } from './sync-analytics.js';
 import { syncGoogleCalendarForProperty } from './sync-google-calendar.js';
 import { config } from '../config/index.js';
-import { getAllProperties, type PropertyConfig } from '../config/properties.js';
+import { getAllProperties, getBiReportConfig, type PropertyConfig } from '../config/properties.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -36,6 +37,8 @@ interface SchedulerState {
   lastAnalyticsSync: Date | null;
   googleCalendarIntervalId: NodeJS.Timeout | null;
   propertyGoogleCalendarLastSync: Map<string, Date>;
+  biReportIntervalId: NodeJS.Timeout | null;
+  biReportSent: Date | null;
 }
 
 const state: SchedulerState = {
@@ -58,6 +61,8 @@ const state: SchedulerState = {
   lastAnalyticsSync: null,
   googleCalendarIntervalId: null,
   propertyGoogleCalendarLastSync: new Map(),
+  biReportIntervalId: null,
+  biReportSent: null,
 };
 
 /**
@@ -210,6 +215,29 @@ async function checkAndSendWeeklyEmail() {
     await checkAndSendWeeklyEmailForProperty(legacyProperty);
   } catch (error) {
     logger.error({ error }, 'Error in weekly email check');
+  }
+}
+
+/**
+ * Check and send the portfolio BI report once per scheduled slot.
+ */
+async function checkAndSendBiReport() {
+  try {
+    if (!shouldSendBiReport()) return;
+
+    const today = new Date().toDateString();
+    if (state.biReportSent?.toDateString() === today) {
+      logger.debug('BI report already sent today, skipping');
+      return;
+    }
+
+    logger.info('📊 BI report conditions met, sending...');
+    const result = await sendBiReportEmail();
+    if (result.sent) {
+      state.biReportSent = new Date();
+    }
+  } catch (error) {
+    logger.error({ error }, 'Error in BI report check');
   }
 }
 
@@ -428,6 +456,17 @@ export function startScheduler() {
     state.weeklyEmailIntervalId = setInterval(checkAndSendWeeklyEmail, hourlyInterval);
   }
 
+  // Start portfolio BI report checker (runs every hour)
+  const biConfig = getBiReportConfig();
+  if (biConfig?.enabled) {
+    logger.info(
+      { day: biConfig.day, hour: biConfig.hour, recipients: biConfig.recipients.length, timezone: biConfig.timezone },
+      '📊 Starting portfolio BI report scheduler'
+    );
+    checkAndSendBiReport();
+    state.biReportIntervalId = setInterval(checkAndSendBiReport, 60 * 60 * 1000);
+  }
+
   // Start daily forced sync checker (runs every hour, executes at 2 AM)
   logger.info('🔄 Starting daily forced sync scheduler (runs at 2 AM)');
 
@@ -508,6 +547,11 @@ export function stopScheduler() {
   if (state.googleCalendarIntervalId) {
     clearInterval(state.googleCalendarIntervalId);
     state.googleCalendarIntervalId = null;
+  }
+
+  if (state.biReportIntervalId) {
+    clearInterval(state.biReportIntervalId);
+    state.biReportIntervalId = null;
   }
 
   state.running = false;
