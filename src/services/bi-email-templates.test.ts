@@ -64,5 +64,6 @@ describe('generateBiReportEmail', () => {
     expect(html.toLowerCase()).toContain('noch offen'); // isOpen month
     expect(html.toLowerCase()).toContain('so entsteht die prognose'); // methodology sentence
     expect(html).not.toContain('±');                 // old band markup gone
+    expect(html).not.toContain('position:absolute'); // range bar must be email-safe (table-based)
   });
 });

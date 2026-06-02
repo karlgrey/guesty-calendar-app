@@ -118,16 +118,21 @@ function confBadge(c: RevenueForecast['confidence']): string {
   return `<span style="font:600 10px sans-serif;padding:1px 7px;border-radius:9px;${CONF_BADGE[c]}">${c}</span>`;
 }
 
+// Email-safe horizontal range bar: a single-row table of coloured segments
+// (no position:absolute — many mail clients drop it). Tones read left→right:
+// fest gebucht (dark) → erwartet-Zuwachs (mittel) → bis optimistisch (hell) → Rest (Spur).
 function rangeBar(m: RevenueForecast, scaleMax: number): string {
   const max = scaleMax > 0 ? scaleMax : 1;
-  const fstPct = Math.round((m.committedRevenue / max) * 100);
-  const expPct = Math.round((m.expectedRevenue / max) * 100);
-  const rngPct = Math.round((m.highRevenue / max) * 100);
-  return `<div style="position:relative;height:13px;background:#eef0ec;border-radius:7px">
-      <div style="position:absolute;left:0;top:0;height:13px;width:${rngPct}%;background:#f2c4b6;border-radius:7px"></div>
-      <div style="position:absolute;left:0;top:0;height:13px;width:${fstPct}%;background:#e07a5f;border-radius:7px 0 0 7px"></div>
-      <div style="position:absolute;left:${expPct}%;top:-2px;height:17px;width:2px;background:#2f3a33"></div>
-    </div>`;
+  const fst = Math.max(0, Math.min(100, Math.round((m.committedRevenue / max) * 100)));
+  const exp = Math.max(fst, Math.min(100, Math.round((m.expectedRevenue / max) * 100)));
+  const high = Math.max(exp, Math.min(100, Math.round((m.highRevenue / max) * 100)));
+  const seg = (w: number, color: string) =>
+    w > 0
+      ? `<td width="${w}%" bgcolor="${color}" style="width:${w}%;height:12px;font-size:0;line-height:0;background:${color}">&nbsp;</td>`
+      : '';
+  return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:100%;border-collapse:collapse;table-layout:fixed">
+      <tr style="height:12px">${seg(fst, '#e07a5f')}${seg(exp - fst, '#ef9f86')}${seg(high - exp, '#f7d8cd')}${seg(100 - high, '#eef0ec')}</tr>
+    </table>`;
 }
 
 function renderForecastTable(months: RevenueForecast[]): string {
@@ -224,8 +229,8 @@ export function generateBiReportEmail(model: BiReportModel): { html: string; tex
         ${renderForecastTable(model.portfolioForecast)}
         <p style="font:11px sans-serif;color:#666;margin:8px 0 0">
           <span style="display:inline-block;width:11px;height:11px;background:#e07a5f;vertical-align:middle"></span> fest gebucht
-          <span style="display:inline-block;width:2px;height:13px;background:#2f3a33;vertical-align:middle;margin-left:14px"></span> erwartet
-          <span style="display:inline-block;width:11px;height:11px;background:#f2c4b6;vertical-align:middle;margin-left:14px"></span> Spanne bis optimistisch
+          <span style="display:inline-block;width:11px;height:11px;background:#ef9f86;vertical-align:middle;margin-left:14px"></span> erwartet
+          <span style="display:inline-block;width:11px;height:11px;background:#f7d8cd;vertical-align:middle;margin-left:14px"></span> bis optimistisch
         </p>
         <div style="font:600 11px sans-serif;color:#888;margin:16px 0 6px">Pro Property · Σ kommende 6 Monate</div>
         ${renderForecastByProperty(model.propertyForecasts)}
