@@ -119,6 +119,9 @@ class GoogleCalendarClient {
         maxResults: 2500,
         singleEvents: true,
         pageToken,
+        // Explicit field mask: the default partial response can omit
+        // extendedProperties, which the block-event cleanup relies on.
+        fields: 'nextPageToken,items(id,summary,start,end,extendedProperties)',
       });
 
       if (res.data.items) {

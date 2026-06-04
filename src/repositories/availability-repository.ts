@@ -493,22 +493,29 @@ export function getOccupancyBreakdown(
   endDate: string
 ): { bookedDays: number; blockedDays: number; sellableDays: number; totalDays: number; rate: number } {
   const db = getDatabase();
-  const r = db
-    .prepare(
-      `SELECT
-         COUNT(*) AS total,
-         SUM(CASE WHEN status = 'booked' THEN 1 ELSE 0 END) AS booked,
-         SUM(CASE WHEN status = 'blocked' THEN 1 ELSE 0 END) AS blocked
-       FROM availability
-       WHERE listing_id = ? AND date >= ? AND date < ?`
-    )
-    .get(listingId, startDate, endDate) as { total: number; booked: number | null; blocked: number | null };
-  const totalDays = r.total ?? 0;
-  const bookedDays = r.booked ?? 0;
-  const blockedDays = r.blocked ?? 0;
-  const sellableDays = totalDays - blockedDays;
-  const rate = sellableDays > 0 ? Math.round((bookedDays / sellableDays) * 100) : 0;
-  return { bookedDays, blockedDays, sellableDays, totalDays, rate };
+  try {
+    const r = db
+      .prepare(
+        `SELECT
+           COUNT(*) AS total,
+           SUM(CASE WHEN status = 'booked' THEN 1 ELSE 0 END) AS booked,
+           SUM(CASE WHEN status = 'blocked' THEN 1 ELSE 0 END) AS blocked
+         FROM availability
+         WHERE listing_id = ? AND date >= ? AND date < ?`
+      )
+      .get(listingId, startDate, endDate) as { total: number; booked: number | null; blocked: number | null };
+    const totalDays = r.total ?? 0;
+    const bookedDays = r.booked ?? 0;
+    const blockedDays = r.blocked ?? 0;
+    const sellableDays = totalDays - blockedDays;
+    const rate = sellableDays > 0 ? Math.round((bookedDays / sellableDays) * 100) : 0;
+    return { bookedDays, blockedDays, sellableDays, totalDays, rate };
+  } catch (error) {
+    logger.error({ error, listingId, startDate, endDate }, 'Failed to get occupancy breakdown');
+    throw new DatabaseError(
+      `Failed to get occupancy breakdown: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
+  }
 }
 
 /**

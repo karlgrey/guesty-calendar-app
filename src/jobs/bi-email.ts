@@ -76,8 +76,9 @@ export function buildBiReportModel(
 
       const allTime = getAllTimeStats(listingId);
       const currentYear = getCurrentYearStats(listingId);
-      const occ6wk = getOccupancyRate(listingId, today, in6Weeks);
-      const blockedDays6wk = getOccupancyBreakdown(listingId, today, in6Weeks).blockedDays;
+      const breakdown6wk = getOccupancyBreakdown(listingId, today, in6Weeks);
+      const occ6wk = breakdown6wk.rate;
+      const blockedDays6wk = breakdown6wk.blockedDays;
       const occ30d = getOccupancyRate(listingId, last30, today);
       const revMonth = getRevenueForCheckInMonth(listingId, curMonth);
       const revPrev = getRevenueForCheckInMonth(listingId, prevMonth);

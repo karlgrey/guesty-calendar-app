@@ -25,7 +25,7 @@ describe('getOccupancyBreakdown', () => {
       ...Array(5).fill('blocked'),
       ...Array(15).fill('available'),
     ]);
-    const b = getOccupancyBreakdown('A', '2026-06-01', '2026-06-31');
+    const b = getOccupancyBreakdown('A', '2026-06-01', '2026-07-01');
     expect(b.bookedDays).toBe(10);
     expect(b.blockedDays).toBe(5);
     expect(b.totalDays).toBe(30);
@@ -35,7 +35,7 @@ describe('getOccupancyBreakdown', () => {
 
   it('all blocked -> rate 0', () => {
     seed(Array(4).fill('blocked'));
-    const b = getOccupancyBreakdown('A', '2026-06-01', '2026-06-31');
+    const b = getOccupancyBreakdown('A', '2026-06-01', '2026-07-01');
     expect(b.sellableDays).toBe(0);
     expect(b.rate).toBe(0);
   });
@@ -44,6 +44,6 @@ describe('getOccupancyBreakdown', () => {
 describe('getOccupancyRate', () => {
   it('returns the sellable rate (delegates to breakdown)', () => {
     seed([...Array(10).fill('booked'), ...Array(5).fill('blocked'), ...Array(15).fill('available')]);
-    expect(getOccupancyRate('A', '2026-06-01', '2026-06-31')).toBe(40);
+    expect(getOccupancyRate('A', '2026-06-01', '2026-07-01')).toBe(40);
   });
 });
