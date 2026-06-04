@@ -4,7 +4,7 @@
  */
 import { addDays, format } from 'date-fns';
 
-export type DayState = 'booked' | 'free' | 'turnover';
+export type DayState = 'booked' | 'free' | 'turnover' | 'blocked';
 
 export interface PropertyGanttRow {
   slug: string;
@@ -54,7 +54,9 @@ export function buildGanttGrid(input: GanttInput): GanttGrid {
         continue;
       }
       const status = statusByDate.get(d);
-      days.push(status === 'booked' || status === 'blocked' ? 'booked' : 'free');
+      if (status === 'booked') days.push('booked');
+      else if (status === 'blocked') days.push('blocked');
+      else days.push('free');
     }
     return { slug: p.slug, name: p.name, days };
   });

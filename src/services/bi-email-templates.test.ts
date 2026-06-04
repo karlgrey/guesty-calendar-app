@@ -9,7 +9,7 @@ const model: BiReportModel = {
   portfolio: { revenueYtd: 123400, avgOccupancy6wk: 68, bookingsYtd: 181, committedRevenueHorizon: 87200 },
   calendar: {
     startDate: '2026-06-02', dayCount: 7,
-    rows: [{ slug: 'farmhouse', name: 'Farmhouse', days: ['booked', 'free', 'turnover', 'booked', 'free', 'free', 'booked'] }],
+    rows: [{ slug: 'farmhouse', name: 'Farmhouse', days: ['booked', 'free', 'turnover', 'blocked', 'free', 'free', 'booked'] }],
     labels: [{ index: 0, label: '2 Jun' }],
   },
   arrivals: [
@@ -36,6 +36,8 @@ describe('generateBiReportEmail', () => {
     expect(html).toContain('123');           // portfolio YTD revenue rendered
     expect(text.length).toBeGreaterThan(0);
     expect(text).toContain('Farmhouse');
+    expect(html).toContain('#b9bfb6');                 // blocked colour rendered
+    expect(html.toLowerCase()).toContain('blockiert'); // legend entry
   });
 
   it('uses the AirBnB Portfolio Report title and lists property names', () => {
