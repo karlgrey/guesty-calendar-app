@@ -6,7 +6,7 @@ const model: BiReportModel = {
   generatedAt: '2026-06-02T06:00:00Z',
   weekLabel: '2. Jun 2026',
   currency: 'EUR',
-  portfolio: { revenueYtd: 123400, avgOccupancy6wk: 68, bookingsYtd: 181, committedRevenueHorizon: 87200 },
+  portfolio: { revenueYtd: 123400, avgOccupancy6wk: 68, bookingsYtd: 181, committedRevenueHorizon: 87200, blockedDays6wk: 5 },
   calendar: {
     startDate: '2026-06-02', dayCount: 7,
     rows: [{ slug: 'farmhouse', name: 'Farmhouse', days: ['booked', 'free', 'turnover', 'blocked', 'free', 'free', 'booked'] }],
@@ -16,7 +16,7 @@ const model: BiReportModel = {
     { date: '2026-06-03', propertySlug: 'u19', propertyName: 'Uferstrasse 19', guestName: 'Max M.', nights: 4, guests: 2, source: 'direct', isTurnover: false },
   ],
   kpis: [
-    { slug: 'farmhouse', name: 'Farmhouse', occupancy6wk: 74, occupancy30d: 68, revenueYtd: 32400, revenueMonth: 4850, revenueChangePct: 12, bookingsYtd: 41, adr: 168, currency: 'EUR' },
+    { slug: 'farmhouse', name: 'Farmhouse', occupancy6wk: 74, occupancy30d: 68, revenueYtd: 32400, revenueMonth: 4850, revenueChangePct: 12, bookingsYtd: 41, adr: 168, blockedDays6wk: 3, currency: 'EUR' },
   ],
   portfolioForecast: [
     { monthLabel: 'Jun', committedRevenue: 18000, expectedRevenue: 19500, lowRevenue: 18000, highRevenue: 21000, confidence: 'hoch', method: 'historical', isOpen: false },
@@ -38,6 +38,7 @@ describe('generateBiReportEmail', () => {
     expect(text).toContain('Farmhouse');
     expect(html).toContain('#b9bfb6');                 // blocked colour rendered
     expect(html.toLowerCase()).toContain('blockiert'); // legend entry
+    expect(html).toContain('Block-Tg');   // KPI table block-days column header
   });
 
   it('uses the AirBnB Portfolio Report title and lists property names', () => {

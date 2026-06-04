@@ -7,6 +7,7 @@ vi.mock('../repositories/availability-repository.js', () => ({
   getAllTimeStats: vi.fn(() => ({ totalBookings: 40, totalRevenue: 30000, totalBookedDays: 200, startDate: '2025-07-01', endDate: '2026-06-02' })),
   getCurrentYearStats: vi.fn(() => ({ year: 2026, totalBookings: 20, totalRevenue: 15000, totalBookedDays: 100 })),
   getOccupancyRate: vi.fn(() => 70),
+  getOccupancyBreakdown: vi.fn(() => ({ bookedDays: 20, blockedDays: 3, sellableDays: 27, totalDays: 30, rate: 70 })),
   getAvailability: vi.fn(() => []),
 }));
 vi.mock('../repositories/reservation-repository.js', () => ({
@@ -51,6 +52,8 @@ describe('buildBiReportModel', () => {
     expect(['hoch', 'mittel', 'niedrig']).toContain(pf.confidence);
     expect(model.portfolioForecast[0]).toHaveProperty('expectedRevenue');
     expect(['historical', 'pickup', 'rampup']).toContain(model.portfolioForecast[0].method);
+    expect(model.kpis[0]).toHaveProperty('blockedDays6wk', 3);
+    expect(model.portfolio).toHaveProperty('blockedDays6wk');
   });
 
   it('isolates a failing property without throwing', () => {

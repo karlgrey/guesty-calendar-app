@@ -15,6 +15,7 @@ export interface PropertyKpi {
   revenueChangePct: number;  // vs previous month
   bookingsYtd: number;
   adr: number;               // avg daily rate (YTD revenue / booked nights)
+  blockedDays6wk: number;   // owner/blocked days in the next 6 weeks
   currency: string;
 }
 
@@ -49,6 +50,7 @@ export interface BiReportModel {
     avgOccupancy6wk: number;
     bookingsYtd: number;
     committedRevenueHorizon: number; // committed € over forecast horizon
+    blockedDays6wk: number;
   };
   calendar: GanttGrid;
   arrivals: UpcomingArrival[];

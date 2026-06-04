@@ -95,17 +95,17 @@ function renderKpiTable(kpis: PropertyKpi[], portfolio: BiReportModel['portfolio
       (k) => `<tr>
         ${td(h(k.name), 'left')}${td(pct(k.occupancy6wk))}${td(pct(k.occupancy30d))}
         ${td(eur(k.revenueYtd))}${td(eur(k.revenueMonth))}${td(deltaCell(k.revenueChangePct))}
-        ${td(String(k.bookingsYtd))}${td(eur(k.adr))}
+        ${td(String(k.bookingsYtd))}${td(eur(k.adr))}${td(String(k.blockedDays6wk))}
       </tr>`
     )
     .join('');
   const total = `<tr style="background:#f7f8f6;font-weight:700">
       ${td('Portfolio', 'left')}${td(pct(portfolio.avgOccupancy6wk))}${td('')}
-      ${td(eur(portfolio.revenueYtd))}${td('')}${td('')}${td(String(portfolio.bookingsYtd))}${td('')}
+      ${td(eur(portfolio.revenueYtd))}${td('')}${td('')}${td(String(portfolio.bookingsYtd))}${td('')}${td(String(portfolio.blockedDays6wk))}
     </tr>`;
   return `<table style="border-collapse:collapse;width:100%">
       <tr><th style="text-align:left;font:600 11px sans-serif;color:#888;padding:6px 8px;border-bottom:2px solid #ddd">Property</th>
-        ${th('Bel. 6Wo')}${th('Bel. 30Tg')}${th(`Umsatz ${year}`)}${th('Umsatz Monat')}${th('Δ Vormon.')}${th(`Buch. ${year}`)}${th('ADR')}</tr>
+        ${th('Bel. 6Wo')}${th('Bel. 30Tg')}${th(`Umsatz ${year}`)}${th('Umsatz Monat')}${th('Δ Vormon.')}${th(`Buch. ${year}`)}${th('ADR')}${th('Block-Tg')}</tr>
       ${body}${total}
     </table>`;
 }

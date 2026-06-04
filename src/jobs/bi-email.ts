@@ -17,6 +17,7 @@ import {
   getAllTimeStats,
   getCurrentYearStats,
   getOccupancyRate,
+  getOccupancyBreakdown,
   getAvailability,
 } from '../repositories/availability-repository.js';
 import {
@@ -76,6 +77,7 @@ export function buildBiReportModel(
       const allTime = getAllTimeStats(listingId);
       const currentYear = getCurrentYearStats(listingId);
       const occ6wk = getOccupancyRate(listingId, today, in6Weeks);
+      const blockedDays6wk = getOccupancyBreakdown(listingId, today, in6Weeks).blockedDays;
       const occ30d = getOccupancyRate(listingId, last30, today);
       const revMonth = getRevenueForCheckInMonth(listingId, curMonth);
       const revPrev = getRevenueForCheckInMonth(listingId, prevMonth);
@@ -106,6 +108,7 @@ export function buildBiReportModel(
           revenueChangePct: changePct,
           bookingsYtd: currentYear.totalBookings,
           adr,
+          blockedDays6wk,
           currency: listing.currency || property.currency || 'EUR',
         },
       });
@@ -227,6 +230,7 @@ export function buildBiReportModel(
       avgOccupancy6wk,
       bookingsYtd: collected.reduce((s, c) => s + c.kpi.bookingsYtd, 0),
       committedRevenueHorizon,
+      blockedDays6wk: collected.reduce((s, c) => s + c.kpi.blockedDays6wk, 0),
     },
     calendar,
     arrivals,
