@@ -423,7 +423,8 @@ export function getDashboardStats(
       total_revenue: number;
     };
 
-    const occupancyRate = availStats.total_days > 0 ? (availStats.booked_days / availStats.total_days) * 100 : 0;
+    const sellableDays = availStats.total_days - availStats.blocked_days;
+    const occupancyRate = sellableDays > 0 ? (availStats.booked_days / sellableDays) * 100 : 0;
 
     return {
       totalBookings: revenueStats.total_bookings || 0,
@@ -483,39 +484,38 @@ export function getAllTimeStats(listingId: string): AllTimeStats {
 }
 
 /**
- * Calculate occupancy rate for a date range
- * Returns percentage of booked/blocked days vs total days
+ * Occupancy breakdown for [startDate, endDate). Sellable occupancy excludes
+ * non-rentable (blocked) days from the base: rate = booked / (total - blocked).
+ */
+export function getOccupancyBreakdown(
+  listingId: string,
+  startDate: string,
+  endDate: string
+): { bookedDays: number; blockedDays: number; sellableDays: number; totalDays: number; rate: number } {
+  const db = getDatabase();
+  const r = db
+    .prepare(
+      `SELECT
+         COUNT(*) AS total,
+         SUM(CASE WHEN status = 'booked' THEN 1 ELSE 0 END) AS booked,
+         SUM(CASE WHEN status = 'blocked' THEN 1 ELSE 0 END) AS blocked
+       FROM availability
+       WHERE listing_id = ? AND date >= ? AND date < ?`
+    )
+    .get(listingId, startDate, endDate) as { total: number; booked: number | null; blocked: number | null };
+  const totalDays = r.total ?? 0;
+  const bookedDays = r.booked ?? 0;
+  const blockedDays = r.blocked ?? 0;
+  const sellableDays = totalDays - blockedDays;
+  const rate = sellableDays > 0 ? Math.round((bookedDays / sellableDays) * 100) : 0;
+  return { bookedDays, blockedDays, sellableDays, totalDays, rate };
+}
+
+/**
+ * Sellable occupancy rate (%) for [startDate, endDate): booked / (total - blocked).
  */
 export function getOccupancyRate(listingId: string, startDate: string, endDate: string): number {
-  const db = getDatabase();
-
-  try {
-    const result = db
-      .prepare(
-        `SELECT
-          COUNT(*) as total_days,
-          SUM(CASE WHEN status IN ('booked', 'blocked') THEN 1 ELSE 0 END) as occupied_days
-        FROM availability
-        WHERE listing_id = ?
-          AND date >= ?
-          AND date < ?`
-      )
-      .get(listingId, startDate, endDate) as {
-        total_days: number;
-        occupied_days: number;
-      };
-
-    if (result.total_days === 0) {
-      return 0;
-    }
-
-    return Math.round((result.occupied_days / result.total_days) * 100);
-  } catch (error) {
-    logger.error({ error, listingId, startDate, endDate }, 'Failed to get occupancy rate');
-    throw new DatabaseError(
-      `Failed to get occupancy rate: ${error instanceof Error ? error.message : 'Unknown error'}`
-    );
-  }
+  return getOccupancyBreakdown(listingId, startDate, endDate).rate;
 }
 
 /**
