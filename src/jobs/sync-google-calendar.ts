@@ -11,11 +11,15 @@ import { getListingById } from '../repositories/listings-repository.js';
 import { getListingId, type PropertyConfig } from '../config/properties.js';
 import type { Reservation } from '../types/models.js';
 import logger from '../utils/logger.js';
+import { getAvailability } from '../repositories/availability-repository.js';
+import { buildBlockSpans, buildBlockEvent, blockEventId } from '../services/google-calendar-blocks.js';
 
 export interface GoogleCalendarSyncResult {
   success: boolean;
   eventsUpserted: number;
   eventsDeleted: number;
+  blockEventsUpserted?: number;
+  blockEventsDeleted?: number;
   error?: string;
   durationMs?: number;
 }
@@ -158,6 +162,48 @@ export async function syncGoogleCalendarForProperty(
       }
     }
 
+    // ----- Owner/blocked-day spans -> shared calendar -----
+    const today = new Date().toISOString().split('T')[0];
+    const horizonEnd = new Date();
+    horizonEnd.setDate(horizonEnd.getDate() + 365);
+    const horizonEndStr = horizonEnd.toISOString().split('T')[0];
+
+    const availability = getAvailability(listingId, today, horizonEndStr);
+    const spans = buildBlockSpans(
+      availability.map((a) => ({ date: a.date, status: a.status, block_type: a.block_type }))
+    );
+    const desiredBlockIds = new Set(spans.map((s) => blockEventId(listingId, s.startDate)));
+
+    let blockEventsUpserted = 0;
+    for (const span of spans) {
+      try {
+        await googleCalendarClient.upsertEvent(calendarId, blockEventId(listingId, span.startDate), buildBlockEvent(span, name));
+        blockEventsUpserted++;
+        await new Promise((resolve) => setTimeout(resolve, 200));
+      } catch (error) {
+        logger.warn(
+          { error: error instanceof Error ? error.message : error, span, propertySlug: slug },
+          'Failed to upsert block calendar event'
+        );
+      }
+    }
+
+    // Cleanup: delete our block events (marked kind='owner-block') that no longer apply.
+    let blockEventsDeleted = 0;
+    try {
+      const existing = await googleCalendarClient.listEvents(calendarId, `${today}T00:00:00Z`, `${horizonEndStr}T00:00:00Z`);
+      for (const ev of existing) {
+        if (ev.extendedProperties?.private?.kind !== 'owner-block') continue;
+        if (ev.id && !desiredBlockIds.has(ev.id)) {
+          const deleted = await googleCalendarClient.deleteEvent(calendarId, ev.id);
+          if (deleted) blockEventsDeleted++;
+          await new Promise((resolve) => setTimeout(resolve, 200));
+        }
+      }
+    } catch (error) {
+      logger.warn({ error: error instanceof Error ? error.message : error, propertySlug: slug }, 'Block cleanup listEvents failed');
+    }
+
     const durationMs = Date.now() - startTime;
 
     logger.info(
@@ -165,6 +211,8 @@ export async function syncGoogleCalendarForProperty(
         propertySlug: slug,
         eventsUpserted,
         eventsDeleted,
+        blockEventsUpserted,
+        blockEventsDeleted,
         totalReservations: activeReservations.length,
         cancelledReservations: cancelledReservationIds.length,
         durationMs,
@@ -172,7 +220,7 @@ export async function syncGoogleCalendarForProperty(
       'Google Calendar sync completed'
     );
 
-    return { success: true, eventsUpserted, eventsDeleted, durationMs };
+    return { success: true, eventsUpserted, eventsDeleted, blockEventsUpserted, blockEventsDeleted, durationMs };
   } catch (error) {
     const durationMs = Date.now() - startTime;
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
