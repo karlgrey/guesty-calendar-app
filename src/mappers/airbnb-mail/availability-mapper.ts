@@ -15,6 +15,11 @@ function addDays(dateStr: string, days: number): string {
   return d.toISOString().split('T')[0];
 }
 
+/** Airbnb iCal blocks (owner/host "not available") vs guest reservations. */
+function isBlockEvent(summary: string): boolean {
+  return /not available/i.test(summary);
+}
+
 export function buildAvailabilityRows(args: {
   listingId: string;
   windowStart: string; // YYYY-MM-DD, inclusive
@@ -30,16 +35,17 @@ export function buildAvailabilityRows(args: {
   let day = windowStart;
   while (day < windowEnd) {
     const event = events.find((e) => e.startDate <= day && day < e.endDate);
+    const isBlock = event ? isBlockEvent(event.summary) : false;
     rows.push({
       listing_id: listingId,
       date: day,
-      status: event ? 'booked' : 'available',
+      status: event ? (isBlock ? 'blocked' : 'booked') : 'available',
       price: basePrice,
       min_nights: defaultMinNights,
       closed_to_arrival: false,
       closed_to_departure: false,
-      block_type: event ? 'reservation' : null,
-      block_ref: event?.reservationCode ?? null,
+      block_type: event ? (isBlock ? 'owner' : 'reservation') : null,
+      block_ref: event && !isBlock ? event.reservationCode : null,
       last_synced_at: lastSyncedAt,
     });
     day = addDays(day, 1);

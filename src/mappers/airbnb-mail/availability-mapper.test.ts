@@ -77,4 +77,43 @@ describe('buildAvailabilityRows', () => {
     expect(rows[0].date).toBe('2026-07-01');
     expect(rows[0].last_synced_at).toBe('2026-07-01T00:00:00.000Z');
   });
+
+  it('classifies "Airbnb (Not available)" events as owner blocks', () => {
+    const rows = buildAvailabilityRows({
+      listingId: '999',
+      windowStart: '2026-07-01',
+      windowEnd: '2026-07-05',
+      events: [
+        { uid: 'BLK@airbnb.com', reservationCode: 'BLK', startDate: '2026-07-02', endDate: '2026-07-04', summary: 'Airbnb (Not available)' },
+      ],
+      basePrice: 100,
+      defaultMinNights: 1,
+      lastSyncedAt: '2026-07-01T00:00:00.000Z',
+    });
+    expect(rows[0].status).toBe('available');           // 07-01
+    expect(rows[1].status).toBe('blocked');             // 07-02
+    expect(rows[1].block_type).toBe('owner');
+    expect(rows[1].block_ref).toBe(null);
+    expect(rows[2].status).toBe('blocked');             // 07-03
+    expect(rows[3].status).toBe('available');           // 07-04 (endDate exclusive)
+  });
+
+  it('reserved events stay booked/reservation; block match is case-insensitive', () => {
+    const rows = buildAvailabilityRows({
+      listingId: '999',
+      windowStart: '2026-07-01',
+      windowEnd: '2026-07-03',
+      events: [
+        { uid: 'R@airbnb.com', reservationCode: 'R', startDate: '2026-07-01', endDate: '2026-07-02', summary: 'Reserved' },
+        { uid: 'B@airbnb.com', reservationCode: 'B', startDate: '2026-07-02', endDate: '2026-07-03', summary: 'AIRBNB (NOT AVAILABLE)' },
+      ],
+      basePrice: 100,
+      defaultMinNights: 1,
+      lastSyncedAt: '2026-07-01T00:00:00.000Z',
+    });
+    expect(rows[0].status).toBe('booked');
+    expect(rows[0].block_type).toBe('reservation');
+    expect(rows[1].status).toBe('blocked');
+    expect(rows[1].block_type).toBe('owner');
+  });
 });
