@@ -177,7 +177,7 @@ export async function syncGoogleCalendarForProperty(
     let blockEventsUpserted = 0;
     for (const span of spans) {
       try {
-        await googleCalendarClient.upsertEvent(calendarId, blockEventId(listingId, span.startDate), buildBlockEvent(span, name));
+        await googleCalendarClient.upsertEvent(calendarId, blockEventId(listingId, span.startDate), buildBlockEvent(span, name, property.provider));
         blockEventsUpserted++;
         await new Promise((resolve) => setTimeout(resolve, 200));
       } catch (error) {
