@@ -9,7 +9,6 @@ const COLORS: Record<DayState, string> = {
   booked: '#e07a5f',
   free: '#e8eae6',
   turnover: '#3d5a80',
-  blocked: '#b9bfb6',
 };
 
 function eur(n: number): string {
@@ -61,7 +60,6 @@ function renderCalendar(cal: GanttGrid): string {
     <p style="font:11px sans-serif;color:#555;margin:8px 0 0">
       <span style="display:inline-block;width:11px;height:11px;background:${COLORS.booked};vertical-align:middle"></span> belegt
       <span style="display:inline-block;width:11px;height:11px;background:${COLORS.free};vertical-align:middle;margin-left:12px"></span> frei
-      <span style="display:inline-block;width:11px;height:11px;background:${COLORS.blocked};vertical-align:middle;margin-left:12px"></span> blockiert
       <span style="display:inline-block;width:11px;height:11px;background:${COLORS.turnover};vertical-align:middle;margin-left:12px"></span> Turnover
     </p>`;
 }

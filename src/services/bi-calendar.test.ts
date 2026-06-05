@@ -34,7 +34,7 @@ describe('buildGanttGrid', () => {
     const days = grid.rows[0].days;
     expect(days[0]).toBe('turnover'); // 06-02 checkout+checkin, overrides booked
     expect(days[1]).toBe('free');     // 06-03 available
-    expect(days[2]).toBe('blocked');  // 06-04 availability status 'blocked' -> own state
+    expect(days[2]).toBe('booked');   // 06-04 'blocked' renders as not-available (red), like booked
   });
 
   it('emits a date label every 7 days', () => {
