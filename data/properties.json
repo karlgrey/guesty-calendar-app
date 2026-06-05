@@ -14,7 +14,9 @@
       "weeklyReport": {
         "enabled": true,
         "recipients": [
-          "micha@remoterepublic.com"
+          "micha@remoterepublic.com",
+          "christian@remoterepublic.com",
+          "holger@remoterepublic.com"
         ],
         "day": 1,
         "hour": 6
@@ -44,7 +46,9 @@
       "weeklyReport": {
         "enabled": true,
         "recipients": [
-          "micha@remoterepublic.com"
+          "micha@remoterepublic.com",
+          "christian@remoterepublic.com",
+          "holger@remoterepublic.com"
         ],
         "day": 1,
         "hour": 6
@@ -68,7 +72,9 @@
       "weeklyReport": {
         "enabled": true,
         "recipients": [
-          "micha@remoterepublic.com"
+          "micha@remoterepublic.com",
+          "christian@remoterepublic.com",
+          "holger@remoterepublic.com"
         ],
         "day": 1,
         "hour": 6
@@ -104,7 +110,9 @@
       "weeklyReport": {
         "enabled": true,
         "recipients": [
-          "micha@remoterepublic.com"
+          "micha@remoterepublic.com",
+          "christian@remoterepublic.com",
+          "holger@remoterepublic.com"
         ],
         "day": 1,
         "hour": 6
@@ -142,7 +150,8 @@
       "weeklyReport": {
         "enabled": true,
         "recipients": [
-          "micha@remoterepublic.com"
+          "micha@remoterepublic.com",
+          "christian@remoterepublic.com"
         ],
         "day": 1,
         "hour": 6
@@ -171,7 +180,10 @@
   ],
   "biReport": {
     "enabled": true,
-    "recipients": ["mic@dynamicdudes.com"],
+    "recipients": [
+      "micha@remoterepublic.com",
+      "christian@remoterepublic.com"
+    ],
     "day": 1,
     "hour": 6,
     "timezone": "Europe/Berlin",
