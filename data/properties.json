@@ -74,7 +74,9 @@
         "recipients": [
           "micha@remoterepublic.com",
           "christian@remoterepublic.com",
-          "holger@remoterepublic.com"
+          "holger@remoterepublic.com",
+          "ulf@remoterepublic.com",
+          "angela@remoterepublic.com"
         ],
         "day": 1,
         "hour": 6
@@ -112,7 +114,9 @@
         "recipients": [
           "micha@remoterepublic.com",
           "christian@remoterepublic.com",
-          "holger@remoterepublic.com"
+          "holger@remoterepublic.com",
+          "ulf@remoterepublic.com",
+          "angela@remoterepublic.com"
         ],
         "day": 1,
         "hour": 6
@@ -182,7 +186,8 @@
     "enabled": true,
     "recipients": [
       "micha@remoterepublic.com",
-      "christian@remoterepublic.com"
+      "christian@remoterepublic.com",
+      "holger@remoterepublic.com"
     ],
     "day": 1,
     "hour": 6,
