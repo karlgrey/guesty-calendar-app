@@ -150,7 +150,7 @@ async function fetchReservationWithGuest(reservationId: string): Promise<{
  * Extract pricing from Guesty reservation money object
  * Uses actual prices from the reservation, not calculated from listing defaults
  */
-function extractPricingFromReservation(reservation: any, listing: any): {
+export function extractPricingFromReservation(reservation: any, listing: any): {
   accommodationTotal: number;
   accommodationRate: number;
   extraGuestTotal: number;
@@ -224,6 +224,14 @@ function extractPricingFromReservation(reservation: any, listing: any): {
   // Check if this is an Airbnb booking
   const isAirbnb = reservation.source?.toLowerCase().includes('airbnb') ||
                    reservation.integration?.platform?.toLowerCase().includes('airbnb');
+
+  // For Airbnb, Guesty's subTotalPrice is already reduced by the platform
+  // commission, so the derived "discount" above is actually that commission —
+  // NOT a customer discount. Drop it so the invoice shows the full price the
+  // guest pays (full service value), not the host-reduced payout.
+  if (isAirbnb) {
+    discountTotal = 0;
+  }
 
   // Subtotal (net, before taxes)
   // For Airbnb: use full service value (accommodation + cleaning + extra guests + discounts)
