@@ -414,7 +414,7 @@ export function getDashboardStats(
         SUM(COALESCE(host_payout, total_price, 0)) as total_revenue
       FROM reservations
       WHERE listing_id = ?
-      AND check_in >= date('now')`;
+      AND date(check_out) > date('now')`;
       revenueParams = [listingId];
     }
 

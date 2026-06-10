@@ -257,6 +257,34 @@ export function getReservationsByPeriod(
 }
 
 /**
+ * Currently in-house reservations: checked in on/before today and not yet
+ * checked out (check_out strictly after today). Active statuses only.
+ * Separate from getReservationsByPeriod so the period semantics used by
+ * BI/weekly/calendar (future = real arrivals) stay unchanged.
+ */
+export function getCurrentReservations(listingId: string): Reservation[] {
+  const db = getDatabase();
+  try {
+    const rows = db
+      .prepare(
+        `SELECT * FROM reservations
+         WHERE listing_id = ?
+           AND date(check_in) <= date('now')
+           AND date(check_out) > date('now')
+           AND status IN ('confirmed','reserved')
+         ORDER BY check_in ASC`
+      )
+      .all(listingId) as ReservationRow[];
+    return rows.map(rowToReservation);
+  } catch (error) {
+    logger.error({ error, listingId }, 'Failed to get current reservations');
+    throw new DatabaseError(
+      `Failed to get current reservations: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
+  }
+}
+
+/**
  * Get inactive reservation IDs (for Google Calendar cleanup).
  * Queries the inquiries table since cancelled reservations are deleted from the reservations table.
  * Includes all non-active statuses: canceled, cancelled, declined, expired, closed.
