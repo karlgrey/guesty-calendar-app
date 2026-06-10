@@ -2,27 +2,30 @@ import { describe, it, expect } from 'vitest';
 import { extractPricingFromReservation } from './document-service.js';
 
 // Real-world example: UNvia GmbH / Janos Udvary (u19, airbnb2).
-// fareAccommodation 318 + cleaning 25 = 343 list value (what the guest pays).
-// Guesty subTotalPrice 262.96 is the host-reduced (post-commission) figure.
+// AF 318 + CF 25, LengthOfStayDiscount -31.80 (real guest discount),
+// host channel fee (PCM) -48.24 (Airbnb commission — NOT a guest discount).
+// fareAccommodationAdjusted 286.20 = 318 - 31.80 (accommodation net of guest discount).
+// What the guest actually pays = 286.20 + 25 + 21.78 tax = 332.98 (= Airbnb's "guest paid").
 const airbnbMoney = {
   fareAccommodation: 318,
+  fareAccommodationAdjusted: 286.2,
   fareCleaning: 25,
-  subTotalPrice: 262.96,
+  subTotalPrice: 262.96,   // host-side (after commission) — must NOT drive the invoice
   totalTaxes: 21.78,
   hostPayout: 284.74,
 };
 
-describe('extractPricingFromReservation — Airbnb full service value', () => {
-  it('Airbnb invoice shows the full price the guest pays, not the commission-reduced amount', () => {
+describe('extractPricingFromReservation — Airbnb invoice = what the guest pays', () => {
+  it('Airbnb invoice includes the real guest discount but excludes the host channel fee', () => {
     const p = extractPricingFromReservation(
       { source: 'airbnb2', nightsCount: 2, guestsCount: 2, money: airbnbMoney },
       {}
     );
-    // Option A: the subTotalPrice gap (commission) is NOT treated as a discount.
-    expect(p.discountTotal).toBe(0);
-    expect(p.subtotal).toBe(34300);          // 343.00 €
+    // discount = fareAccommodationAdjusted - fareAccommodation = -31.80 (the LOSD), not the commission.
+    expect(p.discountTotal).toBe(-3180);     // -31.80 €
+    expect(p.subtotal).toBe(31120);          // 311.20 € (286.20 + 25)
     expect(p.taxAmount).toBe(2178);          // 21.78 €
-    expect(p.total).toBe(36478);             // 364.78 € (was 284.74 before the fix)
+    expect(p.total).toBe(33298);             // 332.98 € — exactly what the guest paid
   });
 
   it('non-Airbnb bookings are unchanged (total = hostPayout, subtotal = Guesty subTotalPrice)', () => {

@@ -225,12 +225,15 @@ export function extractPricingFromReservation(reservation: any, listing: any): {
   const isAirbnb = reservation.source?.toLowerCase().includes('airbnb') ||
                    reservation.integration?.platform?.toLowerCase().includes('airbnb');
 
-  // For Airbnb, Guesty's subTotalPrice is already reduced by the platform
-  // commission, so the derived "discount" above is actually that commission —
-  // NOT a customer discount. Drop it so the invoice shows the full price the
-  // guest pays (full service value), not the host-reduced payout.
+  // For Airbnb, the invoice must show what the GUEST pays — which includes real
+  // guest discounts (e.g. length-of-stay) but NOT the Airbnb host channel fee
+  // (commission). The subTotalPrice-derived discount above conflates both, so
+  // replace it with just the accommodation's guest-facing adjustment:
+  //   fareAccommodationAdjusted = fareAccommodation net of guest discounts.
+  // discountTotal then = adjusted − list (<= 0), the host commission stays out.
   if (isAirbnb) {
-    discountTotal = 0;
+    const adjustedAccommodation = euroToCents(money?.fareAccommodationAdjusted ?? money?.fareAccommodation ?? 0);
+    discountTotal = adjustedAccommodation - accommodationTotal;
   }
 
   // Subtotal (net, before taxes)
