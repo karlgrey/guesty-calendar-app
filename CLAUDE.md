@@ -100,6 +100,11 @@ Properties are defined in `data/properties.json` (validated with Zod on startup)
 - **`/admin`** - Property Dashboard: stats, conversion rate, analytics (if GA4 enabled), bookings, documents
 - **`/admin/system`** - System: health, sync, DB viewer, ETL scheduler, user management
 - Property selector on both pages; analytics auto-hidden for properties without GA4
+- **"Aktuell belegt" block**: an always-visible block above the bookings list shows currently
+  in-house stays (`getCurrentReservations`: `check_in ≤ today < check_out`) in BOTH the Next/Last
+  12-Months views (else "Aktuell nicht belegt"), with the same quote/invoice actions. In-house
+  stays also count in the `future`-period `getDashboardStats` (revenue query uses
+  `check_out > today`). Spec: `docs/superpowers/specs/2026-06-10-current-booking-block-design.md`.
 
 ### Weekly Email Reports
 Per-property config in `properties.json`: `weeklyReport: { enabled, recipients, day (0-6), hour (0-23) }`
@@ -123,8 +128,10 @@ Konfiguration als **Top-Level-Block** `biReport` in `data/properties.json` (Gesc
 - Forecast: `src/services/forecast.ts` (Lead-Time-Kurve aus `reservations.reserved_at`), Kalender:
   `src/services/bi-calendar.ts`, Orchestrierung: `src/jobs/bi-email.ts`, Renderer: `src/services/bi-email-templates.ts`.
 - Manueller Test: `npx tsx src/scripts/test-bi-email.ts` (respektiert `DEV_EMAIL_OVERRIDE`).
-- **Deploy-Hinweis:** Prod-`properties.json` hat divergierende Recipient-Edits → Deploy muss `git stash`/`pop`
-  um den `git pull`. Der neue `biReport`-Top-Level-Key ist additiv.
+- **Deploy:** seit 2026-06-08 ist die frühere Prod-`properties.json`-Divergenz aufgelöst (alle
+  echten Empfänger sind committet, prod-Arbeitskopie sauber) → Deploy ist wieder plain
+  `git pull && npm run build && pm2 restart`, **kein** `git stash`/`pop` mehr nötig. Empfänger
+  künftig im Repo ändern, nicht live auf prod.
 - Spec: `docs/superpowers/specs/2026-06-02-portfolio-bi-email-design.md`
 
 ### Google Analytics 4
@@ -140,6 +147,35 @@ Optional per property. Configured in `properties.json` `ga4` field (or omit for 
 - Document numbers are **permanently stable** once created (never change, even on refresh)
 - Refresh button (↻) fetches fresh Guesty data but preserves the document number
 - Company names (GmbH, AG, UG, Ltd, etc.) in guest firstName auto-detected
+- **Airbnb invoices = what the GUEST pays**, NOT the host payout. In `document-service.ts`
+  `extractPricingFromReservation`, the `isAirbnb` branch sets
+  `discountTotal = fareAccommodationAdjusted − fareAccommodation` (the real guest discount,
+  e.g. length-of-stay) so the **Airbnb host channel fee (commission) is excluded**, while
+  real discounts stay in. `subtotal = fareAccommodationAdjusted + cleaning + extras`,
+  `total = subtotal + taxes`. (Do NOT use `subTotalPrice`/`hostPayout` for Airbnb — those are
+  net of commission.) Verified: reservation `6a2720bb` (UNvia/Janos Udvary) → 332.98 €.
+  Regression history in `docs/superpowers/specs/2026-06-05-…` family; covered by
+  `document-service.airbnb-pricing.test.ts`.
+
+### Owner Blocks & Sellable Occupancy
+
+Owner/host-blocked (non-rentable) days are handled consistently via the canonical marker
+**`availability.status = 'blocked'`** (provider-agnostic). Spec:
+`docs/superpowers/specs/2026-06-04-owner-blocks-design.md`.
+- **Classification:** Guesty `blocks.o/m` → blocked; Hostex `inventory=0` → blocked; Florence
+  Airbnb-iCal `SUMMARY:Airbnb (Not available)` → blocked/`owner` (in
+  `mappers/airbnb-mail/availability-mapper.ts`). Reservations (`Reserved`) stay `booked`.
+- **Sellable occupancy:** `getOccupancyRate`/`getOccupancyBreakdown` = `booked / (total − blocked)`
+  (blocked days excluded from the rentable base; `getDashboardStats` aligned). Used by BI mail,
+  weekly mail, admin.
+- **Google Calendar:** `sync-google-calendar.ts` pushes blocked spans as all-day events labelled by
+  reason/source via `services/google-calendar-blocks.ts` `blockLabel(blockType, provider)`
+  (`Owner-Block`/`Manuell blockiert`/`Wartung`/`Blockiert (Hostex|Airbnb)`, no emoji). Cleanup keys
+  on `extendedProperties.private.kind='owner-block'`; **`listEvents` MUST request `fields=…
+  extendedProperties`** or the default response omits it. Spans split on `block_type` change.
+- **BI mail:** owner-blocked days render the same red as booked (not available); a `Block-Tg` KPI
+  column shows blocked days per property. (`getReservationsByPeriod` is intentionally NOT changed —
+  it stays "future = real arrivals" for BI/weekly/calendar.)
 
 ### Guest Fingerprint (Migration 012)
 
@@ -285,6 +321,11 @@ Optional:
 - `listings.nickname` may be null → fallback to `title`
 - Tax codes: `AF` = accommodation fare, `CF`/`CLEANING` = cleaning fee
 - **Quirk**: `limit=100` returns all reservations, but `limit=1000` returns fewer
+- **Airbnb money fields**: `hostPayout`/`subTotalPrice` are NET of the Airbnb commission (host
+  side) — NOT what the guest paid. The guest-paid amount = `fareAccommodationAdjusted` (accommodation
+  net of guest discounts like length-of-stay) `+ fareCleaning + totalTaxes`. `invoiceItems`: `LOSD`
+  = length-of-stay discount (guest discount), `PCM` = "Host channel fee" (commission, NOT a guest
+  discount). See the Airbnb-invoice rule under Document Generation.
 
 ## Git & Deployment
 
