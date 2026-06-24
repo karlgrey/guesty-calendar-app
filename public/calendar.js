@@ -141,12 +141,16 @@ class BookingCalendar {
   }
 
   /**
-   * Detect browser language (DE or EN)
-   * Defaults to DE if detection fails or language is not English
+   * Detect language (DE or EN)
+   * Precedence: ?lang= URL param (if valid) > browser language > DE default
    */
   detectLanguage() {
+    // 1. Explicit override via ?lang=de|en (e.g. for embedding an English page)
+    const param = new URLSearchParams(window.location.search).get('lang');
+    if (param === 'de' || param === 'en') return param;
+
+    // 2. Browser language — only switch to EN if explicitly English
     const browserLang = navigator.language || navigator.userLanguage;
-    // Default to DE, only switch to EN if explicitly English
     return browserLang && browserLang.startsWith('en') ? 'en' : 'de';
   }
 
@@ -178,6 +182,7 @@ class BookingCalendar {
         monthlyDiscount: 'Monatsrabatt',
         taxes: 'Steuern',
         emptyPricing: 'Wähle Reisedaten, um den Gesamtpreis zu sehen.',
+        loading: 'Lädt …',
         noAvailability: 'Aktuell keine Verfügbarkeit',
         ariaDecreaseGuests: 'Gästeanzahl verringern',
         ariaIncreaseGuests: 'Gästeanzahl erhöhen',
@@ -240,6 +245,7 @@ class BookingCalendar {
         monthlyDiscount: 'Monthly discount',
         taxes: 'Taxes',
         emptyPricing: 'Select dates to see the total price.',
+        loading: 'Loading …',
         noAvailability: 'No availability at this time',
         ariaDecreaseGuests: 'Decrease guests',
         ariaIncreaseGuests: 'Increase guests',
@@ -309,6 +315,10 @@ class BookingCalendar {
   }
 
   async init() {
+    // Apply translated labels immediately so the static (English) HTML markup
+    // doesn't flash before the async data loads below.
+    this.updateLabels();
+
     // Fetch listing data
     await this.fetchListingData();
 
@@ -338,6 +348,9 @@ class BookingCalendar {
    * Update UI labels with translations
    */
   updateLabels() {
+    // Reflect the active language on the document for screen readers / SEO
+    document.documentElement.lang = this.language;
+
     // Labels
     const labelCheckIn = document.getElementById('label-checkin');
     const labelCheckOut = document.getElementById('label-checkout');
@@ -362,6 +375,12 @@ class BookingCalendar {
     if (calendarTitle) calendarTitle.textContent = this.t('selectDates');
     if (resetDatesBtn) resetDatesBtn.textContent = this.t('resetDates');
     if (closeCalendarBtn) closeCalendarBtn.textContent = this.t('close');
+
+    // Translate the initial loading placeholder (only while still "Loading...")
+    const priceEl = document.getElementById('header-price');
+    if (priceEl && priceEl.textContent.trim() === 'Loading...') {
+      priceEl.textContent = this.t('loading');
+    }
 
     // Aria labels
     const checkInInput = document.getElementById('check-in-input');

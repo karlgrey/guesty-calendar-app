@@ -292,6 +292,13 @@ if (!propertyId) throw new NotFoundError('No property configured');
 ### Frontend
 - `public/calendar.js` - Calendar with property context (`window.__PROPERTY_SLUG__`, `__PROPERTY_NAME__`, `__BOOKING_EMAIL__`)
 - `public/calendar.css` - Mobile-first responsive design
+- **Widget i18n (DE/EN)**: the booking widget is fully bilingual — all UI labels, the
+  booking-email body, ARIA labels and currency/date formatting live in a `de`/`en` translations
+  object in `calendar.js`. Language selection (`detectLanguage()`) precedence: **`?lang=de|en`
+  URL param (if valid) > browser language > `de` default**. Embed an English page via
+  `/p/:slug?lang=en` (append the param to the iframe `src`). `detectLanguage()` runs before any
+  network call and sets `document.documentElement.lang`, so there is no English-flash for DE
+  visitors. Adding a new string means adding the key to BOTH language blocks.
 
 ## Environment Variables
 
