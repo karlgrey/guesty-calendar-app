@@ -14,6 +14,8 @@ import logger from '../utils/logger.js';
 import { syncHostexProperty } from './hostex/sync-properties.js';
 import { syncHostexReservations } from './hostex/sync-reservations.js';
 import { syncHostexCalendar } from './hostex/sync-calendar.js';
+import { syncHostexMessagesForProperty } from './hostex/sync-hostex-messages.js';
+import { getHostexClient } from '../services/hostex-client.js';
 import { syncAirbnbProperty } from './airbnb-mail/sync-properties.js';
 import { syncAirbnbMail } from './airbnb-mail/sync-mail.js';
 import { syncAirbnbIcal } from './airbnb-mail/sync-ical.js';
@@ -126,12 +128,21 @@ async function runHostexETL(property: PropertyConfig, force: boolean): Promise<E
     ? await syncHostexReservations(property)
     : { success: false, inquiriesCount: 0, confirmedCount: 0, error: 'Skipped: property sync failed' };
 
-  // Step 3: calendar
+  // Step 3: message sync (conversations → message_threads + messages)
+  if (propertyResult.success) {
+    try {
+      await syncHostexMessagesForProperty(property, getHostexClient());
+    } catch (error) {
+      logger.error({ error, propertySlug: property.slug }, 'Hostex: message sync error (non-fatal)');
+    }
+  }
+
+  // Step 4: calendar
   const calendarResult = propertyResult.success && propertyResult.hostexProperty
     ? await syncHostexCalendar(property, propertyResult.hostexProperty)
     : { success: false, daysCount: 0, error: 'Skipped: property sync failed' };
 
-  // Step 4 (optional re-mapping): if reservations & calendar succeeded, re-sync property
+  // Step 5 (optional re-mapping): if reservations & calendar succeeded, re-sync property
   // so the mapper sees the freshly-synced dynamic data for next-run accuracy.
   if (propertyResult.success && reservationsResult.success && calendarResult.success) {
     await syncHostexProperty(property);
