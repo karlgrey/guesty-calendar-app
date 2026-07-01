@@ -7,7 +7,7 @@
  * See migration 014_add_messages_threads.sql.
  */
 
-export type MessageSource = 'guesty' | 'gmail';
+export type MessageSource = 'guesty' | 'gmail' | 'hostex';
 
 export type MessageChannel =
   | 'airbnb'
