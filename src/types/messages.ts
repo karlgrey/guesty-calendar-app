@@ -99,6 +99,9 @@ export interface MessageDraft {
   error: string | null;
   created_at: string;
   sent_at: string | null;
+  model: string | null;
 }
 
-export type NewDraft = Pick<MessageDraft, 'id' | 'thread_id' | 'provider' | 'body' | 'generated_by'>;
+export type NewDraft = Pick<MessageDraft, 'id' | 'thread_id' | 'provider' | 'body' | 'generated_by'> & {
+  model?: string | null;
+};

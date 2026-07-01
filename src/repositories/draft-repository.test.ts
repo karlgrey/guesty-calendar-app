@@ -16,7 +16,7 @@ beforeEach(() => {
     body TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
     generated_by TEXT NOT NULL DEFAULT 'manual', send_attempts INTEGER NOT NULL DEFAULT 0,
     external_message_id TEXT, error TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')), sent_at TEXT
+    created_at TEXT NOT NULL DEFAULT (datetime('now')), sent_at TEXT, model TEXT
   );`);
   setDatabase(db);
 });
