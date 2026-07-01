@@ -136,7 +136,11 @@ async function runHostexETL(property: PropertyConfig, force: boolean): Promise<E
     } catch (error) {
       logger.error({ error, propertySlug: property.slug }, 'Hostex: message sync error (non-fatal)');
     }
-    await generateDraftsForProperty(property);
+    try {
+      await generateDraftsForProperty(property);
+    } catch (error) {
+      logger.error({ error, propertySlug: property.slug }, 'Hostex: draft-gen error (non-fatal)');
+    }
   }
 
   // Step 4: calendar

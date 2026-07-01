@@ -80,8 +80,7 @@ router.get('/:threadId', (req, res) => {
          <div class="actions"><button type="submit" class="btn btn-primary">Senden (Freigabe)</button></div>
        </form>
        <div class="actions">
-         <form method="POST" action="/admin/messages/${encodeURIComponent(thread.id)}/regenerate">
-           <button type="submit" class="btn btn-ghost">Neu generieren</button></form>
+         ${draft.generated_by === 'llm' ? `<form method="POST" action="/admin/messages/${encodeURIComponent(thread.id)}/regenerate"><button type="submit" class="btn btn-ghost">Neu generieren</button></form>` : ''}
          <form method="POST" action="/admin/messages/drafts/${encodeURIComponent(draft.id)}/discard">
            <button type="submit" class="btn btn-danger">Verwerfen</button></form>
        </div>`
@@ -183,11 +182,10 @@ router.post('/:threadId/regenerate', async (req, res, next) => {
     const facts = property?.vaultNote ? loadPropertyFacts(property.vaultNote) : null;
     if (!voice || !facts) { res.status(400).send('Kein Vault-Wissen verfügbar (VAULT_PATH/vaultNote prüfen)'); return; }
 
-    const existing = getActiveDraftByThread(thread.id);
-    if (existing) discardDraft(existing.id);
-
     const reply = await generateDraftForThread({ thread, messages: getMessagesByThread(thread.id), voice, facts });
     if (reply) {
+      const existing = getActiveDraftByThread(thread.id);
+      if (existing) discardDraft(existing.id);
       createDraft({ id: randomUUID(), thread_id: thread.id, provider: 'hostex', body: reply, generated_by: 'llm', model: DRAFT_MODEL });
     }
     res.redirect(`/admin/messages/${encodeURIComponent(thread.id)}`);
