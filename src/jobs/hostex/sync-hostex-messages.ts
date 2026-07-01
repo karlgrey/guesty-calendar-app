@@ -1,6 +1,6 @@
 // src/jobs/hostex/sync-hostex-messages.ts
 import { upsertThread, upsertMessage } from '../../repositories/message-repository.js';
-import { mapHostexConversation } from '../../mappers/hostex/message-mapper.js';
+import { mapHostexConversation, detailBelongsToProperty } from '../../mappers/hostex/message-mapper.js';
 import type { HostexConversation, HostexConversationDetail } from '../../services/hostex-client.js';
 import type { PropertyConfig } from '../../config/properties.js';
 import logger from '../../utils/logger.js';
@@ -30,19 +30,21 @@ export async function syncHostexMessagesForProperty(
   try {
     const allConvs = await client.getConversations({ limit: 100 });
 
-    // Filter to conversations belonging to this property.
-    // Hostex returns account-wide conversations; property_title in LIST items is the only
-    // discriminator. Conversations with null/empty property_title are inquiries without a
-    // resolvable property — not synced in Schnitt 1 (acceptable limitation).
-    const convs = allConvs.filter(
-      (conv) => conv.property_title && conv.property_title === property.name,
+    // Hostex returns account-wide conversations. Candidates for THIS property are:
+    //  - bookings, whose LIST item carries a matching property_title (cheap fast-path), and
+    //  - inquiries, whose LIST item has an EMPTY property_title (Hostex omits it pre-booking)
+    //    — these must be attributed via the DETAIL's numeric activities[].property.id.
+    const candidates = allConvs.filter(
+      (conv) => (conv.property_title && conv.property_title === property.name) || !conv.property_title,
     );
 
     let threads = 0;
     let messages = 0;
 
-    for (const conv of convs) {
+    for (const conv of candidates) {
       const detail = await client.getConversationDetails(conv.id);
+      // Empty-title candidates (inquiries) belong to another property unless the detail confirms.
+      if (!conv.property_title && !detailBelongsToProperty(detail, listingId)) continue;
       const { thread, messages: msgs } = mapHostexConversation(detail, listingId, now);
       upsertThread(thread);
       for (const m of msgs) {

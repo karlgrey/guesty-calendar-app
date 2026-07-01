@@ -74,6 +74,31 @@ const alteSchilderwerkstatt = {
   name: 'Alte Schilderwerkstatt',
 } as unknown as PropertyConfig;
 
+// Inquiries have an EMPTY property_title in the LIST; attribution comes from the
+// DETAIL's activities[].property.id. 'inq-mine' belongs to 12659676, 'inq-other' does not.
+const inquiryClient: HostexMessageClient = {
+  async getConversations() {
+    return [
+      { id: 'inq-mine', channel_type: 'airbnb', guest: { name: 'Michael', email: '' }, property_title: '' },
+      { id: 'inq-other', channel_type: 'airbnb', guest: { name: 'Foreign', email: '' }, property_title: '' },
+    ];
+  },
+  async getConversationDetails(id: string) {
+    if (id === 'inq-mine') {
+      return {
+        id: 'inq-mine', channel_type: 'airbnb', guest: { name: 'Michael', email: '' }, property_title: '',
+        activities: [{ activity_type: 'inquiry', property: { id: 12659676, title: 'Alte Schilderwerkstatt' } }],
+        messages: [{ id: 'im1', sender_role: 'guest', display_type: 'Text', content: 'Anfrage', created_at: '2026-06-30T10:00:00Z' }],
+      };
+    }
+    return {
+      id: 'inq-other', channel_type: 'airbnb', guest: { name: 'Foreign', email: '' }, property_title: '',
+      activities: [{ activity_type: 'inquiry', property: { id: 99999999, title: 'Somewhere else' } }],
+      messages: [{ id: 'im2', sender_role: 'guest', display_type: 'Text', content: 'x', created_at: '2026-06-30T10:00:00Z' }],
+    };
+  },
+};
+
 describe('syncHostexMessagesForProperty', () => {
   it('persists threads and messages', async () => {
     const res = await syncHostexMessagesForProperty(property, fakeClient, '2026-07-01T00:00:00Z');
@@ -106,5 +131,16 @@ describe('syncHostexMessagesForProperty', () => {
     expect(getThreadById('hostex:c-match')?.guest_name).toBe('Anna');
     // Non-matching thread must NOT exist
     expect(getThreadById('hostex:c-other')).toBeNull();
+  });
+
+  it('persists an inquiry (empty property_title) attributed via the detail property id', async () => {
+    const res = await syncHostexMessagesForProperty(alteSchilderwerkstatt, inquiryClient, '2026-07-01T00:00:00Z');
+    expect(res.success).toBe(true);
+    expect(res.threads).toBe(1);
+    // My inquiry (property.id 12659676) is persisted...
+    expect(getThreadById('hostex:inq-mine')?.guest_name).toBe('Michael');
+    expect(getMessagesByThread('hostex:inq-mine')[0].body).toBe('Anfrage');
+    // ...the foreign inquiry (property.id 99999999) is not.
+    expect(getThreadById('hostex:inq-other')).toBeNull();
   });
 });

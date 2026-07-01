@@ -8,6 +8,21 @@ export function mapHostexDirection(senderRole: string): 'inbound' | 'outbound' |
   return 'system';
 }
 
+/**
+ * Whether a conversation DETAIL belongs to the given Hostex property, matched on
+ * the numeric `activities[].property.id`. This is the reliable attribution key —
+ * unlike the LIST item's `property_title`, it is present even for inquiries
+ * (which carry no property_title). Returns false when no activity resolves.
+ */
+export function detailBelongsToProperty(
+  detail: HostexConversationDetail,
+  hostexPropertyId: string,
+): boolean {
+  return (detail.activities ?? []).some(
+    (a) => a.property?.id != null && String(a.property.id) === String(hostexPropertyId),
+  );
+}
+
 export function mapHostexChannel(channelType: string): MessageChannel {
   const s = (channelType ?? '').toLowerCase();
   if (s === 'airbnb' || s === 'airbnb2') return 'airbnb';
