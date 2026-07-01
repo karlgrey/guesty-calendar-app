@@ -370,27 +370,26 @@ export interface HostexConversationDetail extends HostexConversation {
 }
 
 // Methoden (in der HostexClient-Klasse, neben getProperties()):
+// NB: der private call<T>() entpackt die Hostex-Envelope bereits (`return envelope.data`),
+// daher hier NUR eine Ebene tippen — sonst käme undefined/leer zurück.
 async getConversations(opts: { limit?: number; offset?: number } = {}): Promise<HostexConversation[]> {
   const limit = opts.limit ?? 100;
-  const offset = opts.offset ?? 0;
-  const res = await this.call<{ data: { conversations: HostexConversation[] } }>(
+  const offset = opts.offset ?? 0;  // offset ist Pflicht (HTTP 400 ohne)
+  const res = await this.call<{ conversations: HostexConversation[] }>(
     'GET', `/conversations?limit=${limit}&offset=${offset}`,
   );
-  return res.data?.conversations ?? [];
+  return res.conversations ?? [];
 }
 
 async getConversationDetails(conversationId: string): Promise<HostexConversationDetail> {
-  const res = await this.call<{ data: HostexConversationDetail }>(
-    'GET', `/conversations/${conversationId}`,
-  );
-  return res.data;
+  return this.call<HostexConversationDetail>('GET', `/conversations/${conversationId}`);
 }
 
 async sendMessage(conversationId: string, message: string): Promise<{ message_id: string }> {
-  const res = await this.call<{ data: { message_id: string } }>(
+  const res = await this.call<{ message_id: string }>(
     'POST', `/conversations/${conversationId}`, { message },
   );
-  return { message_id: res.data?.message_id ?? '' };
+  return { message_id: res.message_id ?? '' };
 }
 ```
 
