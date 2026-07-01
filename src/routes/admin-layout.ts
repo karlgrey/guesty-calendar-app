@@ -81,6 +81,8 @@ a { color: var(--color-forest); }
 .btn-primary:hover { background: var(--color-forest-light); }
 .btn-danger { background: transparent; color: var(--color-red); border: 1px solid var(--color-stone); }
 .btn-danger:hover { background: #faeae8; border-color: var(--color-red); }
+.btn-ghost { background: var(--color-sand); color: var(--color-warm-gray); border: 1px solid var(--color-stone); }
+.btn-ghost:hover { background: var(--color-stone); }
 textarea {
   width: 100%; font-family: var(--font-body); font-size: 15px; line-height: 1.6; padding: 14px;
   border: 1px solid var(--color-stone); border-radius: var(--radius-md); background: var(--color-cream);
