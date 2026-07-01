@@ -13,7 +13,7 @@ import { getPropertyByHostexId, getPropertiesByProvider } from '../config/proper
 import { loadVoice, loadPropertyFacts } from '../services/vault-knowledge.js';
 import { generateDraftForThread, DRAFT_MODEL } from '../services/draft-service.js';
 import { sendReply } from '../services/message-sender.js';
-import { getHostexClient } from '../services/hostex-client.js';
+import { getHostexClient, type HostexConversationDetail } from '../services/hostex-client.js';
 import { syncHostexMessagesForProperty } from '../jobs/hostex/sync-hostex-messages.js';
 import { generateDraftsForProperty } from '../jobs/hostex/generate-hostex-drafts.js';
 import logger from '../utils/logger.js';
@@ -209,13 +209,14 @@ router.post('/:threadId/regenerate', async (req, res, next) => {
 
 // Runs in the background so the HTTP request returns immediately (the full sync can
 // take a while — it fetches conversation details — and would otherwise risk a proxy timeout).
+// Process-scoped; correct for single-instance PM2. Cluster mode would need a shared lock.
 let syncRunning = false;
 
 async function runMessageSync(): Promise<void> {
   const client = getHostexClient();
   // One shared detail cache across all property passes → each conversation detail
   // (esp. empty-title inquiries) is fetched at most once per run.
-  const detailCache = new Map();
+  const detailCache = new Map<string, HostexConversationDetail>();
   for (const property of getPropertiesByProvider('hostex')) {
     await syncHostexMessagesForProperty(property, client, undefined, detailCache);
     await generateDraftsForProperty(property);
