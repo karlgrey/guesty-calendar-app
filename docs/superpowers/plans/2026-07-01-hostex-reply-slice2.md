@@ -878,7 +878,7 @@ Die `router.post('/drafts/:draftId/send', ...)`-Route: `express.urlencoded` als 
 router.post('/drafts/:draftId/send', express.urlencoded({ extended: true }), async (req, res, next) => {
 ```
 
-Direkt NACH der thread-Existenzprüfung (`if (!thread) { ... return; }`) und VOR `claimDraftForSending` einfügen:
+**Reihenfolge wichtig:** Den Body erst **NACH** dem erfolgreichen `claimDraftForSending`-Aufruf aktualisieren (nicht davor). Grund: `updateDraftBody` hat keinen Status-Guard — würde man vor dem Claim editieren, könnte man den Body eines nicht-`pending`-Drafts ändern. Nach dem erfolgreichen Claim ist der Draft `sending` (von uns beansprucht), also sicher editierbar. Direkt NACH der `if (!claimDraftForSending(draft.id)) { ...409...; return; }`-Zeile einfügen:
 
 ```typescript
     const edited = typeof req.body?.body === 'string' ? req.body.body.trim() : '';
