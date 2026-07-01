@@ -4,6 +4,7 @@ import { setDatabase, resetDatabase } from '../db/index.js';
 import { getThreadsNeedingDraft } from './message-repository.js';
 
 let db: Database.Database;
+
 beforeEach(() => {
   db = new Database(':memory:');
   db.exec(`
@@ -27,26 +28,47 @@ beforeEach(() => {
     );
   `);
   setDatabase(db);
-  const t = db.prepare(`INSERT INTO message_threads (id,listing_id,source,channel,first_message_at,last_message_at,last_synced_at) VALUES (?,?,?,?,?,?,?)`);
-  t.run('hostex:a', 'L1', 'hostex', 'airbnb', 't', '2026-06-30T10:00Z', 'now'); // inbound-latest, no draft -> needs draft
-  t.run('hostex:b', 'L1', 'hostex', 'airbnb', 't', '2026-06-30T11:00Z', 'now'); // inbound-latest, HAS pending draft -> excluded
-  t.run('hostex:c', 'L1', 'hostex', 'airbnb', 't', '2026-06-30T09:00Z', 'now'); // outbound-latest -> excluded
-  t.run('hostex:d', 'L2', 'hostex', 'airbnb', 't', '2026-06-30T12:00Z', 'now'); // other listing -> excluded by filter
-  const m = db.prepare(`INSERT INTO messages (id,thread_id,direction,sent_at,body,source) VALUES (?,?,?,?,?,?)`);
-  m.run('m1', 'hostex:a', 'inbound', '2026-06-30T10:00Z', 'q', 'hostex');
-  m.run('m2', 'hostex:b', 'inbound', '2026-06-30T11:00Z', 'q', 'hostex');
-  m.run('m3', 'hostex:c', 'inbound', '2026-06-30T08:00Z', 'q', 'hostex');
-  m.run('m4', 'hostex:c', 'outbound', '2026-06-30T09:00Z', 'a', 'hostex');
-  m.run('m5', 'hostex:d', 'inbound', '2026-06-30T12:00Z', 'q', 'hostex');
-  db.prepare(`INSERT INTO message_drafts (id,thread_id,provider,body,status,generated_by) VALUES ('dp','hostex:b','hostex','draft','pending','llm')`).run();
+
+  // last_message_at / sent_at are set RELATIVE to now so the recency filter is
+  // deterministic regardless of the wall clock when the suite runs.
+  const t = db.prepare(
+    `INSERT INTO message_threads (id,listing_id,source,channel,first_message_at,last_message_at,last_synced_at)
+     VALUES (?,?,?,?,datetime('now','-1 day'),datetime('now', ?),datetime('now'))`,
+  );
+  t.run('hostex:a', 'L1', 'hostex', 'airbnb', '-1 hour'); // fresh inbound, no draft -> NEEDS draft
+  t.run('hostex:b', 'L1', 'hostex', 'airbnb', '-1 hour'); // fresh inbound, HAS pending draft -> excluded
+  t.run('hostex:c', 'L1', 'hostex', 'airbnb', '-1 hour'); // fresh but outbound-latest -> excluded
+  t.run('hostex:d', 'L2', 'hostex', 'airbnb', '-1 hour'); // other listing -> excluded
+  t.run('hostex:e', 'L1', 'hostex', 'airbnb', '-10 days'); // inbound but STALE -> excluded by recency
+
+  const m = db.prepare(
+    `INSERT INTO messages (id,thread_id,direction,sent_at,body,source) VALUES (?,?,?,datetime('now', ?),?,?)`,
+  );
+  m.run('m1', 'hostex:a', 'inbound', '-1 hour', 'q', 'hostex');
+  m.run('m2', 'hostex:b', 'inbound', '-1 hour', 'q', 'hostex');
+  m.run('m3c', 'hostex:c', 'inbound', '-2 hour', 'q', 'hostex');
+  m.run('m4c', 'hostex:c', 'outbound', '-1 hour', 'a', 'hostex'); // latest is outbound
+  m.run('m5', 'hostex:d', 'inbound', '-1 hour', 'q', 'hostex');
+  m.run('m6', 'hostex:e', 'inbound', '-10 days', 'q', 'hostex');
+
+  db.prepare(
+    `INSERT INTO message_drafts (id,thread_id,provider,body,status,generated_by) VALUES ('dp','hostex:b','hostex','draft','pending','llm')`,
+  ).run();
 });
 afterEach(() => { resetDatabase(); db.close(); });
 
 describe('getThreadsNeedingDraft', () => {
-  it('returns L1 hostex threads with inbound-latest and no pending draft, respecting limit', () => {
-    expect(getThreadsNeedingDraft('L1', 10).map((t) => t.id)).toEqual(['hostex:a']);
+  it('returns only fresh L1 hostex threads with inbound-latest and no pending draft', () => {
+    // included: hostex:a. excluded: b(draft), c(outbound-latest), d(other listing), e(stale)
+    expect(getThreadsNeedingDraft('L1', 10, '-72 hours').map((r) => r.id)).toEqual(['hostex:a']);
   });
+
+  it('excludes threads whose last message is older than the recency window', () => {
+    // A very tight window drops even the -1h "fresh" thread.
+    expect(getThreadsNeedingDraft('L1', 10, '-1 second')).toEqual([]);
+  });
+
   it('respects the limit', () => {
-    expect(getThreadsNeedingDraft('L1', 0).length).toBe(0);
+    expect(getThreadsNeedingDraft('L1', 0, '-72 hours').length).toBe(0);
   });
 });

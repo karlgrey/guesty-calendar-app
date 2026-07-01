@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { generateDraftsForProperty, DRAFT_GEN_CAP, type DraftGenDeps } from './generate-hostex-drafts.js';
+import { generateDraftsForProperty, DRAFT_GEN_CAP, DRAFT_SINCE_MODIFIER, type DraftGenDeps } from './generate-hostex-drafts.js';
 import type { PropertyConfig } from '../../config/properties.js';
 import type { MessageThread } from '../../types/messages.js';
 
@@ -32,7 +32,7 @@ describe('generateDraftsForProperty', () => {
     const res = await generateDraftsForProperty(property, d);
     expect(res).toEqual({ generated: 2, skipped: 0 });
     expect(d.create).toHaveBeenCalledTimes(2);
-    expect((d.getThreads as any)).toHaveBeenCalledWith('L1', DRAFT_GEN_CAP);
+    expect((d.getThreads as any)).toHaveBeenCalledWith('L1', DRAFT_GEN_CAP, DRAFT_SINCE_MODIFIER);
   });
 
   it('skips a thread when generate returns null', async () => {

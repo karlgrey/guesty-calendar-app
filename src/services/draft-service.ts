@@ -32,6 +32,7 @@ function buildSystemPrompt(voice: string, facts: string): string {
     'Nutze ausschließlich die folgenden Objektfakten. Erfinde nichts; fehlt ein Fakt, bleib allgemein.',
     '--- OBJEKTWISSEN ---', facts, '--- ENDE OBJEKTWISSEN ---',
     'Regeln: Kein Auto-Versand von Zugangscodes. Antworte in der Sprache des Gastes (Default Deutsch). Kurz und konkret.',
+    'Wenn keine Antwort nötig ist (z. B. reine Dankes-/Bestätigungsnachricht ohne Frage oder Anliegen), gib über submit_reply einen leeren String zurück.',
     'Gib die Antwort über das Tool submit_reply zurück (nur den Nachrichtentext, keine Anrede-Meta).',
   ].join('\n');
 }
