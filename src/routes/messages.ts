@@ -16,6 +16,7 @@ import { sendReply } from '../services/message-sender.js';
 import { getHostexClient } from '../services/hostex-client.js';
 import { syncHostexMessagesForProperty } from '../jobs/hostex/sync-hostex-messages.js';
 import { generateDraftsForProperty } from '../jobs/hostex/generate-hostex-drafts.js';
+import logger from '../utils/logger.js';
 import { renderAdminPage } from './admin-layout.js';
 
 const router = express.Router();
@@ -56,7 +57,9 @@ router.get('/', (_req, res) => {
     ? `<ul class="thread-list">${rows}</ul>`
     : '<p class="empty">Keine offenen Nachrichten — alles beantwortet. 🎉</p>';
   const lastSync = getLastHostexMessageSync();
-  const lastSyncLabel = lastSync ? `Letzter Sync: ${esc(fmtDate(lastSync))}` : 'Noch nie gesynct';
+  const lastSyncLabel = syncRunning
+    ? 'Sync läuft …'
+    : lastSync ? `Letzter Sync: ${esc(fmtDate(lastSync))}` : 'Noch nie gesynct';
   const body = `<div class="page-head">
       <h1>Nachrichten <span class="count-pill">${threads.length} offen</span></h1>
       <div class="sync-bar">
@@ -204,16 +207,30 @@ router.post('/:threadId/regenerate', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// Nachrichten jetzt syncen: pro Hostex-Objekt Nachrichten holen + Entwürfe erzeugen.
-router.post('/sync', async (_req, res, next) => {
-  try {
-    const client = getHostexClient();
-    for (const property of getPropertiesByProvider('hostex')) {
-      await syncHostexMessagesForProperty(property, client);
-      await generateDraftsForProperty(property);
-    }
-    res.redirect('/admin/messages');
-  } catch (e) { next(e); }
+// Runs in the background so the HTTP request returns immediately (the full sync can
+// take a while — it fetches conversation details — and would otherwise risk a proxy timeout).
+let syncRunning = false;
+
+async function runMessageSync(): Promise<void> {
+  const client = getHostexClient();
+  // One shared detail cache across all property passes → each conversation detail
+  // (esp. empty-title inquiries) is fetched at most once per run.
+  const detailCache = new Map();
+  for (const property of getPropertiesByProvider('hostex')) {
+    await syncHostexMessagesForProperty(property, client, undefined, detailCache);
+    await generateDraftsForProperty(property);
+  }
+}
+
+// Nachrichten jetzt syncen (asynchron): startet den Lauf und leitet sofort zurück.
+router.post('/sync', (_req, res) => {
+  if (!syncRunning) {
+    syncRunning = true;
+    runMessageSync()
+      .catch((err) => logger.error({ err: err instanceof Error ? err.message : String(err) }, 'message sync (button) failed'))
+      .finally(() => { syncRunning = false; });
+  }
+  res.redirect('/admin/messages');
 });
 
 export default router;

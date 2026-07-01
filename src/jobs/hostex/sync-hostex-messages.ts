@@ -21,11 +21,25 @@ export async function syncHostexMessagesForProperty(
   property: PropertyConfig,
   client: HostexMessageClient,
   now: string = new Date().toISOString(),
+  /**
+   * Optional per-run cache of conversation details keyed by conv id. Pass ONE
+   * shared Map across all property passes in a run so each detail — especially
+   * empty-title inquiries, which are candidates in every pass — is fetched once.
+   */
+  detailCache?: Map<string, HostexConversationDetail>,
 ): Promise<HostexMessageSyncResult> {
   const listingId = property.hostexPropertyId;
   if (!listingId) {
     return { success: false, threads: 0, messages: 0, error: 'No hostexPropertyId on property' };
   }
+
+  const getDetail = async (id: string): Promise<HostexConversationDetail> => {
+    const cached = detailCache?.get(id);
+    if (cached) return cached;
+    const detail = await client.getConversationDetails(id);
+    detailCache?.set(id, detail);
+    return detail;
+  };
 
   try {
     const allConvs = await client.getConversations({ limit: 100 });
@@ -42,7 +56,7 @@ export async function syncHostexMessagesForProperty(
     let messages = 0;
 
     for (const conv of candidates) {
-      const detail = await client.getConversationDetails(conv.id);
+      const detail = await getDetail(conv.id);
       // Empty-title candidates (inquiries) belong to another property unless the detail confirms.
       if (!conv.property_title && !detailBelongsToProperty(detail, listingId)) continue;
       const { thread, messages: msgs } = mapHostexConversation(detail, listingId, now);
