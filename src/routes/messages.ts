@@ -100,9 +100,15 @@ router.get('/:threadId', (req, res) => {
            <button type="submit" class="btn btn-danger">Verwerfen</button></form>
        </div>`
     : `<h3>Antwort verfassen</h3>
+       ${thread.source === 'hostex'
+         ? `<div class="actions" style="margin-bottom:16px">
+              <form method="POST" action="/admin/messages/${encodeURIComponent(thread.id)}/regenerate">
+                <button type="submit" class="btn btn-primary">KI-Entwurf generieren</button></form>
+            </div>`
+         : ''}
        <form method="POST" action="/admin/messages/${encodeURIComponent(thread.id)}/draft">
          <textarea name="body" rows="6" required placeholder="Antwort an ${name} …"></textarea>
-         <div class="actions"><button type="submit" class="btn btn-primary">Entwurf speichern</button></div>
+         <div class="actions"><button type="submit" class="btn ${thread.source === 'hostex' ? 'btn-ghost' : 'btn-primary'}">Manuell speichern</button></div>
        </form>`;
 
   const body = `<a class="back-link" href="/admin/messages">&larr; Alle Nachrichten</a>
