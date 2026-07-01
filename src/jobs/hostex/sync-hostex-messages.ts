@@ -28,7 +28,16 @@ export async function syncHostexMessagesForProperty(
   }
 
   try {
-    const convs = await client.getConversations({ limit: 100 });
+    const allConvs = await client.getConversations({ limit: 100 });
+
+    // Filter to conversations belonging to this property.
+    // Hostex returns account-wide conversations; property_title in LIST items is the only
+    // discriminator. Conversations with null/empty property_title are inquiries without a
+    // resolvable property — not synced in Schnitt 1 (acceptable limitation).
+    const convs = allConvs.filter(
+      (conv) => conv.property_title && conv.property_title === property.name,
+    );
+
     let threads = 0;
     let messages = 0;
 

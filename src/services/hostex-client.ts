@@ -32,6 +32,8 @@ export interface HostexConversation {
   id: string;
   channel_type: string;
   guest: HostexGuest | null;
+  /** Populated in LIST responses; null/absent for account-level inquiries without a property. */
+  property_title: string | null;
 }
 
 export interface HostexMessageRaw {

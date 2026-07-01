@@ -6,6 +6,7 @@ import {
 } from '../repositories/message-repository.js';
 import {
   createDraft, getDraftById, getActiveDraftByThread, markDraftSent, markDraftError, discardDraft,
+  claimDraftForSending,
 } from '../repositories/draft-repository.js';
 import { sendReply } from '../services/message-sender.js';
 
@@ -76,15 +77,29 @@ router.post('/drafts/:draftId/send', async (req, res, next) => {
   try {
     const draft = getDraftById(req.params.draftId);
     if (!draft) { res.status(404).send('Entwurf nicht gefunden'); return; }
-    if (draft.status !== 'pending') { res.status(409).send('Entwurf ist nicht mehr offen'); return; }
     const thread = getThreadById(draft.thread_id);
     if (!thread) { res.status(404).send('Thread nicht gefunden'); return; }
+
+    // Atomic send guard: claim the draft transitioning pending→sending.
+    // Two concurrent POST requests both pass the draft/thread existence checks above,
+    // but only ONE can win the UPDATE WHERE status='pending' race — the other gets false
+    // and is rejected with 409. This eliminates the TOCTOU double-send window.
+    if (!claimDraftForSending(draft.id)) {
+      res.status(409).send('Entwurf ist nicht mehr offen oder wird bereits gesendet');
+      return;
+    }
 
     try {
       const { externalMessageId } = await sendReply(thread, draft.body);
       markDraftSent(draft.id, externalMessageId);
+      // Key the local outbound row on the returned external id so the next sync that ingests
+      // the same message as hostex:{realId} hits the same row (upsert = no-op) instead of
+      // creating a duplicate. Falls back to sent:{draftId} when no external id is returned.
+      // NOTE: this collapse assumes the send response's message_id equals the id the
+      // conversation later reports; confirm on first live send.
+      const outboundId = externalMessageId ? `hostex:${externalMessageId}` : `sent:${draft.id}`;
       upsertMessage({
-        id: `sent:${draft.id}`, thread_id: thread.id, direction: 'outbound',
+        id: outboundId, thread_id: thread.id, direction: 'outbound',
         sent_at: new Date().toISOString(), from_name: 'host', from_address: null, to_address: null,
         subject: null, body: draft.body, body_html: null, source: thread.source,
         raw_meta: JSON.stringify({ draftId: draft.id, externalMessageId }),

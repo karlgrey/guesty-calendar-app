@@ -32,11 +32,13 @@ afterEach(() => { resetDatabase(); db.close(); });
 
 const fakeClient: HostexMessageClient = {
   async getConversations() {
-    return [{ id: 'c-1', channel_type: 'airbnb', guest: { name: 'Darleen', email: '' } }];
+    return [
+      { id: 'c-1', channel_type: 'airbnb', guest: { name: 'Darleen', email: '' }, property_title: 'Bootshaus' },
+    ];
   },
   async getConversationDetails() {
     return {
-      id: 'c-1', channel_type: 'airbnb', guest: { name: 'Darleen', email: '' },
+      id: 'c-1', channel_type: 'airbnb', guest: { name: 'Darleen', email: '' }, property_title: 'Bootshaus',
       messages: [
         { id: 'm-1', sender_role: 'guest', display_type: 'Text', content: 'Hallo', created_at: '2026-06-30T10:00:00Z' },
       ],
@@ -44,7 +46,33 @@ const fakeClient: HostexMessageClient = {
   },
 };
 
-const property = { slug: 'bootshaus', hostexPropertyId: 'listing-9' } as unknown as PropertyConfig;
+const property = { slug: 'bootshaus', hostexPropertyId: 'listing-9', name: 'Bootshaus' } as unknown as PropertyConfig;
+
+// Two-property filter fixture: returns one matching and one non-matching conversation.
+// getConversationDetails is only wired for the matching id (c-match).
+const multiPropertyClient: HostexMessageClient = {
+  async getConversations() {
+    return [
+      { id: 'c-match', channel_type: 'airbnb', guest: { name: 'Anna', email: '' }, property_title: 'Alte Schilderwerkstatt' },
+      { id: 'c-other', channel_type: 'airbnb', guest: { name: 'Bob', email: '' }, property_title: 'Bootshaus an der alten Oder' },
+    ];
+  },
+  async getConversationDetails(id: string) {
+    if (id !== 'c-match') throw new Error(`getConversationDetails called for unexpected id: ${id}`);
+    return {
+      id: 'c-match', channel_type: 'airbnb', guest: { name: 'Anna', email: '' }, property_title: 'Alte Schilderwerkstatt',
+      messages: [
+        { id: 'm-match-1', sender_role: 'guest', display_type: 'Text', content: 'Hallo ASW', created_at: '2026-06-30T10:00:00Z' },
+      ],
+    };
+  },
+};
+
+const alteSchilderwerkstatt = {
+  slug: 'alte-schilderwerkstatt',
+  hostexPropertyId: '12659676',
+  name: 'Alte Schilderwerkstatt',
+} as unknown as PropertyConfig;
 
 describe('syncHostexMessagesForProperty', () => {
   it('persists threads and messages', async () => {
@@ -66,5 +94,17 @@ describe('syncHostexMessagesForProperty', () => {
     const bad = { slug: 'x' } as unknown as PropertyConfig;
     const res = await syncHostexMessagesForProperty(bad, fakeClient, '2026-07-01T00:00:00Z');
     expect(res.success).toBe(false);
+  });
+
+  it('filters to current property — does not persist conversations from other properties', async () => {
+    // multiPropertyClient returns two conversations: one for "Alte Schilderwerkstatt" and one
+    // for "Bootshaus an der alten Oder". Only the matching one should be persisted.
+    const res = await syncHostexMessagesForProperty(alteSchilderwerkstatt, multiPropertyClient, '2026-07-01T00:00:00Z');
+    expect(res.success).toBe(true);
+    expect(res.threads).toBe(1);
+    // Matching thread must exist
+    expect(getThreadById('hostex:c-match')?.guest_name).toBe('Anna');
+    // Non-matching thread must NOT exist
+    expect(getThreadById('hostex:c-other')).toBeNull();
   });
 });

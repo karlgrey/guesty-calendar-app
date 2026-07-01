@@ -4,7 +4,7 @@ import Database from 'better-sqlite3';
 import { setDatabase, resetDatabase } from '../db/index.js';
 import {
   createDraft, getDraftById, getActiveDraftByThread,
-  markDraftSent, markDraftError, discardDraft,
+  markDraftSent, markDraftError, discardDraft, claimDraftForSending,
 } from './draft-repository.js';
 
 let db: Database.Database;
@@ -55,5 +55,26 @@ describe('draft-repository', () => {
     discardDraft('d4');
     expect(getActiveDraftByThread('hostex:c4')).toBeNull();
     expect(getDraftById('d4')?.status).toBe('discarded');
+  });
+
+  describe('claimDraftForSending', () => {
+    it('returns true and sets status=sending on first call for a pending draft', () => {
+      createDraft({ id: 'd5', thread_id: 'hostex:c5', provider: 'hostex', body: 'x', generated_by: 'manual' });
+      const claimed = claimDraftForSending('d5');
+      expect(claimed).toBe(true);
+      expect(getDraftById('d5')?.status).toBe('sending');
+    });
+
+    it('returns false on a second call (draft no longer pending)', () => {
+      createDraft({ id: 'd6', thread_id: 'hostex:c6', provider: 'hostex', body: 'x', generated_by: 'manual' });
+      claimDraftForSending('d6');
+      const secondClaim = claimDraftForSending('d6');
+      expect(secondClaim).toBe(false);
+    });
+
+    it('returns false for a non-existent draft id', () => {
+      const result = claimDraftForSending('does-not-exist');
+      expect(result).toBe(false);
+    });
   });
 });

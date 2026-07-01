@@ -25,6 +25,19 @@ export function getActiveDraftByThread(threadId: string): MessageDraft | null {
   return row ?? null;
 }
 
+/**
+ * Atomically transition a draft from 'pending' → 'sending'.
+ * Returns true if the claim succeeded (exactly one row updated), false otherwise.
+ * Two concurrent callers: the first wins, the second gets false (TOCTOU guard).
+ */
+export function claimDraftForSending(id: string): boolean {
+  const db = getDatabase();
+  const result = db
+    .prepare(`UPDATE message_drafts SET status = 'sending' WHERE id = ? AND status = 'pending'`)
+    .run(id);
+  return result.changes === 1;
+}
+
 export function markDraftSent(id: string, externalMessageId: string): void {
   const db = getDatabase();
   db.prepare(

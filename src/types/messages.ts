@@ -85,7 +85,7 @@ export type NewMessageThread = Omit<MessageThread, 'created_at' | 'manually_cate
 export type NewMessage = Omit<Message, 'created_at'>;
 
 // --- Drafts (outbound reply, Schnitt 1) ---
-export type DraftStatus = 'pending' | 'sent' | 'error' | 'discarded';
+export type DraftStatus = 'pending' | 'sending' | 'sent' | 'error' | 'discarded';
 
 export interface MessageDraft {
   id: string;
