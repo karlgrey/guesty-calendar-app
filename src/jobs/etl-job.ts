@@ -15,6 +15,7 @@ import { syncHostexProperty } from './hostex/sync-properties.js';
 import { syncHostexReservations } from './hostex/sync-reservations.js';
 import { syncHostexCalendar } from './hostex/sync-calendar.js';
 import { syncHostexMessagesForProperty } from './hostex/sync-hostex-messages.js';
+import { generateDraftsForProperty } from './hostex/generate-hostex-drafts.js';
 import { getHostexClient } from '../services/hostex-client.js';
 import { syncAirbnbProperty } from './airbnb-mail/sync-properties.js';
 import { syncAirbnbMail } from './airbnb-mail/sync-mail.js';
@@ -135,6 +136,7 @@ async function runHostexETL(property: PropertyConfig, force: boolean): Promise<E
     } catch (error) {
       logger.error({ error, propertySlug: property.slug }, 'Hostex: message sync error (non-fatal)');
     }
+    await generateDraftsForProperty(property);
   }
 
   // Step 4: calendar
