@@ -332,24 +332,36 @@ git commit -m "feat(drafts): message_drafts table + draft repository"
   - `getConversationDetails(conversationId: string): Promise<HostexConversationDetail>`
   - `sendMessage(conversationId: string, message: string): Promise<{ message_id: string }>`
 - Produces (Typen, exportiert):
-  - `interface HostexConversation { id: string; channel_type: string; guest_name: string | null }`
-  - `interface HostexMessageRaw { id: string; sender_role: string; content: string; created_at: string }`
+  - `interface HostexGuest { name: string | null; email: string | null }`
+  - `interface HostexConversation { id: string; channel_type: string; guest: HostexGuest | null }`
+  - `interface HostexMessageRaw { id: string; sender_role: string; display_type: string; content: string; created_at: string }`
   - `interface HostexConversationDetail extends HostexConversation { messages: HostexMessageRaw[] }`
 
-> **Feld-Reconciliation:** Die Feldnamen oben spiegeln die dokumentierte `message_created`-Payload (`message_id`/`conversation_id`/`channel_type`/`sender_role`/`content`/`created_at`). Falls die in Task 1 gezogene Fixture abweicht (z. B. `sender_type` statt `sender_role`, `body` statt `content`), hier die realen Namen eintragen — Task 4 referenziert genau diese Typen.
+> **Feld-Reconciliation (aus Task-1-Fixture bestätigt):** Reale Form ist
+> Conversation `{ id, channel_type, guest: { name, phone, email }, messages }`,
+> Message `{ id, sender_role ('guest'|'host'), sender_name, display_type ('Text'|'Box'|'ReservationAlteration'), content, created_at }`.
+> **Wichtig:** Der List-Endpoint verlangt zwingend `offset` (sonst HTTP 400) — die
+> Methode `getConversations` sendet ihn immer mit. Nur `display_type === 'Text'`
+> sind echte Gast/Host-Texte; `Box`/`ReservationAlteration` sind System-Karten
+> (in Task 4 herausfiltern).
 
 - [ ] **Step 1: Typen + Methoden in `hostex-client.ts` ergänzen**
 
 ```typescript
 // Typen (oben bei den anderen Hostex-Typen einordnen)
+export interface HostexGuest {
+  name: string | null;
+  email: string | null;
+}
 export interface HostexConversation {
   id: string;
   channel_type: string;
-  guest_name: string | null;
+  guest: HostexGuest | null;
 }
 export interface HostexMessageRaw {
   id: string;
-  sender_role: string;   // 'guest' | 'host' | 'system' (aus Fixture bestätigen)
+  sender_role: string;   // 'guest' | 'host'
+  display_type: string;  // 'Text' | 'Box' | 'ReservationAlteration' — nur 'Text' ist echter Gesprächstext
   content: string;
   created_at: string;
 }
@@ -434,7 +446,7 @@ git commit -m "feat(hostex): conversation read + sendMessage client methods"
 - Produces:
   - `mapHostexDirection(senderRole: string): 'inbound' | 'outbound' | 'system'`
   - `mapHostexChannel(channelType: string): MessageChannel`
-  - `mapHostexConversation(detail: HostexConversationDetail, listingId: string, now: string): { thread: NewMessageThread; messages: NewMessage[] }`
+  - `mapHostexConversation(detail: HostexConversationDetail, listingId: string, now: string): { thread: NewMessageThread; messages: NewMessage[] }` — filtert Nachrichten auf `display_type === 'Text'` (System-Karten `Box`/`ReservationAlteration` werden verworfen); Gastname aus `detail.guest?.name`.
 
 - [ ] **Step 1: `MessageSource` in `src/types/messages.ts` erweitern**
 
@@ -466,12 +478,13 @@ describe('hostex message mapper', () => {
     expect(mapHostexChannel('whatever')).toBe('other');
   });
 
-  it('maps a conversation to thread + messages with stable ids', () => {
+  it('maps a conversation to thread + messages with stable ids, filtering non-Text', () => {
     const detail: HostexConversationDetail = {
-      id: 'c-1', channel_type: 'airbnb', guest_name: 'Darleen',
+      id: 'c-1', channel_type: 'airbnb', guest: { name: 'Darleen', email: '' },
       messages: [
-        { id: 'm-1', sender_role: 'guest', content: 'Hallo', created_at: '2026-06-30T10:00:00Z' },
-        { id: 'm-2', sender_role: 'host', content: 'Hi', created_at: '2026-06-30T11:00:00Z' },
+        { id: 'm-1', sender_role: 'guest', display_type: 'Text', content: 'Hallo', created_at: '2026-06-30T10:00:00Z' },
+        { id: 'm-2', sender_role: 'host', display_type: 'Text', content: 'Hi', created_at: '2026-06-30T11:00:00Z' },
+        { id: 'm-3', sender_role: 'guest', display_type: 'ReservationAlteration', content: '', created_at: '2026-06-30T12:00:00Z' },
       ],
     };
     const { thread, messages } = mapHostexConversation(detail, 'listing-9', '2026-07-01T00:00:00Z');
@@ -481,10 +494,11 @@ describe('hostex message mapper', () => {
     expect(thread.source).toBe('hostex');
     expect(thread.channel).toBe('airbnb');
     expect(thread.guest_name).toBe('Darleen');
-    expect(thread.message_count).toBe(2);
+    expect(thread.message_count).toBe(2); // only Text messages counted
     expect(thread.first_message_at).toBe('2026-06-30T10:00:00Z');
     expect(thread.last_message_at).toBe('2026-06-30T11:00:00Z');
 
+    // the ReservationAlteration system card (m-3) is filtered out
     expect(messages.map((m) => m.id)).toEqual(['hostex:m-1', 'hostex:m-2']);
     expect(messages[0].direction).toBe('inbound');
     expect(messages[0].thread_id).toBe('hostex:c-1');
@@ -527,7 +541,10 @@ export function mapHostexConversation(
   now: string,
 ): { thread: NewMessageThread; messages: NewMessage[] } {
   const threadId = `hostex:${detail.id}`;
-  const posts = detail.messages ?? [];
+  // Only 'Text' messages are real guest/host conversation; 'Box' and
+  // 'ReservationAlteration' are system cards (Task-1-Fixture bestätigt).
+  const posts = (detail.messages ?? []).filter((p) => p.display_type === 'Text');
+  const guestName = detail.guest?.name ?? null;
   const times = posts.map((p) => p.created_at).filter(Boolean).sort();
   const firstAt = times[0] ?? now;
   const lastAt = times[times.length - 1] ?? now;
@@ -537,7 +554,7 @@ export function mapHostexConversation(
     listing_id: listingId,
     source: 'hostex',
     channel: mapHostexChannel(detail.channel_type),
-    guest_name: detail.guest_name ?? null,
+    guest_name: guestName,
     guest_email: null,
     first_message_at: firstAt,
     last_message_at: lastAt,
@@ -557,7 +574,7 @@ export function mapHostexConversation(
     thread_id: threadId,
     direction: mapHostexDirection(p.sender_role),
     sent_at: p.created_at ?? now,
-    from_name: p.sender_role === 'host' ? 'host' : detail.guest_name ?? null,
+    from_name: p.sender_role === 'host' ? 'host' : guestName,
     from_address: null,
     to_address: null,
     subject: null,
@@ -637,12 +654,14 @@ afterEach(() => { resetDatabase(); db.close(); });
 
 const fakeClient: HostexMessageClient = {
   async getConversations() {
-    return [{ id: 'c-1', channel_type: 'airbnb', guest_name: 'Darleen' }];
+    return [{ id: 'c-1', channel_type: 'airbnb', guest: { name: 'Darleen', email: '' } }];
   },
   async getConversationDetails() {
     return {
-      id: 'c-1', channel_type: 'airbnb', guest_name: 'Darleen',
-      messages: [{ id: 'm-1', sender_role: 'guest', content: 'Hallo', created_at: '2026-06-30T10:00:00Z' }],
+      id: 'c-1', channel_type: 'airbnb', guest: { name: 'Darleen', email: '' },
+      messages: [
+        { id: 'm-1', sender_role: 'guest', display_type: 'Text', content: 'Hallo', created_at: '2026-06-30T10:00:00Z' },
+      ],
     };
   },
 };
