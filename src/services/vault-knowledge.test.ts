@@ -20,9 +20,12 @@ describe('vault-knowledge', () => {
     expect(loadPropertyFacts('Bootshaus.md', base)).toBe('BOOTSHAUS-FACTS');
   });
 
-  it('returns null when base dir is undefined (feature off)', () => {
-    expect(loadVoice(undefined)).toBeNull();
-    expect(loadPropertyFacts('Bootshaus.md', undefined)).toBeNull();
+  it('returns null when base dir is falsy (feature off / no VAULT_PATH)', () => {
+    // Pass '' (falsy but not undefined) so we exercise the !baseDir guard directly,
+    // independent of whether config.vaultPath is set — `undefined` would trigger the
+    // `= config.vaultPath` default parameter and read the real vault.
+    expect(loadVoice('')).toBeNull();
+    expect(loadPropertyFacts('Bootshaus.md', '')).toBeNull();
   });
 
   it('returns null for a missing file', () => {
