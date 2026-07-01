@@ -12,10 +12,12 @@ async function main() {
   const listRes = await fetch(`${base}/conversations?limit=5&offset=0`, {
     headers: { 'Hostex-Access-Token': token, 'User-Agent': 'guesty-calendar-app' },
   });
-  const list = await listRes.json();
+  // Diagnostic script: the response shape is exactly what we're inspecting,
+  // so treat the parsed JSON as loosely typed.
+  const list = (await listRes.json()) as any;
   const firstId = list?.data?.conversations?.[0]?.id ?? list?.data?.conversations?.[0]?.conversation_id;
 
-  let detail: unknown = null;
+  let detail: any = null;
   if (firstId) {
     const detRes = await fetch(`${base}/conversations/${firstId}`, {
       headers: { 'Hostex-Access-Token': token, 'User-Agent': 'guesty-calendar-app' },
