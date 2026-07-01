@@ -35,6 +35,7 @@ const configSchema = z.object({
   guestyOAuthUrl: z.string().url().default('https://open-api.guesty.com/oauth2/token'),
   guestyPropertyId: z.string().optional(), // Optional - falls back to properties.json
   propertiesConfigPath: z.string().default('./data/properties.json'),
+  vaultPath: z.string().optional(),
 
   // Hostex API (optional — only required if hostex-provider properties exist)
   hostexAccessToken: z.string().optional(),
@@ -133,6 +134,7 @@ function parseConfig() {
     guestyOAuthUrl: process.env.GUESTY_OAUTH_URL,
     guestyPropertyId: process.env.GUESTY_PROPERTY_ID,
     propertiesConfigPath: process.env.PROPERTIES_CONFIG_PATH,
+    vaultPath: process.env.VAULT_PATH,
     hostexAccessToken: process.env.HOSTEX_ACCESS_TOKEN,
     hostexApiUrl: process.env.HOSTEX_API_URL,
     airbnbMailHost: process.env.AIRBNB_MAIL_HOST,

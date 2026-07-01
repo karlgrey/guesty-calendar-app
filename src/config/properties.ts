@@ -108,6 +108,7 @@ export interface PropertyConfig {
   // with this set will have direct-email sync.
   directEmailLabel?: string;
   name: string;
+  vaultNote?: string; // Dateiname der Objekt-Notiz im Vault (Areas/Hosting/Properties/<vaultNote>)
   timezone: string;
   currency: string;
   bookingRecipientEmail: string;
@@ -208,6 +209,7 @@ const propertyConfigSchema = z.object({
   airbnbMailLabel: z.string().optional(),
   directEmailLabel: z.string().optional(),
   name: z.string().min(1),
+  vaultNote: z.string().optional(),
   timezone: z.string().default('Europe/Berlin'),
   currency: z.string().length(3).toUpperCase().default('EUR'),
   bookingRecipientEmail: z.string().email(),
