@@ -5,9 +5,9 @@ import type { MessageDraft, NewDraft } from '../types/messages.js';
 export function createDraft(d: NewDraft): void {
   const db = getDatabase();
   db.prepare(
-    `INSERT INTO message_drafts (id, thread_id, provider, body, generated_by)
-     VALUES (@id, @thread_id, @provider, @body, @generated_by)`,
-  ).run(d);
+    `INSERT INTO message_drafts (id, thread_id, provider, body, generated_by, model)
+     VALUES (@id, @thread_id, @provider, @body, @generated_by, @model)`,
+  ).run({ ...d, model: d.model ?? null });
 }
 
 export function getDraftById(id: string): MessageDraft | null {
@@ -59,4 +59,9 @@ export function markDraftError(id: string, error: string): void {
 export function discardDraft(id: string): void {
   const db = getDatabase();
   db.prepare(`UPDATE message_drafts SET status = 'discarded' WHERE id = ?`).run(id);
+}
+
+export function updateDraftBody(id: string, body: string): void {
+  const db = getDatabase();
+  db.prepare(`UPDATE message_drafts SET body = ? WHERE id = ?`).run(body, id);
 }

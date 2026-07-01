@@ -6,8 +6,11 @@ import {
 } from '../repositories/message-repository.js';
 import {
   createDraft, getDraftById, getActiveDraftByThread, markDraftSent, markDraftError, discardDraft,
-  claimDraftForSending,
+  claimDraftForSending, updateDraftBody,
 } from '../repositories/draft-repository.js';
+import { getPropertyByHostexId } from '../config/properties.js';
+import { loadVoice, loadPropertyFacts } from '../services/vault-knowledge.js';
+import { generateDraftForThread, DRAFT_MODEL } from '../services/draft-service.js';
 import { sendReply } from '../services/message-sender.js';
 import { renderAdminPage } from './admin-layout.js';
 
@@ -35,9 +38,13 @@ router.get('/', (_req, res) => {
   const rows = threads
     .map((t) => {
       const name = esc(t.guest_name) || esc(t.id);
+      const d = getActiveDraftByThread(t.id);
+      const draftBadge = d
+        ? `<span class="badge" style="background:var(--color-amber);color:#fff;border:none">${d.generated_by === 'llm' ? 'KI-Entwurf' : 'Entwurf'} bereit</span>`
+        : '';
       return `<li><a href="/admin/messages/${encodeURIComponent(t.id)}">
         <span class="thread-name">${name}</span>
-        <span class="thread-meta"><span class="badge">${esc(t.channel)}</span><span>${esc(fmtDate(t.last_message_at))}</span></span>
+        <span class="thread-meta">${draftBadge}<span class="badge">${esc(t.channel)}</span><span>${esc(fmtDate(t.last_message_at))}</span></span>
       </a></li>`;
     })
     .join('');
@@ -67,11 +74,13 @@ router.get('/:threadId', (req, res) => {
     .join('');
 
   const draftBlock = draft
-    ? `<h3>Entwurf</h3>
-       <div class="draft-preview">${esc(draft.body)}</div>
+    ? `<h3>${draft.generated_by === 'llm' ? 'KI-Entwurf' : 'Entwurf'}</h3>
+       <form method="POST" action="/admin/messages/drafts/${encodeURIComponent(draft.id)}/send">
+         <textarea name="body" rows="7">${esc(draft.body)}</textarea>
+         <div class="actions"><button type="submit" class="btn btn-primary">Senden (Freigabe)</button></div>
+       </form>
        <div class="actions">
-         <form method="POST" action="/admin/messages/drafts/${encodeURIComponent(draft.id)}/send">
-           <button type="submit" class="btn btn-primary">Senden (Freigabe)</button></form>
+         ${draft.generated_by === 'llm' ? `<form method="POST" action="/admin/messages/${encodeURIComponent(thread.id)}/regenerate"><button type="submit" class="btn btn-ghost">Neu generieren</button></form>` : ''}
          <form method="POST" action="/admin/messages/drafts/${encodeURIComponent(draft.id)}/discard">
            <button type="submit" class="btn btn-danger">Verwerfen</button></form>
        </div>`
@@ -107,7 +116,7 @@ router.post('/:threadId/draft', express.urlencoded({ extended: true }), (req, re
 });
 
 // Freigabe: senden
-router.post('/drafts/:draftId/send', async (req, res, next) => {
+router.post('/drafts/:draftId/send', express.urlencoded({ extended: true }), async (req, res, next) => {
   try {
     const draft = getDraftById(req.params.draftId);
     if (!draft) { res.status(404).send('Entwurf nicht gefunden'); return; }
@@ -123,8 +132,12 @@ router.post('/drafts/:draftId/send', async (req, res, next) => {
       return;
     }
 
+    const edited = typeof req.body?.body === 'string' ? req.body.body.trim() : '';
+    if (edited && edited !== draft.body) updateDraftBody(draft.id, edited);
+    const bodyToSend = edited || draft.body;
+
     try {
-      const { externalMessageId } = await sendReply(thread, draft.body);
+      const { externalMessageId } = await sendReply(thread, bodyToSend);
       markDraftSent(draft.id, externalMessageId);
       // Key the local outbound row on the returned external id so the next sync that ingests
       // the same message as hostex:{realId} hits the same row (upsert = no-op) instead of
@@ -135,7 +148,7 @@ router.post('/drafts/:draftId/send', async (req, res, next) => {
       upsertMessage({
         id: outboundId, thread_id: thread.id, direction: 'outbound',
         sent_at: new Date().toISOString(), from_name: 'host', from_address: null, to_address: null,
-        subject: null, body: draft.body, body_html: null, source: thread.source,
+        subject: null, body: bodyToSend, body_html: null, source: thread.source,
         raw_meta: JSON.stringify({ draftId: draft.id, externalMessageId }),
       });
       res.redirect(`/admin/messages/${encodeURIComponent(thread.id)}`);
@@ -153,6 +166,29 @@ router.post('/drafts/:draftId/discard', (req, res, next) => {
     if (!draft) { res.status(404).send('Entwurf nicht gefunden'); return; }
     discardDraft(draft.id);
     res.redirect(`/admin/messages/${encodeURIComponent(draft.thread_id)}`);
+  } catch (e) { next(e); }
+});
+
+// Neu generieren: aktiven Entwurf verwerfen, frischen KI-Entwurf erzeugen (nur Hostex)
+router.post('/:threadId/regenerate', async (req, res, next) => {
+  try {
+    const thread = getThreadById(req.params.threadId);
+    if (!thread) { res.status(404).send('Thread nicht gefunden'); return; }
+    if (thread.source !== 'hostex' || !thread.listing_id) {
+      res.status(400).send('Neu generieren ist nur für Hostex-Threads verfügbar'); return;
+    }
+    const property = getPropertyByHostexId(thread.listing_id);
+    const voice = loadVoice();
+    const facts = property?.vaultNote ? loadPropertyFacts(property.vaultNote) : null;
+    if (!voice || !facts) { res.status(400).send('Kein Vault-Wissen verfügbar (VAULT_PATH/vaultNote prüfen)'); return; }
+
+    const reply = await generateDraftForThread({ thread, messages: getMessagesByThread(thread.id), voice, facts });
+    if (reply) {
+      const existing = getActiveDraftByThread(thread.id);
+      if (existing) discardDraft(existing.id);
+      createDraft({ id: randomUUID(), thread_id: thread.id, provider: 'hostex', body: reply, generated_by: 'llm', model: DRAFT_MODEL });
+    }
+    res.redirect(`/admin/messages/${encodeURIComponent(thread.id)}`);
   } catch (e) { next(e); }
 });
 

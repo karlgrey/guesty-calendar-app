@@ -15,6 +15,7 @@ import { syncHostexProperty } from './hostex/sync-properties.js';
 import { syncHostexReservations } from './hostex/sync-reservations.js';
 import { syncHostexCalendar } from './hostex/sync-calendar.js';
 import { syncHostexMessagesForProperty } from './hostex/sync-hostex-messages.js';
+import { generateDraftsForProperty } from './hostex/generate-hostex-drafts.js';
 import { getHostexClient } from '../services/hostex-client.js';
 import { syncAirbnbProperty } from './airbnb-mail/sync-properties.js';
 import { syncAirbnbMail } from './airbnb-mail/sync-mail.js';
@@ -134,6 +135,11 @@ async function runHostexETL(property: PropertyConfig, force: boolean): Promise<E
       await syncHostexMessagesForProperty(property, getHostexClient());
     } catch (error) {
       logger.error({ error, propertySlug: property.slug }, 'Hostex: message sync error (non-fatal)');
+    }
+    try {
+      await generateDraftsForProperty(property);
+    } catch (error) {
+      logger.error({ error, propertySlug: property.slug }, 'Hostex: draft-gen error (non-fatal)');
     }
   }
 

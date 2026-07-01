@@ -222,6 +222,26 @@ export function getCategoryCounts(
   return Object.fromEntries(rows.map((r) => [r.category, r.n]));
 }
 
+export function getThreadsNeedingDraft(listingId: string, limit: number): MessageThread[] {
+  const db = getDatabase();
+  return db
+    .prepare(
+      `SELECT t.* FROM message_threads t
+       WHERE t.source = 'hostex' AND t.listing_id = ?
+         AND (
+           SELECT m.direction FROM messages m
+           WHERE m.thread_id = t.id
+           ORDER BY m.sent_at DESC, m.created_at DESC LIMIT 1
+         ) = 'inbound'
+         AND NOT EXISTS (
+           SELECT 1 FROM message_drafts d WHERE d.thread_id = t.id AND d.status = 'pending'
+         )
+       ORDER BY t.last_message_at DESC
+       LIMIT ?`,
+    )
+    .all(listingId, limit) as MessageThread[];
+}
+
 export function getThreadsNeedingReply(): MessageThread[] {
   const db = getDatabase();
   return db
