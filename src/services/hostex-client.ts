@@ -21,6 +21,33 @@ import type {
   HostexCalendarResponse,
 } from '../types/hostex.js';
 
+// ── Conversation / Messaging types ───────────────────────────────────────────
+
+export interface HostexGuest {
+  name: string | null;
+  email: string | null;
+}
+
+export interface HostexConversation {
+  id: string;
+  channel_type: string;
+  guest: HostexGuest | null;
+  /** Populated in LIST responses; null/absent for account-level inquiries without a property. */
+  property_title: string | null;
+}
+
+export interface HostexMessageRaw {
+  id: string;
+  sender_role: string;   // 'guest' | 'host'
+  display_type: string;  // 'Text' | 'Box' | 'ReservationAlteration'
+  content: string;
+  created_at: string;
+}
+
+export interface HostexConversationDetail extends HostexConversation {
+  messages: HostexMessageRaw[];
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -195,6 +222,37 @@ export class HostexClient {
       end_date: opts.endDate,
       listings: opts.listings,
     });
+  }
+
+  /**
+   * GET /v3/conversations — list conversations (offset required by API)
+   */
+  async getConversations(opts: { limit?: number; offset?: number } = {}): Promise<HostexConversation[]> {
+    const limit = opts.limit ?? 100;
+    const offset = opts.offset ?? 0;
+    const res = await this.call<{ conversations: HostexConversation[] }>(
+      'GET', `/conversations?limit=${limit}&offset=${offset}`,
+    );
+    return res.conversations ?? [];
+  }
+
+  /**
+   * GET /v3/conversations/:id — full conversation with messages
+   */
+  async getConversationDetails(conversationId: string): Promise<HostexConversationDetail> {
+    return this.call<HostexConversationDetail>(
+      'GET', `/conversations/${conversationId}`,
+    );
+  }
+
+  /**
+   * POST /v3/conversations/:id — send a reply message to a guest
+   */
+  async sendMessage(conversationId: string, message: string): Promise<{ message_id: string }> {
+    const res = await this.call<{ message_id: string }>(
+      'POST', `/conversations/${conversationId}`, { message },
+    );
+    return { message_id: res?.message_id ?? '' };
   }
 }
 

@@ -221,3 +221,19 @@ export function getCategoryCounts(
     .all(listingId) as Array<{ category: string; n: number }>;
   return Object.fromEntries(rows.map((r) => [r.category, r.n]));
 }
+
+export function getThreadsNeedingReply(): MessageThread[] {
+  const db = getDatabase();
+  return db
+    .prepare(
+      `SELECT t.* FROM message_threads t
+       WHERE (
+         SELECT m.direction FROM messages m
+         WHERE m.thread_id = t.id
+         ORDER BY m.sent_at DESC, m.created_at DESC
+         LIMIT 1
+       ) = 'inbound'
+       ORDER BY t.last_message_at DESC`,
+    )
+    .all() as MessageThread[];
+}

@@ -17,6 +17,7 @@ import availabilityRoutes from './routes/availability.js';
 import quoteRoutes from './routes/quote.js';
 import debugRoutes from './routes/debug.js';
 import adminRoutes from './routes/admin.js';
+import messagesRoutes from './routes/messages.js';
 import authRoutes from './routes/auth.js';
 import adminUsersRoutes from './routes/admin-users.js';
 import propertyRoutes from './routes/property-routes.js';
@@ -78,6 +79,7 @@ export function createApp() {
   app.use('/debug', debugRoutes);
 
   // Protected admin routes (require authentication)
+  app.use('/admin/messages', requireAuth, messagesRoutes);
   app.use('/admin', requireAuth, adminRoutes);
   app.use('/api/admin-users', adminUsersRoutes); // requireAuth is applied within the router
 

@@ -7,7 +7,7 @@
  * See migration 014_add_messages_threads.sql.
  */
 
-export type MessageSource = 'guesty' | 'gmail';
+export type MessageSource = 'guesty' | 'gmail' | 'hostex';
 
 export type MessageChannel =
   | 'airbnb'
@@ -83,3 +83,22 @@ export type NewMessageThread = Omit<MessageThread, 'created_at' | 'manually_cate
   classification_reasoning?: string | null; // set only by LLM classifier, not sync jobs
 };
 export type NewMessage = Omit<Message, 'created_at'>;
+
+// --- Drafts (outbound reply, Schnitt 1) ---
+export type DraftStatus = 'pending' | 'sending' | 'sent' | 'error' | 'discarded';
+
+export interface MessageDraft {
+  id: string;
+  thread_id: string;
+  provider: 'hostex' | 'guesty';
+  body: string;
+  status: DraftStatus;
+  generated_by: 'manual' | 'llm';
+  send_attempts: number;
+  external_message_id: string | null;
+  error: string | null;
+  created_at: string;
+  sent_at: string | null;
+}
+
+export type NewDraft = Pick<MessageDraft, 'id' | 'thread_id' | 'provider' | 'body' | 'generated_by'>;
