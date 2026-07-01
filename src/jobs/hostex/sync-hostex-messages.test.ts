@@ -143,4 +143,28 @@ describe('syncHostexMessagesForProperty', () => {
     // ...the foreign inquiry (property.id 99999999) is not.
     expect(getThreadById('hostex:inq-other')).toBeNull();
   });
+
+  it('with a shared detail cache, an inquiry is fetched only once across property passes', async () => {
+    let detailCalls = 0;
+    const countingClient: HostexMessageClient = {
+      async getConversations() {
+        return [{ id: 'inq', channel_type: 'airbnb', guest: { name: 'M', email: '' }, property_title: '' }];
+      },
+      async getConversationDetails(id: string) {
+        detailCalls++;
+        return {
+          id, channel_type: 'airbnb', guest: { name: 'M', email: '' }, property_title: '',
+          activities: [{ activity_type: 'inquiry', property: { id: 111, title: 'A' } }],
+          messages: [{ id: 'im', sender_role: 'guest', display_type: 'Text', content: 'q', created_at: '2026-06-30T10:00:00Z' }],
+        };
+      },
+    };
+    const propA = { slug: 'a', hostexPropertyId: '111', name: 'A' } as unknown as PropertyConfig;
+    const propB = { slug: 'b', hostexPropertyId: '222', name: 'B' } as unknown as PropertyConfig;
+    const cache = new Map();
+    await syncHostexMessagesForProperty(propA, countingClient, '2026-07-01T00:00:00Z', cache);
+    await syncHostexMessagesForProperty(propB, countingClient, '2026-07-01T00:00:00Z', cache);
+    expect(detailCalls).toBe(1); // fetched once despite being a candidate in both passes
+    expect(getThreadById('hostex:inq')?.listing_id).toBe('111'); // attributed to A only
+  });
 });
