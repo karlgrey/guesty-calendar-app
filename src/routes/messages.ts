@@ -19,7 +19,7 @@ function esc(s: string | null | undefined): string {
 router.get('/', (_req, res) => {
   const threads = getThreadsNeedingReply();
   const rows = threads.map((t) =>
-    `<li><a href="/admin/messages/${encodeURIComponent(t.id)}">${esc(t.guest_name) || t.id}</a>
+    `<li><a href="/admin/messages/${encodeURIComponent(t.id)}">${esc(t.guest_name) || esc(t.id)}</a>
      — ${esc(t.channel)} — ${esc(t.last_message_at)}</li>`,
   ).join('');
   res.type('html').send(`<h1>Offene Nachrichten (${threads.length})</h1><ul>${rows}</ul>`);
@@ -37,9 +37,9 @@ router.get('/:threadId', (req, res) => {
 
   const draftBlock = draft
     ? `<h3>Entwurf</h3><pre>${esc(draft.body)}</pre>
-       <form method="POST" action="/admin/drafts/${draft.id}/send">
+       <form method="POST" action="/admin/messages/drafts/${encodeURIComponent(draft.id)}/send">
          <button type="submit">Senden (Freigabe)</button></form>
-       <form method="POST" action="/admin/drafts/${draft.id}/discard">
+       <form method="POST" action="/admin/messages/drafts/${encodeURIComponent(draft.id)}/discard">
          <button type="submit">Verwerfen</button></form>`
     : `<h3>Antwort verfassen</h3>
        <form method="POST" action="/admin/messages/${encodeURIComponent(thread.id)}/draft">
@@ -48,7 +48,7 @@ router.get('/:threadId', (req, res) => {
 
   res.type('html').send(
     `<a href="/admin/messages">&larr; zurück</a>
-     <h1>${esc(thread.guest_name) || thread.id}</h1>
+     <h1>${esc(thread.guest_name) || esc(thread.id)}</h1>
      <p>Kanal: ${esc(thread.channel)} — Provider: ${esc(thread.source)}</p>
      ${history}<hr>${draftBlock}`,
   );
