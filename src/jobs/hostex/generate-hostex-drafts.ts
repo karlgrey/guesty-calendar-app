@@ -8,9 +8,13 @@ import type { PropertyConfig } from '../../config/properties.js';
 import logger from '../../utils/logger.js';
 
 export const DRAFT_GEN_CAP = 10;
+// Only draft threads whose last guest message is newer than this — stale threads
+// don't warrant an AI reply. Expressed as a SQLite datetime modifier.
+export const DRAFT_MAX_AGE_HOURS = 72;
+export const DRAFT_SINCE_MODIFIER = `-${DRAFT_MAX_AGE_HOURS} hours`;
 
 export interface DraftGenDeps {
-  getThreads: (listingId: string, limit: number) => MessageThread[];
+  getThreads: (listingId: string, limit: number, sinceModifier: string) => MessageThread[];
   getMessages: (threadId: string) => Message[];
   loadVoice: () => string | null;
   loadFacts: (vaultNote: string) => string | null;
@@ -39,7 +43,7 @@ export async function generateDraftsForProperty(
     return { generated: 0, skipped: 0 };
   }
 
-  const threads = deps.getThreads(property.hostexPropertyId, DRAFT_GEN_CAP);
+  const threads = deps.getThreads(property.hostexPropertyId, DRAFT_GEN_CAP, DRAFT_SINCE_MODIFIER);
   let generated = 0;
   let skipped = 0;
   for (const thread of threads) {

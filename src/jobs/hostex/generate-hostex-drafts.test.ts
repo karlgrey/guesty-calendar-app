@@ -32,7 +32,7 @@ describe('generateDraftsForProperty', () => {
     const res = await generateDraftsForProperty(property, d);
     expect(res).toEqual({ generated: 2, skipped: 0 });
     expect(d.create).toHaveBeenCalledTimes(2);
-    expect((d.getThreads as any)).toHaveBeenCalledWith('L1', DRAFT_GEN_CAP);
+    expect((d.getThreads as any)).toHaveBeenCalledWith('L1', DRAFT_GEN_CAP, '-72 hours');
   });
 
   it('skips a thread when generate returns null', async () => {

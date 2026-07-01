@@ -222,12 +222,23 @@ export function getCategoryCounts(
   return Object.fromEntries(rows.map((r) => [r.category, r.n]));
 }
 
-export function getThreadsNeedingDraft(listingId: string, limit: number): MessageThread[] {
+/**
+ * Hostex threads that warrant an auto-generated draft: latest message is from
+ * the guest (inbound), no pending draft yet, AND the last message is recent —
+ * `sinceModifier` is a SQLite datetime modifier like '-72 hours' so we skip
+ * stale threads where drafting a reply makes no sense.
+ */
+export function getThreadsNeedingDraft(
+  listingId: string,
+  limit: number,
+  sinceModifier: string,
+): MessageThread[] {
   const db = getDatabase();
   return db
     .prepare(
       `SELECT t.* FROM message_threads t
        WHERE t.source = 'hostex' AND t.listing_id = ?
+         AND datetime(t.last_message_at) > datetime('now', ?)
          AND (
            SELECT m.direction FROM messages m
            WHERE m.thread_id = t.id
@@ -239,7 +250,7 @@ export function getThreadsNeedingDraft(listingId: string, limit: number): Messag
        ORDER BY t.last_message_at DESC
        LIMIT ?`,
     )
-    .all(listingId, limit) as MessageThread[];
+    .all(listingId, sinceModifier, limit) as MessageThread[];
 }
 
 export function getThreadsNeedingReply(): MessageThread[] {
