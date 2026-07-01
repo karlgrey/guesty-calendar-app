@@ -715,6 +715,7 @@ router.get('/', (_req, res) => {
         </select>
       </div>
       <div style="display: flex; gap: 10px;">
+        <a href="/admin/messages"><button class="secondary">💬 Nachrichten</button></a>
         <a href="/admin/conversions"><button class="secondary">🔍 Conversions</button></a>
         <a href="/admin/system"><button class="secondary">System</button></a>
         <a href="/auth/logout"><button class="secondary">Logout</button></a>

@@ -96,6 +96,9 @@ textarea:focus { outline: none; border-color: var(--color-forest); box-shadow: 0
 .actions { display: flex; gap: 12px; align-items: center; margin-top: 14px; }
 .empty { color: var(--color-warm-gray); padding: 20px 0; }
 form { margin: 0; }
+.page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.sync-bar { display: flex; align-items: center; gap: 12px; }
+.sync-info { color: var(--color-warm-gray); font-size: 13px; white-space: nowrap; }
 `;
 
 export function renderAdminPage(opts: { title: string; body: string }): string {

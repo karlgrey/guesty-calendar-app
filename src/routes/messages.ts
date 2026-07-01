@@ -3,15 +3,19 @@ import express from 'express';
 import { randomUUID } from 'node:crypto';
 import {
   getThreadsNeedingReply, getThreadById, getMessagesByThread, upsertMessage,
+  getLastHostexMessageSync,
 } from '../repositories/message-repository.js';
 import {
   createDraft, getDraftById, getActiveDraftByThread, markDraftSent, markDraftError, discardDraft,
   claimDraftForSending, updateDraftBody,
 } from '../repositories/draft-repository.js';
-import { getPropertyByHostexId } from '../config/properties.js';
+import { getPropertyByHostexId, getPropertiesByProvider } from '../config/properties.js';
 import { loadVoice, loadPropertyFacts } from '../services/vault-knowledge.js';
 import { generateDraftForThread, DRAFT_MODEL } from '../services/draft-service.js';
 import { sendReply } from '../services/message-sender.js';
+import { getHostexClient } from '../services/hostex-client.js';
+import { syncHostexMessagesForProperty } from '../jobs/hostex/sync-hostex-messages.js';
+import { generateDraftsForProperty } from '../jobs/hostex/generate-hostex-drafts.js';
 import { renderAdminPage } from './admin-layout.js';
 
 const router = express.Router();
@@ -51,7 +55,15 @@ router.get('/', (_req, res) => {
   const list = threads.length
     ? `<ul class="thread-list">${rows}</ul>`
     : '<p class="empty">Keine offenen Nachrichten — alles beantwortet. 🎉</p>';
-  const body = `<h1>Nachrichten <span class="count-pill">${threads.length} offen</span></h1>
+  const lastSync = getLastHostexMessageSync();
+  const lastSyncLabel = lastSync ? `Letzter Sync: ${esc(fmtDate(lastSync))}` : 'Noch nie gesynct';
+  const body = `<div class="page-head">
+      <h1>Nachrichten <span class="count-pill">${threads.length} offen</span></h1>
+      <div class="sync-bar">
+        <form method="POST" action="/admin/messages/sync"><button type="submit" class="btn btn-primary">Jetzt syncen</button></form>
+        <span class="sync-info">${lastSyncLabel}</span>
+      </div>
+    </div>
     <p class="subtitle">Threads, deren letzte Nachricht vom Gast kam und auf eine Antwort warten.</p>
     <div class="section">${list}</div>`;
   res.type('html').send(renderAdminPage({ title: 'Nachrichten', body }));
@@ -189,6 +201,18 @@ router.post('/:threadId/regenerate', async (req, res, next) => {
       createDraft({ id: randomUUID(), thread_id: thread.id, provider: 'hostex', body: reply, generated_by: 'llm', model: DRAFT_MODEL });
     }
     res.redirect(`/admin/messages/${encodeURIComponent(thread.id)}`);
+  } catch (e) { next(e); }
+});
+
+// Nachrichten jetzt syncen: pro Hostex-Objekt Nachrichten holen + Entwürfe erzeugen.
+router.post('/sync', async (_req, res, next) => {
+  try {
+    const client = getHostexClient();
+    for (const property of getPropertiesByProvider('hostex')) {
+      await syncHostexMessagesForProperty(property, client);
+      await generateDraftsForProperty(property);
+    }
+    res.redirect('/admin/messages');
   } catch (e) { next(e); }
 });
 
