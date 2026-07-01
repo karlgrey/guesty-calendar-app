@@ -1,0 +1,169 @@
+{
+  "list": {
+    "request_id": "RT2026070120342461008b3",
+    "error_code": 200,
+    "error_msg": "Done.",
+    "data": {
+      "conversations": [
+        {
+          "id": "0-2557140328",
+          "channel_type": "airbnb",
+          "last_message_at": "2026-06-29T08:37:02+00:00",
+          "guest": {
+            "name": "Alice Teresa",
+            "phone": "+49 17663374840",
+            "email": ""
+          },
+          "property_title": "Alte Schilderwerkstatt",
+          "check_in_date": "2026-07-31",
+          "check_out_date": "2026-08-02"
+        },
+        {
+          "id": "0-2567366505",
+          "channel_type": "airbnb",
+          "last_message_at": "2026-06-27T18:49:56+00:00",
+          "guest": {
+            "name": "Charlotte Eckardt",
+            "phone": "+49 17621831476",
+            "email": ""
+          },
+          "property_title": "Bootshaus an der alten Oder",
+          "check_in_date": "2026-06-26",
+          "check_out_date": "2026-06-29"
+        },
+        {
+          "id": "0-2573087831",
+          "channel_type": "airbnb",
+          "last_message_at": "2026-06-26T19:47:24+00:00",
+          "guest": {
+            "name": "Gamal Chaouki",
+            "phone": "+381 638996339",
+            "email": ""
+          },
+          "property_title": "Alte Schilderwerkstatt",
+          "check_in_date": "2026-06-26",
+          "check_out_date": "2026-06-28"
+        },
+        {
+          "id": "0-2573547168",
+          "channel_type": "airbnb",
+          "last_message_at": "2026-06-23T18:35:04+00:00",
+          "guest": {
+            "name": "Friedrich",
+            "phone": null,
+            "email": ""
+          },
+          "property_title": "",
+          "check_in_date": "",
+          "check_out_date": ""
+        },
+        {
+          "id": "0-2560315991",
+          "channel_type": "airbnb",
+          "last_message_at": "2026-06-23T05:23:33+00:00",
+          "guest": {
+            "name": "Niklas",
+            "phone": "+49 1783663095",
+            "email": ""
+          },
+          "property_title": "Alte Schilderwerkstatt",
+          "check_in_date": "2026-06-25",
+          "check_out_date": "2026-06-27"
+        }
+      ]
+    }
+  },
+  "detail": {
+    "request_id": "RT2026070120342518908b3",
+    "error_code": 200,
+    "error_msg": "Done.",
+    "data": {
+      "id": "0-2557140328",
+      "channel_type": "airbnb",
+      "guest": {
+        "name": "Alice Teresa",
+        "phone": "+49 17663374840",
+        "email": ""
+      },
+      "activities": [
+        {
+          "activity_type": "reservation",
+          "reservation_code": "0-HMSSZAKE2A-idy146ykhx",
+          "check_in_date": "2026-07-31",
+          "check_out_date": "2026-08-02",
+          "listing_id": null,
+          "property": {
+            "id": 12659676,
+            "title": "Alte Schilderwerkstatt",
+            "cover_url": "https://z1.muscache.cn/im/pictures/hosting/Hosting-1635436646666826858/original/ece27fc2-7af1-4d4d-949a-528e00162e75.jpeg?aki_policy=small",
+            "room_type": null
+          }
+        },
+        {
+          "activity_type": "inquiry",
+          "reservation_code": null,
+          "check_in_date": "2026-07-31",
+          "check_out_date": "2026-08-02",
+          "listing_id": "1635436646666826858",
+          "property": {
+            "id": 12659676,
+            "title": "Alte Schilderwerkstatt",
+            "cover_url": "https://z1.muscache.cn/im/pictures/hosting/Hosting-1635436646666826858/original/ece27fc2-7af1-4d4d-949a-528e00162e75.jpeg?aki_policy=small",
+            "room_type": null
+          }
+        }
+      ],
+      "note": null,
+      "messages": [
+        {
+          "id": "0-17827222220247530",
+          "sender_role": "guest",
+          "sender_name": null,
+          "sources": [],
+          "display_type": "Box",
+          "content": "Alteration request accepted",
+          "attachment": null,
+          "created_at": "2026-06-29T08:37:02+00:00"
+        },
+        {
+          "id": "0-31458635162-691787089",
+          "sender_role": "host",
+          "sender_name": "micha@remoterepublic.com",
+          "sources": [],
+          "display_type": "Text",
+          "content": "Na klar kein problem!",
+          "attachment": null,
+          "created_at": "2026-06-29T08:36:38+00:00"
+        },
+        {
+          "id": "0-31458626466-691787089",
+          "sender_role": "guest",
+          "sender_name": null,
+          "sources": [],
+          "display_type": "Text",
+          "content": "Hallo Micha,\nich reise mit meinem Freund Robin und unserem dreimonate alten Baby. Wir würden gerne noch Robins Schwester mitnehmen, daher die Änderung der Gäste. Ich hoffe, das passt. \nLiebe Grüße Alice",
+          "attachment": null,
+          "created_at": "2026-06-29T08:35:41+00:00"
+        },
+        {
+          "id": "0-17827218335246530",
+          "sender_role": "guest",
+          "sender_name": null,
+          "sources": [],
+          "display_type": "ReservationAlteration",
+          "content": "",
+          "attachment": {
+            "subject": "Reservation alteration request",
+            "title": "Alte Schilderwerkstatt–Upcycling Loft im Oderbruch",
+            "picture": "https://z1.muscache.cn/im/pictures/hosting/Hosting-1635436646666826858/original/ece27fc2-7af1-4d4d-949a-528e00162e75.jpeg?aki_policy=small",
+            "url": "https://www.airbnb.com/rooms/1635436646666826858",
+            "price": "243.36",
+            "currency": "EUR",
+            "describe": "Jul 31 ~ Aug 2 ・ 4 guests"
+          },
+          "created_at": "2026-06-29T08:30:33+00:00"
+        }
+      ]
+    }
+  }
+}
