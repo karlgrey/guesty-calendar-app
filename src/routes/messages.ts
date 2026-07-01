@@ -9,6 +9,7 @@ import {
   claimDraftForSending,
 } from '../repositories/draft-repository.js';
 import { sendReply } from '../services/message-sender.js';
+import { renderAdminPage } from './admin-layout.js';
 
 const router = express.Router();
 
@@ -16,14 +17,37 @@ function esc(s: string | null | undefined): string {
   return String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 }
 
+// ISO timestamp -> "2026-06-29 08:37" (trim seconds/timezone for readability).
+function fmtDate(iso: string | null | undefined): string {
+  const s = String(iso ?? '');
+  return s.length >= 16 ? `${s.slice(0, 10)} ${s.slice(11, 16)}` : s;
+}
+
+function directionLabel(direction: string): string {
+  if (direction === 'inbound') return 'Gast';
+  if (direction === 'outbound') return 'Host';
+  return 'System';
+}
+
 // Liste offener Threads
 router.get('/', (_req, res) => {
   const threads = getThreadsNeedingReply();
-  const rows = threads.map((t) =>
-    `<li><a href="/admin/messages/${encodeURIComponent(t.id)}">${esc(t.guest_name) || esc(t.id)}</a>
-     — ${esc(t.channel)} — ${esc(t.last_message_at)}</li>`,
-  ).join('');
-  res.type('html').send(`<h1>Offene Nachrichten (${threads.length})</h1><ul>${rows}</ul>`);
+  const rows = threads
+    .map((t) => {
+      const name = esc(t.guest_name) || esc(t.id);
+      return `<li><a href="/admin/messages/${encodeURIComponent(t.id)}">
+        <span class="thread-name">${name}</span>
+        <span class="thread-meta"><span class="badge">${esc(t.channel)}</span><span>${esc(fmtDate(t.last_message_at))}</span></span>
+      </a></li>`;
+    })
+    .join('');
+  const list = threads.length
+    ? `<ul class="thread-list">${rows}</ul>`
+    : '<p class="empty">Keine offenen Nachrichten — alles beantwortet. 🎉</p>';
+  const body = `<h1>Nachrichten <span class="count-pill">${threads.length} offen</span></h1>
+    <p class="subtitle">Threads, deren letzte Nachricht vom Gast kam und auf eine Antwort warten.</p>
+    <div class="section">${list}</div>`;
+  res.type('html').send(renderAdminPage({ title: 'Nachrichten', body }));
 });
 
 // Thread-Detail + Draft-Formular
@@ -32,27 +56,37 @@ router.get('/:threadId', (req, res) => {
   if (!thread) { res.status(404).send('Thread nicht gefunden'); return; }
   const msgs = getMessagesByThread(thread.id);
   const draft = getActiveDraftByThread(thread.id);
-  const history = msgs.map((m) =>
-    `<div class="${m.direction}"><b>${esc(m.direction)}</b> ${esc(m.sent_at)}<br>${esc(m.body)}</div>`,
-  ).join('<hr>');
+  const name = esc(thread.guest_name) || esc(thread.id);
+  const history = msgs
+    .map((m) =>
+      `<div class="msg ${esc(m.direction)}">
+        <div class="meta">${esc(directionLabel(m.direction))} · ${esc(fmtDate(m.sent_at))}</div>
+        <div class="body">${esc(m.body)}</div>
+      </div>`,
+    )
+    .join('');
 
   const draftBlock = draft
-    ? `<h3>Entwurf</h3><pre>${esc(draft.body)}</pre>
-       <form method="POST" action="/admin/messages/drafts/${encodeURIComponent(draft.id)}/send">
-         <button type="submit">Senden (Freigabe)</button></form>
-       <form method="POST" action="/admin/messages/drafts/${encodeURIComponent(draft.id)}/discard">
-         <button type="submit">Verwerfen</button></form>`
+    ? `<h3>Entwurf</h3>
+       <div class="draft-preview">${esc(draft.body)}</div>
+       <div class="actions">
+         <form method="POST" action="/admin/messages/drafts/${encodeURIComponent(draft.id)}/send">
+           <button type="submit" class="btn btn-primary">Senden (Freigabe)</button></form>
+         <form method="POST" action="/admin/messages/drafts/${encodeURIComponent(draft.id)}/discard">
+           <button type="submit" class="btn btn-danger">Verwerfen</button></form>
+       </div>`
     : `<h3>Antwort verfassen</h3>
        <form method="POST" action="/admin/messages/${encodeURIComponent(thread.id)}/draft">
-         <textarea name="body" rows="6" cols="60" required></textarea><br>
-         <button type="submit">Entwurf speichern</button></form>`;
+         <textarea name="body" rows="6" required placeholder="Antwort an ${name} …"></textarea>
+         <div class="actions"><button type="submit" class="btn btn-primary">Entwurf speichern</button></div>
+       </form>`;
 
-  res.type('html').send(
-    `<a href="/admin/messages">&larr; zurück</a>
-     <h1>${esc(thread.guest_name) || esc(thread.id)}</h1>
-     <p>Kanal: ${esc(thread.channel)} — Provider: ${esc(thread.source)}</p>
-     ${history}<hr>${draftBlock}`,
-  );
+  const body = `<a class="back-link" href="/admin/messages">&larr; Alle Nachrichten</a>
+    <h1>${name}</h1>
+    <p class="subtitle"><span class="badge">${esc(thread.channel)}</span> · Provider: ${esc(thread.source)}</p>
+    <div class="section"><h3>Verlauf</h3>${history}</div>
+    <div class="section">${draftBlock}</div>`;
+  res.type('html').send(renderAdminPage({ title: name, body }));
 });
 
 // Draft anlegen (manuell)
