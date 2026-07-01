@@ -257,3 +257,16 @@ export function getThreadsNeedingReply(): MessageThread[] {
     )
     .all() as MessageThread[];
 }
+
+/**
+ * Timestamp of the most recent Hostex message sync, derived from the newest
+ * last_synced_at across hostex threads (upsertThread stamps it each sync run).
+ * Returns null when no hostex threads have ever been synced.
+ */
+export function getLastHostexMessageSync(): string | null {
+  const db = getDatabase();
+  const row = db
+    .prepare(`SELECT MAX(last_synced_at) AS last FROM message_threads WHERE source = 'hostex'`)
+    .get() as { last: string | null } | undefined;
+  return row?.last ?? null;
+}
