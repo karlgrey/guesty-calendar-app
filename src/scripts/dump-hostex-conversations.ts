@@ -1,7 +1,6 @@
 // src/scripts/dump-hostex-conversations.ts
 import 'dotenv/config';
 import { writeFileSync } from 'node:fs';
-import { getHostexClient } from '../services/hostex-client.js';
 
 // Roh-Fetch über den bestehenden Client-Rohkanal ist privat; hier bewusst direkt via fetch,
 // nur um die echte Antwortform zu inspizieren.
