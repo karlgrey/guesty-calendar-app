@@ -44,7 +44,15 @@ export interface HostexMessageRaw {
   created_at: string;
 }
 
+/** A reservation/inquiry activity on a conversation; carries the property attribution. */
+export interface HostexActivity {
+  activity_type?: string;
+  property?: { id?: number | null; title?: string | null } | null;
+}
+
 export interface HostexConversationDetail extends HostexConversation {
+  /** Present on the DETAIL response — the reliable property key, incl. for inquiries. */
+  activities?: HostexActivity[];
   messages: HostexMessageRaw[];
 }
 

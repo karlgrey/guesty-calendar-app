@@ -1,6 +1,8 @@
 // src/mappers/hostex/message-mapper.test.ts
 import { describe, it, expect } from 'vitest';
-import { mapHostexDirection, mapHostexChannel, mapHostexConversation } from './message-mapper.js';
+import {
+  mapHostexDirection, mapHostexChannel, mapHostexConversation, detailBelongsToProperty,
+} from './message-mapper.js';
 import type { HostexConversationDetail } from '../../services/hostex-client.js';
 
 describe('hostex message mapper', () => {
@@ -43,5 +45,22 @@ describe('hostex message mapper', () => {
     expect(messages[0].thread_id).toBe('hostex:c-1');
     expect(messages[0].body).toBe('Hallo');
     expect(messages[0].source).toBe('hostex');
+  });
+
+  it('detailBelongsToProperty matches on numeric activities property id (incl. string/number)', () => {
+    const detail = {
+      id: 'x', channel_type: 'airbnb', guest: null, property_title: '',
+      activities: [{ activity_type: 'inquiry', property: { id: 12659676, title: 'Alte Schilderwerkstatt' } }],
+      messages: [],
+    } as unknown as HostexConversationDetail;
+    expect(detailBelongsToProperty(detail, '12659676')).toBe(true); // string hostexPropertyId vs number id
+    expect(detailBelongsToProperty(detail, '99999999')).toBe(false);
+  });
+
+  it('detailBelongsToProperty is false when there are no activities', () => {
+    const detail = {
+      id: 'x', channel_type: 'airbnb', guest: null, property_title: '', messages: [],
+    } as unknown as HostexConversationDetail;
+    expect(detailBelongsToProperty(detail, '12659676')).toBe(false);
   });
 });
