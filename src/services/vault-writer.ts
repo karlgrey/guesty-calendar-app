@@ -20,7 +20,7 @@ function defaultDeps(): VaultWriterDeps {
     vaultPath,
     readFile: (p) => readFileSync(p, 'utf8'),
     writeFile: (p, c) => writeFileSync(p, c),
-    git: (args) => String(execFileSync('git', ['-C', vaultPath ?? '.', ...args])),
+    git: (args) => String(execFileSync('git', ['-C', vaultPath as string, ...args])),
   };
 }
 
@@ -58,7 +58,11 @@ export function applySuggestion(
   } catch (err) {
     return { committed: false, commit: null, error: `read failed: ${err instanceof Error ? err.message : String(err)}` };
   }
-  deps.writeFile(abs, insertUnderHeading(content, s.target_heading, s.addition_text));
+  try {
+    deps.writeFile(abs, insertUnderHeading(content, s.target_heading, s.addition_text));
+  } catch (err) {
+    return { committed: false, commit: null, error: `write failed: ${err instanceof Error ? err.message : String(err)}` };
+  }
 
   try {
     deps.git(['add', s.target_file]);

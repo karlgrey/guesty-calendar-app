@@ -57,5 +57,7 @@ describe('applySuggestion (temp git repo)', () => {
     const res = applySuggestion(sug({ target_file: 'Areas/Hosting/../../secret.md' }), deps());
     expect(res.committed).toBe(false);
     expect(res.error).toMatch(/unsafe/i);
+    // The vault file is untouched — the guard fired before any write.
+    expect(readFileSync(join(base, 'Areas/Hosting/_Voice.md'), 'utf8')).toBe('# Voice\n## Anti-Pattern\n- alt\n');
   });
 });
