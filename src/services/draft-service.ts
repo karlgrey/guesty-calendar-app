@@ -37,12 +37,15 @@ function buildSystemPrompt(voice: string, facts: string): string {
   ].join('\n');
 }
 
-function buildConversation(messages: Message[]): string {
+function buildConversation(messages: Message[], guestName: string | null): string {
+  const nameLine = guestName
+    ? `Der Gast heißt „${guestName}". Sprich ihn direkt mit Namen an (z. B. „Hallo ${guestName},") — niemals mit „Liebe/Lieber Gast" o. Ä.`
+    : 'Der Name des Gastes ist nicht bekannt — nutze eine natürliche namenlose Anrede (z. B. „Hallo,"), niemals „Liebe/Lieber Gast".';
   const lines = messages.map((m) => {
     const who = m.direction === 'inbound' ? 'Gast' : m.direction === 'outbound' ? 'Host' : 'System';
     return `${who}: ${m.body}`;
   });
-  return `Bisheriger Verlauf (chronologisch), beantworte die letzte Gastnachricht:\n${lines.join('\n')}`;
+  return `${nameLine}\n\nBisheriger Verlauf (chronologisch), beantworte die letzte Gastnachricht:\n${lines.join('\n')}`;
 }
 
 export async function generateDraftForThread(
@@ -51,7 +54,7 @@ export async function generateDraftForThread(
 ): Promise<string | null> {
   const out = await deps.call({
     systemPrompt: buildSystemPrompt(input.voice, input.facts),
-    userMessage: buildConversation(input.messages),
+    userMessage: buildConversation(input.messages, input.thread.guest_name),
     tool: SUBMIT_REPLY_TOOL,
     model: DRAFT_MODEL,
   });
