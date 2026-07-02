@@ -24,6 +24,12 @@ An Airbnb-style booking interface for a single property, powered by the Guesty A
 - **Type-Safe**: Written in TypeScript with full type definitions
 - **Observable**: Comprehensive logging for monitoring
 
+### Guest-Reply System (Hostex)
+- **Message Sync**: Fetches Hostex conversations per property and persists them in `message_threads` + `messages`
+- **AI Drafts**: Generates reply drafts via Claude (`claude-sonnet-4-6`) using Voice style and per-property facts from the knowledge vault; capped at 10 drafts per property per ETL run; only threads with guest activity in the last 72 hours
+- **Admin UI**: `/admin/messages` lists open threads and `/admin/messages/:threadId` shows history with editable draft, send/discard/regenerate/manual actions
+- **Feedback Loop**: "Passt nicht?" form records feedback and triggers an AI-proposed vault edit; `/admin/suggestions` lets you review, approve (writes + git-commits to vault), or discard
+
 ## Architecture
 
 ```
@@ -139,7 +145,13 @@ DATABASE_PATH=./data/calendar.db
 # Logging
 LOG_LEVEL=info
 LOG_PRETTY=true
+
+# AI + Vault (Guest-Reply System)
+ANTHROPIC_API_KEY=sk-ant-...   # Required for AI draft generation and vault suggestions
+VAULT_PATH=/path/to/vault      # Absolute path to the knowledge vault repo; enables AI drafts and feedback loop
 ```
+
+`VAULT_PATH` and `ANTHROPIC_API_KEY` are optional — the guest-reply UI works without them, but AI draft generation and the vault feedback loop are disabled. Per-property vault notes are configured via the `vaultNote` field in `data/properties.json` (e.g. `"vaultNote": "Farmhouse.md"` maps to `Areas/Hosting/Properties/Farmhouse.md` in the vault).
 
 ## API Endpoints
 
@@ -172,6 +184,23 @@ See **[API Endpoints Documentation](docs/API_ENDPOINTS.md)** for detailed reques
 **POST /sync/listing** - Sync listing only
 **POST /sync/availability** - Sync availability only
 **GET /sync/status** - Scheduler status
+
+### Guest-Reply Admin UI (auth-protected)
+
+**GET /admin/messages** - Open Hostex threads awaiting reply; shows last-sync timestamp and "Jetzt syncen" button
+**GET /admin/messages/:threadId** - Thread detail with conversation history, editable draft, send/discard/regenerate/manual actions, and "Passt nicht?" feedback form
+**POST /admin/messages/sync** - Trigger immediate message sync + draft generation for all Hostex properties (async, returns immediately)
+**POST /admin/messages/:threadId/draft** - Save a manual draft
+**POST /admin/messages/drafts/:draftId/send** - Approve and send draft (editable body, atomic send guard)
+**POST /admin/messages/drafts/:draftId/discard** - Discard draft
+**POST /admin/messages/:threadId/regenerate** - Discard current draft and generate a fresh AI draft
+**POST /admin/messages/:threadId/feedback** - Submit feedback (ton/fakt/einmalig); triggers AI vault suggestion for ton/fakt categories
+
+**GET /admin/suggestions** - Pending AI-proposed vault edits with rationale
+**POST /admin/suggestions/:id/approve** - Apply suggestion: writes + git-commits to vault
+**POST /admin/suggestions/:id/discard** - Discard suggestion
+
+See **[API Endpoints Documentation](docs/API_ENDPOINTS.md)** for full detail.
 
 ## Development
 

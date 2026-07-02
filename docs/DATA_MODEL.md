@@ -183,6 +183,145 @@ CREATE INDEX idx_quotes_expires ON quotes_cache(expires_at);
 
 ---
 
+### 4. message_threads
+
+Stores one row per Hostex (or future Guesty/email) conversation, keyed by a provider-prefixed id. Powers the guest-reply UI and conversion dashboard.
+
+```sql
+CREATE TABLE message_threads (
+  id TEXT PRIMARY KEY,                       -- e.g. 'hostex:12345' or 'guesty:6a0da...'
+  listing_id TEXT NOT NULL,                  -- hostexPropertyId (links to listings.id)
+  source TEXT NOT NULL,                      -- 'hostex' | 'guesty' | 'gmail'
+  channel TEXT NOT NULL,                     -- 'airbnb' | 'booking.com' | 'vrbo' | 'direct_email' | 'manual' | 'other'
+  guest_name TEXT,
+  guest_email TEXT,
+  first_message_at TEXT NOT NULL,            -- ISO 8601 timestamp
+  last_message_at TEXT NOT NULL,
+  message_count INTEGER NOT NULL DEFAULT 0,
+  reservation_id TEXT,                       -- nullable: link to reservations
+  inquiry_id TEXT,
+  reservation_status TEXT,
+  conversion_category TEXT,                  -- 'CONFIRMED' | 'PRICE' | 'WEDDING' | 'DIRECT_DRIFT' | 'OTHER' | NULL
+  classification_confidence REAL,
+  classification_keywords TEXT,              -- JSON array
+  raw_meta TEXT,                             -- JSON: source-specific extras
+  last_synced_at TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX idx_message_threads_listing ON message_threads(listing_id);
+CREATE INDEX idx_message_threads_channel ON message_threads(channel);
+CREATE INDEX idx_message_threads_last_msg ON message_threads(last_message_at);
+CREATE INDEX idx_message_threads_category ON message_threads(conversion_category);
+CREATE INDEX idx_message_threads_reservation ON message_threads(reservation_id);
+```
+
+---
+
+### 5. messages
+
+Individual messages within a thread. Only `display_type='Text'` messages are imported from Hostex (system cards are discarded at the mapper level).
+
+```sql
+CREATE TABLE messages (
+  id TEXT PRIMARY KEY,                       -- 'hostex:<postId>' | 'gmail:<messageId>'
+  thread_id TEXT NOT NULL,
+  direction TEXT NOT NULL,                   -- 'inbound' (guest) | 'outbound' (host) | 'system'
+  sent_at TEXT NOT NULL,                     -- ISO 8601 timestamp
+  from_name TEXT,
+  from_address TEXT,
+  to_address TEXT,
+  subject TEXT,
+  body TEXT NOT NULL,                        -- normalized plain text
+  body_html TEXT,
+  source TEXT NOT NULL,                      -- 'hostex' | 'guesty' | 'gmail'
+  raw_meta TEXT,                             -- JSON
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (thread_id) REFERENCES message_threads(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_messages_thread ON messages(thread_id);
+CREATE INDEX idx_messages_sent_at ON messages(sent_at);
+CREATE INDEX idx_messages_direction ON messages(direction);
+```
+
+---
+
+### 6. message_drafts
+
+Outbound reply drafts pending human approval. One `pending` draft per thread is the intended invariant (enforced in the repository/route layer). Added by migrations 018 + 019.
+
+```sql
+CREATE TABLE message_drafts (
+  id TEXT PRIMARY KEY,
+  thread_id TEXT NOT NULL,
+  provider TEXT NOT NULL,                       -- 'hostex' | 'guesty'
+  body TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',       -- runtime: 'pending' | 'sending' | 'sent' | 'error' | 'discarded'
+                                                --   ('sending' = atomically claimed for send; see claimDraftForSending. Column is free-text TEXT — the migration comment predates the 'sending' state.)
+  generated_by TEXT NOT NULL DEFAULT 'manual',  -- 'manual' | 'llm'
+  model TEXT,                                   -- e.g. 'claude-sonnet-4-6'; NULL for manual drafts
+  send_attempts INTEGER NOT NULL DEFAULT 0,
+  external_message_id TEXT,                     -- message_id returned by provider on successful send
+  error TEXT,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  sent_at TEXT,
+  FOREIGN KEY (thread_id) REFERENCES message_threads(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_message_drafts_thread ON message_drafts(thread_id, status);
+```
+
+---
+
+### 7. draft_feedback
+
+Records operator feedback on AI-generated drafts. Added by migration 020.
+
+```sql
+CREATE TABLE draft_feedback (
+  id TEXT PRIMARY KEY,
+  thread_id TEXT NOT NULL,
+  draft_id TEXT,                             -- nullable: may not have an active draft at feedback time
+  category TEXT NOT NULL,                   -- 'ton' | 'fakt' | 'einmalig'
+  note TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+```
+
+**Category values:**
+- `ton` — the reply's tone or style doesn't match the voice; triggers a Voice-file suggestion
+- `fakt` — a property fact is missing or wrong; triggers a property-note suggestion
+- `einmalig` — one-off correction; feedback recorded but no vault suggestion generated
+
+---
+
+### 8. vault_suggestions
+
+AI-proposed edits to vault knowledge files, awaiting human approval. Approved suggestions are written and git-committed to the vault. Added by migration 020.
+
+```sql
+CREATE TABLE vault_suggestions (
+  id TEXT PRIMARY KEY,
+  feedback_id TEXT NOT NULL,
+  target_file TEXT NOT NULL,                 -- relative path in vault, e.g. 'Areas/Hosting/_Voice.md'
+  target_heading TEXT NOT NULL,              -- existing heading under which the addition is appended
+  addition_text TEXT NOT NULL,               -- markdown bullet(s) to insert
+  rationale TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',   -- 'pending' | 'approved' | 'discarded'
+  applied_commit TEXT,                       -- git SHA after successful write+commit
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  applied_at TEXT,
+  FOREIGN KEY (feedback_id) REFERENCES draft_feedback(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_vault_suggestions_status ON vault_suggestions(status);
+```
+
+**Path safety:** `vault-writer.ts` rejects any `target_file` not matching `^Areas/Hosting/[A-Za-z0-9._/-]+\.md$` and containing `..`.
+
+---
+
 ## Field Mapping: Guesty → Internal
 
 ### Listings Table Mapping
@@ -468,6 +607,11 @@ WHERE expires_at < datetime('now');
 ✅ **Listings table** - Stores property details, pricing config, taxes
 ✅ **Availability table** - Daily availability, pricing, min stay requirements
 ✅ **Quotes cache table** - Computed price quotes with TTL
+✅ **message_threads table** - Provider-agnostic conversation threads (Hostex, Guesty, email)
+✅ **messages table** - Individual messages within threads (Text-only for Hostex)
+✅ **message_drafts table** - Outbound reply drafts with lifecycle status (pending→sent/discarded)
+✅ **draft_feedback table** - Operator feedback on AI drafts (ton/fakt/einmalig)
+✅ **vault_suggestions table** - AI-proposed vault edits pending human approval
 ✅ **Field mapping** - Complete Guesty → Internal transformation rules
 ✅ **Date strategy** - Store in property timezone, timestamps in UTC
 

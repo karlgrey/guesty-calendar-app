@@ -134,7 +134,7 @@ Execute the ETL process:
 
 ### Complete ETL Job
 
-**Purpose:** Orchestrate listing + availability sync
+**Purpose:** Orchestrate listing + availability sync (Guesty properties)
 
 **Execution:**
 1. Sync listing (Step 1/2)
@@ -144,6 +144,38 @@ Execute the ETL process:
 **Success Criteria:**
 - Both steps must succeed for overall success
 - Either step can be skipped if cache is fresh
+
+---
+
+### Hostex ETL Pipeline (`runHostexETL`)
+
+**Purpose:** Full sync for Hostex-provider properties, including guest conversations and AI reply drafts.
+
+**Execution order:**
+1. **Sync property listing** — upsert `listings` from static config
+2. **Sync reservations** — fetch bookings from Hostex API; skipped if Step 1 failed
+3. **Sync messages** — fetch all Hostex conversations and persist to `message_threads` + `messages` (**non-fatal**)
+4. **Generate AI drafts** — for threads needing a reply, produce Claude drafts (**non-fatal**)
+5. **Sync calendar** — fetch availability; skipped if Step 1 failed
+6. **Re-sync property** (optional) — re-runs Step 1 if 1+2+5 all succeeded, to pick up freshly-synced state
+
+Steps 3 and 4 run in separate `try/catch` blocks: an error in either one is logged but does not fail the overall ETL result or block the calendar sync.
+
+**Message sync rules:**
+- Fetches conversations account-wide (`limit=100`); attributes to property by `property_title` match (bookings) or detail `activities[].property.id` (inquiries with empty `property_title`)
+- `syncHostexMessagesForProperty` accepts an optional `detailCache` (Map). The scheduled ETL does not pass one (each property runs independently). The "Jetzt syncen" UI button path creates a shared Map across all property passes so each conversation detail is fetched at most once per manual run
+- Only `display_type='Text'` messages are persisted; system cards (`Box`, `ReservationAlteration`) are discarded
+
+**Draft generation rules:**
+- Requires `hostexPropertyId` + `vaultNote` on the property config, plus `VAULT_PATH` and `ANTHROPIC_API_KEY` in environment
+- Only threads whose last guest message is within `DRAFT_MAX_AGE_HOURS` (default 72 h) are eligible
+- Only threads with no existing `pending` draft and whose last direction is `inbound`
+- Capped at `DRAFT_GEN_CAP` (default 10) drafts per property per run
+- Idempotent: re-running the ETL skips threads that already have a pending draft
+
+**Success Criteria:**
+- Steps 1, 2, and 5 must all succeed for overall `success: true`
+- Steps 3 and 4 failures are logged (`error` level) but do not affect the success flag
 
 ## Scheduling
 

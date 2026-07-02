@@ -32,6 +32,7 @@ npx tsx src/scripts/list-properties.ts       # List all Guesty properties
 - Property API: `/p/:slug/listing`, `/p/:slug/availability`, `/p/:slug/quote`
 - Admin dashboard: `/admin` (property stats, bookings, analytics, documents)
 - Admin system: `/admin/system` (health, sync, DB viewer, ETL, user management)
+- Guest replies: `/admin/messages` (Hostex threads needing reply), `/admin/suggestions` (vault edits)
 - Legacy routes: `/listing`, `/availability`, `/quote` (use default property)
 - Auth: `/auth/login`, Health: `/health`, `/health/detailed`
 
@@ -213,6 +214,55 @@ Zweiter Booking-Provider neben Guesty. Parallel-Modul-Architektur, ETL-Dispatch 
 
 **Rollback**: 3 Hostex-Property-Einträge aus `properties.json` entfernen, Server-Restart. DB-Rows können stehenbleiben oder via SQL gelöscht werden.
 
+### Hostex Guest-Reply System (Migrations 014, 018–020)
+
+Drei-Schnitt-System für KI-gestützte Gästekommunikation — nur für Hostex-Properties.
+
+**Schnitt 1 — Message Sync** (`src/jobs/hostex/sync-hostex-messages.ts`):
+- Fetcht alle Conversations via Hostex-API (`limit=100`, account-weit)
+- Attributiert Buchungen über `property_title === property.name` (Schnell-Pfad), Anfragen (leerer `property_title`) über `activities[].property.id` im Detail
+- Optionaler per-Run-`detailCache` (Map) verhindert Mehrfachfetches derselben Detail-Response
+- Persistiert `Text`-Messages in `message_threads` + `messages` (mapper: `src/mappers/hostex/message-mapper.ts`); andere `display_type`-Werte (`Box`, `ReservationAlteration`) werden verworfen
+- Liest via `src/repositories/message-repository.ts`
+
+**Schnitt 2 — AI-Entwürfe** (`src/jobs/hostex/generate-hostex-drafts.ts` + `src/services/draft-service.ts`):
+- Voraussetzungen pro Property: `hostexPropertyId` + `vaultNote` in `properties.json` + `VAULT_PATH` + `ANTHROPIC_API_KEY`
+- Liest Voice-Stil aus `Areas/Hosting/_Voice.md` und Objektfakten aus `Areas/Hosting/Properties/<vaultNote>` via `src/services/vault-knowledge.ts`
+- Wählt nur Threads, deren letzte Gastnachricht < 72h alt ist (`DRAFT_MAX_AGE_HOURS = 72`), noch kein `pending`-Entwurf existiert, und letzte Richtung `inbound` ist
+- Cap: maximal `DRAFT_GEN_CAP = 10` Entwürfe pro Property pro Run
+- Modell: `claude-sonnet-4-6` via Forced-Tool-Call (`submit_reply`); leere Antwort = kein Entwurf nötig
+- Speichert in `message_drafts` (`generated_by='llm'`, `model='claude-sonnet-4-6'`)
+- Beide Schritte laufen in `runHostexETL` (nach Reservierungen, vor Calendar) in separaten try/catch-Blöcken — **non-fatal**
+
+**Send** (`src/services/message-sender.ts`):
+- Hostex-Branch: entfernt `hostex:`-Prefix aus `thread.id`, sendet via `hostexClient.sendMessage`
+- Atomarer Send-Guard: `claimDraftForSending` setzt Status `pending→sending` (TOCTOU-sicher)
+- Outbound-Row wird auf `hostex:{message_id}` der API-Response gehasht (kein Duplikat beim nächsten Sync)
+- Guesty: throws not-implemented
+
+**Admin-UI** (`src/routes/messages.ts`, gemountet auf `/admin/messages`):
+- `GET /` — Threadliste (letzte Gastnachricht zuerst) + "Jetzt syncen"-Button + letzter Sync-Zeitstempel
+- `GET /:threadId` — Verlauf, bearbeitbarer Entwurf-Textarea, Senden/Verwerfen/Neu-generieren/Manuell-speichern, einklappbares "Passt nicht?"-Feedback-Formular
+- `POST /sync` — startet Sync+Drafts asynchron, leitet sofort zurück (kein Proxy-Timeout)
+- `POST /:threadId/draft` — manueller Entwurf; lehnt ab wenn schon `pending`-Draft existiert
+- `POST /drafts/:draftId/send` — sendet (mit optionalem Body-Edit), atomic claim
+- `POST /drafts/:draftId/discard` — verwirft Entwurf
+- `POST /:threadId/regenerate` — verwirft aktuellen Draft, generiert frischen KI-Entwurf
+- `POST /:threadId/feedback` — speichert Feedback, löst bei `ton`/`fakt` KI-Vault-Vorschlag aus
+
+**Schnitt 3 — Feedback-Loop** (`src/services/suggestion-service.ts`, `src/services/vault-writer.ts`, `src/routes/suggestions.ts`):
+- Feedback (Kategorie: `ton`/`fakt`/`einmalig` + Freitext) landet in `draft_feedback`
+- Bei `ton`/`fakt`: LLM (`claude-sonnet-4-6`, Tool `propose_vault_edit`) schlägt einen Markdown-Bullet vor (target_heading + addition_text + rationale) → gespeichert in `vault_suggestions`
+- `src/services/vault-writer.ts`: pfad-sicher (nur `Areas/Hosting/*.md`), hängt Text unter bestehende Überschrift an, git-committet via `execFileSync` (argv, kein Shell-Injection)
+- Freigabe auf `/admin/suggestions` ist das Kurations-Gate — kein Auto-Write
+
+**Konfiguration:**
+- `VAULT_PATH` — absoluter Pfad zum Knowledge-Vault-Repo; ohne diesen Wert sind Entwürfe und Feedback-Loop deaktiviert
+- `ANTHROPIC_API_KEY` — für Entwurf-Generierung und Vault-Vorschläge (auch vom bestehenden Classifier genutzt)
+- `vaultNote` — optionales Feld pro Property in `data/properties.json`, z.B. `"vaultNote": "Farmhouse.md"` → `Areas/Hosting/Properties/Farmhouse.md`
+
+**Server-Setup:** → siehe `docs/vault-deployment.md`
+
 ### Airbnb-Mail Integration (Migration 013)
 
 Dritter Booking-Provider für Properties, die nur über Airbnb laufen. Daten kommen aus:
@@ -288,6 +338,20 @@ if (!propertyId) throw new NotFoundError('No property configured');
 - `src/routes/property-routes.ts` - `/p/:slug/*` routes with `resolveProperty` middleware
 - `src/routes/admin.ts` - `/admin` dashboard + `/admin/system`
 - `src/routes/listing.ts`, `availability.ts`, `quote.ts` - Legacy routes (default property)
+- `src/routes/messages.ts` - `/admin/messages*` — Hostex thread list, detail, send, feedback
+- `src/routes/suggestions.ts` - `/admin/suggestions*` — vault suggestion review + approve/discard
+- `src/routes/admin-layout.ts` - Shared HTML page shell used by messages + suggestions routes
+
+### Guest-Reply Services
+- `src/services/draft-service.ts` - `generateDraftForThread()`: builds prompt, calls Claude, returns reply text or null
+- `src/services/message-sender.ts` - `sendReply()`: provider-dispatch (Hostex only); atomic claim in caller
+- `src/services/suggestion-service.ts` - `generateSuggestion()`: LLM-proposes vault edit (target_heading + bullet)
+- `src/services/vault-writer.ts` - `applySuggestion()`: path-safe write + git-commit to vault
+- `src/services/vault-knowledge.ts` - `loadVoice()` + `loadPropertyFacts()`: reads vault files, gated on `VAULT_PATH`
+- `src/mappers/hostex/message-mapper.ts` - Maps Hostex conversation detail → thread + messages (Text only)
+- `src/repositories/message-repository.ts` - Upsert + query for `message_threads` / `messages`
+- `src/jobs/hostex/sync-hostex-messages.ts` - Per-property message sync with detail cache
+- `src/jobs/hostex/generate-hostex-drafts.ts` - Per-property draft generation with cap + age gate
 
 ### Frontend
 - `public/calendar.js` - Calendar with property context (`window.__PROPERTY_SLUG__`, `__PROPERTY_NAME__`, `__BOOKING_EMAIL__`)
@@ -319,6 +383,11 @@ Optional:
 - `PORT` (default: 3000), `DATABASE_PATH` (default: ./data/calendar.db)
 - `CACHE_AVAILABILITY_TTL` - Minutes between ETL runs (default: 60)
 - `LOG_LEVEL` (default: info), `LOG_PRETTY` (default: false)
+- `ANTHROPIC_API_KEY` - Required for AI draft generation and vault suggestions (also used by the existing classifier)
+- `VAULT_PATH` - Absolute path to the knowledge vault repo; enables AI drafts + feedback loop. Without it, draft-gen is a no-op and vault-writer aborts safely
+- `HOSTEX_ACCESS_TOKEN` - Hostex API token (required for Hostex properties)
+- `DRAFT_GEN_CAP` - Max AI drafts per property per ETL run (default: 10)
+- `DRAFT_MAX_AGE_HOURS` - Only draft threads with guest activity newer than this (default: 72 hours)
 
 ## Guesty API Quirks
 

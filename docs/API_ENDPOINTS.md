@@ -400,6 +400,71 @@ Add `?force=true` to ignore cache freshness.
 
 ---
 
+## Guest-Reply Admin UI
+
+All `/admin/messages*` and `/admin/suggestions*` routes require authentication (Google OAuth session). They return HTML pages, not JSON. Mounted in `src/app.ts` before the general `/admin` router.
+
+### Message Threads
+
+**GET /admin/messages**
+
+Displays all Hostex threads whose last message is from the guest (i.e. awaiting a host reply). Shows guest name, channel, last-message timestamp, and a "KI-Entwurf bereit" badge if a pending draft exists. Also shows last-sync timestamp and a "Jetzt syncen" button.
+
+---
+
+**GET /admin/messages/:threadId**
+
+Thread detail page. Shows the full conversation history (chronological) and, if a draft exists, an editable `<textarea>` pre-filled with the draft body. Actions available:
+
+| Action | HTTP | Description |
+|--------|------|-------------|
+| Send (approve) | `POST /admin/messages/drafts/:draftId/send` | Sends draft via Hostex API; body can be edited in the textarea before submit; atomic send guard (409 if already sending) |
+| Discard draft | `POST /admin/messages/drafts/:draftId/discard` | Marks draft `discarded` |
+| Regenerate | `POST /admin/messages/:threadId/regenerate` | Discards current draft, generates fresh AI draft (Hostex threads only) |
+| Manual draft | `POST /admin/messages/:threadId/draft` | Saves a manually composed draft; rejected (409) if a pending draft already exists |
+| Feedback | `POST /admin/messages/:threadId/feedback` | Records feedback (see below) |
+
+---
+
+**POST /admin/messages/sync**
+
+Triggers an immediate message sync + draft generation for all Hostex properties. Runs asynchronously in the background (returns a redirect to `/admin/messages` immediately). A process-scoped `syncRunning` flag prevents concurrent runs on the same instance.
+
+---
+
+**POST /admin/messages/:threadId/feedback**
+
+Records operator feedback on a draft. Body parameters:
+
+| Field | Values | Description |
+|-------|--------|-------------|
+| `category` | `ton` \| `fakt` \| `einmalig` | `ton` = voice/style issue (targets `_Voice.md`); `fakt` = property fact issue (targets property vaultNote); `einmalig` = one-off, no vault proposal |
+| `note` | string (required) | Free-text description of the problem |
+
+For `ton` and `fakt`, the server calls the LLM to propose a vault edit and redirects to `/admin/suggestions` if successful; otherwise redirects back to the thread.
+
+---
+
+### Vault Suggestions
+
+**GET /admin/suggestions**
+
+Lists all `pending` vault suggestions. Each item shows the target file, target heading, proposed addition text, and rationale. Linked from the messages list header (shows pending count badge).
+
+---
+
+**POST /admin/suggestions/:id/approve**
+
+Applies the suggestion to the vault: appends `addition_text` under `target_heading` in `target_file`, then runs `git add` + `git commit` in the vault repo. Records the commit SHA in `vault_suggestions.applied_commit`. Returns 502 if the write or git step fails.
+
+---
+
+**POST /admin/suggestions/:id/discard**
+
+Marks the suggestion `discarded` without modifying the vault.
+
+---
+
 ## Error Handling
 
 All errors follow this format:
