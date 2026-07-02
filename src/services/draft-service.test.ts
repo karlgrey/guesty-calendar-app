@@ -24,6 +24,17 @@ describe('generateDraftForThread', () => {
     expect(arg.systemPrompt).toContain('VOICE-X');
     expect(arg.systemPrompt).toContain('FACTS-Y');
     expect(arg.userMessage).toContain('Kann ich früher einchecken?');
+    // The guest's name is passed so the model addresses them by name.
+    expect(arg.userMessage).toContain('Darleen');
+  });
+
+  it('instructs a nameless greeting when the guest name is unknown', async () => {
+    const call = vi.fn().mockResolvedValue({ reply: 'Hallo!' });
+    const anon = { ...thread(), guest_name: null };
+    await generateDraftForThread({ thread: anon, messages, voice: 'v', facts: 'f' }, { call });
+    const arg = call.mock.calls[0][0];
+    expect(arg.userMessage).toContain('nicht bekannt');
+    expect(arg.userMessage).not.toContain('Darleen');
   });
 
   it('returns null on an empty/malformed reply', async () => {
