@@ -363,6 +363,16 @@ if (!propertyId) throw new NotFoundError('No property configured');
   `/p/:slug?lang=en` (append the param to the iframe `src`). `detectLanguage()` runs before any
   network call and sets `document.documentElement.lang`, so there is no English-flash for DE
   visitors. Adding a new string means adding the key to BOTH language blocks.
+- **iframe-Embedding (WICHTIG)**: im iframe öffnet das Widget mailto NICHT selbst — es sendet
+  `postMessage({type: 'OPEN_MAILTO', url}, '*')` an die Eltern-Seite und bricht dann ab
+  (`openMailtoLink()` in `calendar.js`; `postMessage` wirft nie, daher greifen die Fallbacks im
+  iframe nie). **Jede einbettende Website MUSS einen `message`-Listener einbauen**, sonst macht
+  der „Buchung anfragen"-Button stumm gar nichts (so geschehen beim farmhouse-prasser.de-Relaunch
+  2026-07). Snippet + Details: `WEBFLOW_IFRAME_INTEGRATION.md`; Referenz-Implementierung:
+  farmhouse-prasser.de-Repo, `assets/js/main.js` Section 7 (mit Origin- und mailto-Scheme-Guard).
+  Zweite Anforderung: die CSP `frame-ancestors` (gesetzt in der Caddy-Config auf dem Server,
+  nicht im App-Code) muss die Domain der einbettenden Seite whitelisten, sonst lädt das iframe
+  gar nicht erst.
 
 ## Environment Variables
 

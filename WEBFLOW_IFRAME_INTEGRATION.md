@@ -1,12 +1,25 @@
-# Webflow iframe Integration Guide
+# iframe Integration Guide (Webflow & jede andere Website)
+
+> **Gilt für JEDE Website, die das Buchungs-Widget als iframe einbettet** — nicht nur Webflow.
+> Ohne den PostMessage-Listener (Abschnitt 2) macht der „Buchung anfragen"-Button **stumm gar
+> nichts**: das Widget sendet im iframe nur die `OPEN_MAILTO`-Message und hat keinen Fallback.
+> Genau das passierte beim farmhouse-prasser.de-Relaunch (Webflow → Eleventy, Juli 2026), weil
+> der Listener nicht mit umzog. Referenz-Implementierung mit Origin- und mailto-Scheme-Guard:
+> farmhouse-prasser.de-Repo, `assets/js/main.js` Section 7 („Booking iframe mailto bridge").
+>
+> **Zweite Voraussetzung:** die CSP `frame-ancestors` (Caddy-Config auf dem Calendar-Server,
+> nicht im App-Code) muss die Domain der einbettenden Seite erlauben — sonst lädt das iframe
+> gar nicht (grauer Kasten mit Broken-Page-Icon).
 
 ## Problem
 iOS Safari blockiert `window.location.href` mailto-Links in iframes aus Sicherheitsgründen.
+Und generell: in modernen Browsern kann das Widget aus einem Cross-Origin-iframe heraus nicht
+zuverlässig mailto öffnen — daher delegiert es per PostMessage an die Eltern-Seite.
 
 ## Lösung
-Das Kalender-iframe sendet jetzt PostMessage-Events an das Parent-Window, das dann den mailto-Link öffnet.
+Das Kalender-iframe sendet PostMessage-Events an das Parent-Window, das dann den mailto-Link öffnet.
 
-## Integration in Webflow
+## Integration in die einbettende Website
 
 ### 1. iframe Embed Code
 
