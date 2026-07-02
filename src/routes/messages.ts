@@ -18,6 +18,8 @@ import { syncHostexMessagesForProperty } from '../jobs/hostex/sync-hostex-messag
 import { generateDraftsForProperty } from '../jobs/hostex/generate-hostex-drafts.js';
 import logger from '../utils/logger.js';
 import { renderAdminPage } from './admin-layout.js';
+import { createFeedback, createSuggestion, countPendingSuggestions } from '../repositories/feedback-repository.js';
+import { generateSuggestion } from '../services/suggestion-service.js';
 
 const router = express.Router();
 
@@ -65,6 +67,7 @@ router.get('/', (_req, res) => {
       <div class="sync-bar">
         <form method="POST" action="/admin/messages/sync"><button type="submit" class="btn btn-primary">Jetzt syncen</button></form>
         <span class="sync-info">${lastSyncLabel}</span>
+        <a href="/admin/suggestions" class="btn btn-ghost">Vault-Vorschläge${(() => { const n = countPendingSuggestions(); return n ? ` (${n})` : ''; })()}</a>
       </div>
     </div>
     <p class="subtitle">Threads, deren letzte Nachricht vom Gast kam und auf eine Antwort warten.</p>
@@ -98,7 +101,19 @@ router.get('/:threadId', (req, res) => {
          ${draft.generated_by === 'llm' ? `<form method="POST" action="/admin/messages/${encodeURIComponent(thread.id)}/regenerate"><button type="submit" class="btn btn-ghost">Neu generieren</button></form>` : ''}
          <form method="POST" action="/admin/messages/drafts/${encodeURIComponent(draft.id)}/discard">
            <button type="submit" class="btn btn-danger">Verwerfen</button></form>
-       </div>`
+       </div>
+       <details style="margin-top:16px">
+         <summary style="cursor:pointer;color:var(--color-warm-gray)">Passt nicht? Feedback geben</summary>
+         <form method="POST" action="/admin/messages/${encodeURIComponent(thread.id)}/feedback" style="margin-top:12px">
+           <select name="category" class="badge" style="padding:6px 10px">
+             <option value="ton">Ton/Voice</option>
+             <option value="fakt">Objektfakt</option>
+             <option value="einmalig">Einmalig</option>
+           </select>
+           <textarea name="note" rows="3" required placeholder="Was stört dich?" style="margin-top:10px"></textarea>
+           <div class="actions"><button type="submit" class="btn btn-ghost">Feedback senden</button></div>
+         </form>
+       </details>`
     : `<h3>Antwort verfassen</h3>
        ${thread.source === 'hostex'
          ? `<div class="actions" style="margin-bottom:16px">
@@ -238,6 +253,48 @@ router.post('/sync', (_req, res) => {
       .finally(() => { syncRunning = false; });
   }
   res.redirect('/admin/messages');
+});
+
+// Feedback zu einem Entwurf: erfassen und (Ton/Fakt) einen Vault-Vorschlag generieren.
+router.post('/:threadId/feedback', express.urlencoded({ extended: true }), async (req, res, next) => {
+  try {
+    const thread = getThreadById(req.params.threadId);
+    if (!thread) { res.status(404).send('Thread nicht gefunden'); return; }
+    const category = String(req.body?.category ?? '');
+    const note = String(req.body?.note ?? '').trim();
+    if (!['ton', 'fakt', 'einmalig'].includes(category) || !note) { res.status(400).send('Kategorie + Notiz nötig'); return; }
+
+    const draft = getActiveDraftByThread(thread.id);
+    const feedbackId = randomUUID();
+    createFeedback({ id: feedbackId, thread_id: thread.id, draft_id: draft?.id ?? null, category: category as 'ton' | 'fakt' | 'einmalig', note });
+
+    if (category !== 'einmalig') {
+      const isTon = category === 'ton';
+      const property = isTon ? null : getPropertyByHostexId(thread.listing_id ?? '');
+      const targetFile = isTon
+        ? 'Areas/Hosting/_Voice.md'
+        : property?.vaultNote ? `Areas/Hosting/Properties/${property.vaultNote}` : null;
+      const fileContent = isTon ? loadVoice() : property?.vaultNote ? loadPropertyFacts(property.vaultNote) : null;
+      if (targetFile && fileContent) {
+        try {
+          const proposal = await generateSuggestion(
+            { category: category as 'ton' | 'fakt', note, draftBody: draft?.body ?? '', fileContent },
+          );
+          if (proposal) {
+            createSuggestion({
+              id: randomUUID(), feedback_id: feedbackId, target_file: targetFile,
+              target_heading: proposal.target_heading, addition_text: proposal.addition_text, rationale: proposal.rationale,
+            });
+            res.redirect('/admin/suggestions');
+            return;
+          }
+        } catch (llmErr) {
+          logger.error({ err: llmErr instanceof Error ? llmErr.message : String(llmErr) }, 'generateSuggestion failed; feedback recorded, degrading gracefully');
+        }
+      }
+    }
+    res.redirect(`/admin/messages/${encodeURIComponent(thread.id)}`);
+  } catch (e) { next(e); }
 });
 
 export default router;
