@@ -58,10 +58,13 @@ export function applySuggestion(
   } catch (err) {
     return { committed: false, commit: null, error: `read failed: ${err instanceof Error ? err.message : String(err)}` };
   }
-  try {
-    deps.writeFile(abs, insertUnderHeading(content, s.target_heading, s.addition_text));
-  } catch (err) {
-    return { committed: false, commit: null, error: `write failed: ${err instanceof Error ? err.message : String(err)}` };
+  const trimmedAddition = s.addition_text.trim();
+  if (!content.includes(trimmedAddition)) {
+    try {
+      deps.writeFile(abs, insertUnderHeading(content, s.target_heading, s.addition_text));
+    } catch (err) {
+      return { committed: false, commit: null, error: `write failed: ${err instanceof Error ? err.message : String(err)}` };
+    }
   }
 
   try {

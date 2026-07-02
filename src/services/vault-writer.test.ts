@@ -53,6 +53,13 @@ describe('applySuggestion (temp git repo)', () => {
     expect(readFileSync(join(base, 'Areas/Hosting/_Voice.md'), 'utf8')).toContain('- alt\n- neu');
   });
 
+  it('is idempotent — applying the same suggestion twice appends the addition only once', () => {
+    applySuggestion(sug(), deps());
+    applySuggestion(sug(), deps()); // simulates a re-approve after a partial failure
+    const content = readFileSync(join(base, 'Areas/Hosting/_Voice.md'), 'utf8');
+    expect(content.split('- neu').length - 1).toBe(1);
+  });
+
   it('rejects an unsafe target_file without writing', () => {
     const res = applySuggestion(sug({ target_file: 'Areas/Hosting/../../secret.md' }), deps());
     expect(res.committed).toBe(false);

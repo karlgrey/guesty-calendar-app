@@ -276,16 +276,20 @@ router.post('/:threadId/feedback', express.urlencoded({ extended: true }), async
         : property?.vaultNote ? `Areas/Hosting/Properties/${property.vaultNote}` : null;
       const fileContent = isTon ? loadVoice() : property?.vaultNote ? loadPropertyFacts(property.vaultNote) : null;
       if (targetFile && fileContent) {
-        const proposal = await generateSuggestion(
-          { category: category as 'ton' | 'fakt', note, draftBody: draft?.body ?? '', fileContent },
-        );
-        if (proposal) {
-          createSuggestion({
-            id: randomUUID(), feedback_id: feedbackId, target_file: targetFile,
-            target_heading: proposal.target_heading, addition_text: proposal.addition_text, rationale: proposal.rationale,
-          });
-          res.redirect('/admin/suggestions');
-          return;
+        try {
+          const proposal = await generateSuggestion(
+            { category: category as 'ton' | 'fakt', note, draftBody: draft?.body ?? '', fileContent },
+          );
+          if (proposal) {
+            createSuggestion({
+              id: randomUUID(), feedback_id: feedbackId, target_file: targetFile,
+              target_heading: proposal.target_heading, addition_text: proposal.addition_text, rationale: proposal.rationale,
+            });
+            res.redirect('/admin/suggestions');
+            return;
+          }
+        } catch (llmErr) {
+          logger.error({ err: llmErr instanceof Error ? llmErr.message : String(llmErr) }, 'generateSuggestion failed; feedback recorded, degrading gracefully');
         }
       }
     }
