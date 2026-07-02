@@ -39,8 +39,8 @@ function buildSystemPrompt(voice: string, facts: string): string {
 
 function buildConversation(messages: Message[], guestName: string | null): string {
   const nameLine = guestName
-    ? `Der Gast heißt „${guestName}". Sprich ihn direkt mit Namen an (z. B. „Hallo ${guestName},") — niemals mit „Liebe/Lieber Gast" o. Ä.`
-    : 'Der Name des Gastes ist nicht bekannt — nutze eine natürliche namenlose Anrede (z. B. „Hallo,"), niemals „Liebe/Lieber Gast".';
+    ? `Der Gast heißt „${guestName}". Sprich ihn direkt mit Vornamen an (Begrüßungs-Stil siehe Voice) — niemals mit „Liebe/Lieber Gast" o. Ä.`
+    : 'Der Name des Gastes ist nicht bekannt — nutze eine natürliche namenlose Begrüßung im Voice-Stil, niemals „Liebe/Lieber Gast".';
   const lines = messages.map((m) => {
     const who = m.direction === 'inbound' ? 'Gast' : m.direction === 'outbound' ? 'Host' : 'System';
     return `${who}: ${m.body}`;
