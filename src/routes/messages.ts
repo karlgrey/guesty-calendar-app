@@ -18,7 +18,7 @@ import { syncHostexMessagesForProperty } from '../jobs/hostex/sync-hostex-messag
 import { generateDraftsForProperty } from '../jobs/hostex/generate-hostex-drafts.js';
 import logger from '../utils/logger.js';
 import { renderAdminPage } from './admin-layout.js';
-import { createFeedback, createSuggestion } from '../repositories/feedback-repository.js';
+import { createFeedback, createSuggestion, countPendingSuggestions } from '../repositories/feedback-repository.js';
 import { generateSuggestion } from '../services/suggestion-service.js';
 
 const router = express.Router();
@@ -67,6 +67,7 @@ router.get('/', (_req, res) => {
       <div class="sync-bar">
         <form method="POST" action="/admin/messages/sync"><button type="submit" class="btn btn-primary">Jetzt syncen</button></form>
         <span class="sync-info">${lastSyncLabel}</span>
+        <a href="/admin/suggestions" class="btn btn-ghost">Vault-Vorschläge${(() => { const n = countPendingSuggestions(); return n ? ` (${n})` : ''; })()}</a>
       </div>
     </div>
     <p class="subtitle">Threads, deren letzte Nachricht vom Gast kam und auf eine Antwort warten.</p>
