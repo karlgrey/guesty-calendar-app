@@ -4,7 +4,9 @@ import {
   getPendingSuggestions, getSuggestionById, markSuggestionApplied, discardSuggestion,
 } from '../repositories/feedback-repository.js';
 import { applySuggestion } from '../services/vault-writer.js';
+import { syncVault } from '../services/vault-sync.js';
 import { renderAdminPage } from './admin-layout.js';
+import logger from '../utils/logger.js';
 
 const router = express.Router();
 
@@ -12,8 +14,11 @@ function esc(s: string | null | undefined): string {
   return String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 }
 
-router.get('/', (_req, res) => {
+router.get('/', (req, res) => {
   const pending = getPendingSuggestions();
+  const pushNotice = req.query.push === 'pending'
+    ? '<p class="subtitle">⚠️ Vault committet, Push zu GitHub ausstehend — wird beim nächsten Sync automatisch nachgeholt.</p>'
+    : '';
   const items = pending.map((s) => `
     <div class="section">
       <p class="subtitle" style="margin:0 0 8px"><span class="badge">${esc(s.target_file)}</span> → <span class="badge">${esc(s.target_heading)}</span></p>
@@ -27,6 +32,7 @@ router.get('/', (_req, res) => {
   const body = `<a class="back-link" href="/admin/messages">&larr; Nachrichten</a>
     <h1>Vault-Vorschläge <span class="count-pill">${pending.length} offen</span></h1>
     <p class="subtitle">Vorschläge aus deinem Feedback. Freigeben schreibt die Ergänzung in den Vault und committet.</p>
+    ${pushNotice}
     ${items || '<p class="empty">Keine offenen Vorschläge.</p>'}`;
   res.type('html').send(renderAdminPage({ title: 'Vault-Vorschläge', body }));
 });
@@ -39,7 +45,9 @@ router.post('/:id/approve', (req, res, next) => {
     const result = applySuggestion(s);
     if (!result.committed && result.error) { res.status(502).send(`Schreiben fehlgeschlagen: ${esc(result.error)}`); return; }
     markSuggestionApplied(s.id, result.commit);
-    res.redirect('/admin/suggestions');
+    const sync = syncVault();
+    if (sync.error) logger.warn({ error: sync.error }, 'Vault-Sync nach Freigabe (non-fatal)');
+    res.redirect(sync.pushed ? '/admin/suggestions' : '/admin/suggestions?push=pending');
   } catch (e) { next(e); }
 });
 
