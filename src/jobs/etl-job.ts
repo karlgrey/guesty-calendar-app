@@ -17,6 +17,7 @@ import { syncHostexCalendar } from './hostex/sync-calendar.js';
 import { syncHostexMessagesForProperty } from './hostex/sync-hostex-messages.js';
 import { generateDraftsForProperty } from './hostex/generate-hostex-drafts.js';
 import { getHostexClient } from '../services/hostex-client.js';
+import { syncVault } from '../services/vault-sync.js';
 import { syncAirbnbProperty } from './airbnb-mail/sync-properties.js';
 import { syncAirbnbMail } from './airbnb-mail/sync-mail.js';
 import { syncAirbnbIcal } from './airbnb-mail/sync-ical.js';
@@ -326,6 +327,14 @@ export async function runETLJobForProperty(
  * Falls back to single property mode if no properties.json configured
  */
 export async function runETLJob(force: boolean = false): Promise<ETLJobResult> {
+  // Vault zuerst syncen: frisches Wissen für Draft-Gen + liegengebliebene Feedback-Commits pushen
+  const vaultSync = syncVault();
+  if (vaultSync.error) {
+    logger.warn({ error: vaultSync.error }, '📚 Vault-Sync (non-fatal)');
+  } else if (vaultSync.synced) {
+    logger.info({ pushed: vaultSync.pushed }, '📚 Vault synced');
+  }
+
   const properties = getAllProperties();
 
   // Multi-property mode
