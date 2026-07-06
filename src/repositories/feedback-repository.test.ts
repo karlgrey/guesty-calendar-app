@@ -28,7 +28,7 @@ afterEach(() => { resetDatabase(); db.close(); });
 
 function seedSuggestion(id: string) {
   createFeedback({ id: `fb-${id}`, thread_id: 't1', draft_id: 'd1', category: 'ton', note: 'zu lang' });
-  createSuggestion({ id, feedback_id: `fb-${id}`, target_file: 'Areas/Hosting/_Voice.md', target_heading: '## Anti-Pattern', addition_text: '- Regel', rationale: 'weil' });
+  createSuggestion({ id, feedback_id: `fb-${id}`, target_file: 'prozesse/Gästekommunikation Grundsätze.md', target_heading: '## Anti-Pattern', addition_text: '- Regel', rationale: 'weil' });
 }
 
 describe('feedback-repository', () => {

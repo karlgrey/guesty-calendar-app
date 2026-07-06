@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { config } from '../config/index.js';
 import type { VaultSuggestion } from '../types/feedback.js';
 
-const SAFE_TARGET = /^Areas\/Hosting\/[A-Za-z0-9._/-]+\.md$/;
+const SAFE_TARGET = /^prozesse\/[\p{L}\p{N} ._-]+\.md$/u;
 
 export interface VaultWriterDeps {
   vaultPath: string | undefined;

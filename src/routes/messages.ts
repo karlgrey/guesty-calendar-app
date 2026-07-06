@@ -272,8 +272,8 @@ router.post('/:threadId/feedback', express.urlencoded({ extended: true }), async
       const isTon = category === 'ton';
       const property = isTon ? null : getPropertyByHostexId(thread.listing_id ?? '');
       const targetFile = isTon
-        ? 'Areas/Hosting/_Voice.md'
-        : property?.vaultNote ? `Areas/Hosting/Properties/${property.vaultNote}` : null;
+        ? 'prozesse/Gästekommunikation Grundsätze.md'
+        : property?.vaultNote ? `prozesse/${property.vaultNote}` : null;
       const fileContent = isTon ? loadVoice() : property?.vaultNote ? loadPropertyFacts(property.vaultNote) : null;
       if (targetFile && fileContent) {
         try {

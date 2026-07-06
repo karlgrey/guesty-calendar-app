@@ -23,8 +23,8 @@ describe('applySuggestion (temp git repo)', () => {
   let base: string;
   beforeEach(() => {
     base = mkdtempSync(join(tmpdir(), 'vault-w-'));
-    mkdirSync(join(base, 'Areas/Hosting'), { recursive: true });
-    writeFileSync(join(base, 'Areas/Hosting/_Voice.md'), '# Voice\n## Anti-Pattern\n- alt\n');
+    mkdirSync(join(base, 'prozesse'), { recursive: true });
+    writeFileSync(join(base, 'prozesse/Gästekommunikation Grundsätze.md'), '# Voice\n## Anti-Pattern\n- alt\n');
     execFileSync('git', ['-C', base, 'init', '-q']);
     execFileSync('git', ['-C', base, 'config', 'user.email', 't@t.de']);
     execFileSync('git', ['-C', base, 'config', 'user.name', 'Test']);
@@ -42,7 +42,7 @@ describe('applySuggestion (temp git repo)', () => {
     };
   }
   const sug = (over: Partial<VaultSuggestion> = {}): VaultSuggestion => ({
-    id: 's', feedback_id: 'f', target_file: 'Areas/Hosting/_Voice.md', target_heading: '## Anti-Pattern',
+    id: 's', feedback_id: 'f', target_file: 'prozesse/Gästekommunikation Grundsätze.md', target_heading: '## Anti-Pattern',
     addition_text: '- neu', rationale: 'r', status: 'pending', applied_commit: null, applied_at: null, ...over,
   });
 
@@ -50,21 +50,21 @@ describe('applySuggestion (temp git repo)', () => {
     const res = applySuggestion(sug(), deps());
     expect(res.committed).toBe(true);
     expect(res.commit).toMatch(/^[0-9a-f]{7,}/);
-    expect(readFileSync(join(base, 'Areas/Hosting/_Voice.md'), 'utf8')).toContain('- alt\n- neu');
+    expect(readFileSync(join(base, 'prozesse/Gästekommunikation Grundsätze.md'), 'utf8')).toContain('- alt\n- neu');
   });
 
   it('is idempotent — applying the same suggestion twice appends the addition only once', () => {
     applySuggestion(sug(), deps());
     applySuggestion(sug(), deps()); // simulates a re-approve after a partial failure
-    const content = readFileSync(join(base, 'Areas/Hosting/_Voice.md'), 'utf8');
+    const content = readFileSync(join(base, 'prozesse/Gästekommunikation Grundsätze.md'), 'utf8');
     expect(content.split('- neu').length - 1).toBe(1);
   });
 
   it('rejects an unsafe target_file without writing', () => {
-    const res = applySuggestion(sug({ target_file: 'Areas/Hosting/../../secret.md' }), deps());
+    const res = applySuggestion(sug({ target_file: 'prozesse/../../secret.md' }), deps());
     expect(res.committed).toBe(false);
     expect(res.error).toMatch(/unsafe/i);
     // The vault file is untouched — the guard fired before any write.
-    expect(readFileSync(join(base, 'Areas/Hosting/_Voice.md'), 'utf8')).toBe('# Voice\n## Anti-Pattern\n- alt\n');
+    expect(readFileSync(join(base, 'prozesse/Gästekommunikation Grundsätze.md'), 'utf8')).toBe('# Voice\n## Anti-Pattern\n- alt\n');
   });
 });

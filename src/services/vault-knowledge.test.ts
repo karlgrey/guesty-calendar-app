@@ -8,16 +8,16 @@ let base: string;
 
 beforeAll(() => {
   base = mkdtempSync(join(tmpdir(), 'vault-'));
-  mkdirSync(join(base, 'Areas/Hosting/Properties'), { recursive: true });
-  writeFileSync(join(base, 'Areas/Hosting/_Voice.md'), 'VOICE-TEXT');
-  writeFileSync(join(base, 'Areas/Hosting/Properties/Bootshaus.md'), 'BOOTSHAUS-FACTS');
+  mkdirSync(join(base, 'prozesse'), { recursive: true });
+  writeFileSync(join(base, 'prozesse/Gästekommunikation Grundsätze.md'), 'VOICE-TEXT');
+  writeFileSync(join(base, 'prozesse/Gästekommunikation Bootshaus.md'), 'BOOTSHAUS-FACTS');
 });
 afterAll(() => { rmSync(base, { recursive: true, force: true }); });
 
 describe('vault-knowledge', () => {
   it('reads voice and property facts from the vault base dir', () => {
     expect(loadVoice(base)).toBe('VOICE-TEXT');
-    expect(loadPropertyFacts('Bootshaus.md', base)).toBe('BOOTSHAUS-FACTS');
+    expect(loadPropertyFacts('Gästekommunikation Bootshaus.md', base)).toBe('BOOTSHAUS-FACTS');
   });
 
   it('returns null when base dir is falsy (feature off / no VAULT_PATH)', () => {
@@ -25,7 +25,7 @@ describe('vault-knowledge', () => {
     // independent of whether config.vaultPath is set — `undefined` would trigger the
     // `= config.vaultPath` default parameter and read the real vault.
     expect(loadVoice('')).toBeNull();
-    expect(loadPropertyFacts('Bootshaus.md', '')).toBeNull();
+    expect(loadPropertyFacts('Gästekommunikation Bootshaus.md', '')).toBeNull();
   });
 
   it('returns null for a missing file', () => {

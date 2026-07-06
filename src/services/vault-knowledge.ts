@@ -3,8 +3,9 @@ import { join } from 'node:path';
 import { config } from '../config/index.js';
 import logger from '../utils/logger.js';
 
-const HOSTING_DIR = 'Areas/Hosting';
-const SAFE_NOTE = /^[A-Za-z0-9._-]+\.md$/;
+const PROZESSE_DIR = 'prozesse';
+const VOICE_NOTE = 'Gästekommunikation Grundsätze.md';
+const SAFE_NOTE = /^[\p{L}\p{N} ._-]+\.md$/u;
 
 function readVaultFile(relPath: string, baseDir: string | undefined): string | null {
   if (!baseDir) return null;
@@ -17,7 +18,7 @@ function readVaultFile(relPath: string, baseDir: string | undefined): string | n
 }
 
 export function loadVoice(baseDir: string | undefined = config.vaultPath): string | null {
-  return readVaultFile(join(HOSTING_DIR, '_Voice.md'), baseDir);
+  return readVaultFile(join(PROZESSE_DIR, VOICE_NOTE), baseDir);
 }
 
 export function loadPropertyFacts(
@@ -28,5 +29,5 @@ export function loadPropertyFacts(
     logger.warn({ vaultNote }, 'vault-knowledge: unsafe vaultNote rejected');
     return null;
   }
-  return readVaultFile(join(HOSTING_DIR, 'Properties', vaultNote), baseDir);
+  return readVaultFile(join(PROZESSE_DIR, vaultNote), baseDir);
 }

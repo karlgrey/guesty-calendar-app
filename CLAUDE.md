@@ -227,7 +227,7 @@ Drei-Schnitt-System für KI-gestützte Gästekommunikation — nur für Hostex-P
 
 **Schnitt 2 — AI-Entwürfe** (`src/jobs/hostex/generate-hostex-drafts.ts` + `src/services/draft-service.ts`):
 - Voraussetzungen pro Property: `hostexPropertyId` + `vaultNote` in `properties.json` + `VAULT_PATH` + `ANTHROPIC_API_KEY`
-- Liest Voice-Stil aus `Areas/Hosting/_Voice.md` und Objektfakten aus `Areas/Hosting/Properties/<vaultNote>` via `src/services/vault-knowledge.ts`
+- Liest Voice-Stil aus `prozesse/Gästekommunikation Grundsätze.md` und Objektfakten aus `prozesse/<vaultNote>` via `src/services/vault-knowledge.ts`
 - Wählt nur Threads, deren letzte Gastnachricht < 72h alt ist (`DRAFT_MAX_AGE_HOURS = 72`), noch kein `pending`-Entwurf existiert, und letzte Richtung `inbound` ist
 - Cap: maximal `DRAFT_GEN_CAP = 10` Entwürfe pro Property pro Run
 - Modell: `claude-sonnet-4-6` via Forced-Tool-Call (`submit_reply`); leere Antwort = kein Entwurf nötig
@@ -253,13 +253,13 @@ Drei-Schnitt-System für KI-gestützte Gästekommunikation — nur für Hostex-P
 **Schnitt 3 — Feedback-Loop** (`src/services/suggestion-service.ts`, `src/services/vault-writer.ts`, `src/routes/suggestions.ts`):
 - Feedback (Kategorie: `ton`/`fakt`/`einmalig` + Freitext) landet in `draft_feedback`
 - Bei `ton`/`fakt`: LLM (`claude-sonnet-4-6`, Tool `propose_vault_edit`) schlägt einen Markdown-Bullet vor (target_heading + addition_text + rationale) → gespeichert in `vault_suggestions`
-- `src/services/vault-writer.ts`: pfad-sicher (nur `Areas/Hosting/*.md`), hängt Text unter bestehende Überschrift an, git-committet via `execFileSync` (argv, kein Shell-Injection)
+- `src/services/vault-writer.ts`: pfad-sicher (nur `prozesse/*.md`), hängt Text unter bestehende Überschrift an, git-committet via `execFileSync` (argv, kein Shell-Injection)
 - Freigabe auf `/admin/suggestions` ist das Kurations-Gate — kein Auto-Write
 
 **Konfiguration:**
-- `VAULT_PATH` — absoluter Pfad zum Knowledge-Vault-Repo; ohne diesen Wert sind Entwürfe und Feedback-Loop deaktiviert
+- `VAULT_PATH` — absoluter Pfad zum Deploy-Vault (brainstem-gaeste, generiert aus TheBrain2); ohne diesen Wert sind Entwürfe und Feedback-Loop deaktiviert
 - `ANTHROPIC_API_KEY` — für Entwurf-Generierung und Vault-Vorschläge (auch vom bestehenden Classifier genutzt)
-- `vaultNote` — optionales Feld pro Property in `data/properties.json`, z.B. `"vaultNote": "Farmhouse.md"` → `Areas/Hosting/Properties/Farmhouse.md`
+- `vaultNote` — optionales Feld pro Property in `data/properties.json`, z.B. `"vaultNote": "Gästekommunikation Bootshaus.md"` → `prozesse/Gästekommunikation Bootshaus.md`
 
 **Server-Setup:** → siehe `docs/vault-deployment.md`
 
