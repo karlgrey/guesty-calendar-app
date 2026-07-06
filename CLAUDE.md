@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+> **Roadmap:** Die priorisierte Vorhaben-Liste (u. a. Schnitt 4 — Guesty-Send) lebt im
+> Wissens-Master `~/Development/TheBrain2` — CLAUDE.md „→ Nächste Session" und
+> Projektseite `wiki/projekte/Gäste-Messaging-Automation.md`.
+
 ## Project Overview
 
 A Node.js/TypeScript service that provides Airbnb-style booking calendars for multiple Guesty properties. The service caches Guesty API data in SQLite and serves it through a public API with a vanilla JavaScript frontend. Properties are configured via `data/properties.json` and each gets its own URL namespace (`/p/:slug/...`).
