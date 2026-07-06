@@ -261,6 +261,21 @@ Drei-Schnitt-System für KI-gestützte Gästekommunikation — nur für Hostex-P
 - `ANTHROPIC_API_KEY` — für Entwurf-Generierung und Vault-Vorschläge (auch vom bestehenden Classifier genutzt)
 - `vaultNote` — optionales Feld pro Property in `data/properties.json`, z.B. `"vaultNote": "Gästekommunikation Bootshaus.md"` → `prozesse/Gästekommunikation Bootshaus.md`
 
+**Vault-Vertrag (WICHTIG bei App-Änderungen):** Das Vault (`VAULT_PATH` →
+`brainstem-gaeste`) ist ein generiertes Deploy-Artefakt des Master-Wikis `TheBrain2`;
+dessen `tools/sync.py` (läuft nur auf dem Laptop, via post-commit-Hook) holt die
+Feedback-Loop-Commits per Struktur-Replay in den Master zurück. Der Sync verlässt sich
+auf drei Invarianten der App — wer eine davon ändert, muss `TheBrain2/tools/sync.py`
+mitziehen, sonst bricht der Rückfluss (laut, mit „bitte manuell ingesten"):
+1. **Pfade:** gelesen/geschrieben wird nur `prozesse/<Seitenname>.md`; `vaultNote` in
+   `data/properties.json` = Dateiname der Master-Seite in `wiki/prozesse/`.
+2. **Git-Autor:** Feedback-Commits laufen als **"Remote Republic Bot"** — daran erkennt
+   sync sie (`git config user.name` im Vault-Repo auf dem Server).
+3. **Edit-Muster:** `vault-writer.ts` hängt ausschließlich Zeilen unter eine bestehende
+   `##`-Überschrift an (append-only). Ersetzen/Löschen würde der Struktur-Replay
+   ablehnen.
+Spec: `TheBrain2/docs/superpowers/specs/2026-07-06-brainstem-sync-design.md`.
+
 **Server-Setup:** → siehe `docs/vault-deployment.md`
 
 ### Airbnb-Mail Integration (Migration 013)
