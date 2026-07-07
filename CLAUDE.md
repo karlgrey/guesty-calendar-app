@@ -224,7 +224,16 @@ KI-gestützte Gästekommunikation mit Freigabe-Gate. Schnitte 1–3 (Hostex), Sc
 erweitert auf Guesty-Properties (Farmhouse, U19) — Spec:
 `docs/superpowers/specs/2026-07-07-guesty-send-design.md`.
 
-**Schnitt 1 — Message Sync** (`src/jobs/hostex/sync-hostex-messages.ts`):
+**Schnitt 1 — Message Sync** (`src/jobs/hostex/sync-hostex-messages.ts` + `src/jobs/sync-guesty-messages.ts`):
+- **Inkrementell** (Button + stündlicher ETL): Hostex skippt Details, wenn das
+  Listen-`last_message_at` ≤ lokalem `last_synced_at` (exakt); Guesty skippt Posts für
+  Conversations, die lokal bekannt, >30 Tage inaktiv UND deren Aufenthalt >14 Tage vorbei
+  ist (Liste hat KEINEN Aktivitäts-Zeitstempel, `state.read` ist bei uns immer unread,
+  Sortierung = `createdAt`). Täglicher Force-ETL (2 Uhr) = Deep-Sync über alles.
+  Guesty-Posts-Fetches laufen parallel (Bottleneck 10 in flight). Button-Sync: ~15 s.
+- **Guesty-Eigenheit:** an neue Anfragen hängt Guesty einen System-Post („New guest
+  inquiry") ZEITLICH NACH der Gastnachricht — die „letzte Nachricht = inbound"-Queries
+  ignorieren daher `direction='system'`.
 - Fetcht alle Conversations via Hostex-API (`limit=100`, account-weit)
 - Attributiert Buchungen über `property_title === property.name` (Schnell-Pfad), Anfragen (leerer `property_title`) über `activities[].property.id` im Detail
 - Optionaler per-Run-`detailCache` (Map) verhindert Mehrfachfetches derselben Detail-Response
@@ -253,7 +262,9 @@ erweitert auf Guesty-Properties (Farmhouse, U19) — Spec:
   nächsten Sync); Guesty-Response-Schema beim Erst-Send verifizieren (wird raw geloggt)
 
 **Admin-UI** (`src/routes/messages.ts`, gemountet auf `/admin/messages`):
-- `GET /` — Threadliste (letzte Gastnachricht zuerst) + "Jetzt syncen"-Button + letzter Sync-Zeitstempel
+- `GET /` — Threadliste (letzte Gastnachricht zuerst, nur letzte 14 Tage, farbige
+  Objekt-Kürzel via `shortCode`/`uiColor` in properties.json) + "Jetzt syncen"-Button +
+  verboser Sync-Fortschritt (Auto-Reload alle 4s während des Laufs)
 - `GET /:threadId` — Verlauf, bearbeitbarer Entwurf-Textarea, Senden/Verwerfen/Neu-generieren/Manuell-speichern, einklappbares "Passt nicht?"-Feedback-Formular
 - `POST /sync` — startet Sync+Drafts asynchron für Hostex- UND Guesty-Properties, leitet sofort zurück (kein Proxy-Timeout); Guesty-Conversations werden pro Run nur EINMAL account-weit gefetcht
 - `POST /:threadId/draft` — manueller Entwurf; lehnt ab wenn schon `pending`-Draft existiert

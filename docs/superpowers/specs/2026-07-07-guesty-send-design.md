@@ -123,6 +123,15 @@ Neuer Helper (z. B. `src/services/guesty-channel.ts`):
   Feedback-Handler muss Guesty-Listings auflösen können — mit `getPropertyByGuestyId`).
 
 ### 8. Vorsicht & Erst-Send (manueller Verifikationsschritt)
+
+> **Verifiziert am 2026-07-07 (echter End-to-End-Test mit Test-Gast, U19):**
+> Kanal-Spiegelung `airbnb2` korrekt · Response-Schema: Post-ID liegt in
+> `res.data._id` (erster Kandidaten-Pfad) · Draft → `sent` mit externer ID ·
+> Folge-Sync erzeugte KEIN Duplikat (Response-ID == Post-ID, Upsert-Kollaps
+> greift). Dabei gefundener und gefixter Bug: Guestys nachlaufender
+> System-Post („New guest inquiry") maskierte neue Anfragen in den
+> „letzte Nachricht = inbound"-Queries — System-Posts werden dort jetzt
+> ignoriert.
 1. **Erst-Send kontrolliert:** Die erste Guesty-Freigabe geht an eine beobachtbare
    Konversation (eigene Test-Anfrage oder ein unkritischer echter Thread). Dabei
    verifizieren: (a) Nachricht kommt auf dem richtigen Kanal an (Airbnb-App/Inbox),
@@ -150,6 +159,22 @@ Neuer Helper (z. B. `src/services/guesty-channel.ts`):
   Bedarf verfeinern).
 - Änderungen am Feedback-Loop/Vault-Sync (funktioniert `vaultNote`-basiert mit).
 - Airbnb-Mail-Provider (firenze-loft) — hat keinen Rückkanal, bleibt read-only.
+
+## Nachträge (gebaut über den ursprünglichen Scope hinaus, 2026-07-07)
+
+- **Inkrementeller Message-Sync** (perf, beide Provider): Guesty lädt Posts nur
+  für lokal unbekannte, lokal <30 Tage aktive oder aufenthaltsnahe (Checkout
+  ≥ heute−14 Tage) Conversations — die Liste hat keinen Aktivitäts-Zeitstempel,
+  `state.read` ist bei uns immer unread, Sortierung ist `createdAt`. Hostex
+  liefert `last_message_at` in der Liste → exakter Skip gegen den
+  `last_synced_at`-Stempel. Täglicher Force-ETL = Deep-Sync (Sicherheitsnetz).
+  Posts-Fetches laufen parallel durchs Bottleneck-Limit. Messung: Button-Sync
+  ~3–5 min → ~15 s.
+- **UI:** farbige Objekt-Kürzel (shortCode/uiColor in properties.json),
+  Objektname im Thread-Detail, 14-Tage-Fenster der Threadliste, verboser
+  Sync-Fortschritt mit 4s-Auto-Reload, „KI-Entwurf generieren" ausgegraut wenn
+  das Modell „keine Antwort nötig" entschieden hat (Migration 021
+  `ai_no_reply_at`; verhindert auch wiederholte Cron-LLM-Calls).
 
 ## Risiken
 - **Send-Response-Schema unbekannt** → Erst-Send-Verifikation (Abschnitt 8);
