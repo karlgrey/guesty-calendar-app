@@ -50,7 +50,7 @@ function mapDirection(sentBy: string | undefined): 'inbound' | 'outbound' | 'sys
   return 'system'; // 'log' or anything else
 }
 
-async function fetchAllConversations(): Promise<any[]> {
+export async function fetchAllConversations(): Promise<any[]> {
   const all: any[] = [];
   let cursor = '';
   let page = 0;
@@ -73,6 +73,11 @@ async function fetchAllConversations(): Promise<any[]> {
 
 export async function syncGuestyMessagesForProperty(
   property: PropertyConfig,
+  /**
+   * Optional pre-fetched account-wide conversation list. Pass ONE list across
+   * all guesty property passes in a run so the paginated fetch happens once.
+   */
+  prefetchedConversations?: any[],
 ): Promise<GuestyMessageSyncResult> {
   const start = Date.now();
   const slug = property.slug;
@@ -91,7 +96,7 @@ export async function syncGuestyMessagesForProperty(
 
   try {
     logger.info({ slug }, 'Guesty messages: starting sync');
-    const allConvs = await fetchAllConversations();
+    const allConvs = prefetchedConversations ?? (await fetchAllConversations());
 
     // Filter to this listing
     const propertyConvs = allConvs.filter((c) =>

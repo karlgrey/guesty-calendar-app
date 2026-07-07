@@ -15,6 +15,7 @@ import { syncHostexProperty } from './hostex/sync-properties.js';
 import { syncHostexReservations } from './hostex/sync-reservations.js';
 import { syncHostexCalendar } from './hostex/sync-calendar.js';
 import { syncHostexMessagesForProperty } from './hostex/sync-hostex-messages.js';
+import { syncGuestyMessagesForProperty } from './sync-guesty-messages.js';
 import { generateDraftsForProperty } from './generate-drafts.js';
 import { getHostexClient } from '../services/hostex-client.js';
 import { syncVault } from '../services/vault-sync.js';
@@ -228,6 +229,18 @@ export async function runETLJobForProperty(
     // Step 3: Sync inquiries data
     logger.info({ propertySlug: slug }, 'Step 3/3: Syncing inquiries data...');
     const inquiriesResult = await syncInquiries(guestyPropertyId!);
+
+    // Step 4 (non-fatal): conversations → message_threads/messages + AI drafts
+    try {
+      await syncGuestyMessagesForProperty(property);
+    } catch (error) {
+      logger.error({ error, propertySlug: slug }, 'Guesty: message sync error (non-fatal)');
+    }
+    try {
+      await generateDraftsForProperty(property);
+    } catch (error) {
+      logger.error({ error, propertySlug: slug }, 'Guesty: draft-gen error (non-fatal)');
+    }
 
     const duration = Date.now() - startTime;
     const overallSuccess = listingResult.success && availabilityResult.success && inquiriesResult.success;

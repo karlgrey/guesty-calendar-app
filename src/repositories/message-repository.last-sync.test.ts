@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Database from 'better-sqlite3';
 import { setDatabase, resetDatabase } from '../db/index.js';
-import { getLastHostexMessageSync } from './message-repository.js';
+import { getLastMessageSync } from './message-repository.js';
 
 let db: Database.Database;
 
@@ -23,16 +23,21 @@ function ins(id: string, source: string, lastSynced: string) {
     VALUES (?,?,?,?,?,?,?)`).run(id, 'L', source, 'airbnb', 't', 't', lastSynced);
 }
 
-describe('getLastHostexMessageSync', () => {
-  it('returns null when there are no hostex threads', () => {
-    ins('guesty:a', 'guesty', '2026-06-30T10:00:00Z'); // non-hostex ignored
-    expect(getLastHostexMessageSync()).toBeNull();
+describe('getLastMessageSync', () => {
+  it('returns null when there are no hostex/guesty threads', () => {
+    ins('gmail:a', 'gmail', '2026-06-30T10:00:00Z'); // other sources ignored
+    expect(getLastMessageSync()).toBeNull();
   });
 
-  it('returns the newest last_synced_at across hostex threads only', () => {
+  it('returns the newest last_synced_at across hostex threads', () => {
     ins('hostex:a', 'hostex', '2026-06-30T10:00:00Z');
     ins('hostex:b', 'hostex', '2026-06-30T12:00:00Z');
-    ins('guesty:c', 'guesty', '2026-06-30T23:00:00Z'); // later but non-hostex -> ignored
-    expect(getLastHostexMessageSync()).toBe('2026-06-30T12:00:00Z');
+    expect(getLastMessageSync()).toBe('2026-06-30T12:00:00Z');
+  });
+
+  it('considers guesty threads too — the newer of both providers wins', () => {
+    ins('hostex:a', 'hostex', '2026-06-30T10:00:00Z');
+    ins('guesty:c', 'guesty', '2026-06-30T23:00:00Z');
+    expect(getLastMessageSync()).toBe('2026-06-30T23:00:00Z');
   });
 });

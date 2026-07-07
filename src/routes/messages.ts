@@ -3,7 +3,7 @@ import express from 'express';
 import { randomUUID } from 'node:crypto';
 import {
   getThreadsNeedingReply, getThreadById, getMessagesByThread, upsertMessage,
-  getLastHostexMessageSync,
+  getLastMessageSync,
 } from '../repositories/message-repository.js';
 import {
   createDraft, getDraftById, getActiveDraftByThread, markDraftSent, markDraftError, discardDraft,
@@ -15,6 +15,7 @@ import { generateDraftForThread, DRAFT_MODEL } from '../services/draft-service.j
 import { sendReply } from '../services/message-sender.js';
 import { getHostexClient, type HostexConversationDetail } from '../services/hostex-client.js';
 import { syncHostexMessagesForProperty } from '../jobs/hostex/sync-hostex-messages.js';
+import { syncGuestyMessagesForProperty, fetchAllConversations } from '../jobs/sync-guesty-messages.js';
 import { generateDraftsForProperty } from '../jobs/generate-drafts.js';
 import logger from '../utils/logger.js';
 import { renderAdminPage } from './admin-layout.js';
@@ -66,7 +67,7 @@ router.get('/', (_req, res) => {
   const list = threads.length
     ? `<ul class="thread-list">${rows}</ul>`
     : '<p class="empty">Keine offenen Nachrichten — alles beantwortet. 🎉</p>';
-  const lastSync = getLastHostexMessageSync();
+  const lastSync = getLastMessageSync();
   const lastSyncLabel = syncRunning
     ? 'Sync läuft …'
     : lastSync ? `Letzter Sync: ${esc(fmtDate(lastSync))}` : 'Noch nie gesynct';
@@ -249,6 +250,14 @@ async function runMessageSync(): Promise<void> {
   for (const property of getPropertiesByProvider('hostex')) {
     await syncHostexMessagesForProperty(property, client, undefined, detailCache);
     await generateDraftsForProperty(property);
+  }
+  const guestyProps = getPropertiesByProvider('guesty');
+  if (guestyProps.length > 0) {
+    const conversations = await fetchAllConversations(); // account-weit: EIN Fetch pro Run
+    for (const property of guestyProps) {
+      await syncGuestyMessagesForProperty(property, conversations);
+      await generateDraftsForProperty(property);
+    }
   }
 }
 
