@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { getThreadsNeedingDraft, getMessagesByThread } from '../repositories/message-repository.js';
+import { getThreadsNeedingDraft, getMessagesByThread, markThreadAiNoReply } from '../repositories/message-repository.js';
 import { createDraft } from '../repositories/draft-repository.js';
 import { loadVoice, loadPropertyFacts } from '../services/vault-knowledge.js';
 import { generateDraftForThread, DRAFT_MODEL } from '../services/draft-service.js';
@@ -36,6 +36,7 @@ export interface DraftGenDeps {
   loadFacts: (vaultNote: string) => string | null;
   generate: (input: { thread: MessageThread; messages: Message[]; voice: string; facts: string }) => Promise<string | null>;
   create: (d: NewDraft) => void;
+  markNoReply: (threadId: string) => void;
 }
 
 const realDeps: DraftGenDeps = {
@@ -45,6 +46,7 @@ const realDeps: DraftGenDeps = {
   loadFacts: (vaultNote) => loadPropertyFacts(vaultNote),
   generate: (input) => generateDraftForThread(input),
   create: createDraft,
+  markNoReply: markThreadAiNoReply,
 };
 
 export async function generateDraftsForProperty(
@@ -70,6 +72,9 @@ export async function generateDraftsForProperty(
         deps.create({ id: randomUUID(), thread_id: thread.id, provider: target.source, body: reply, generated_by: 'llm', model: DRAFT_MODEL });
         generated++;
       } else {
+        // Bewusste Modell-Entscheidung "keine Antwort nötig" — merken, damit weder der
+        // nächste Cron-Lauf noch die UI denselben Stand erneut ans Modell schicken.
+        deps.markNoReply(thread.id);
         skipped++;
       }
     } catch (err) {

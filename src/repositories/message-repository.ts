@@ -242,32 +242,52 @@ export function getThreadsNeedingDraft(
          AND datetime(t.last_message_at) > datetime('now', ?)
          AND (
            SELECT m.direction FROM messages m
-           WHERE m.thread_id = t.id
+           WHERE m.thread_id = t.id AND m.direction != 'system'
            ORDER BY m.sent_at DESC, m.created_at DESC LIMIT 1
          ) = 'inbound'
          AND NOT EXISTS (
            SELECT 1 FROM message_drafts d WHERE d.thread_id = t.id AND d.status = 'pending'
          )
+         AND (t.ai_no_reply_at IS NULL OR datetime(t.ai_no_reply_at) < datetime(t.last_message_at))
        ORDER BY t.last_message_at DESC
        LIMIT ?`,
     )
     .all(source, listingId, sinceModifier, limit) as MessageThread[];
 }
 
-export function getThreadsNeedingReply(): MessageThread[] {
+/**
+ * Remember that the LLM decided this thread needs no reply right now. The
+ * marker is only meaningful while newer than last_message_at — a new guest
+ * message implicitly invalidates it (see getThreadsNeedingDraft + UI).
+ */
+export function markThreadAiNoReply(threadId: string, at: string = new Date().toISOString()): void {
+  const db = getDatabase();
+  db.prepare(`UPDATE message_threads SET ai_no_reply_at = ? WHERE id = ?`).run(at, threadId);
+}
+
+/**
+ * Threads whose latest message is from the guest, limited to recent activity —
+ * `sinceModifier` is a SQLite datetime modifier; default hides threads older
+ * than 14 days (old inbound-latest threads are usually already handled
+ * elsewhere and only clutter the list). System posts (e.g. Guestys
+ * "New guest inquiry" log, which arrives AFTER the guest message) are ignored
+ * when determining the latest message.
+ */
+export function getThreadsNeedingReply(sinceModifier: string = '-14 days'): MessageThread[] {
   const db = getDatabase();
   return db
     .prepare(
       `SELECT t.* FROM message_threads t
-       WHERE (
+       WHERE datetime(t.last_message_at) > datetime('now', ?)
+         AND (
          SELECT m.direction FROM messages m
-         WHERE m.thread_id = t.id
+         WHERE m.thread_id = t.id AND m.direction != 'system'
          ORDER BY m.sent_at DESC, m.created_at DESC
          LIMIT 1
        ) = 'inbound'
        ORDER BY t.last_message_at DESC`,
     )
-    .all() as MessageThread[];
+    .all(sinceModifier) as MessageThread[];
 }
 
 /**

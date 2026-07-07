@@ -22,6 +22,7 @@ function deps(over: Partial<DraftGenDeps> = {}): DraftGenDeps {
     loadFacts: vi.fn().mockReturnValue('FACTS'),
     generate: vi.fn().mockResolvedValue('REPLY'),
     create: vi.fn(),
+    markNoReply: vi.fn(),
     ...over,
   };
 }
@@ -51,11 +52,13 @@ describe('generateDraftsForProperty', () => {
     expect(created[0].provider).toBe('guesty');
   });
 
-  it('skips a thread when generate returns null', async () => {
+  it('skips a thread when generate returns null and remembers the no-reply decision', async () => {
     const d = deps({ generate: vi.fn().mockResolvedValueOnce('REPLY').mockResolvedValueOnce(null) });
     const res = await generateDraftsForProperty(property, d);
     expect(res).toEqual({ generated: 1, skipped: 1 });
     expect(d.create).toHaveBeenCalledTimes(1);
+    expect(d.markNoReply).toHaveBeenCalledTimes(1);
+    expect(d.markNoReply).toHaveBeenCalledWith('hostex:b');
   });
 
   it('is a no-op when voice or facts are missing', async () => {

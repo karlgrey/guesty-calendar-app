@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Database from 'better-sqlite3';
 import { setDatabase, resetDatabase } from '../db/index.js';
-import { getThreadsNeedingDraft } from './message-repository.js';
+import { getThreadsNeedingDraft, markThreadAiNoReply } from './message-repository.js';
 
 let db: Database.Database;
 
@@ -13,7 +13,7 @@ beforeEach(() => {
       guest_name TEXT, guest_email TEXT, first_message_at TEXT NOT NULL, last_message_at TEXT NOT NULL,
       message_count INTEGER NOT NULL DEFAULT 0, reservation_id TEXT, inquiry_id TEXT, reservation_status TEXT,
       conversion_category TEXT, classification_confidence REAL, classification_keywords TEXT,
-      raw_meta TEXT, last_synced_at TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      raw_meta TEXT, ai_no_reply_at TEXT, last_synced_at TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE TABLE messages (
       id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, direction TEXT NOT NULL, sent_at TEXT NOT NULL,
@@ -41,6 +41,7 @@ beforeEach(() => {
   t.run('hostex:d', 'L2', 'hostex', 'airbnb', '-1 hour'); // other listing -> excluded
   t.run('hostex:e', 'L1', 'hostex', 'airbnb', '-10 days'); // inbound but STALE -> excluded by recency
   t.run('guesty:g1', 'GL1', 'guesty', 'airbnb', '-1 hour'); // fresh guesty inbound -> NEEDS draft (source=guesty)
+  t.run('guesty:g2', 'GL2', 'guesty', 'airbnb', '-1 hour'); // inbound + NEWER system post -> still NEEDS draft
 
   const m = db.prepare(
     `INSERT INTO messages (id,thread_id,direction,sent_at,body,source) VALUES (?,?,?,datetime('now', ?),?,?)`,
@@ -52,6 +53,10 @@ beforeEach(() => {
   m.run('m5', 'hostex:d', 'inbound', '-1 hour', 'q', 'hostex');
   m.run('m6', 'hostex:e', 'inbound', '-10 days', 'q', 'hostex');
   m.run('mg1', 'guesty:g1', 'inbound', '-1 hour', 'q', 'guesty');
+  // Guesty appends a system log post ("New guest inquiry") AFTER the guest message —
+  // it must not mask the inbound message (real case: E2E-Test 2026-07-07).
+  m.run('mg2', 'guesty:g2', 'inbound', '-1 hour', 'q', 'guesty');
+  m.run('mg3', 'guesty:g2', 'system', '-59 minutes', 'New guest inquiry', 'guesty');
 
   db.prepare(
     `INSERT INTO message_drafts (id,thread_id,provider,body,status,generated_by) VALUES ('dp','hostex:b','hostex','draft','pending','llm')`,
@@ -77,5 +82,17 @@ describe('getThreadsNeedingDraft', () => {
   it('filters by source: guesty listing only returns guesty threads', () => {
     expect(getThreadsNeedingDraft('guesty', 'GL1', 10, '-72 hours').map((r) => r.id)).toEqual(['guesty:g1']);
     expect(getThreadsNeedingDraft('hostex', 'GL1', 10, '-72 hours')).toEqual([]);
+  });
+
+  it('ignores system posts when determining the latest message', () => {
+    expect(getThreadsNeedingDraft('guesty', 'GL2', 10, '-72 hours').map((r) => r.id)).toEqual(['guesty:g2']);
+  });
+
+  it('excludes threads marked ai-no-reply until a newer guest message arrives', () => {
+    markThreadAiNoReply('guesty:g1');
+    expect(getThreadsNeedingDraft('guesty', 'GL1', 10, '-72 hours')).toEqual([]);
+    // A newer guest message invalidates the marker (last_message_at moves past it).
+    db.prepare(`UPDATE message_threads SET last_message_at = datetime('now','+1 minute') WHERE id='guesty:g1'`).run();
+    expect(getThreadsNeedingDraft('guesty', 'GL1', 10, '-72 hours').map((r) => r.id)).toEqual(['guesty:g1']);
   });
 });

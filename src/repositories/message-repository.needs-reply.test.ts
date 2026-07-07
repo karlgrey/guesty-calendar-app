@@ -25,21 +25,39 @@ beforeEach(() => {
   const t = db.prepare(`INSERT INTO message_threads
     (id,listing_id,source,channel,first_message_at,last_message_at,last_synced_at)
     VALUES (?,?,?,?,?,?,?)`);
-  t.run('hostex:a', 'L', 'hostex', 'airbnb', '2026-06-30T09:00:00Z', '2026-06-30T10:00:00Z', 'now');
-  t.run('hostex:b', 'L', 'hostex', 'airbnb', '2026-06-30T09:00:00Z', '2026-06-30T11:00:00Z', 'now');
+  // Dates RELATIVE to now so the 14-day window is deterministic whenever the suite runs.
+  t.run('hostex:a', 'L', 'hostex', 'airbnb', datetime('-2 days'), datetime('-1 day'), 'now');
+  t.run('hostex:b', 'L', 'hostex', 'airbnb', datetime('-2 days'), datetime('-1 day'), 'now');
+  t.run('guesty:old', 'L', 'guesty', 'airbnb', datetime('-40 days'), datetime('-30 days'), 'now');
   const m = db.prepare(`INSERT INTO messages (id,thread_id,direction,sent_at,body,source)
     VALUES (?,?,?,?,?,?)`);
   // Thread a: last message is inbound -> needs reply
-  m.run('m1', 'hostex:a', 'inbound', '2026-06-30T10:00:00Z', 'Frage', 'hostex');
+  m.run('m1', 'hostex:a', 'inbound', datetime('-1 day'), 'Frage', 'hostex');
   // Thread b: last message is outbound (already answered) -> no reply needed
-  m.run('m2', 'hostex:b', 'inbound', '2026-06-30T10:00:00Z', 'Frage', 'hostex');
-  m.run('m3', 'hostex:b', 'outbound', '2026-06-30T11:00:00Z', 'Antwort', 'hostex');
+  m.run('m2', 'hostex:b', 'inbound', datetime('-2 days'), 'Frage', 'hostex');
+  m.run('m3', 'hostex:b', 'outbound', datetime('-1 day'), 'Antwort', 'hostex');
+  // Thread old: inbound-latest, but older than the 14-day window -> hidden
+  m.run('m4', 'guesty:old', 'inbound', datetime('-30 days'), 'Frage', 'guesty');
+  // Thread c: inbound + NEWER system post -> system must not mask the guest message
+  // (last_message_at -12h => deterministically newer than hostex:a's -1 day)
+  t.run('guesty:c', 'L', 'guesty', 'airbnb', datetime('-2 days'), datetime('-12 hours'), 'now');
+  m.run('m5', 'guesty:c', 'inbound', datetime('-12 hours'), 'Frage', 'guesty');
+  m.run('m6', 'guesty:c', 'system', datetime('-11 hours'), 'New guest inquiry', 'guesty');
 });
 afterEach(() => { resetDatabase(); db.close(); });
 
+function datetime(modifier: string): string {
+  return db.prepare(`SELECT datetime('now', ?) AS d`).pluck().get(modifier) as string;
+}
+
 describe('getThreadsNeedingReply', () => {
-  it('returns only threads whose latest message is inbound', () => {
+  it('returns only threads whose latest non-system message is inbound and newer than 14 days', () => {
     const ids = getThreadsNeedingReply().map((t) => t.id);
-    expect(ids).toEqual(['hostex:a']);
+    expect(ids).toEqual(['guesty:c', 'hostex:a']);
+  });
+
+  it('includes older threads when a wider window is requested', () => {
+    const ids = getThreadsNeedingReply('-60 days').map((t) => t.id);
+    expect(ids).toEqual(['guesty:c', 'hostex:a', 'guesty:old']);
   });
 });
