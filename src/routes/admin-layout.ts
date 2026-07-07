@@ -98,7 +98,13 @@ textarea:focus { outline: none; border-color: var(--color-forest); box-shadow: 0
 form { margin: 0; }
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .sync-bar { display: flex; align-items: center; gap: 12px; }
-.sync-info { color: var(--color-warm-gray); font-size: 13px; white-space: nowrap; }
+.sync-info {
+  color: var(--color-warm-gray); font-size: 13px; white-space: nowrap;
+  /* Feste Mindestbreite: verhindert, dass die Sync-Bar beim Wechsel zwischen
+     "Letzter Sync: …" und dem kürzeren "Sync läuft …" umbricht und der Button
+     neben die Überschrift nach rechts oben "springt". */
+  min-width: 210px;
+}
 `;
 
 export function renderAdminPage(opts: { title: string; body: string }): string {

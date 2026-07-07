@@ -3,7 +3,7 @@ import express from 'express';
 import { randomUUID } from 'node:crypto';
 import {
   getThreadsNeedingReply, getThreadById, getMessagesByThread, upsertMessage,
-  getLastMessageSync,
+  getLastMessageSync, markThreadAiNoReply,
 } from '../repositories/message-repository.js';
 import {
   createDraft, getDraftById, getActiveDraftByThread, markDraftSent, markDraftError, discardDraft,
@@ -29,6 +29,12 @@ function esc(s: string | null | undefined): string {
   return String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 }
 
+// Robust UTC parse for DB timestamps (ISO "…Z" or SQLite "YYYY-MM-DD HH:MM:SS").
+function parseUtc(s: string): number {
+  const iso = s.includes('T') ? s : s.replace(' ', 'T');
+  return Date.parse(/Z|[+-]\d{2}:?\d{2}$/.test(iso) ? iso : `${iso}Z`);
+}
+
 // ISO timestamp -> "2026-06-29 08:37" (trim seconds/timezone for readability).
 function fmtDate(iso: string | null | undefined): string {
   const s = String(iso ?? '');
@@ -41,6 +47,17 @@ function getPropertyForThread(thread: { source: string; listing_id: string | nul
   if (thread.source === 'hostex') return getPropertyByHostexId(thread.listing_id);
   if (thread.source === 'guesty') return getPropertyByGuestyId(thread.listing_id);
   return undefined;
+}
+
+// Property fürs Listen-Badge/-Tint (FH, U19, AS, BH …). Gmail-Threads tragen die
+// Guesty-Listing-ID als listing_id, daher der generische Fallback über beide IDs.
+function propertyForBadge(thread: { source: string; listing_id: string | null }): PropertyConfig | undefined {
+  return (
+    getPropertyForThread(thread) ??
+    (thread.listing_id
+      ? getPropertyByGuestyId(thread.listing_id) ?? getPropertyByHostexId(thread.listing_id)
+      : undefined)
+  );
 }
 
 function directionLabel(direction: string): string {
@@ -59,9 +76,15 @@ router.get('/', (_req, res) => {
       const draftBadge = d
         ? `<span class="badge" style="background:var(--color-amber);color:#fff;border:none">${d.generated_by === 'llm' ? 'KI-Entwurf' : 'Entwurf'} bereit</span>`
         : '';
+      const property = propertyForBadge(t);
+      const code = property?.shortCode ?? property?.slug;
+      // Objekt-Kürzel farbig (uiColor der Property), Zeile selbst bleibt neutral.
+      const codeBadge = code
+        ? `<span class="badge"${property?.uiColor ? ` style="background:${esc(property.uiColor)};color:var(--color-charcoal)"` : ''}>${esc(code)}</span>`
+        : '';
       return `<li><a href="/admin/messages/${encodeURIComponent(t.id)}">
         <span class="thread-name">${name}</span>
-        <span class="thread-meta">${draftBadge}<span class="badge">${esc(t.channel)}</span><span>${esc(fmtDate(t.last_message_at))}</span></span>
+        <span class="thread-meta">${draftBadge}${codeBadge}<span class="badge">${esc(t.channel)}</span><span>${esc(fmtDate(t.last_message_at))}</span></span>
       </a></li>`;
     })
     .join('');
@@ -93,6 +116,10 @@ router.get('/:threadId', (req, res) => {
   const draft = getActiveDraftByThread(thread.id);
   // Guesty: Senden nur, wenn der Kanal der letzten Gastnachricht spiegelbar ist.
   const canSend = thread.source !== 'guesty' || resolveOutboundModuleType(msgs) !== null;
+  // Das Modell hat für den aktuellen Stand entschieden: keine Antwort nötig → Button ausgrauen.
+  const aiSaysNoReply = !!thread.ai_no_reply_at
+    && parseUtc(thread.ai_no_reply_at) >= parseUtc(thread.last_message_at);
+  const property = propertyForBadge(thread);
   const name = esc(thread.guest_name) || esc(thread.id);
   const history = msgs
     .map((m) =>
@@ -131,21 +158,32 @@ router.get('/:threadId', (req, res) => {
        </details>`
     : `<h3>Antwort verfassen</h3>
        ${['hostex', 'guesty'].includes(thread.source)
-         ? `<div class="actions" style="margin-bottom:16px">
-              <form method="POST" action="/admin/messages/${encodeURIComponent(thread.id)}/regenerate">
-                <button type="submit" class="btn btn-primary">KI-Entwurf generieren</button></form>
-            </div>`
+         ? aiSaysNoReply
+           ? `<div class="actions" style="margin-bottom:16px;align-items:center">
+                <button type="button" class="btn btn-ghost" disabled style="opacity:0.5;cursor:not-allowed">KI-Entwurf generieren</button>
+                <span class="subtitle" style="margin:0">KI sieht aktuell keine Antwort nötig</span>
+              </div>`
+           : `<div class="actions" style="margin-bottom:16px">
+                <form method="POST" action="/admin/messages/${encodeURIComponent(thread.id)}/regenerate">
+                  <button type="submit" class="btn btn-primary">KI-Entwurf generieren</button></form>
+              </div>`
          : ''}
        <form method="POST" action="/admin/messages/${encodeURIComponent(thread.id)}/draft">
          <textarea name="body" rows="6" required placeholder="Antwort an ${name} …"></textarea>
          <div class="actions"><button type="submit" class="btn ${['hostex', 'guesty'].includes(thread.source) ? 'btn-ghost' : 'btn-primary'}">Manuell speichern</button></div>
        </form>`;
 
+  const noDraftNotice = req.query.nodraft === '1'
+    ? `<p class="subtitle" style="background:var(--color-sand);padding:10px 14px;border-radius:8px">
+         Die KI hat bewusst keinen Entwurf erstellt — die letzte Gastnachricht braucht aus ihrer
+         Sicht keine Antwort (z.&nbsp;B. reines Danke/Bestätigung). Bei Bedarf unten manuell schreiben.
+       </p>`
+    : '';
   const body = `<a class="back-link" href="/admin/messages">&larr; Alle Nachrichten</a>
     <h1>${name}</h1>
-    <p class="subtitle"><span class="badge">${esc(thread.channel)}</span> · Provider: ${esc(thread.source)}</p>
+    <p class="subtitle"><span class="badge">${esc(thread.channel)}</span>${property ? ` · <strong>${esc(property.name)}</strong>` : ''} · Provider: ${esc(thread.source)}</p>
     <div class="section"><h3>Verlauf</h3>${history}</div>
-    <div class="section">${draftBlock}</div>`;
+    <div class="section">${noDraftNotice}${draftBlock}</div>`;
   res.type('html').send(renderAdminPage({ title: name, body }));
 });
 
@@ -239,7 +277,10 @@ router.post('/:threadId/regenerate', async (req, res, next) => {
       if (existing) discardDraft(existing.id);
       createDraft({ id: randomUUID(), thread_id: thread.id, provider: thread.source as 'hostex' | 'guesty', body: reply, generated_by: 'llm', model: DRAFT_MODEL });
     }
-    res.redirect(`/admin/messages/${encodeURIComponent(thread.id)}`);
+    // Kein Entwurf = bewusste Modell-Entscheidung (keine Antwort nötig) — merken
+    // (graut den Button aus, verhindert erneute Cron-LLM-Calls) + Hinweis anzeigen.
+    if (!reply) markThreadAiNoReply(thread.id);
+    res.redirect(`/admin/messages/${encodeURIComponent(thread.id)}${reply ? '' : '?nodraft=1'}`);
   } catch (e) { next(e); }
 });
 

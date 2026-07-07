@@ -108,6 +108,8 @@ export interface PropertyConfig {
   // with this set will have direct-email sync.
   directEmailLabel?: string;
   name: string;
+  shortCode?: string; // Kurzkürzel für kompakte UI-Badges, z.B. "FH", "U19", "AS", "BH"
+  uiColor?: string; // sehr helle Hintergrund-Tönung für Listenzeilen, z.B. "#FBF3E4"
   vaultNote?: string; // Dateiname der Objekt-Notiz im Vault (Areas/Hosting/Properties/<vaultNote>)
   timezone: string;
   currency: string;
@@ -209,6 +211,8 @@ const propertyConfigSchema = z.object({
   airbnbMailLabel: z.string().optional(),
   directEmailLabel: z.string().optional(),
   name: z.string().min(1),
+  shortCode: z.string().min(1).max(5).optional(),
+  uiColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   vaultNote: z.string().optional(),
   timezone: z.string().default('Europe/Berlin'),
   currency: z.string().length(3).toUpperCase().default('EUR'),
