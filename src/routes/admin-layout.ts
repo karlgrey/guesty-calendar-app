@@ -97,6 +97,11 @@ textarea:focus { outline: none; border-color: var(--color-forest); box-shadow: 0
 .empty { color: var(--color-warm-gray); padding: 20px 0; }
 form { margin: 0; }
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.sync-log {
+  background: var(--color-sand); border: 1px solid var(--color-stone); border-radius: var(--radius-sm);
+  padding: 10px 14px; margin: 12px 0 4px; font-size: 13px; color: var(--color-warm-gray); line-height: 1.7;
+}
+.sync-log summary { cursor: pointer; font-weight: 600; }
 .sync-bar { display: flex; align-items: center; gap: 12px; }
 .sync-info {
   color: var(--color-warm-gray); font-size: 13px; white-space: nowrap;

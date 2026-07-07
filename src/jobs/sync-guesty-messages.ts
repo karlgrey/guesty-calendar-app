@@ -28,6 +28,7 @@ export interface GuestyMessageSyncResult {
   conversationsFetched: number;
   threadsForProperty: number;
   postsUpserted: number;
+  skippedUnchanged: number;
   durationMs: number;
   error?: string;
 }
@@ -122,6 +123,7 @@ export async function syncGuestyMessagesForProperty(
       conversationsFetched: 0,
       threadsForProperty: 0,
       postsUpserted: 0,
+      skippedUnchanged: 0,
       durationMs: 0,
       error: 'No guestyPropertyId on property',
     };
@@ -238,6 +240,7 @@ export async function syncGuestyMessagesForProperty(
       conversationsFetched: allConvs.length,
       threadsForProperty: propertyConvs.length,
       postsUpserted,
+      skippedUnchanged,
       durationMs: duration,
     };
   } catch (error) {
@@ -248,6 +251,7 @@ export async function syncGuestyMessagesForProperty(
       conversationsFetched: 0,
       threadsForProperty: 0,
       postsUpserted: 0,
+      skippedUnchanged: 0,
       durationMs: Date.now() - start,
       error: errMsg,
     };

@@ -95,6 +95,12 @@ router.get('/', (_req, res) => {
   const lastSyncLabel = syncRunning
     ? 'Sync läuft …'
     : lastSync ? `Letzter Sync: ${esc(fmtDate(lastSync))}` : 'Noch nie gesynct';
+  const progressLines = syncProgress.lines.map((l) => esc(l)).join('<br>');
+  const syncLog = syncRunning
+    ? `<div class="sync-log"><strong>Sync läuft — Fortschritt:</strong><br>${progressLines || 'Starte …'}</div>`
+    : syncProgress.lines.length
+      ? `<details class="sync-log"><summary>Letzter Sync-Lauf ${esc(fmtDate(syncProgress.finishedAt ?? ''))} — Details</summary>${progressLines}</details>`
+      : '';
   const body = `<div class="page-head">
       <h1>Nachrichten <span class="count-pill">${threads.length} offen</span></h1>
       <div class="sync-bar">
@@ -103,6 +109,7 @@ router.get('/', (_req, res) => {
         <a href="/admin/suggestions" class="btn btn-ghost">Vault-Vorschläge${(() => { const n = countPendingSuggestions(); return n ? ` (${n})` : ''; })()}</a>
       </div>
     </div>
+    ${syncLog}
     <p class="subtitle">Threads, deren letzte Nachricht vom Gast kam und auf eine Antwort warten.</p>
     <div class="section">${list}</div>
     ${syncRunning ? '<script>setTimeout(() => location.reload(), 4000);</script>' : ''}`;
@@ -290,22 +297,51 @@ router.post('/:threadId/regenerate', async (req, res, next) => {
 // Process-scoped; correct for single-instance PM2. Cluster mode would need a shared lock.
 let syncRunning = false;
 
+// Menschlich lesbarer Fortschritt des letzten/laufenden Sync-Laufs — wird von der
+// Threadliste angezeigt (live via 4s-Auto-Reload, danach als aufklappbare Zusammenfassung).
+const syncProgress: { startedAt: string | null; finishedAt: string | null; lines: string[] } = {
+  startedAt: null,
+  finishedAt: null,
+  lines: [],
+};
+
 async function runMessageSync(): Promise<void> {
+  syncProgress.startedAt = new Date().toISOString();
+  syncProgress.finishedAt = null;
+  syncProgress.lines = [];
+  const log = (line: string) => { syncProgress.lines.push(line); };
   const client = getHostexClient();
   // One shared detail cache across all property passes → each conversation detail
   // (esp. empty-title inquiries) is fetched at most once per run.
   const detailCache = new Map<string, HostexConversationDetail>();
-  for (const property of getPropertiesByProvider('hostex')) {
-    await syncHostexMessagesForProperty(property, client, undefined, detailCache);
-    await generateDraftsForProperty(property);
-  }
-  const guestyProps = getPropertiesByProvider('guesty');
-  if (guestyProps.length > 0) {
-    const conversations = await fetchAllConversations(); // account-weit: EIN Fetch pro Run
-    for (const property of guestyProps) {
-      await syncGuestyMessagesForProperty(property, conversations);
-      await generateDraftsForProperty(property);
+  try {
+    for (const property of getPropertiesByProvider('hostex')) {
+      log(`Hostex · ${property.name}: Nachrichten syncen …`);
+      const r = await syncHostexMessagesForProperty(property, client, undefined, detailCache);
+      log(r.success
+        ? `Hostex · ${property.name}: ${r.threads} Threads, ${r.messages} Nachrichten ✓`
+        : `Hostex · ${property.name}: FEHLER — ${r.error}`);
+      const d = await generateDraftsForProperty(property);
+      if (d.generated > 0) log(`Hostex · ${property.name}: ${d.generated} KI-Entwurf/-Entwürfe neu`);
     }
+    const guestyProps = getPropertiesByProvider('guesty');
+    if (guestyProps.length > 0) {
+      log('Guesty: Conversation-Liste laden …');
+      const conversations = await fetchAllConversations(); // account-weit: EIN Fetch pro Run
+      log(`Guesty: ${conversations.length} Conversations geladen`);
+      for (const property of guestyProps) {
+        log(`Guesty · ${property.name}: Nachrichten syncen …`);
+        const r = await syncGuestyMessagesForProperty(property, conversations);
+        log(r.success
+          ? `Guesty · ${property.name}: ${r.threadsForProperty - r.skippedUnchanged} aktualisiert, ${r.skippedUnchanged} unverändert übersprungen (${(r.durationMs / 1000).toFixed(1)}s) ✓`
+          : `Guesty · ${property.name}: FEHLER — ${r.error}`);
+        const d = await generateDraftsForProperty(property);
+        if (d.generated > 0) log(`Guesty · ${property.name}: ${d.generated} KI-Entwurf/-Entwürfe neu`);
+      }
+    }
+    log('Fertig.');
+  } finally {
+    syncProgress.finishedAt = new Date().toISOString();
   }
 }
 
