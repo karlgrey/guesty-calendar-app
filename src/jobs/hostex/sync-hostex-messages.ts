@@ -1,5 +1,5 @@
 // src/jobs/hostex/sync-hostex-messages.ts
-import { upsertThread, upsertMessage } from '../../repositories/message-repository.js';
+import { upsertThread, upsertMessage, getThreadById } from '../../repositories/message-repository.js';
 import { mapHostexConversation, detailBelongsToProperty } from '../../mappers/hostex/message-mapper.js';
 import type { HostexConversation, HostexConversationDetail } from '../../services/hostex-client.js';
 import type { PropertyConfig } from '../../config/properties.js';
@@ -14,7 +14,22 @@ export interface HostexMessageSyncResult {
   success: boolean;
   threads: number;
   messages: number;
+  skippedUnchanged: number;
   error?: string;
+}
+
+/**
+ * Incremental-sync gate: the Hostex LIST carries last_message_at, so we can
+ * skip the detail fetch exactly — a conversation only changed when its list
+ * activity is newer than the local thread's last sync stamp. Unknown threads
+ * and list items without the field are always fetched.
+ */
+export function shouldFetchHostexDetail(
+  conv: { last_message_at?: string | null },
+  localThread: { last_synced_at: string } | null,
+): boolean {
+  if (!localThread || !conv.last_message_at) return true;
+  return Date.parse(conv.last_message_at) > Date.parse(localThread.last_synced_at);
 }
 
 export async function syncHostexMessagesForProperty(
@@ -27,10 +42,12 @@ export async function syncHostexMessagesForProperty(
    * empty-title inquiries, which are candidates in every pass — is fetched once.
    */
   detailCache?: Map<string, HostexConversationDetail>,
+  /** deep=true (täglicher Force-ETL): Details für ALLE Kandidaten, kein inkrementeller Skip. */
+  opts: { deep?: boolean } = {},
 ): Promise<HostexMessageSyncResult> {
   const listingId = property.hostexPropertyId;
   if (!listingId) {
-    return { success: false, threads: 0, messages: 0, error: 'No hostexPropertyId on property' };
+    return { success: false, threads: 0, messages: 0, skippedUnchanged: 0, error: 'No hostexPropertyId on property' };
   }
 
   const getDetail = async (id: string): Promise<HostexConversationDetail> => {
@@ -54,8 +71,13 @@ export async function syncHostexMessagesForProperty(
 
     let threads = 0;
     let messages = 0;
+    let skippedUnchanged = 0;
 
     for (const conv of candidates) {
+      if (!opts.deep && !shouldFetchHostexDetail(conv, getThreadById(`hostex:${conv.id}`))) {
+        skippedUnchanged++;
+        continue;
+      }
       const detail = await getDetail(conv.id);
       // Empty-title candidates (inquiries) belong to another property unless the detail confirms.
       if (!conv.property_title && !detailBelongsToProperty(detail, listingId)) continue;
@@ -68,11 +90,11 @@ export async function syncHostexMessagesForProperty(
       threads++;
     }
 
-    logger.info({ slug: property.slug, threads, messages }, 'Hostex: message sync done');
-    return { success: true, threads, messages };
+    logger.info({ slug: property.slug, threads, messages, skippedUnchanged, deep: !!opts.deep }, 'Hostex: message sync done');
+    return { success: true, threads, messages, skippedUnchanged };
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
     logger.error({ slug: property.slug, err: msg }, 'Hostex: message sync failed');
-    return { success: false, threads: 0, messages: 0, error: msg };
+    return { success: false, threads: 0, messages: 0, skippedUnchanged: 0, error: msg };
   }
 }

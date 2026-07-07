@@ -144,6 +144,56 @@ describe('syncHostexMessagesForProperty', () => {
     expect(getThreadById('hostex:inq-other')).toBeNull();
   });
 
+  it('skips the detail fetch for conversations unchanged since the last sync', async () => {
+    let detailCalls = 0;
+    const conv = {
+      id: 'c-1', channel_type: 'airbnb', guest: { name: 'Darleen', email: '' },
+      property_title: 'Bootshaus', last_message_at: '2026-06-30T10:00:00+00:00',
+    };
+    const client: HostexMessageClient = {
+      async getConversations() { return [conv]; },
+      async getConversationDetails() {
+        detailCalls++;
+        return {
+          id: 'c-1', channel_type: 'airbnb', guest: { name: 'Darleen', email: '' }, property_title: 'Bootshaus',
+          messages: [{ id: 'm-1', sender_role: 'guest', display_type: 'Text', content: 'Hallo', created_at: '2026-06-30T10:00:00Z' }],
+        };
+      },
+    };
+    await syncHostexMessagesForProperty(property, client, '2026-07-01T00:00:00Z');
+    expect(detailCalls).toBe(1);
+    // Unverändert (Aktivität 06-30 < letzter Sync 07-01) → Detail übersprungen.
+    const res2 = await syncHostexMessagesForProperty(property, client, '2026-07-01T01:00:00Z');
+    expect(detailCalls).toBe(1);
+    expect(res2.skippedUnchanged).toBe(1);
+    // Neue Aktivität laut Liste → Detail wird wieder geladen.
+    conv.last_message_at = '2026-07-02T09:00:00+00:00';
+    await syncHostexMessagesForProperty(property, client, '2026-07-02T10:00:00Z');
+    expect(detailCalls).toBe(2);
+  });
+
+  it('deep=true fetches details even for unchanged conversations', async () => {
+    let detailCalls = 0;
+    const client: HostexMessageClient = {
+      async getConversations() {
+        return [{
+          id: 'c-1', channel_type: 'airbnb', guest: { name: 'D', email: '' },
+          property_title: 'Bootshaus', last_message_at: '2026-06-30T10:00:00+00:00',
+        }];
+      },
+      async getConversationDetails() {
+        detailCalls++;
+        return {
+          id: 'c-1', channel_type: 'airbnb', guest: { name: 'D', email: '' }, property_title: 'Bootshaus',
+          messages: [{ id: 'm-1', sender_role: 'guest', display_type: 'Text', content: 'Hallo', created_at: '2026-06-30T10:00:00Z' }],
+        };
+      },
+    };
+    await syncHostexMessagesForProperty(property, client, '2026-07-01T00:00:00Z');
+    await syncHostexMessagesForProperty(property, client, '2026-07-01T01:00:00Z', undefined, { deep: true });
+    expect(detailCalls).toBe(2);
+  });
+
   it('with a shared detail cache, an inquiry is fetched only once across property passes', async () => {
     let detailCalls = 0;
     const countingClient: HostexMessageClient = {

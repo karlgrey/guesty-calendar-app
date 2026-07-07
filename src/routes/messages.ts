@@ -319,7 +319,7 @@ async function runMessageSync(): Promise<void> {
       log(`Hostex · ${property.name}: Nachrichten syncen …`);
       const r = await syncHostexMessagesForProperty(property, client, undefined, detailCache);
       log(r.success
-        ? `Hostex · ${property.name}: ${r.threads} Threads, ${r.messages} Nachrichten ✓`
+        ? `Hostex · ${property.name}: ${r.threads} aktualisiert, ${r.skippedUnchanged} unverändert übersprungen ✓`
         : `Hostex · ${property.name}: FEHLER — ${r.error}`);
       const d = await generateDraftsForProperty(property);
       if (d.generated > 0) log(`Hostex · ${property.name}: ${d.generated} KI-Entwurf/-Entwürfe neu`);

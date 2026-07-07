@@ -34,6 +34,8 @@ export interface HostexConversation {
   guest: HostexGuest | null;
   /** Populated in LIST responses; null/absent for account-level inquiries without a property. */
   property_title: string | null;
+  /** Last activity timestamp from the LIST response — drives the incremental-sync skip. */
+  last_message_at?: string | null;
 }
 
 export interface HostexMessageRaw {

@@ -134,7 +134,8 @@ async function runHostexETL(property: PropertyConfig, force: boolean): Promise<E
   // Step 3: message sync (conversations → message_threads + messages)
   if (propertyResult.success) {
     try {
-      await syncHostexMessagesForProperty(property, getHostexClient());
+      // force (täglicher 2-Uhr-Lauf) = deep: alle Details neu; sonst inkrementell.
+      await syncHostexMessagesForProperty(property, getHostexClient(), undefined, undefined, { deep: force });
     } catch (error) {
       logger.error({ error, propertySlug: property.slug }, 'Hostex: message sync error (non-fatal)');
     }
