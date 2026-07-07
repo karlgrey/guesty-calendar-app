@@ -218,9 +218,11 @@ Zweiter Booking-Provider neben Guesty. Parallel-Modul-Architektur, ETL-Dispatch 
 
 **Rollback**: 3 Hostex-Property-Einträge aus `properties.json` entfernen, Server-Restart. DB-Rows können stehenbleiben oder via SQL gelöscht werden.
 
-### Hostex Guest-Reply System (Migrations 014, 018–020)
+### Guest-Reply System: Hostex + Guesty (Migrations 014, 018–020)
 
-Drei-Schnitt-System für KI-gestützte Gästekommunikation — nur für Hostex-Properties.
+KI-gestützte Gästekommunikation mit Freigabe-Gate. Schnitte 1–3 (Hostex), Schnitt 4
+erweitert auf Guesty-Properties (Farmhouse, U19) — Spec:
+`docs/superpowers/specs/2026-07-07-guesty-send-design.md`.
 
 **Schnitt 1 — Message Sync** (`src/jobs/hostex/sync-hostex-messages.ts`):
 - Fetcht alle Conversations via Hostex-API (`limit=100`, account-weit)
@@ -229,8 +231,9 @@ Drei-Schnitt-System für KI-gestützte Gästekommunikation — nur für Hostex-P
 - Persistiert `Text`-Messages in `message_threads` + `messages` (mapper: `src/mappers/hostex/message-mapper.ts`); andere `display_type`-Werte (`Box`, `ReservationAlteration`) werden verworfen
 - Liest via `src/repositories/message-repository.ts`
 
-**Schnitt 2 — AI-Entwürfe** (`src/jobs/hostex/generate-hostex-drafts.ts` + `src/services/draft-service.ts`):
-- Voraussetzungen pro Property: `hostexPropertyId` + `vaultNote` in `properties.json` + `VAULT_PATH` + `ANTHROPIC_API_KEY`
+**Schnitt 2 — AI-Entwürfe** (`src/jobs/generate-drafts.ts` + `src/services/draft-service.ts`):
+- Provider-agnostisch: `resolveDraftSource(property)` mappt hostex→`hostexPropertyId`, guesty→`guestyPropertyId`; airbnb-mail hat keinen Rückkanal (kein Draft)
+- Voraussetzungen pro Property: Provider-Listing-ID + `vaultNote` in `properties.json` + `VAULT_PATH` + `ANTHROPIC_API_KEY`
 - Liest Voice-Stil aus `prozesse/Gästekommunikation Grundsätze.md` und Objektfakten aus `prozesse/<vaultNote>` via `src/services/vault-knowledge.ts`
 - Wählt nur Threads, deren letzte Gastnachricht < 72h alt ist (`DRAFT_MAX_AGE_HOURS = 72`), noch kein `pending`-Entwurf existiert, und letzte Richtung `inbound` ist
 - Cap: maximal `DRAFT_GEN_CAP = 10` Entwürfe pro Property pro Run
@@ -240,14 +243,19 @@ Drei-Schnitt-System für KI-gestützte Gästekommunikation — nur für Hostex-P
 
 **Send** (`src/services/message-sender.ts`):
 - Hostex-Branch: entfernt `hostex:`-Prefix aus `thread.id`, sendet via `hostexClient.sendMessage`
+- Guesty-Branch (Schnitt 4): entfernt `guesty:`-Prefix, spiegelt den Kanal der letzten
+  Gastnachricht via `resolveOutboundModuleType` (`src/services/guesty-channel.ts`, liest
+  `raw_meta.type` — z. B. `airbnb2`, `platform`=E-Mail; `log`/unklar → Fehler bzw. kein
+  Send-Button in der UI) und sendet via `guestyClient.sendConversationMessage`
+  (`POST /communication/conversations/{id}/send-message`)
 - Atomarer Send-Guard: `claimDraftForSending` setzt Status `pending→sending` (TOCTOU-sicher)
-- Outbound-Row wird auf `hostex:{message_id}` der API-Response gehasht (kein Duplikat beim nächsten Sync)
-- Guesty: throws not-implemented
+- Outbound-Row wird auf `{source}:{message_id}` der API-Response gehasht (kein Duplikat beim
+  nächsten Sync); Guesty-Response-Schema beim Erst-Send verifizieren (wird raw geloggt)
 
 **Admin-UI** (`src/routes/messages.ts`, gemountet auf `/admin/messages`):
 - `GET /` — Threadliste (letzte Gastnachricht zuerst) + "Jetzt syncen"-Button + letzter Sync-Zeitstempel
 - `GET /:threadId` — Verlauf, bearbeitbarer Entwurf-Textarea, Senden/Verwerfen/Neu-generieren/Manuell-speichern, einklappbares "Passt nicht?"-Feedback-Formular
-- `POST /sync` — startet Sync+Drafts asynchron, leitet sofort zurück (kein Proxy-Timeout)
+- `POST /sync` — startet Sync+Drafts asynchron für Hostex- UND Guesty-Properties, leitet sofort zurück (kein Proxy-Timeout); Guesty-Conversations werden pro Run nur EINMAL account-weit gefetcht
 - `POST /:threadId/draft` — manueller Entwurf; lehnt ab wenn schon `pending`-Draft existiert
 - `POST /drafts/:draftId/send` — sendet (mit optionalem Body-Edit), atomic claim
 - `POST /drafts/:draftId/discard` — verwirft Entwurf
@@ -369,8 +377,10 @@ if (!propertyId) throw new NotFoundError('No property configured');
 - `src/services/vault-knowledge.ts` - `loadVoice()` + `loadPropertyFacts()`: reads vault files, gated on `VAULT_PATH`
 - `src/mappers/hostex/message-mapper.ts` - Maps Hostex conversation detail → thread + messages (Text only)
 - `src/repositories/message-repository.ts` - Upsert + query for `message_threads` / `messages`
-- `src/jobs/hostex/sync-hostex-messages.ts` - Per-property message sync with detail cache
-- `src/jobs/hostex/generate-hostex-drafts.ts` - Per-property draft generation with cap + age gate
+- `src/jobs/hostex/sync-hostex-messages.ts` - Per-property Hostex message sync with detail cache
+- `src/jobs/sync-guesty-messages.ts` - Per-property Guesty conversation sync (läuft non-fatal im Guesty-ETL + Sync-Button)
+- `src/jobs/generate-drafts.ts` - Provider-agnostic draft generation with cap + age gate
+- `src/services/guesty-channel.ts` - `resolveOutboundModuleType()`: Kanal-Spiegelung für Guesty-Sends
 
 ### Frontend
 - `public/calendar.js` - Calendar with property context (`window.__PROPERTY_SLUG__`, `__PROPERTY_NAME__`, `__BOOKING_EMAIL__`)
