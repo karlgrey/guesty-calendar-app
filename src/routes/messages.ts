@@ -9,7 +9,7 @@ import {
   createDraft, getDraftById, getActiveDraftByThread, markDraftSent, markDraftError, discardDraft,
   claimDraftForSending, updateDraftBody,
 } from '../repositories/draft-repository.js';
-import { getPropertyByHostexId, getPropertiesByProvider } from '../config/properties.js';
+import { getPropertyByHostexId, getPropertyByGuestyId, getPropertiesByProvider, type PropertyConfig } from '../config/properties.js';
 import { loadVoice, loadPropertyFacts } from '../services/vault-knowledge.js';
 import { generateDraftForThread, DRAFT_MODEL } from '../services/draft-service.js';
 import { sendReply } from '../services/message-sender.js';
@@ -31,6 +31,14 @@ function esc(s: string | null | undefined): string {
 function fmtDate(iso: string | null | undefined): string {
   const s = String(iso ?? '');
   return s.length >= 16 ? `${s.slice(0, 10)} ${s.slice(11, 16)}` : s;
+}
+
+// Provider-aware property lookup: threads store the provider-native listing id.
+function getPropertyForThread(thread: { source: string; listing_id: string | null }): PropertyConfig | undefined {
+  if (!thread.listing_id) return undefined;
+  if (thread.source === 'hostex') return getPropertyByHostexId(thread.listing_id);
+  if (thread.source === 'guesty') return getPropertyByGuestyId(thread.listing_id);
+  return undefined;
 }
 
 function directionLabel(direction: string): string {
@@ -210,10 +218,10 @@ router.post('/:threadId/regenerate', async (req, res, next) => {
   try {
     const thread = getThreadById(req.params.threadId);
     if (!thread) { res.status(404).send('Thread nicht gefunden'); return; }
-    if (thread.source !== 'hostex' || !thread.listing_id) {
-      res.status(400).send('Neu generieren ist nur für Hostex-Threads verfügbar'); return;
+    if (!['hostex', 'guesty'].includes(thread.source) || !thread.listing_id) {
+      res.status(400).send('Neu generieren ist nur für Hostex-/Guesty-Threads verfügbar'); return;
     }
-    const property = getPropertyByHostexId(thread.listing_id);
+    const property = getPropertyForThread(thread);
     const voice = loadVoice();
     const facts = property?.vaultNote ? loadPropertyFacts(property.vaultNote) : null;
     if (!voice || !facts) { res.status(400).send('Kein Vault-Wissen verfügbar (VAULT_PATH/vaultNote prüfen)'); return; }
@@ -222,7 +230,7 @@ router.post('/:threadId/regenerate', async (req, res, next) => {
     if (reply) {
       const existing = getActiveDraftByThread(thread.id);
       if (existing) discardDraft(existing.id);
-      createDraft({ id: randomUUID(), thread_id: thread.id, provider: 'hostex', body: reply, generated_by: 'llm', model: DRAFT_MODEL });
+      createDraft({ id: randomUUID(), thread_id: thread.id, provider: thread.source as 'hostex' | 'guesty', body: reply, generated_by: 'llm', model: DRAFT_MODEL });
     }
     res.redirect(`/admin/messages/${encodeURIComponent(thread.id)}`);
   } catch (e) { next(e); }
@@ -270,7 +278,7 @@ router.post('/:threadId/feedback', express.urlencoded({ extended: true }), async
 
     if (category !== 'einmalig') {
       const isTon = category === 'ton';
-      const property = isTon ? null : getPropertyByHostexId(thread.listing_id ?? '');
+      const property = isTon ? null : getPropertyForThread(thread);
       const targetFile = isTon
         ? 'prozesse/Gästekommunikation Grundsätze.md'
         : property?.vaultNote ? `prozesse/${property.vaultNote}` : null;
