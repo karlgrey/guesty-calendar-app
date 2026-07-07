@@ -737,6 +737,26 @@ export class GuestyClient {
   }
 
   /**
+   * Send a reply into a conversation, mirroring the guest's channel.
+   * moduleType examples: 'airbnb2' (Airbnb), 'platform' (delivered as email).
+   * Response schema is undocumented — we log it raw and try common id fields;
+   * callers must tolerate messageId === null (fallback dedup key).
+   */
+  async sendConversationMessage(
+    conversationId: string,
+    body: string,
+    moduleType: string,
+  ): Promise<{ messageId: string | null; raw: unknown }> {
+    const res = await this.request<any>(
+      `/communication/conversations/${conversationId}/send-message`,
+      { method: 'POST', body: JSON.stringify({ module: { type: moduleType }, body }) },
+    );
+    logger.info({ conversationId, moduleType, response: res }, 'Guesty send-message response');
+    const candidate = res?.data?._id ?? res?._id ?? res?.data?.post?._id ?? null;
+    return { messageId: typeof candidate === 'string' ? candidate : null, raw: res };
+  }
+
+  /**
    * Health check: verify API credentials and connectivity
    */
   async healthCheck(): Promise<boolean> {
