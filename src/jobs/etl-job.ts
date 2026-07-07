@@ -230,9 +230,10 @@ export async function runETLJobForProperty(
     logger.info({ propertySlug: slug }, 'Step 3/3: Syncing inquiries data...');
     const inquiriesResult = await syncInquiries(guestyPropertyId!);
 
-    // Step 4 (non-fatal): conversations → message_threads/messages + AI drafts
+    // Step 4 (non-fatal): conversations → message_threads/messages + AI drafts.
+    // force (täglicher 2-Uhr-Lauf) = deep: alle Posts neu; sonst inkrementell.
     try {
-      await syncGuestyMessagesForProperty(property);
+      await syncGuestyMessagesForProperty(property, undefined, { deep: force });
     } catch (error) {
       logger.error({ error, propertySlug: slug }, 'Guesty: message sync error (non-fatal)');
     }

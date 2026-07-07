@@ -13,6 +13,7 @@ import { guestyClient } from '../services/guesty-client.js';
 import {
   upsertThread,
   upsertMessage,
+  getThreadById,
 } from '../repositories/message-repository.js';
 import logger from '../utils/logger.js';
 import type { PropertyConfig } from '../config/properties.js';
@@ -71,6 +72,36 @@ export async function fetchAllConversations(): Promise<any[]> {
   return all;
 }
 
+/**
+ * Incremental-sync gate: fetch a conversation's posts only when something can
+ * have changed. Guestys conversation list has NO activity timestamp (and
+ * state.read is useless for us — the Guesty inbox is never opened, everything
+ * stays unread; the list sorts by createdAt, not activity). Signals:
+ * unknown locally (must fetch) · local thread active within
+ * INCREMENTAL_ACTIVE_WINDOW_DAYS · any reservation whose stay is upcoming or
+ * ended less than STAY_GRACE_DAYS ago (guest messages cluster around the
+ * stay). Everything else is skipped; the daily FORCED ETL (deep=true) does a
+ * full pass and catches the rare late message on a long-finished stay.
+ */
+export const INCREMENTAL_ACTIVE_WINDOW_DAYS = 30;
+export const STAY_GRACE_DAYS = 14;
+
+export function shouldDeepFetchConversation(
+  conv: any,
+  localThread: { last_message_at: string } | null,
+  now: Date = new Date(),
+): boolean {
+  if (!localThread) return true;
+  const activeCutoff = now.getTime() - INCREMENTAL_ACTIVE_WINDOW_DAYS * 24 * 3600 * 1000;
+  if (Date.parse(localThread.last_message_at) > activeCutoff) return true;
+  const graceCutoff = now.getTime() - STAY_GRACE_DAYS * 24 * 3600 * 1000;
+  for (const r of conv?.meta?.reservations ?? []) {
+    const checkOut = r?.checkOut ? Date.parse(r.checkOut) : NaN;
+    if (!Number.isNaN(checkOut) && checkOut >= graceCutoff) return true;
+  }
+  return false;
+}
+
 export async function syncGuestyMessagesForProperty(
   property: PropertyConfig,
   /**
@@ -78,6 +109,8 @@ export async function syncGuestyMessagesForProperty(
    * all guesty property passes in a run so the paginated fetch happens once.
    */
   prefetchedConversations?: any[],
+  /** deep=true (forced ETL): fetch ALL conversations' posts, no incremental skip. */
+  opts: { deep?: boolean } = {},
 ): Promise<GuestyMessageSyncResult> {
   const start = Date.now();
   const slug = property.slug;
@@ -108,11 +141,21 @@ export async function syncGuestyMessagesForProperty(
     let postsUpserted = 0;
     const now = new Date().toISOString();
 
-    for (const conv of propertyConvs) {
+    // Incremental gate (skip unchanged), then fetch all post lists CONCURRENTLY —
+    // the client's Bottleneck limiter caps at 10 in flight; sequential awaits
+    // would idle the limiter and take ~0.5s per conversation.
+    const toFetch = opts.deep
+      ? propertyConvs
+      : propertyConvs.filter((conv) => shouldDeepFetchConversation(conv, getThreadById(`guesty:${conv._id}`)));
+    const skippedUnchanged = propertyConvs.length - toFetch.length;
+
+    const fetched = await Promise.all(
+      toFetch.map(async (conv) => ({ conv, posts: await guestyClient.listConversationPosts(conv._id, 200) })),
+    );
+
+    for (const { conv, posts } of fetched) {
       const convId = conv._id;
       const threadId = `guesty:${convId}`;
-
-      const posts = await guestyClient.listConversationPosts(convId, 200);
 
       const reservations = conv.meta?.reservations ?? [];
       const primaryRes = reservations[0] ?? null;
@@ -182,6 +225,8 @@ export async function syncGuestyMessagesForProperty(
         slug,
         conversationsFetched: allConvs.length,
         threadsForProperty: propertyConvs.length,
+        skippedUnchanged,
+        deep: !!opts.deep,
         postsUpserted,
         duration,
       },

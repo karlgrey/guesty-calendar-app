@@ -104,7 +104,8 @@ router.get('/', (_req, res) => {
       </div>
     </div>
     <p class="subtitle">Threads, deren letzte Nachricht vom Gast kam und auf eine Antwort warten.</p>
-    <div class="section">${list}</div>`;
+    <div class="section">${list}</div>
+    ${syncRunning ? '<script>setTimeout(() => location.reload(), 4000);</script>' : ''}`;
   res.type('html').send(renderAdminPage({ title: 'Nachrichten', body }));
 });
 
