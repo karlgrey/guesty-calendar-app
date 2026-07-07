@@ -15,7 +15,7 @@ import { generateDraftForThread, DRAFT_MODEL } from '../services/draft-service.j
 import { sendReply } from '../services/message-sender.js';
 import { getHostexClient, type HostexConversationDetail } from '../services/hostex-client.js';
 import { syncHostexMessagesForProperty } from '../jobs/hostex/sync-hostex-messages.js';
-import { generateDraftsForProperty } from '../jobs/hostex/generate-hostex-drafts.js';
+import { generateDraftsForProperty } from '../jobs/generate-drafts.js';
 import logger from '../utils/logger.js';
 import { renderAdminPage } from './admin-layout.js';
 import { createFeedback, createSuggestion, countPendingSuggestions } from '../repositories/feedback-repository.js';

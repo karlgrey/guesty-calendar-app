@@ -15,7 +15,7 @@ import { syncHostexProperty } from './hostex/sync-properties.js';
 import { syncHostexReservations } from './hostex/sync-reservations.js';
 import { syncHostexCalendar } from './hostex/sync-calendar.js';
 import { syncHostexMessagesForProperty } from './hostex/sync-hostex-messages.js';
-import { generateDraftsForProperty } from './hostex/generate-hostex-drafts.js';
+import { generateDraftsForProperty } from './generate-drafts.js';
 import { getHostexClient } from '../services/hostex-client.js';
 import { syncVault } from '../services/vault-sync.js';
 import { syncAirbnbProperty } from './airbnb-mail/sync-properties.js';
