@@ -13,6 +13,7 @@ import { getPropertyByHostexId, getPropertyByGuestyId, getPropertiesByProvider, 
 import { loadVoice, loadPropertyFacts } from '../services/vault-knowledge.js';
 import { generateDraftForThread, DRAFT_MODEL } from '../services/draft-service.js';
 import { sendReply } from '../services/message-sender.js';
+import { resolveOutboundModuleType } from '../services/guesty-channel.js';
 import { getHostexClient, type HostexConversationDetail } from '../services/hostex-client.js';
 import { syncHostexMessagesForProperty } from '../jobs/hostex/sync-hostex-messages.js';
 import { syncGuestyMessagesForProperty, fetchAllConversations } from '../jobs/sync-guesty-messages.js';
@@ -90,6 +91,8 @@ router.get('/:threadId', (req, res) => {
   if (!thread) { res.status(404).send('Thread nicht gefunden'); return; }
   const msgs = getMessagesByThread(thread.id);
   const draft = getActiveDraftByThread(thread.id);
+  // Guesty: Senden nur, wenn der Kanal der letzten Gastnachricht spiegelbar ist.
+  const canSend = thread.source !== 'guesty' || resolveOutboundModuleType(msgs) !== null;
   const name = esc(thread.guest_name) || esc(thread.id);
   const history = msgs
     .map((m) =>
@@ -102,10 +105,13 @@ router.get('/:threadId', (req, res) => {
 
   const draftBlock = draft
     ? `<h3>${draft.generated_by === 'llm' ? 'KI-Entwurf' : 'Entwurf'}</h3>
-       <form method="POST" action="/admin/messages/drafts/${encodeURIComponent(draft.id)}/send">
-         <textarea name="body" rows="7">${esc(draft.body)}</textarea>
-         <div class="actions"><button type="submit" class="btn btn-primary">Senden (Freigabe)</button></div>
-       </form>
+       ${canSend
+         ? `<form method="POST" action="/admin/messages/drafts/${encodeURIComponent(draft.id)}/send">
+              <textarea name="body" rows="7">${esc(draft.body)}</textarea>
+              <div class="actions"><button type="submit" class="btn btn-primary">Senden (Freigabe)</button></div>
+            </form>`
+         : `<textarea rows="7" readonly>${esc(draft.body)}</textarea>
+            <p class="subtitle">Kanal unklar — bitte direkt in der Guesty-Inbox antworten.</p>`}
        <div class="actions">
          ${draft.generated_by === 'llm' ? `<form method="POST" action="/admin/messages/${encodeURIComponent(thread.id)}/regenerate"><button type="submit" class="btn btn-ghost">Neu generieren</button></form>` : ''}
          <form method="POST" action="/admin/messages/drafts/${encodeURIComponent(draft.id)}/discard">
@@ -124,7 +130,7 @@ router.get('/:threadId', (req, res) => {
          </form>
        </details>`
     : `<h3>Antwort verfassen</h3>
-       ${thread.source === 'hostex'
+       ${['hostex', 'guesty'].includes(thread.source)
          ? `<div class="actions" style="margin-bottom:16px">
               <form method="POST" action="/admin/messages/${encodeURIComponent(thread.id)}/regenerate">
                 <button type="submit" class="btn btn-primary">KI-Entwurf generieren</button></form>
@@ -132,7 +138,7 @@ router.get('/:threadId', (req, res) => {
          : ''}
        <form method="POST" action="/admin/messages/${encodeURIComponent(thread.id)}/draft">
          <textarea name="body" rows="6" required placeholder="Antwort an ${name} …"></textarea>
-         <div class="actions"><button type="submit" class="btn ${thread.source === 'hostex' ? 'btn-ghost' : 'btn-primary'}">Manuell speichern</button></div>
+         <div class="actions"><button type="submit" class="btn ${['hostex', 'guesty'].includes(thread.source) ? 'btn-ghost' : 'btn-primary'}">Manuell speichern</button></div>
        </form>`;
 
   const body = `<a class="back-link" href="/admin/messages">&larr; Alle Nachrichten</a>
@@ -185,11 +191,11 @@ router.post('/drafts/:draftId/send', express.urlencoded({ extended: true }), asy
       const { externalMessageId } = await sendReply(thread, bodyToSend);
       markDraftSent(draft.id, externalMessageId);
       // Key the local outbound row on the returned external id so the next sync that ingests
-      // the same message as hostex:{realId} hits the same row (upsert = no-op) instead of
+      // the same message as {source}:{realId} hits the same row (upsert = no-op) instead of
       // creating a duplicate. Falls back to sent:{draftId} when no external id is returned.
-      // NOTE: this collapse assumes the send response's message_id equals the id the
-      // conversation later reports; confirm on first live send.
-      const outboundId = externalMessageId ? `hostex:${externalMessageId}` : `sent:${draft.id}`;
+      // NOTE: this collapse assumes the send response's message id equals the id the
+      // conversation later reports; confirm on first live send (hostex AND guesty).
+      const outboundId = externalMessageId ? `${thread.source}:${externalMessageId}` : `sent:${draft.id}`;
       upsertMessage({
         id: outboundId, thread_id: thread.id, direction: 'outbound',
         sent_at: new Date().toISOString(), from_name: 'host', from_address: null, to_address: null,

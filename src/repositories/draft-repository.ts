@@ -38,7 +38,7 @@ export function claimDraftForSending(id: string): boolean {
   return result.changes === 1;
 }
 
-export function markDraftSent(id: string, externalMessageId: string): void {
+export function markDraftSent(id: string, externalMessageId: string | null): void {
   const db = getDatabase();
   db.prepare(
     `UPDATE message_drafts
