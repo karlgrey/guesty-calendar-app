@@ -29,6 +29,7 @@ import { guestyClient } from './guesty-client.js';
 import { areDatesAvailable } from '../repositories/availability-repository.js';
 import { createOrGetDocument } from './document-service.js';
 import { createOfferReservation, confirmOfferReservation, releaseOfferReservation } from './reservation-service.js';
+import { ConflictError, ValidationError } from '../utils/errors.js';
 
 const baseInput = {
   propertySlug: 'farmhouse',
@@ -54,17 +55,34 @@ describe('createOfferReservation', () => {
 
   it('409 bei belegtem Zeitraum — KEIN Guesty-Call', async () => {
     (areDatesAvailable as any).mockReturnValue(false);
+    await expect(createOfferReservation({ ...baseInput })).rejects.toThrow(ConflictError);
     await expect(createOfferReservation({ ...baseInput })).rejects.toThrow(/not available|belegt/i);
     expect(guestyClient.createReservation).not.toHaveBeenCalled();
   });
 
   it('validiert: unbekanntes Objekt, Nicht-Guesty-Objekt, checkOut<=checkIn, guestsCount<1, Preis<=0', async () => {
-    await expect(createOfferReservation({ ...baseInput, propertySlug: 'nope' })).rejects.toThrow();
-    await expect(createOfferReservation({ ...baseInput, propertySlug: 'firenze-loft' })).rejects.toThrow();
-    await expect(createOfferReservation({ ...baseInput, checkOut: '2026-09-09' })).rejects.toThrow();
-    await expect(createOfferReservation({ ...baseInput, guestsCount: 0 })).rejects.toThrow();
-    await expect(createOfferReservation({ ...baseInput, priceGross: -1 })).rejects.toThrow();
+    await expect(createOfferReservation({ ...baseInput, propertySlug: 'nope' })).rejects.toThrow(ValidationError);
+    await expect(createOfferReservation({ ...baseInput, propertySlug: 'firenze-loft' })).rejects.toThrow(ValidationError);
+    await expect(createOfferReservation({ ...baseInput, checkOut: '2026-09-09' })).rejects.toThrow(ValidationError);
+    await expect(createOfferReservation({ ...baseInput, guestsCount: 0 })).rejects.toThrow(ValidationError);
+    await expect(createOfferReservation({ ...baseInput, priceGross: -1 })).rejects.toThrow(ValidationError);
     expect(guestyClient.createReservation).not.toHaveBeenCalled();
+  });
+
+  it('createGuest schlägt fehl → Fehler propagiert unverändert, KEIN Dokument, KEINE Reservierung', async () => {
+    const err = new Error('Guesty down');
+    (guestyClient.createGuest as any).mockRejectedValueOnce(err);
+    await expect(createOfferReservation({ ...baseInput })).rejects.toThrow(err);
+    expect(guestyClient.createReservation).not.toHaveBeenCalled();
+    expect(createOrGetDocument).not.toHaveBeenCalled();
+  });
+
+  it('createReservation schlägt fehl → Fehler propagiert unverändert, KEIN Dokument, KEIN Status-Update', async () => {
+    const err = new Error('Guesty reservations-v3 down');
+    (guestyClient.createReservation as any).mockRejectedValueOnce(err);
+    await expect(createOfferReservation({ ...baseInput })).rejects.toThrow(err);
+    expect(createOrGetDocument).not.toHaveBeenCalled();
+    expect(guestyClient.updateReservationStatus).not.toHaveBeenCalled();
   });
 
   it('ohne priceGross: kein Override, priceSource=quote', async () => {
