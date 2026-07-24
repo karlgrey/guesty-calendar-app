@@ -45,10 +45,34 @@ Wege trägt — in dieser Reihenfolge:
    `document-service` bekommt einen lokalen Datenpfad statt
    `fetchDocumentDataFromGuesty`.
 
-Ergebnis des Spikes wird im Plan festgehalten, bevor gebaut wird. Die
-nachfolgende Architektur ist für Weg 1 formuliert; bei Weg 2/3 ändert sich nur
-das Innere von `createHoldReservation` bzw. der Datenpfad des Dokuments — die
-API-Oberfläche (unten) bleibt identisch.
+### Spike-Ergebnis (24.07.2026, Doku-Recherche — WEG 1 TRÄGT)
+
+Quelle: open-api-docs.guesty.com (Reservations V3 Booking Flow + Referenz
+`POST /reservations-v3` „Quick Booking", `PUT /reservations-v3/{id}/status`).
+
+- **`POST /v1/reservations-v3`** erstellt Reservierungen direkt (ohne Quote).
+  Pflicht: `checkInDateLocalized`, `checkOutDateLocalized` (YYYY-MM-DD),
+  `listingId`, `source`, `status`, `guestsCount`.
+  `status`-Enum enthält `reserved` (Hold), `confirmed`, `inquiry` u. a.
+- **Preis-Override beim Erstellen:** `accommodationFare` (number ≥ 0,
+  „override the calculated nightly rates") + `cleaningFee` — Pauschalpreise
+  gehen also DIREKT im Create-Call, kein Nach-Adjustieren nötig.
+- **Gast:** `guestId` (empfohlen: vorher via guests-crud anlegen) oder
+  Inline-`guest`-Objekt (`firstName`, `lastName`, `email`, `phones`).
+- **⚠️ `reservedUntil` ist enum-beschränkt:** −1 (unbefristet), 10/15/30 min,
+  24 h, 48 h, 72 h — **max. 72 Stunden**. Angebots-Holds brauchen aber oft
+  1–2 Wochen → **Design-Anpassung:** wir setzen `reservedUntil: -1` und
+  verwalten die Hold-Frist SELBST: `holdUntil` wird lokal gespeichert
+  (documents-/reservations-Snapshot) und von Claude über die #275-Routine
+  überwacht (nachfassen → bestätigen oder via Cancel-Endpoint freigeben).
+  Kein App-eigener Auto-Expiry-Scheduler (YAGNI; kann später kommen).
+- **Statuswechsel:** `PUT /v1/reservations-v3/{id}/status` (z. B. auf
+  `confirmed`); Stornieren = Status `canceled`.
+- Nützliche Flags: `ignoreCalendar`/`ignoreBlocks` (Default false — wir lassen
+  sie false, damit Guesty Konflikte selbst ablehnt).
+
+Im Implementierungsplan bleibt als Rest-Verifikation ein **echter Test-Call**
+(Anlegen + sofort stornieren) — die Doku-Lage ist eindeutig, Weg 2/3 entfallen.
 
 ## Architektur
 
@@ -74,7 +98,9 @@ das Dokument entsteht erst, wenn die Reservierung steht):
 2. **Preis bestimmen:** `priceGross` bzw. `priceNet` aus dem Input; fehlt
    beides → Guesty-Quote (`getQuote`) als Fallback.
 3. **Gast + Hold-Reservierung in Guesty anlegen** (Status `reserved`,
-   `holdUntil`; Default-Frist wenn nicht mitgegeben: **14 Tage**).
+   `reservedUntil: -1`; die fachliche Hold-Frist `holdUntil` — Default
+   **14 Tage** — wird lokal gespeichert und per #275-Routine überwacht,
+   siehe Spike-Ergebnis).
 4. **Angebot erzeugen:** bestehender `document-service`
    (`createOrGetDocument(reservationId, 'angebot')`) → fortlaufende Nummer
    `A-YYYY-NNNN`, PDF.
