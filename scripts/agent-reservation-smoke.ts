@@ -1,0 +1,63 @@
+/**
+ * Echt-Verifikation gegen Guesty: legt eine Hold-Reservierung WEIT in der
+ * Zukunft an (Farmhouse, 2 Nächte, 1 € Pauschale), prüft den Status,
+ * erzeugt das Angebot und storniert SOFORT wieder.
+ *
+ * Prüft explizit die Final-Review-Risiken:
+ *  - Preis-Rundlauf: spiegelt Guesty den accommodationFare-Override in
+ *    money.fareAccommodation? (sonst stille Falschpreise im Angebots-PDF)
+ *  - v3-Write → v1-Read-Konsistenz (getReservation direkt nach Anlegen)
+ *  - ID-Extraktion und Status-Endpoint (PUT /reservations-v3/{id}/status)
+ *
+ * Aufruf (lokal, echte Creds in .env):
+ *   npx tsx scripts/agent-reservation-smoke.ts
+ *
+ * Hinweis: verbraucht eine echte Angebotsnummer (A-YYYY-NNNN) — ok, Angebote
+ * müssen nicht lückenlos sein (nur Rechnungen).
+ */
+import { createOfferReservation, releaseOfferReservation } from '../src/services/reservation-service.js';
+import { guestyClient } from '../src/services/guesty-client.js';
+
+async function main() {
+  const checkIn = '2027-03-01';
+  const checkOut = '2027-03-03';
+  const priceGross = 1;
+
+  console.log('1) Hold anlegen …');
+  const result = await createOfferReservation({
+    propertySlug: 'farmhouse',
+    checkIn,
+    checkOut,
+    guestsCount: 2,
+    guest: { firstName: 'Smoke', lastName: 'Test', email: 'micha+smoketest@remoterepublic.com' },
+    priceGross,
+  });
+  console.log('   →', JSON.stringify(result, null, 2));
+
+  console.log('2) Status + Preis-Rundlauf prüfen (v1-Read nach v3-Write) …');
+  const r = await guestyClient.getReservation(result.reservationId);
+  const fare = r?.money?.fareAccommodation;
+  console.log('   → status:', r?.status, '| fareAccommodation:', fare,
+    '| subTotalPrice:', r?.money?.subTotalPrice, '| currency:', r?.money?.currency);
+  if (fare !== priceGross) {
+    console.error(`   ⚠️ PREIS-RUNDLAUF FEHLGESCHLAGEN: erwartet fareAccommodation=${priceGross}, bekommen ${fare}`);
+  }
+
+  console.log('3) Stornieren …');
+  await releaseOfferReservation(result.reservationId);
+  const r2 = await guestyClient.getReservation(result.reservationId);
+  console.log('   → status nach Cancel:', r2?.status);
+
+  const failures: string[] = [];
+  if (result.documentError) failures.push(`Angebot fehlgeschlagen: ${result.documentError}`);
+  if (fare !== priceGross) failures.push(`Preis-Override nicht gespiegelt (fareAccommodation=${fare})`);
+  if (r2?.status !== 'canceled') failures.push(`Status nach Cancel: ${r2?.status} (erwartet canceled)`);
+
+  if (failures.length) {
+    console.error('❌ Smoke-Test mit Befunden:\n   - ' + failures.join('\n   - '));
+    process.exit(1);
+  }
+  console.log('✅ Smoke-Test ok — Angebotsnummer', result.documentNumber, '(Reservierung storniert)');
+}
+
+main().catch((err) => { console.error('❌', err); process.exit(1); });
