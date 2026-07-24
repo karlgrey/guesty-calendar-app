@@ -463,6 +463,7 @@ API-Key-geschützte Endpoints für den maschinellen Angebots-Workflow
 - `GET /api/agent/reservations/:id` · `GET …/:id/offer.pdf` · `POST …/:id/confirm` · `POST …/:id/cancel`
 - Admin-Pendant: Formular unter `/admin/reservations/new`.
 - Hold-Fristen verwaltet der aufrufende Agent (kein Auto-Expiry in der App; `holdUntil` ist rein informativ).
+- **Nummernkreise:** Quelle ist `document_sequences` in der Server-DB — wird ein Angebot/eine Rechnung MANUELL außerhalb der App nummeriert, den Zähler nachziehen (Admin-UI `/admin/system` oder `POST /admin/api/document-sequence`), sonst laufen Automatik und Hand auseinander (Abgleich 24.07.2026: quote=28, invoice=27).
 
 **Guesty-Verhalten (Smoke-Test 24.07.2026):**
 - `POST /reservations-v3` antwortet mit `reservationId` (nicht `_id`); Creates werden ASYNCHRON verarbeitet — sofortiger `GET /reservations/{id}` kann 404en (Service pollt bis ~18 s).
