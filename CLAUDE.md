@@ -460,7 +460,8 @@ API-Key-geschützte Endpoints für den maschinellen Angebots-Workflow
 
 - Auth: Header `X-Agent-Key` = `AGENT_API_KEY` aus `.env` (min. 32 Zeichen; fehlt er, antwortet die Route 503).
 - `POST /api/agent/reservations` — Gast + Hold (`reserved`, `reservedUntil: -1`) + Angebots-PDF; Body siehe `src/services/reservation-service.ts` (`CreateOfferInput`).
-- `GET /api/agent/reservations/:id` · `GET …/:id/offer.pdf` · `POST …/:id/confirm` · `POST …/:id/cancel`
+- `GET /api/agent/reservations/:id` · `GET …/:id/offer.pdf` (`?refresh=1` = frische Guesty-Daten, Nummer stabil) · `POST …/:id/confirm` · `POST …/:id/cancel` · `PUT /api/agent/guests/:guestId` (Kundenstamm-Nachpflege)
+- **Kundenstamm:** Gast beim Anlegen IMMER mit `address` (street/city/zipcode/country) + `phone` versorgen — die Anschrift fließt aus dem Guesty-Gastdatensatz ins Angebots-/Rechnungs-PDF (Regel Micha, 24.07.2026).
 - Admin-Pendant: Formular unter `/admin/reservations/new`.
 - Hold-Fristen verwaltet der aufrufende Agent (kein Auto-Expiry in der App; `holdUntil` ist rein informativ).
 - **Firmenkunden-Konvention (Guesty-Beschränkung):** Firmenname ins `firstName`-Feld, Ansprechpartner ins `lastName`-Feld (z. B. firstName "S. Fischer Verlage GmbH", lastName "Katharina Matroß") — der Rechnungs-/Angebotsgenerator erkennt Firmen daran automatisch (COMPANY_SUFFIXES) und formatiert entsprechend. Gilt auch für die Agent-API.
