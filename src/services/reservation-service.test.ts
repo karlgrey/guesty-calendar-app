@@ -30,7 +30,6 @@ vi.mock('../config/properties.js', () => ({
 }));
 
 import { guestyClient } from './guesty-client.js';
-import { ValidationError } from '../utils/errors.js';
 import { areDatesAvailable } from '../repositories/availability-repository.js';
 import { upsertReservation } from '../repositories/reservation-repository.js';
 import { createOrGetDocument } from './document-service.js';
@@ -103,6 +102,20 @@ describe('createOfferReservation', () => {
     await expect(createOfferReservation({ ...baseInput, checkOut: '2026-09-09' })).rejects.toThrow(ValidationError);
     await expect(createOfferReservation({ ...baseInput, guestsCount: 0 })).rejects.toThrow(ValidationError);
     await expect(createOfferReservation({ ...baseInput, totalGross: -1 })).rejects.toThrow(ValidationError);
+    expect(guestyClient.createReservation).not.toHaveBeenCalled();
+  });
+
+  it('Rückwärtsrechnung mit USt: Satz aus Quote, fare = total/(1+r) − Reinigung', async () => {
+    (guestyClient.getQuote as any).mockResolvedValueOnce({ fareCleaning: 350, totalTaxes: 213.5, subTotalPrice: 3050 });
+    await createOfferReservation({ ...baseInput, totalGross: 3263.5 });
+    // 3263.5 / 1.07 = 3050 → − 350 Reinigung = 2700
+    expect(guestyClient.createReservation).toHaveBeenCalledWith(expect.objectContaining({ accommodationFare: 2700 }));
+  });
+
+  it('totalGross unter Reinigung+USt → ValidationError, kein Guesty-Write', async () => {
+    (guestyClient.getQuote as any).mockResolvedValueOnce({ fareCleaning: 349.9, totalTaxes: 0, subTotalPrice: 1200 });
+    await expect(createOfferReservation({ ...baseInput, totalGross: 300 })).rejects.toThrow(ValidationError);
+    expect(guestyClient.createGuest).not.toHaveBeenCalled();
     expect(guestyClient.createReservation).not.toHaveBeenCalled();
   });
 

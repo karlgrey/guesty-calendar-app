@@ -90,11 +90,17 @@ export async function createOfferReservation(input: CreateOfferInput): Promise<C
   // Reinigungsgebühr (+ Steuern) ergibt den Übernachtungspreis-Override.
   let accommodationFare: number | undefined;
   if (input.totalGross !== undefined) {
+    // Steuermodell (verifiziert 24.07.2026): Guesty schlägt die USt AUF
+    // (Gastpreis = subTotal + totalTaxes); der Satz wird aus der Quote
+    // abgeleitet, weil taxes als FIXED-Betrag kommen.
     const quote = await guestyClient.getQuote(listingId, input.checkIn, input.checkOut, input.guestsCount);
-    const fare = Math.round((input.totalGross - (quote.fareCleaning ?? 0) - (quote.totalTaxes ?? 0)) * 100) / 100;
+    const cleaning = quote.fareCleaning ?? 0;
+    const vatRate = quote.subTotalPrice > 0 ? (quote.totalTaxes ?? 0) / quote.subTotalPrice : 0;
+    const fare = Math.round((input.totalGross / (1 + vatRate) - cleaning) * 100) / 100;
     if (!(fare > 0)) {
+      const minimum = Math.round(cleaning * (1 + vatRate) * 100) / 100;
       throw new ValidationError(
-        `totalGross ${input.totalGross} zu niedrig: Reinigung ${quote.fareCleaning ?? 0} + Steuern ${quote.totalTaxes ?? 0} lassen keinen positiven Übernachtungspreis übrig`,
+        `totalGross ${input.totalGross} zu niedrig: allein Reinigung (${cleaning}) + USt ergeben mindestens ${minimum}`,
       );
     }
     accommodationFare = fare;
@@ -207,7 +213,10 @@ async function mirrorReservationLocally(
     internal_guest_id: null,
     guest_company: null,
   });
-  return r?.money?.subTotalPrice ?? r?.money?.totalPrice ?? undefined;
+  // Gastpreis inkl. Steuern (Guesty: hostPayout = subTotal + totalTaxes bei Direktbuchung)
+  const m = r?.money;
+  if (!m) return undefined;
+  return m.hostPayout ?? ((m.subTotalPrice ?? 0) + (m.totalTaxes ?? 0)) ?? m.totalPrice;
 }
 
 export async function confirmOfferReservation(reservationId: string): Promise<void> {
