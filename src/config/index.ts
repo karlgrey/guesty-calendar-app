@@ -36,6 +36,7 @@ const configSchema = z.object({
   guestyPropertyId: z.string().optional(), // Optional - falls back to properties.json
   propertiesConfigPath: z.string().default('./data/properties.json'),
   vaultPath: z.string().optional(),
+  agentApiKey: z.string().min(32, 'AGENT_API_KEY must be at least 32 characters').optional(),
 
   // Hostex API (optional — only required if hostex-provider properties exist)
   hostexAccessToken: z.string().optional(),
@@ -135,6 +136,7 @@ function parseConfig() {
     guestyPropertyId: process.env.GUESTY_PROPERTY_ID,
     propertiesConfigPath: process.env.PROPERTIES_CONFIG_PATH,
     vaultPath: process.env.VAULT_PATH,
+    agentApiKey: process.env.AGENT_API_KEY,
     hostexAccessToken: process.env.HOSTEX_ACCESS_TOKEN,
     hostexApiUrl: process.env.HOSTEX_API_URL,
     airbnbMailHost: process.env.AIRBNB_MAIL_HOST,
