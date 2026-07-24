@@ -467,7 +467,7 @@ API-Key-geschützte Endpoints für den maschinellen Angebots-Workflow
 **Guesty-Verhalten (Smoke-Test 24.07.2026):**
 - `POST /reservations-v3` antwortet mit `reservationId` (nicht `_id`); Creates werden ASYNCHRON verarbeitet — sofortiger `GET /reservations/{id}` kann 404en (Service pollt bis ~18 s).
 - Ein Hold (`reserved`) ist NICHT stornierbar — Freigabe = Status **`expired`** (`PUT /reservations-v3/{id}/status`); `canceled` gilt für bestätigte Reservierungen und verlangt einen `cancellationReason` aus fester Liste.
-- `accommodationFare` überschreibt die Nachtpreise und wird in `money.fareAccommodation` gespiegelt — ABER die Listing-**Reinigungsgebühr wird ADDIERT** (Smoke: 1 € fare + 349,90 cleaning). Bei All-inclusive-Pauschalen `cleaningFee: 0` mitgeben.
+- **Sonderpreise via `totalGross`** (Ziel-GESAMTSUMME inkl. Reinigung + USt): der Service rechnet rückwärts auf den `accommodationFare`-Override — `fare = (totalGross/(1+USt-Satz) − fareCleaning) / Rabattfaktor`. USt-Satz und Rabattfaktor (`fareAccommodationAdjusted/fareAccommodation`, z. B. Length-of-Stay 10 %) kommen aus der Quote, denn Guesty schlägt die USt AUF und wendet Rate-Plan-Rabatte AUCH auf Overrides an (verifiziert 24.07.2026: Ziel 500 € → Punktlandung). Reinigungsgebühr bleibt separater Posten; `actualTotal` in der Antwort ist der Kontrollwert.
 - `documents.reservation_id` hat einen FK auf die lokale `reservations`-Tabelle → der Service spiegelt die frische Reservierung sofort lokal (ETL überschreibt später). Achtung Follow-up: nach Hold-Freigabe räumt `deleteStaleReservationsInRange` die Zeile + Dokument-Zeile wieder ab.
 
 ## Git & Deployment
