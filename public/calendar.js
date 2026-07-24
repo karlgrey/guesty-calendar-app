@@ -165,6 +165,9 @@ class BookingCalendar {
         checkOut: 'Check-out',
         guests: 'Gäste',
         reserve: 'Buchung anfragen',
+        mailtoFallbackHint: 'Kein E-Mail-Fenster aufgegangen? Schick uns deine Anfrage einfach direkt an',
+        mailtoFallbackCopy: 'Anfrage-Text kopieren',
+        mailtoFallbackCopied: 'Kopiert!',
         noCharge: 'Du musst noch nichts bezahlen.',
         pricingDetails: 'Preisdetails',
         hidePricingDetails: 'Preisdetails ausblenden',
@@ -228,6 +231,9 @@ class BookingCalendar {
         checkOut: 'Check-out',
         guests: 'Guests',
         reserve: 'Request to Book',
+        mailtoFallbackHint: 'No email window opened? Just send your request directly to',
+        mailtoFallbackCopy: 'Copy request text',
+        mailtoFallbackCopied: 'Copied!',
         noCharge: 'You won\'t be charged yet.',
         pricingDetails: 'Pricing details',
         hidePricingDetails: 'Hide pricing details',
@@ -2039,9 +2045,8 @@ class BookingCalendar {
     const checkOutFormatted = this.formatDateShort(new Date(checkOut));
 
     // Generate mailto link with localized subject
-    const subject = encodeURIComponent(
-      this.t('emailSubject')(propertyTitle, checkInFormatted, checkOutFormatted, guests)
-    );
+    const subjectPlain = this.t('emailSubject')(propertyTitle, checkInFormatted, checkOutFormatted, guests);
+    const subject = encodeURIComponent(subjectPlain);
 
     // Build detailed email body (localized)
     let emailBody = this.t('emailIntro')(propertyTitle);
@@ -2118,6 +2123,62 @@ class BookingCalendar {
     // Use our iframe/iOS-safe mailto handler
     console.log('[Booking] Opening mailto with booking request');
     openMailtoLink(mailtoUrl);
+
+    // Fallback (#270, Fall Nina): Bei Gästen ohne konfiguriertes Mailprogramm
+    // (Corporate-Laptops, Webmail) passiert beim mailto-Klick stumm nichts —
+    // deshalb immer zusätzlich die Direkt-Adresse + Kopier-Möglichkeit zeigen.
+    this.showMailtoFallback(subjectPlain, emailBody);
+  }
+
+  showMailtoFallback(subjectPlain, emailBody) {
+    const ctaButton = document.querySelector('.cta-button');
+    if (!ctaButton || !ctaButton.parentNode) return;
+
+    const existing = document.getElementById('mailto-fallback');
+    if (existing) existing.remove();
+
+    const box = document.createElement('div');
+    box.id = 'mailto-fallback';
+    box.style.cssText = 'margin-top:12px;padding:12px;border:1px solid #ddd;border-radius:8px;background:#faf9f7;font-size:13px;line-height:1.5;color:#444;';
+
+    const hint = document.createElement('div');
+    hint.textContent = this.t('mailtoFallbackHint') + ' ';
+    const mailLink = document.createElement('a');
+    mailLink.href = 'mailto:' + this.bookingEmail;
+    mailLink.textContent = this.bookingEmail;
+    mailLink.style.cssText = 'font-weight:600;color:inherit;';
+    hint.appendChild(mailLink);
+    box.appendChild(hint);
+
+    const copyBtn = document.createElement('button');
+    copyBtn.type = 'button';
+    copyBtn.textContent = this.t('mailtoFallbackCopy');
+    copyBtn.style.cssText = 'margin-top:8px;padding:6px 12px;border:1px solid #bbb;border-radius:6px;background:#fff;cursor:pointer;font-size:13px;';
+    const fullText = subjectPlain + '\n\n' + emailBody;
+    copyBtn.addEventListener('click', () => {
+      const done = () => {
+        copyBtn.textContent = this.t('mailtoFallbackCopied');
+        setTimeout(() => { copyBtn.textContent = this.t('mailtoFallbackCopy'); }, 2000);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(fullText).then(done).catch(() => this.copyViaTextarea(fullText, done));
+      } else {
+        this.copyViaTextarea(fullText, done);
+      }
+    });
+    box.appendChild(copyBtn);
+
+    ctaButton.parentNode.insertBefore(box, ctaButton.nextSibling);
+  }
+
+  copyViaTextarea(text, done) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.cssText = 'position:fixed;opacity:0;';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); done(); } catch (e) { /* Kopieren nicht möglich — Adresse bleibt sichtbar */ }
+    document.body.removeChild(ta);
   }
 }
 
