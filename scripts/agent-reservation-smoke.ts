@@ -65,7 +65,10 @@ async function main() {
 
   const failures: string[] = [];
   if (result.documentError) failures.push(`Angebot fehlgeschlagen: ${result.documentError}`);
-  if (fare !== totalGross) failures.push(`Gesamtsumme falsch: subTotalPrice=${fare}, Ziel=${totalGross}`);
+  const actual = result.actualTotal;
+  if (actual === undefined || Math.abs(actual - totalGross) > 0.05) {
+    failures.push(`Gesamtsumme falsch: actualTotal=${actual}, Ziel=${totalGross}`);
+  }
   if (releasedStatus !== 'expired') failures.push(`Status nach Release: ${releasedStatus} (erwartet expired)`);
 
   if (failures.length) {

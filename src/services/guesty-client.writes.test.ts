@@ -38,7 +38,6 @@ describe('GuestyClient writes', () => {
       source: 'manual',
       reservedUntil: -1,
       accommodationFare: 2850,
-      applyPromotions: false,
     });
     expect(body).not.toHaveProperty('cleaningFee');
   });
@@ -51,7 +50,6 @@ describe('GuestyClient writes', () => {
     });
     const body = JSON.parse(spy.mock.calls[0][1].body);
     expect(body).not.toHaveProperty('accommodationFare');
-    expect(body).not.toHaveProperty('applyPromotions');
   });
 
   it('updateReservationStatus PUTtet an /reservations-v3/{id}/status', async () => {

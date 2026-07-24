@@ -96,7 +96,12 @@ export async function createOfferReservation(input: CreateOfferInput): Promise<C
     const quote = await guestyClient.getQuote(listingId, input.checkIn, input.checkOut, input.guestsCount);
     const cleaning = quote.fareCleaning ?? 0;
     const vatRate = quote.subTotalPrice > 0 ? (quote.totalTaxes ?? 0) / quote.subTotalPrice : 0;
-    const fare = Math.round((input.totalGross / (1 + vatRate) - cleaning) * 100) / 100;
+    // Guesty wendet Rate-Plan-Rabatte (z. B. Length-of-Stay) auch auf den
+    // Override an (Befund 24.07.2026) — Faktor aus der Quote herausrechnen.
+    const discountFactor = (quote.fareAccommodation ?? 0) > 0 && (quote.fareAccommodationAdjusted ?? 0) > 0
+      ? quote.fareAccommodationAdjusted / quote.fareAccommodation
+      : 1;
+    const fare = Math.round(((input.totalGross / (1 + vatRate) - cleaning) / discountFactor) * 100) / 100;
     if (!(fare > 0)) {
       const minimum = Math.round(cleaning * (1 + vatRate) * 100) / 100;
       throw new ValidationError(

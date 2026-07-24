@@ -805,11 +805,7 @@ export class GuestyClient {
         status: p.status,
         source: 'manual',
         reservedUntil: -1,
-        // Bei Preis-Override keine Promotions — Guesty würde Rabatte (z. B.
-        // Length-of-Stay) sonst AUF den Override anwenden (Befund 24.07.2026).
-        ...(p.accommodationFare !== undefined
-          ? { accommodationFare: p.accommodationFare, applyPromotions: false }
-          : {}),
+        ...(p.accommodationFare !== undefined ? { accommodationFare: p.accommodationFare } : {}),
         ...(p.cleaningFee !== undefined ? { cleaningFee: p.cleaningFee } : {}),
       }),
     });

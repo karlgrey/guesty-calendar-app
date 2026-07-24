@@ -6,7 +6,7 @@ vi.mock('./guesty-client.js', () => ({
     createReservation: vi.fn().mockResolvedValue('res-1'),
     updateReservationStatus: vi.fn().mockResolvedValue(undefined),
     getReservation: vi.fn().mockResolvedValue({ status: 'reserved', confirmationCode: 'GY-TEST', money: { currency: 'EUR', subTotalPrice: 2850 } }),
-    getQuote: vi.fn().mockResolvedValue({ fareCleaning: 349.9, totalTaxes: 0, subTotalPrice: 1200 }),
+    getQuote: vi.fn().mockResolvedValue({ fareCleaning: 349.9, totalTaxes: 0, subTotalPrice: 1200, fareAccommodation: 1000, fareAccommodationAdjusted: 1000 }),
   },
 }));
 vi.mock('../repositories/availability-repository.js', () => ({
@@ -106,14 +106,14 @@ describe('createOfferReservation', () => {
   });
 
   it('Rückwärtsrechnung mit USt: Satz aus Quote, fare = total/(1+r) − Reinigung', async () => {
-    (guestyClient.getQuote as any).mockResolvedValueOnce({ fareCleaning: 350, totalTaxes: 213.5, subTotalPrice: 3050 });
+    (guestyClient.getQuote as any).mockResolvedValueOnce({ fareCleaning: 350, totalTaxes: 213.5, subTotalPrice: 3050, fareAccommodation: 3000, fareAccommodationAdjusted: 2700 });
     await createOfferReservation({ ...baseInput, totalGross: 3263.5 });
-    // 3263.5 / 1.07 = 3050 → − 350 Reinigung = 2700
-    expect(guestyClient.createReservation).toHaveBeenCalledWith(expect.objectContaining({ accommodationFare: 2700 }));
+    // 3263.5/1.07 = 3050 → −350 Reinigung = 2700 → /0.9 LOS-Faktor = 3000
+    expect(guestyClient.createReservation).toHaveBeenCalledWith(expect.objectContaining({ accommodationFare: 3000 }));
   });
 
   it('totalGross unter Reinigung+USt → ValidationError, kein Guesty-Write', async () => {
-    (guestyClient.getQuote as any).mockResolvedValueOnce({ fareCleaning: 349.9, totalTaxes: 0, subTotalPrice: 1200 });
+    (guestyClient.getQuote as any).mockResolvedValueOnce({ fareCleaning: 349.9, totalTaxes: 0, subTotalPrice: 1200, fareAccommodation: 1000, fareAccommodationAdjusted: 1000 });
     await expect(createOfferReservation({ ...baseInput, totalGross: 300 })).rejects.toThrow(ValidationError);
     expect(guestyClient.createGuest).not.toHaveBeenCalled();
     expect(guestyClient.createReservation).not.toHaveBeenCalled();
