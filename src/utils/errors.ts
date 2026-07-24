@@ -74,6 +74,15 @@ export class ValidationError extends AppError {
 }
 
 /**
+ * Conflict error (e.g. requested dates are already booked)
+ */
+export class ConflictError extends AppError {
+  constructor(message: string, details?: unknown) {
+    super(message, 409, 'CONFLICT_ERROR', details);
+  }
+}
+
+/**
  * Not found error
  */
 export class NotFoundError extends AppError {
