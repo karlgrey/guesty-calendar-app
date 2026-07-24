@@ -22,6 +22,7 @@ import suggestionsRoutes from './routes/suggestions.js';
 import authRoutes from './routes/auth.js';
 import adminUsersRoutes from './routes/admin-users.js';
 import propertyRoutes from './routes/property-routes.js';
+import agentApiRoutes from './routes/agent-api.js';
 
 /**
  * Create and configure Express application
@@ -78,6 +79,9 @@ export function createApp() {
   app.use('/health', healthRoutes);
   app.use('/sync', syncRoutes);
   app.use('/debug', debugRoutes);
+
+  // Agent API (maschineller Zugang, Auth via X-Agent-Key in der Route selbst)
+  app.use('/api/agent', agentApiRoutes);
 
   // Protected admin routes (require authentication)
   app.use('/admin/messages', requireAuth, messagesRoutes);
