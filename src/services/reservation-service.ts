@@ -24,8 +24,14 @@ export interface CreateOfferInput {
   checkOut: string;
   guestsCount: number;
   guest: { firstName: string; lastName: string; email: string; phone?: string };
-  priceGross?: number;
-  cleaningFee?: number;
+  /**
+   * Ziel-GESAMTSUMME des Angebots in EUR (inkl. Reinigungsgebühr und Steuern).
+   * Die Reinigungsgebühr bleibt ein separater Posten (Listing-Standard) —
+   * der Übernachtungspreis wird rückwärts angepasst, bis die Summe passt
+   * (Micha, 24.07.2026: wie im Guesty-Backend von Hand).
+   * Ohne Angabe gilt die normale Guesty-Preiskalkulation.
+   */
+  totalGross?: number;
   holdUntil?: string;
 }
 
@@ -35,11 +41,13 @@ export interface CreateOfferResult {
   documentNumber: string;
   holdUntil: string;
   priceSource: 'manual' | 'quote';
+  /** Tatsächliche Gesamtsumme laut Guesty nach dem Anlegen (Kontrollwert). */
+  actualTotal?: number;
   documentError?: string;
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const HOLD_DEFAULT_DAYS = 14;
+const HOLD_DEFAULT_DAYS = 7;
 
 function validate(input: CreateOfferInput): { listingId: string } {
   const prop = getPropertyBySlug(input.propertySlug);
@@ -57,11 +65,8 @@ function validate(input: CreateOfferInput): { listingId: string } {
   if (!input.guest?.firstName || !input.guest?.lastName || !input.guest?.email) {
     throw new ValidationError('guest.firstName, guest.lastName and guest.email are required');
   }
-  if (input.priceGross !== undefined && !(input.priceGross > 0)) {
-    throw new ValidationError('priceGross must be > 0');
-  }
-  if (input.cleaningFee !== undefined && !(input.cleaningFee >= 0)) {
-    throw new ValidationError('cleaningFee must be >= 0');
+  if (input.totalGross !== undefined && !(input.totalGross > 0)) {
+    throw new ValidationError('totalGross must be > 0');
   }
   if (input.holdUntil !== undefined && !DATE_RE.test(input.holdUntil)) {
     throw new ValidationError('holdUntil must be YYYY-MM-DD');
@@ -81,6 +86,20 @@ export async function createOfferReservation(input: CreateOfferInput): Promise<C
   const holdUntil = input.holdUntil
     ?? new Date(Date.now() + HOLD_DEFAULT_DAYS * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
+  // Sonderpreis: Rückwärtsrechnung — Ziel-Gesamtsumme minus separat bleibende
+  // Reinigungsgebühr (+ Steuern) ergibt den Übernachtungspreis-Override.
+  let accommodationFare: number | undefined;
+  if (input.totalGross !== undefined) {
+    const quote = await guestyClient.getQuote(listingId, input.checkIn, input.checkOut, input.guestsCount);
+    const fare = Math.round((input.totalGross - (quote.fareCleaning ?? 0) - (quote.totalTaxes ?? 0)) * 100) / 100;
+    if (!(fare > 0)) {
+      throw new ValidationError(
+        `totalGross ${input.totalGross} zu niedrig: Reinigung ${quote.fareCleaning ?? 0} + Steuern ${quote.totalTaxes ?? 0} lassen keinen positiven Übernachtungspreis übrig`,
+      );
+    }
+    accommodationFare = fare;
+  }
+
   const guestId = await guestyClient.createGuest(input.guest);
   const reservationId = await guestyClient.createReservation({
     listingId,
@@ -89,8 +108,7 @@ export async function createOfferReservation(input: CreateOfferInput): Promise<C
     guestsCount: input.guestsCount,
     guestId,
     status: 'reserved',
-    ...(input.priceGross !== undefined ? { accommodationFare: input.priceGross } : {}),
-    ...(input.cleaningFee !== undefined ? { cleaningFee: input.cleaningFee } : {}),
+    ...(accommodationFare !== undefined ? { accommodationFare } : {}),
   });
 
   const result: CreateOfferResult = {
@@ -98,14 +116,21 @@ export async function createOfferReservation(input: CreateOfferInput): Promise<C
     guestId,
     documentNumber: '',
     holdUntil,
-    priceSource: input.priceGross !== undefined ? 'manual' : 'quote',
+    priceSource: input.totalGross !== undefined ? 'manual' : 'quote',
   };
 
   try {
     // Reservierung sofort lokal spiegeln: documents.reservation_id hat einen
     // FK auf die lokale reservations-Tabelle, der ETL zieht erst ~1 h später
     // nach (Befund Smoke-Test 24.07.2026 — sonst "FOREIGN KEY constraint failed").
-    await mirrorReservationLocally(reservationId, listingId, input);
+    result.actualTotal = await mirrorReservationLocally(reservationId, listingId, input);
+    if (input.totalGross !== undefined && result.actualTotal !== undefined
+        && Math.abs(result.actualTotal - input.totalGross) > 0.01) {
+      logger.warn(
+        { reservationId, totalGross: input.totalGross, actualTotal: result.actualTotal },
+        'Gesamtsumme weicht vom Ziel ab — Rückwärtsrechnung prüfen',
+      );
+    }
     const doc = await createOrGetDocument({ reservationId, documentType: 'quote' });
     result.documentNumber = doc.document.documentNumber;
   } catch (err) {
@@ -145,7 +170,7 @@ async function mirrorReservationLocally(
   reservationId: string,
   listingId: string,
   input: CreateOfferInput,
-): Promise<void> {
+): Promise<number | undefined> {
   const r = await getReservationWithRetry(reservationId);
   const nights = Math.max(
     1,
@@ -182,6 +207,7 @@ async function mirrorReservationLocally(
     internal_guest_id: null,
     guest_company: null,
   });
+  return r?.money?.subTotalPrice ?? r?.money?.totalPrice ?? undefined;
 }
 
 export async function confirmOfferReservation(reservationId: string): Promise<void> {

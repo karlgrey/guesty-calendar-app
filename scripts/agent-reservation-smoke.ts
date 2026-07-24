@@ -23,7 +23,9 @@ async function main() {
   initDatabase();
   const checkIn = '2027-03-01';
   const checkOut = '2027-03-03';
-  const priceGross = 1;
+  // Ziel-GESAMTSUMME inkl. Reinigung — der Service rechnet rückwärts auf den
+  // Übernachtungspreis (Reinigung bleibt separater Posten).
+  const totalGross = 500;
 
   console.log('1) Hold anlegen …');
   const result = await createOfferReservation({
@@ -32,7 +34,7 @@ async function main() {
     checkOut,
     guestsCount: 2,
     guest: { firstName: 'Smoke', lastName: 'Test', email: 'micha+smoketest@remoterepublic.com' },
-    priceGross,
+    totalGross,
   });
   console.log('   →', JSON.stringify(result, null, 2));
 
@@ -45,9 +47,9 @@ async function main() {
       r = await guestyClient.getReservation(result.reservationId).catch(() => null);
       if (!r) await new Promise((res) => setTimeout(res, 3000));
     }
-    fare = r?.money?.fareAccommodation;
-    console.log('   → status:', r?.status, '| fareAccommodation:', fare,
-      '| subTotalPrice:', r?.money?.subTotalPrice, '| currency:', r?.money?.currency);
+    fare = r?.money?.subTotalPrice;
+    console.log('   → status:', r?.status, '| fareAccommodation:', r?.money?.fareAccommodation,
+      '| fareCleaning:', r?.money?.fareCleaning, '| subTotalPrice:', fare, '| currency:', r?.money?.currency);
   } finally {
     console.log('3) Hold freigeben (expired) …');
     await releaseOfferReservation(result.reservationId);
@@ -63,7 +65,7 @@ async function main() {
 
   const failures: string[] = [];
   if (result.documentError) failures.push(`Angebot fehlgeschlagen: ${result.documentError}`);
-  if (fare !== priceGross) failures.push(`Preis-Override nicht gespiegelt (fareAccommodation=${fare})`);
+  if (fare !== totalGross) failures.push(`Gesamtsumme falsch: subTotalPrice=${fare}, Ziel=${totalGross}`);
   if (releasedStatus !== 'expired') failures.push(`Status nach Release: ${releasedStatus} (erwartet expired)`);
 
   if (failures.length) {

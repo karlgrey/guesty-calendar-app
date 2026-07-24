@@ -4263,8 +4263,8 @@ router.get('/reservations/new', (_req, res) => {
     </div>
     <label>E-Mail <input type="email" name="email" required></label>
     <label>Telefon (optional) <input name="phone"></label>
-    <label>Pauschalpreis € (leer = Guesty-Preis) <input type="number" name="priceGross" min="1" step="0.01"></label>
-    <label>Hold bis (leer = +14 Tage) <input type="date" name="holdUntil"></label>
+    <label>Gesamtpreis € inkl. Reinigung (leer = normale Kalkulation) <input type="number" name="totalGross" min="1" step="0.01"></label>
+    <label>Hold bis (leer = +7 Tage) <input type="date" name="holdUntil"></label>
     <button type="submit">Anlegen + Angebot erzeugen</button>
   </form>
   <div id="result"></div>
@@ -4281,7 +4281,7 @@ router.get('/reservations/new', (_req, res) => {
         checkOut: fd.get('checkOut'),
         guestsCount: parseInt(fd.get('guestsCount'), 10),
         guest: { firstName: fd.get('firstName'), lastName: fd.get('lastName'), email: fd.get('email'), phone: fd.get('phone') || undefined },
-        priceGross: fd.get('priceGross') ? parseFloat(fd.get('priceGross')) : undefined,
+        totalGross: fd.get('totalGross') ? parseFloat(fd.get('totalGross')) : undefined,
         holdUntil: fd.get('holdUntil') || undefined,
       };
       const el = document.getElementById('result');

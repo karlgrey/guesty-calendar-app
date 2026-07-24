@@ -6,7 +6,7 @@ vi.mock('./guesty-client.js', () => ({
     createReservation: vi.fn().mockResolvedValue('res-1'),
     updateReservationStatus: vi.fn().mockResolvedValue(undefined),
     getReservation: vi.fn().mockResolvedValue({ status: 'reserved', confirmationCode: 'GY-TEST', money: { currency: 'EUR', subTotalPrice: 2850 } }),
-    getQuote: vi.fn().mockResolvedValue({ money: { totalPrice: 1200 } }),
+    getQuote: vi.fn().mockResolvedValue({ fareCleaning: 349.9, totalTaxes: 0, subTotalPrice: 1200 }),
   },
 }));
 vi.mock('../repositories/availability-repository.js', () => ({
@@ -30,6 +30,7 @@ vi.mock('../config/properties.js', () => ({
 }));
 
 import { guestyClient } from './guesty-client.js';
+import { ValidationError } from '../utils/errors.js';
 import { areDatesAvailable } from '../repositories/availability-repository.js';
 import { upsertReservation } from '../repositories/reservation-repository.js';
 import { createOrGetDocument } from './document-service.js';
@@ -42,7 +43,7 @@ const baseInput = {
   checkOut: '2026-09-10',
   guestsCount: 15,
   guest: { firstName: 'Nina', lastName: 'Lattke', email: 'n@x.de' },
-  priceGross: 2850,
+  totalGross: 2850,
 };
 
 beforeEach(() => {
@@ -81,8 +82,9 @@ describe('createOfferReservation', () => {
   it('legt Gast + Hold an und erzeugt das Angebot', async () => {
     const r = await createOfferReservation({ ...baseInput });
     expect(guestyClient.createGuest).toHaveBeenCalledOnce();
+    // Rückwärtsrechnung: 2850 Ziel − 349,90 Reinigung − 0 Steuern = 2500,10
     expect(guestyClient.createReservation).toHaveBeenCalledWith(expect.objectContaining({
-      listingId: 'listing-fh', status: 'reserved', accommodationFare: 2850,
+      listingId: 'listing-fh', status: 'reserved', accommodationFare: 2500.1,
     }));
     expect(createOrGetDocument).toHaveBeenCalledWith({ reservationId: 'res-1', documentType: 'quote' });
     expect(r).toMatchObject({ reservationId: 'res-1', guestId: 'guest-1', documentNumber: 'A-2026-0042', priceSource: 'manual' });
@@ -100,7 +102,7 @@ describe('createOfferReservation', () => {
     await expect(createOfferReservation({ ...baseInput, propertySlug: 'firenze-loft' })).rejects.toThrow(ValidationError);
     await expect(createOfferReservation({ ...baseInput, checkOut: '2026-09-09' })).rejects.toThrow(ValidationError);
     await expect(createOfferReservation({ ...baseInput, guestsCount: 0 })).rejects.toThrow(ValidationError);
-    await expect(createOfferReservation({ ...baseInput, priceGross: -1 })).rejects.toThrow(ValidationError);
+    await expect(createOfferReservation({ ...baseInput, totalGross: -1 })).rejects.toThrow(ValidationError);
     expect(guestyClient.createReservation).not.toHaveBeenCalled();
   });
 
@@ -120,16 +122,17 @@ describe('createOfferReservation', () => {
     expect(guestyClient.updateReservationStatus).not.toHaveBeenCalled();
   });
 
-  it('ohne priceGross: kein Override, priceSource=quote', async () => {
-    const { priceGross: _p, ...noPrice } = baseInput;
+  it('ohne totalGross: kein Override, keine Quote nötig, priceSource=quote', async () => {
+    const { totalGross: _p, ...noPrice } = baseInput;
     const r = await createOfferReservation(noPrice as any);
     expect(guestyClient.createReservation).toHaveBeenCalledWith(expect.not.objectContaining({ accommodationFare: expect.anything() }));
     expect(r.priceSource).toBe('quote');
+    expect(guestyClient.getQuote).not.toHaveBeenCalled();
   });
 
-  it('holdUntil Default = heute + 14 Tage', async () => {
+  it('holdUntil Default = heute + 7 Tage', async () => {
     const r = await createOfferReservation({ ...baseInput });
-    const expected = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const expected = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     expect(r.holdUntil).toBe(expected);
   });
 
