@@ -760,7 +760,13 @@ export class GuestyClient {
    * Create a guest record (guests-crud).
    * Returns the new guest's ID.
    */
-  async createGuest(g: { firstName: string; lastName: string; email: string; phone?: string }): Promise<string> {
+  async createGuest(g: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    phone?: string;
+    address?: { street?: string; city?: string; zipcode?: string; country?: string };
+  }): Promise<string> {
     const res = await this.request<any>('/guests-crud', {
       method: 'POST',
       body: JSON.stringify({
@@ -768,6 +774,10 @@ export class GuestyClient {
         lastName: g.lastName,
         email: g.email,
         ...(g.phone ? { phones: [g.phone] } : {}),
+        // Adresse landet über den Dokument-Service im Angebots-/Rechnungs-PDF
+        // (Kundenstamm-Regel Micha, 24.07.2026) — Feldnamen wie im Read-Shape
+        // (GuestyGuestAddress: street/city/zipcode/country).
+        ...(g.address ? { address: g.address } : {}),
       }),
     });
     const id = res?._id ?? res?.id ?? res?.data?._id;
@@ -816,6 +826,27 @@ export class GuestyClient {
     }
     logger.info({ reservationId: id, listingId: p.listingId, status: p.status }, 'Created Guesty reservation');
     return id;
+  }
+
+  /**
+   * Update an existing guest (Kundenstamm-Nachpflege, z. B. Rechnungsanschrift).
+   */
+  async updateGuest(guestId: string, fields: {
+    firstName?: string;
+    lastName?: string;
+    email?: string;
+    phone?: string;
+    address?: { street?: string; city?: string; zipcode?: string; country?: string };
+  }): Promise<void> {
+    const { phone, ...rest } = fields;
+    await this.request<any>(`/guests-crud/${guestId}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        ...rest,
+        ...(phone ? { phones: [phone] } : {}),
+      }),
+    });
+    logger.info({ guestId }, 'Updated Guesty guest');
   }
 
   /**

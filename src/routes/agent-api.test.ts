@@ -18,9 +18,15 @@ vi.mock('../services/document-service.js', () => ({
   createOrGetDocument: vi.fn().mockResolvedValue({
     document: { documentNumber: 'A-2026-0042' }, pdf: Buffer.from('%PDF-fake'), isNew: false,
   }),
+  refreshDocument: vi.fn().mockResolvedValue({
+    document: { documentNumber: 'A-2026-0042' }, pdf: Buffer.from('%PDF-fresh'), isNew: false,
+  }),
 }));
 vi.mock('../services/guesty-client.js', () => ({
-  guestyClient: { getReservation: vi.fn().mockResolvedValue({ _id: 'res-1', status: 'reserved' }) },
+  guestyClient: {
+    getReservation: vi.fn().mockResolvedValue({ _id: 'res-1', status: 'reserved' }),
+    updateGuest: vi.fn().mockResolvedValue(undefined),
+  },
 }));
 
 import agentApiRoutes from './agent-api.js';
@@ -64,6 +70,24 @@ describe('agent-api', () => {
     expect(r.status).toBe(200);
     expect(r.headers.get('content-type')).toContain('application/pdf');
     expect(r.headers.get('x-document-number')).toBe('A-2026-0042');
+  });
+
+  it('offer.pdf?refresh=1 nutzt refreshDocument', async () => {
+    const { refreshDocument, createOrGetDocument } = await import('../services/document-service.js');
+    (createOrGetDocument as any).mockClear(); (refreshDocument as any).mockClear();
+    const r = await fetch(`${base}/api/agent/reservations/res-1/offer.pdf?refresh=1`, { headers: KEY });
+    expect(r.status).toBe(200);
+    expect(refreshDocument).toHaveBeenCalledOnce();
+    expect(createOrGetDocument).not.toHaveBeenCalled();
+  });
+
+  it('PUT /guests/:id → updateGuest', async () => {
+    const { guestyClient } = await import('../services/guesty-client.js');
+    const r = await fetch(`${base}/api/agent/guests/guest-1`, {
+      method: 'PUT', headers: KEY, body: JSON.stringify({ address: { city: 'Potsdam' } }),
+    });
+    expect(r.status).toBe(200);
+    expect(guestyClient.updateGuest).toHaveBeenCalledWith('guest-1', { address: { city: 'Potsdam' } });
   });
 
   it('confirm + cancel → 200', async () => {

@@ -4263,6 +4263,12 @@ router.get('/reservations/new', (_req, res) => {
     </div>
     <label>E-Mail <input type="email" name="email" required></label>
     <label>Telefon (optional) <input name="phone"></label>
+    <label>Straße + Nr. (optional, für Angebot/Rechnung) <input name="street"></label>
+    <div class="row">
+      <div><label>PLZ <input name="zipcode"></label></div>
+      <div><label>Ort <input name="city"></label></div>
+    </div>
+    <label>Land (optional) <input name="country" placeholder="Germany"></label>
     <label>Gesamtpreis € inkl. Reinigung (leer = normale Kalkulation) <input type="number" name="totalGross" min="1" step="0.01"></label>
     <label>Hold bis (leer = +7 Tage) <input type="date" name="holdUntil"></label>
     <button type="submit">Anlegen + Angebot erzeugen</button>
@@ -4280,7 +4286,13 @@ router.get('/reservations/new', (_req, res) => {
         checkIn: fd.get('checkIn'),
         checkOut: fd.get('checkOut'),
         guestsCount: parseInt(fd.get('guestsCount'), 10),
-        guest: { firstName: fd.get('firstName'), lastName: fd.get('lastName'), email: fd.get('email'), phone: fd.get('phone') || undefined },
+        guest: {
+          firstName: fd.get('firstName'), lastName: fd.get('lastName'), email: fd.get('email'), phone: fd.get('phone') || undefined,
+          address: (fd.get('street') || fd.get('city')) ? {
+            street: fd.get('street') || undefined, city: fd.get('city') || undefined,
+            zipcode: fd.get('zipcode') || undefined, country: fd.get('country') || undefined,
+          } : undefined,
+        },
         totalGross: fd.get('totalGross') ? parseFloat(fd.get('totalGross')) : undefined,
         holdUntil: fd.get('holdUntil') || undefined,
       };

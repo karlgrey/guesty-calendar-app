@@ -23,7 +23,14 @@ export interface CreateOfferInput {
   checkIn: string;
   checkOut: string;
   guestsCount: number;
-  guest: { firstName: string; lastName: string; email: string; phone?: string };
+  guest: {
+    firstName: string;
+    lastName: string;
+    email: string;
+    phone?: string;
+    /** Rechnungs-/Kundenanschrift — landet im Guesty-Kundenstamm und damit im Angebots-PDF. */
+    address?: { street?: string; city?: string; zipcode?: string; country?: string };
+  };
   /**
    * Ziel-GESAMTSUMME des Angebots in EUR (inkl. Reinigungsgebühr und Steuern).
    * Die Reinigungsgebühr bleibt ein separater Posten (Listing-Standard) —

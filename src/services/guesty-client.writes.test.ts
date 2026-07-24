@@ -10,12 +10,18 @@ function clientWithMockedRequest(result: any) {
 describe('GuestyClient writes', () => {
   it('createGuest POSTet an /guests-crud und liefert die ID', async () => {
     const { client, spy } = clientWithMockedRequest({ _id: 'guest-1' });
-    const id = await client.createGuest({ firstName: 'Nina', lastName: 'Lattke', email: 'n@x.de', phone: '+49 170 000' });
+    const id = await client.createGuest({
+      firstName: 'calimoto GmbH', lastName: 'Sebastian Dambeck', email: 's@x.de', phone: '+49 170 000',
+      address: { street: 'Babelsberger Str. 12', city: 'Potsdam', zipcode: '14473', country: 'Germany' },
+    });
     expect(id).toBe('guest-1');
     const [endpoint, options] = spy.mock.calls[0];
     expect(endpoint).toBe('/guests-crud');
     const body = JSON.parse(options.body);
-    expect(body).toMatchObject({ firstName: 'Nina', lastName: 'Lattke', email: 'n@x.de', phones: ['+49 170 000'] });
+    expect(body).toMatchObject({
+      firstName: 'calimoto GmbH', lastName: 'Sebastian Dambeck', email: 's@x.de', phones: ['+49 170 000'],
+      address: { street: 'Babelsberger Str. 12', city: 'Potsdam', zipcode: '14473', country: 'Germany' },
+    });
   });
 
   it('createReservation POSTet an /reservations-v3 mit reservedUntil -1 und Preis-Override', async () => {
@@ -50,6 +56,15 @@ describe('GuestyClient writes', () => {
     });
     const body = JSON.parse(spy.mock.calls[0][1].body);
     expect(body).not.toHaveProperty('accommodationFare');
+  });
+
+  it('updateGuest PUTtet an /guests-crud/{id} (Adresse + phones-Mapping)', async () => {
+    const { client, spy } = clientWithMockedRequest({ ok: true });
+    await client.updateGuest('guest-1', { phone: '+49 1', address: { city: 'Potsdam' } });
+    const [endpoint, options] = spy.mock.calls[0];
+    expect(endpoint).toBe('/guests-crud/guest-1');
+    expect(options.method).toBe('PUT');
+    expect(JSON.parse(options.body)).toEqual({ phones: ['+49 1'], address: { city: 'Potsdam' } });
   });
 
   it('updateReservationStatus PUTtet an /reservations-v3/{id}/status', async () => {
