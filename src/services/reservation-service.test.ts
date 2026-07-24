@@ -5,11 +5,15 @@ vi.mock('./guesty-client.js', () => ({
     createGuest: vi.fn().mockResolvedValue('guest-1'),
     createReservation: vi.fn().mockResolvedValue('res-1'),
     updateReservationStatus: vi.fn().mockResolvedValue(undefined),
+    getReservation: vi.fn().mockResolvedValue({ status: 'reserved', confirmationCode: 'GY-TEST', money: { currency: 'EUR', subTotalPrice: 2850 } }),
     getQuote: vi.fn().mockResolvedValue({ money: { totalPrice: 1200 } }),
   },
 }));
 vi.mock('../repositories/availability-repository.js', () => ({
   areDatesAvailable: vi.fn().mockReturnValue(true),
+}));
+vi.mock('../repositories/reservation-repository.js', () => ({
+  upsertReservation: vi.fn(),
 }));
 vi.mock('./document-service.js', () => ({
   createOrGetDocument: vi.fn().mockResolvedValue({
@@ -27,6 +31,7 @@ vi.mock('../config/properties.js', () => ({
 
 import { guestyClient } from './guesty-client.js';
 import { areDatesAvailable } from '../repositories/availability-repository.js';
+import { upsertReservation } from '../repositories/reservation-repository.js';
 import { createOrGetDocument } from './document-service.js';
 import { createOfferReservation, confirmOfferReservation, releaseOfferReservation } from './reservation-service.js';
 import { ConflictError, ValidationError } from '../utils/errors.js';
@@ -40,9 +45,39 @@ const baseInput = {
   priceGross: 2850,
 };
 
-beforeEach(() => { vi.clearAllMocks(); (areDatesAvailable as any).mockReturnValue(true); });
+beforeEach(() => {
+  vi.clearAllMocks();
+  (areDatesAvailable as any).mockReturnValue(true);
+  (upsertReservation as any).mockImplementation(() => undefined);
+  (createOrGetDocument as any).mockResolvedValue({
+    document: { documentNumber: 'A-2026-0042' }, pdf: Buffer.from('pdf'), isNew: true,
+  });
+  (guestyClient.getReservation as any).mockResolvedValue({ status: 'reserved', confirmationCode: 'GY-TEST', money: { currency: 'EUR', subTotalPrice: 2850 } });
+});
 
 describe('createOfferReservation', () => {
+  it('spiegelt die Reservierung lokal, BEVOR das Dokument entsteht (documents-FK)', async () => {
+    const order: string[] = [];
+    (upsertReservation as any).mockImplementation(() => order.push('mirror'));
+    (createOrGetDocument as any).mockImplementation(async () => {
+      order.push('document');
+      return { document: { documentNumber: 'A-2026-0042' }, pdf: Buffer.from('pdf'), isNew: true };
+    });
+    await createOfferReservation({ ...baseInput });
+    expect(order).toEqual(['mirror', 'document']);
+    expect(upsertReservation).toHaveBeenCalledWith(expect.objectContaining({
+      reservation_id: 'res-1', listing_id: 'listing-fh', status: 'reserved', guest_name: 'Nina Lattke',
+    }));
+  });
+
+  it('Spiegel-Fehler landet als documentError, Reservierung bleibt', async () => {
+    (upsertReservation as any).mockImplementation(() => { throw new Error('db kaputt'); });
+    const r = await createOfferReservation({ ...baseInput });
+    expect(r.reservationId).toBe('res-1');
+    expect(r.documentError).toMatch(/db kaputt/);
+    expect(createOrGetDocument).not.toHaveBeenCalled();
+  });
+
   it('legt Gast + Hold an und erzeugt das Angebot', async () => {
     const r = await createOfferReservation({ ...baseInput });
     expect(guestyClient.createGuest).toHaveBeenCalledOnce();
@@ -112,8 +147,8 @@ describe('confirm/release', () => {
     await confirmOfferReservation('res-1');
     expect(guestyClient.updateReservationStatus).toHaveBeenCalledWith('res-1', 'confirmed');
   });
-  it('release setzt Status canceled', async () => {
+  it('release setzt Status expired (Holds sind nicht cancelbar)', async () => {
     await releaseOfferReservation('res-1');
-    expect(guestyClient.updateReservationStatus).toHaveBeenCalledWith('res-1', 'canceled');
+    expect(guestyClient.updateReservationStatus).toHaveBeenCalledWith('res-1', 'expired');
   });
 });

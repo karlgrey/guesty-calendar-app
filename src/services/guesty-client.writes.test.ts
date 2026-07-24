@@ -19,7 +19,7 @@ describe('GuestyClient writes', () => {
   });
 
   it('createReservation POSTet an /reservations-v3 mit reservedUntil -1 und Preis-Override', async () => {
-    const { client, spy } = clientWithMockedRequest({ _id: 'res-1' });
+    const { client, spy } = clientWithMockedRequest({ reservationId: 'res-1' });
     const id = await client.createReservation({
       listingId: 'listing-1', checkIn: '2026-09-09', checkOut: '2026-09-10',
       guestsCount: 15, guestId: 'guest-1', status: 'reserved', accommodationFare: 2850,
@@ -43,7 +43,7 @@ describe('GuestyClient writes', () => {
   });
 
   it('createReservation lässt accommodationFare weg, wenn kein Preis übergeben', async () => {
-    const { client, spy } = clientWithMockedRequest({ _id: 'res-2' });
+    const { client, spy } = clientWithMockedRequest({ reservationId: 'res-2' });
     await client.createReservation({
       listingId: 'l', checkIn: '2026-09-09', checkOut: '2026-09-10',
       guestsCount: 2, guestId: 'g', status: 'reserved',
@@ -58,6 +58,6 @@ describe('GuestyClient writes', () => {
     const [endpoint, options] = spy.mock.calls[0];
     expect(endpoint).toBe('/reservations-v3/res-1/status');
     expect(options.method).toBe('PUT');
-    expect(JSON.parse(options.body)).toEqual({ status: 'canceled' });
+    expect(JSON.parse(options.body)).toEqual({ status: 'canceled', cancellationReason: 'Cancelled Due to Hold/Expiration' });
   });
 });

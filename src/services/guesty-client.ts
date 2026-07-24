@@ -809,7 +809,8 @@ export class GuestyClient {
         ...(p.cleaningFee !== undefined ? { cleaningFee: p.cleaningFee } : {}),
       }),
     });
-    const id = res?._id ?? res?.id ?? res?.data?._id;
+    // Reservations-V3 antwortet mit `reservationId` (verifiziert Smoke-Test 24.07.2026)
+    const id = res?.reservationId ?? res?._id ?? res?.id ?? res?.data?._id;
     if (typeof id !== 'string') {
       throw new ExternalApiError('Guesty createReservation response missing id', 502, 'Guesty', { res });
     }
@@ -820,10 +821,22 @@ export class GuestyClient {
   /**
    * Update a reservation's status (confirm a hold / cancel it).
    */
-  async updateReservationStatus(reservationId: string, status: 'confirmed' | 'canceled'): Promise<void> {
+  async updateReservationStatus(
+    reservationId: string,
+    status: 'confirmed' | 'canceled' | 'expired',
+    cancellationReason: string = 'Cancelled Due to Hold/Expiration',
+  ): Promise<void> {
+    // Smoke-Test-Befunde 24.07.2026: ein Hold (status 'reserved') ist NICHT
+    // 'canceled'-bar ("Reservation not cancellable") — Freigabe läuft über
+    // 'expired'. 'canceled' braucht einen cancellationReason aus fester Liste
+    // (sonst 400) und gilt für bestätigte Reservierungen. Status-Updates werden
+    // ASYNCHRON verarbeitet — ein sofortiger Read zeigt noch den alten Status.
     await this.request<any>(`/reservations-v3/${reservationId}/status`, {
       method: 'PUT',
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({
+        status,
+        ...(status === 'canceled' ? { cancellationReason } : {}),
+      }),
     });
     logger.info({ reservationId, status }, 'Updated Guesty reservation status');
   }
