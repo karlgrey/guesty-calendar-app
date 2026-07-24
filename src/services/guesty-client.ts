@@ -757,6 +757,78 @@ export class GuestyClient {
   }
 
   /**
+   * Create a guest record (guests-crud).
+   * Returns the new guest's ID.
+   */
+  async createGuest(g: { firstName: string; lastName: string; email: string; phone?: string }): Promise<string> {
+    const res = await this.request<any>('/guests-crud', {
+      method: 'POST',
+      body: JSON.stringify({
+        firstName: g.firstName,
+        lastName: g.lastName,
+        email: g.email,
+        ...(g.phone ? { phones: [g.phone] } : {}),
+      }),
+    });
+    const id = res?._id ?? res?.id ?? res?.data?._id;
+    if (typeof id !== 'string') {
+      throw new ExternalApiError('Guesty createGuest response missing id', 502, 'Guesty', { res });
+    }
+    logger.info({ guestId: id }, 'Created Guesty guest');
+    return id;
+  }
+
+  /**
+   * Create a reservation via Reservations V3 quick booking.
+   * Hold = status 'reserved' with reservedUntil -1 (no Guesty auto-expiry;
+   * the hold deadline is managed outside the app, see agent-reservierung spec).
+   * accommodationFare overrides the calculated nightly rates (flat offer price).
+   */
+  async createReservation(p: {
+    listingId: string;
+    checkIn: string;
+    checkOut: string;
+    guestsCount: number;
+    guestId: string;
+    status: 'reserved' | 'confirmed' | 'inquiry';
+    accommodationFare?: number;
+    cleaningFee?: number;
+  }): Promise<string> {
+    const res = await this.request<any>('/reservations-v3', {
+      method: 'POST',
+      body: JSON.stringify({
+        listingId: p.listingId,
+        checkInDateLocalized: p.checkIn,
+        checkOutDateLocalized: p.checkOut,
+        guestsCount: p.guestsCount,
+        guestId: p.guestId,
+        status: p.status,
+        source: 'manual',
+        reservedUntil: -1,
+        ...(p.accommodationFare !== undefined ? { accommodationFare: p.accommodationFare } : {}),
+        ...(p.cleaningFee !== undefined ? { cleaningFee: p.cleaningFee } : {}),
+      }),
+    });
+    const id = res?._id ?? res?.id ?? res?.data?._id;
+    if (typeof id !== 'string') {
+      throw new ExternalApiError('Guesty createReservation response missing id', 502, 'Guesty', { res });
+    }
+    logger.info({ reservationId: id, listingId: p.listingId, status: p.status }, 'Created Guesty reservation');
+    return id;
+  }
+
+  /**
+   * Update a reservation's status (confirm a hold / cancel it).
+   */
+  async updateReservationStatus(reservationId: string, status: 'confirmed' | 'canceled'): Promise<void> {
+    await this.request<any>(`/reservations-v3/${reservationId}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    });
+    logger.info({ reservationId, status }, 'Updated Guesty reservation status');
+  }
+
+  /**
    * Health check: verify API credentials and connectivity
    */
   async healthCheck(): Promise<boolean> {
