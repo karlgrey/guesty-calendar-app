@@ -2131,7 +2131,9 @@ class BookingCalendar {
   }
 
   showMailtoFallback(subjectPlain, emailBody) {
-    const ctaButton = document.querySelector('.cta-button');
+    // Je nach Layout heißt der Anfrage-Button .cta-button (Info-Panel) oder
+    // .header-cta (kompakte Ansicht) — beide unterstützen (#270-Test 24.07.).
+    const ctaButton = document.querySelector('.cta-button') || document.querySelector('.header-cta');
     if (!ctaButton || !ctaButton.parentNode) return;
 
     const existing = document.getElementById('mailto-fallback');
