@@ -216,7 +216,7 @@ async function mirrorReservationLocally(
   // Gastpreis inkl. Steuern (Guesty: hostPayout = subTotal + totalTaxes bei Direktbuchung)
   const m = r?.money;
   if (!m) return undefined;
-  return m.hostPayout ?? ((m.subTotalPrice ?? 0) + (m.totalTaxes ?? 0)) ?? m.totalPrice;
+  return m.hostPayout ?? ((m.subTotalPrice ?? 0) + (m.totalTaxes ?? 0));
 }
 
 export async function confirmOfferReservation(reservationId: string): Promise<void> {
