@@ -463,6 +463,7 @@ API-Key-geschützte Endpoints für den maschinellen Angebots-Workflow
 - `GET /api/agent/reservations/:id` · `GET …/:id/offer.pdf` · `POST …/:id/confirm` · `POST …/:id/cancel`
 - Admin-Pendant: Formular unter `/admin/reservations/new`.
 - Hold-Fristen verwaltet der aufrufende Agent (kein Auto-Expiry in der App; `holdUntil` ist rein informativ).
+- **Firmenkunden-Konvention (Guesty-Beschränkung):** Firmenname ins `firstName`-Feld, Ansprechpartner ins `lastName`-Feld (z. B. firstName "S. Fischer Verlage GmbH", lastName "Katharina Matroß") — der Rechnungs-/Angebotsgenerator erkennt Firmen daran automatisch (COMPANY_SUFFIXES) und formatiert entsprechend. Gilt auch für die Agent-API.
 - **Nummernkreise:** Quelle ist `document_sequences` in der Server-DB — wird ein Angebot/eine Rechnung MANUELL außerhalb der App nummeriert, den Zähler nachziehen (Admin-UI `/admin/system` oder `POST /admin/api/document-sequence`), sonst laufen Automatik und Hand auseinander (Abgleich 24.07.2026: quote=28, invoice=27).
 
 **Guesty-Verhalten (Smoke-Test 24.07.2026):**
