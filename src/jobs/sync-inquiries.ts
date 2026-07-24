@@ -27,12 +27,27 @@ export async function syncInquiries(listingId: string): Promise<SyncInquiriesRes
   try {
     logger.info({ listingId }, 'Starting inquiry sync from Guesty API');
 
-    // Fetch ALL reservations from Guesty API (no status filter = all statuses)
-    // Note: Using limit=100 returns more results than limit=1000 (Guesty API quirk)
-    const allReservations = await guestyClient.getReservations({
-      listingId,
-      limit: 100,
-    });
+    // Fetch ALL reservations from Guesty API (no status filter = all statuses).
+    // Note: Using limit=100 returns more results than limit=1000 (Guesty API quirk).
+    // WICHTIG (#271, Fall Kemkes): mit Paginierung — ohne sie blieben Listings
+    // mit >100 historischen Reservierungen bei den ältesten 100 hängen und neue
+    // Buchungen/Stornos kamen nie in der inquiries-Tabelle an (Geister-Events
+    // im Google-Kalender, weil getCancelledReservationIds den Storno nie sah).
+    const pageSize = 100;
+    const maxPages = 50; // Sicherheitsgrenze (5.000 Reservierungen pro Listing)
+    const allReservations: any[] = [];
+    for (let page = 0; page < maxPages; page++) {
+      const batch = (await guestyClient.getReservations({
+        listingId,
+        limit: pageSize,
+        ...(page > 0 ? { skip: page * pageSize } : {}),
+      })) ?? [];
+      allReservations.push(...batch);
+      if (batch.length < pageSize) break;
+      if (page === maxPages - 1) {
+        logger.warn({ listingId, fetched: allReservations.length }, 'syncInquiries: Seiten-Sicherheitsgrenze erreicht — Liste evtl. unvollständig');
+      }
+    }
 
     logger.info(
       { count: allReservations.length, listingId },
