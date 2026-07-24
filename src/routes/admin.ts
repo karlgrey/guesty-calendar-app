@@ -22,6 +22,8 @@ import { ga4Client } from '../services/ga4-client.js';
 import { createOrGetDocument, refreshDocument } from '../services/document-service.js';
 import { getDocumentsByReservation, getDocumentByReservation, listDocuments, getDocumentSequenceInfo, setDocumentSequenceNumber } from '../repositories/document-repository.js';
 import { setManualCategory } from '../repositories/message-repository.js';
+import { createOfferReservation } from '../services/reservation-service.js';
+import { AppError } from '../utils/errors.js';
 
 const router = express.Router();
 
@@ -4216,6 +4218,100 @@ router.patch('/conversions/:slug/thread/:threadId(*)/category', express.json(), 
     res.json({ success: true });
   } catch (error) {
     next(error);
+  }
+});
+
+/**
+ * GET /admin/reservations/new — Formular: Hold-Reservierung + Angebot anlegen
+ */
+router.get('/reservations/new', (_req, res) => {
+  res.send(`<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>Neue Reservierung + Angebot</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: -apple-system, sans-serif; max-width: 560px; margin: 2rem auto; padding: 0 1rem; }
+    label { display: block; margin-top: .8rem; font-weight: 600; }
+    input, select { width: 100%; padding: .5rem; margin-top: .2rem; box-sizing: border-box; }
+    button { margin-top: 1.2rem; padding: .6rem 1.4rem; font-size: 1rem; cursor: pointer; }
+    #result { margin-top: 1rem; padding: .8rem; border-radius: 6px; display: none; }
+    #result.ok { display: block; background: #e6f6e6; }
+    #result.err { display: block; background: #fde8e8; }
+    .row { display: flex; gap: .8rem; } .row > div { flex: 1; }
+  </style>
+</head>
+<body>
+  <h1>Neue Reservierung + Angebot</h1>
+  <p>Legt einen Hold (Status „reserved") in Guesty an und erzeugt das Angebots-PDF.</p>
+  <form id="f">
+    <label>Objekt
+      <select name="propertySlug">
+        <option value="farmhouse">Farmhouse Prasser</option>
+        <option value="u19">Uferstrasse 19</option>
+      </select>
+    </label>
+    <div class="row">
+      <div><label>Check-in <input type="date" name="checkIn" required></label></div>
+      <div><label>Check-out <input type="date" name="checkOut" required></label></div>
+    </div>
+    <label>Personen <input type="number" name="guestsCount" min="1" value="2" required></label>
+    <div class="row">
+      <div><label>Vorname <input name="firstName" required></label></div>
+      <div><label>Nachname <input name="lastName" required></label></div>
+    </div>
+    <label>E-Mail <input type="email" name="email" required></label>
+    <label>Telefon (optional) <input name="phone"></label>
+    <label>Pauschalpreis € (leer = Guesty-Preis) <input type="number" name="priceGross" min="1" step="0.01"></label>
+    <label>Hold bis (leer = +14 Tage) <input type="date" name="holdUntil"></label>
+    <button type="submit">Anlegen + Angebot erzeugen</button>
+  </form>
+  <div id="result"></div>
+  <script>
+    document.getElementById('f').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const body = {
+        propertySlug: fd.get('propertySlug'),
+        checkIn: fd.get('checkIn'),
+        checkOut: fd.get('checkOut'),
+        guestsCount: parseInt(fd.get('guestsCount'), 10),
+        guest: { firstName: fd.get('firstName'), lastName: fd.get('lastName'), email: fd.get('email'), phone: fd.get('phone') || undefined },
+        priceGross: fd.get('priceGross') ? parseFloat(fd.get('priceGross')) : undefined,
+        holdUntil: fd.get('holdUntil') || undefined,
+      };
+      const el = document.getElementById('result');
+      el.className = ''; el.textContent = 'Wird angelegt …'; el.style.display = 'block';
+      try {
+        const r = await fetch('/admin/reservations', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+        });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error || 'Fehler');
+        el.className = 'ok';
+        el.innerHTML = 'Reservierung <b>' + data.reservationId + '</b> angelegt, Hold bis ' + data.holdUntil +
+          (data.documentNumber ? ' — Angebot <b>' + data.documentNumber + '</b>' : '') +
+          (data.documentError ? '<br>⚠️ Angebot fehlgeschlagen: ' + data.documentError : '');
+      } catch (err) {
+        el.className = 'err'; el.textContent = 'Fehler: ' + err.message;
+      }
+    });
+  </script>
+</body>
+</html>`);
+});
+
+/**
+ * POST /admin/reservations — Formular-Backend (gleicher Service wie Agent-API)
+ */
+router.post('/reservations', async (req, res) => {
+  try {
+    const result = await createOfferReservation(req.body);
+    res.status(201).json(result);
+  } catch (err) {
+    const status = err instanceof AppError ? err.statusCode : 500;
+    res.status(status).json({ error: err instanceof Error ? err.message : 'Internal error' });
   }
 });
 
