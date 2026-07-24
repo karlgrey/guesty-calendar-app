@@ -4269,8 +4269,11 @@ router.get('/reservations/new', (_req, res) => {
   </form>
   <div id="result"></div>
   <script>
+    function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
     document.getElementById('f').addEventListener('submit', async (e) => {
       e.preventDefault();
+      const btn = e.target.querySelector('button[type="submit"]');
+      btn.disabled = true;
       const fd = new FormData(e.target);
       const body = {
         propertySlug: fd.get('propertySlug'),
@@ -4290,11 +4293,13 @@ router.get('/reservations/new', (_req, res) => {
         const data = await r.json();
         if (!r.ok) throw new Error(data.error || 'Fehler');
         el.className = 'ok';
-        el.innerHTML = 'Reservierung <b>' + data.reservationId + '</b> angelegt, Hold bis ' + data.holdUntil +
+        el.innerHTML = 'Reservierung <b>' + esc(data.reservationId) + '</b> angelegt, Hold bis ' + data.holdUntil +
           (data.documentNumber ? ' — Angebot <b>' + data.documentNumber + '</b>' : '') +
-          (data.documentError ? '<br>⚠️ Angebot fehlgeschlagen: ' + data.documentError : '');
+          (data.documentError ? '<br>⚠️ Angebot fehlgeschlagen: ' + esc(data.documentError) : '');
       } catch (err) {
         el.className = 'err'; el.textContent = 'Fehler: ' + err.message;
+      } finally {
+        btn.disabled = false;
       }
     });
   </script>
