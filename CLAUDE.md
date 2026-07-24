@@ -453,6 +453,23 @@ Optional:
   = length-of-stay discount (guest discount), `PCM` = "Host channel fee" (commission, NOT a guest
   discount). See the Airbnb-invoice rule under Document Generation.
 
+## Agent-API (Angebots-Workflow, seit 07/2026)
+
+API-Key-geschützte Endpoints für den maschinellen Angebots-Workflow
+(Spec: `docs/superpowers/specs/2026-07-24-agent-reservierung-design.md`):
+
+- Auth: Header `X-Agent-Key` = `AGENT_API_KEY` aus `.env` (min. 32 Zeichen; fehlt er, antwortet die Route 503).
+- `POST /api/agent/reservations` — Gast + Hold (`reserved`, `reservedUntil: -1`) + Angebots-PDF; Body siehe `src/services/reservation-service.ts` (`CreateOfferInput`).
+- `GET /api/agent/reservations/:id` · `GET …/:id/offer.pdf` · `POST …/:id/confirm` · `POST …/:id/cancel`
+- Admin-Pendant: Formular unter `/admin/reservations/new`.
+- Hold-Fristen verwaltet der aufrufende Agent (kein Auto-Expiry in der App; `holdUntil` ist rein informativ).
+
+**Guesty-Verhalten (Smoke-Test 24.07.2026):**
+- `POST /reservations-v3` antwortet mit `reservationId` (nicht `_id`); Creates werden ASYNCHRON verarbeitet — sofortiger `GET /reservations/{id}` kann 404en (Service pollt bis ~18 s).
+- Ein Hold (`reserved`) ist NICHT stornierbar — Freigabe = Status **`expired`** (`PUT /reservations-v3/{id}/status`); `canceled` gilt für bestätigte Reservierungen und verlangt einen `cancellationReason` aus fester Liste.
+- `accommodationFare` überschreibt die Nachtpreise und wird in `money.fareAccommodation` gespiegelt — ABER die Listing-**Reinigungsgebühr wird ADDIERT** (Smoke: 1 € fare + 349,90 cleaning). Bei All-inclusive-Pauschalen `cleaningFee: 0` mitgeben.
+- `documents.reservation_id` hat einen FK auf die lokale `reservations`-Tabelle → der Service spiegelt die frische Reservierung sofort lokal (ETL überschreibt später). Achtung Follow-up: nach Hold-Freigabe räumt `deleteStaleReservationsInRange` die Zeile + Dokument-Zeile wieder ab.
+
 ## Git & Deployment
 
 ### Commit Conventions

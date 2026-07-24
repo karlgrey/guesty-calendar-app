@@ -70,7 +70,7 @@ async function main() {
     console.error('❌ Smoke-Test mit Befunden:\n   - ' + failures.join('\n   - '));
     process.exit(1);
   }
-  console.log('✅ Smoke-Test ok — Angebotsnummer', result.documentNumber, '(Reservierung storniert)');
+  console.log('✅ Smoke-Test ok — Angebotsnummer', result.documentNumber, '(Hold freigegeben/expired)');
 }
 
 main().catch((err) => { console.error('❌', err); process.exit(1); });
