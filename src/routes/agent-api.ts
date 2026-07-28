@@ -59,6 +59,19 @@ router.get('/reservations/:id/offer.pdf', async (req, res) => {
   } catch (err) { handleError(res, err); }
 });
 
+router.get('/reservations/:id/invoice.pdf', async (req, res) => {
+  try {
+    // ?refresh=1 zieht frische Daten aus Guesty (z. B. nachgepflegte
+    // Kundenanschrift) — die Rechnungsnummer bleibt dabei stabil.
+    const fetchDoc = req.query.refresh ? refreshDocument : createOrGetDocument;
+    const { document, pdf } = await fetchDoc({ reservationId: req.params.id, documentType: 'invoice' });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('X-Document-Number', document.documentNumber);
+    res.setHeader('Content-Disposition', `attachment; filename="Rechnung_${document.documentNumber}.pdf"`);
+    res.send(pdf);
+  } catch (err) { handleError(res, err); }
+});
+
 router.put('/guests/:guestId', async (req, res) => {
   try {
     await guestyClient.updateGuest(req.params.guestId, req.body);

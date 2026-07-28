@@ -81,6 +81,23 @@ describe('agent-api', () => {
     expect(createOrGetDocument).not.toHaveBeenCalled();
   });
 
+  it('GET /reservations/:id/invoice.pdf → PDF mit Nummer im Header', async () => {
+    const r = await fetch(`${base}/api/agent/reservations/res-1/invoice.pdf`, { headers: KEY });
+    expect(r.status).toBe(200);
+    expect(r.headers.get('content-type')).toContain('application/pdf');
+    expect(r.headers.get('x-document-number')).toBe('A-2026-0042');
+    expect(r.headers.get('content-disposition')).toContain('Rechnung_A-2026-0042.pdf');
+  });
+
+  it('invoice.pdf?refresh=1 nutzt refreshDocument', async () => {
+    const { refreshDocument, createOrGetDocument } = await import('../services/document-service.js');
+    (createOrGetDocument as any).mockClear(); (refreshDocument as any).mockClear();
+    const r = await fetch(`${base}/api/agent/reservations/res-1/invoice.pdf?refresh=1`, { headers: KEY });
+    expect(r.status).toBe(200);
+    expect(refreshDocument).toHaveBeenCalledOnce();
+    expect(createOrGetDocument).not.toHaveBeenCalled();
+  });
+
   it('PUT /guests/:id → updateGuest', async () => {
     const { guestyClient } = await import('../services/guesty-client.js');
     const r = await fetch(`${base}/api/agent/guests/guest-1`, {
