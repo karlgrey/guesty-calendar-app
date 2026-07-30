@@ -102,42 +102,50 @@ export async function syncAirbnbMail(property: PropertyConfig): Promise<SyncMail
     let maxUid = lastUid;
 
     for (const raw of mails) {
+      // UID must advance past this mail regardless of what happens below —
+      // otherwise a single bad mail wedges the property's ingest forever
+      // (next run refetches the same batch, hits the same failure again).
       maxUid = Math.max(maxUid, raw.uid);
 
-      // Archive raw first
-      insertMail({
-        property_slug: slug,
-        message_id: raw.messageId,
-        imap_uid: raw.uid,
-        subject: raw.subject,
-        from_address: raw.fromAddress,
-        received_at: raw.receivedAt,
-        raw_body: raw.htmlBody || raw.textBody,
-        detected_type: null,
-        reservation_code: null,
-        parse_status: 'pending',
-        parse_error: null,
-      });
-
-      const type = detectMailType(raw.subject);
-      if (type === 'unknown') {
-        // Not a booking-relevant Subject (account-management, message threads,
-        // 2FA, payouts, etc.). Archive for audit, but do not flag as error.
-        updateParseStatus(raw.messageId, 'ignored', `Unrecognised Subject: ${raw.subject}`, null, type);
-        ignoredCount++;
-        logger.debug({ slug, messageId: raw.messageId, subject: raw.subject }, 'Airbnb mail: ignored (unrecognised subject)');
-        continue;
-      }
-      if (type === 'modification') {
-        // Modification mails (Deine Buchungsänderung wurde bestätigt) carry no
-        // reservation code or dates — the iCal sync reconciles the change.
-        // Archive for audit and skip parsing.
-        updateParseStatus(raw.messageId, 'ignored', 'modification: handled by iCal reconciliation', null, type);
-        ignoredCount++;
-        continue;
-      }
-
+      // Everything below is scoped to THIS mail. A failure anywhere here
+      // (archiving, parsing, mapping, persisting) must not abort the batch —
+      // it would silently drop every mail after it in this run, and — since
+      // setLastUid() only runs after the loop completes — permanently wedge
+      // the property at this UID on every future run too.
       try {
+        // Archive raw first
+        insertMail({
+          property_slug: slug,
+          message_id: raw.messageId,
+          imap_uid: raw.uid,
+          subject: raw.subject,
+          from_address: raw.fromAddress,
+          received_at: raw.receivedAt,
+          raw_body: raw.htmlBody || raw.textBody,
+          detected_type: null,
+          reservation_code: null,
+          parse_status: 'pending',
+          parse_error: null,
+        });
+
+        const type = detectMailType(raw.subject);
+        if (type === 'unknown') {
+          // Not a booking-relevant Subject (account-management, message threads,
+          // 2FA, payouts, etc.). Archive for audit, but do not flag as error.
+          updateParseStatus(raw.messageId, 'ignored', `Unrecognised Subject: ${raw.subject}`, null, type);
+          ignoredCount++;
+          logger.debug({ slug, messageId: raw.messageId, subject: raw.subject }, 'Airbnb mail: ignored (unrecognised subject)');
+          continue;
+        }
+        if (type === 'modification') {
+          // Modification mails (Deine Buchungsänderung wurde bestätigt) carry no
+          // reservation code or dates — the iCal sync reconciles the change.
+          // Archive for audit and skip parsing.
+          updateParseStatus(raw.messageId, 'ignored', 'modification: handled by iCal reconciliation', null, type);
+          ignoredCount++;
+          continue;
+        }
+
         const parsed = dispatchParser(type, raw);
         if (!parsed) {
           updateParseStatus(raw.messageId, 'error', 'Parser returned null (missing fields)', null, type);
@@ -176,9 +184,18 @@ export async function syncAirbnbMail(property: PropertyConfig): Promise<SyncMail
         parsedOk++;
       } catch (error) {
         const errMsg = error instanceof Error ? error.message : 'unknown error';
-        updateParseStatus(raw.messageId, 'error', errMsg, null, type);
         parsedError++;
-        logger.warn({ slug, messageId: raw.messageId, type, error: errMsg }, 'Airbnb mail: parse threw');
+        logger.error(
+          { slug, messageId: raw.messageId, uid: raw.uid, error: errMsg },
+          'Airbnb mail: processing this mail failed unexpectedly — skipping it, UID still advances'
+        );
+        // Best-effort status update — the row may not exist if insertMail()
+        // itself is what threw, so this can legitimately no-op.
+        try {
+          updateParseStatus(raw.messageId, 'error', errMsg, null, null);
+        } catch {
+          // ignore — already logged above
+        }
       }
     }
 
