@@ -466,6 +466,7 @@ API-Key-geschützte Endpoints für den maschinellen Angebots-Workflow
 - Hold-Fristen verwaltet der aufrufende Agent (kein Auto-Expiry in der App; `holdUntil` ist rein informativ).
 - **Firmenkunden-Konvention (Guesty-Beschränkung):** Firmenname ins `firstName`-Feld, Ansprechpartner ins `lastName`-Feld (z. B. firstName "S. Fischer Verlage GmbH", lastName "Katharina Matroß") — der Rechnungs-/Angebotsgenerator erkennt Firmen daran automatisch (COMPANY_SUFFIXES) und formatiert entsprechend. Gilt auch für die Agent-API.
 - **Nummernkreise:** Quelle ist `document_sequences` in der Server-DB — wird ein Angebot/eine Rechnung MANUELL außerhalb der App nummeriert, den Zähler nachziehen (Admin-UI `/admin/system` oder `POST /admin/api/document-sequence`), sonst laufen Automatik und Hand auseinander (Abgleich 24.07.2026: quote=28, invoice=27).
+- **Gäste-Messaging (read-only, seit 08/2026):** `GET /api/agent/threads?since=<ISO>&limit=<n>` (Default: letzte 7 Tage, 50 Treffer, neueste zuerst) — Liste mit `threadId`, `source`, `property` (Kürzel/Name), `guestName`, `needsReply`, `lastMessageAt`/`lastMessageDirection`. `GET /api/agent/threads/:threadId` — Thread-Metadaten + alle Nachrichten (`direction`, `sender`, `body`, `sentAt`, aufsteigend). Nur lesend — kein Draft-/Send-Zugriff über die Agent-API.
 
 **Guesty-Verhalten (Smoke-Test 24.07.2026):**
 - `POST /reservations-v3` antwortet mit `reservationId` (nicht `_id`); Creates werden ASYNCHRON verarbeitet — sofortiger `GET /reservations/{id}` kann 404en (Service pollt bis ~18 s).

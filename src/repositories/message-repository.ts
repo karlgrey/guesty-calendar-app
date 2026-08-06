@@ -13,6 +13,7 @@ import { DatabaseError } from '../utils/errors.js';
 import logger from '../utils/logger.js';
 import type {
   Message,
+  MessageDirection,
   MessageThread,
   NewMessage,
   NewMessageThread,
@@ -180,6 +181,35 @@ export function getMessagesByThread(threadId: string): Message[] {
   return db
     .prepare(`SELECT * FROM messages WHERE thread_id = ? ORDER BY sent_at ASC`)
     .all(threadId) as Message[];
+}
+
+export interface ThreadWithLastMessage extends MessageThread {
+  // Direction of the latest non-system message (same convention as
+  // getThreadsNeedingReply/getThreadsNeedingDraft) — null if the thread has
+  // no non-system messages yet.
+  last_message_direction: MessageDirection | null;
+}
+
+/**
+ * Threads with activity (thread-level last_message_at) at or after `sinceIso`,
+ * newest first. Read-only helper for the Agent API (GET /api/agent/threads) so
+ * external sessions can review guest conversations — incl. bot-sent replies —
+ * without direct DB access.
+ */
+export function getThreadsUpdatedSince(sinceIso: string, limit: number): ThreadWithLastMessage[] {
+  const db = getDatabase();
+  return db
+    .prepare(
+      `SELECT t.*,
+         (SELECT m.direction FROM messages m
+          WHERE m.thread_id = t.id AND m.direction != 'system'
+          ORDER BY m.sent_at DESC, m.created_at DESC LIMIT 1) AS last_message_direction
+       FROM message_threads t
+       WHERE datetime(t.last_message_at) >= datetime(?)
+       ORDER BY t.last_message_at DESC
+       LIMIT ?`,
+    )
+    .all(sinceIso, limit) as ThreadWithLastMessage[];
 }
 
 export function getLastEmailUid(propertySlug: string): number {
