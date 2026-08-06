@@ -28,6 +28,42 @@ vi.mock('../services/guesty-client.js', () => ({
     updateGuest: vi.fn().mockResolvedValue(undefined),
   },
 }));
+vi.mock('../repositories/message-repository.js', () => ({
+  getThreadsUpdatedSince: vi.fn().mockReturnValue([
+    {
+      id: 'hostex:a', listing_id: 'L1', source: 'hostex', channel: 'airbnb',
+      guest_name: 'Anna', guest_email: 'anna@example.com',
+      last_message_at: '2026-08-05T10:00:00.000Z', last_message_direction: 'inbound',
+    },
+    {
+      id: 'guesty:b', listing_id: 'L2', source: 'guesty', channel: 'airbnb',
+      guest_name: 'Ben', guest_email: 'ben@example.com',
+      last_message_at: '2026-08-04T09:00:00.000Z', last_message_direction: 'outbound',
+    },
+  ]),
+  getThreadById: vi.fn((id: string) =>
+    id === 'hostex:a'
+      ? {
+          id: 'hostex:a', listing_id: 'L1', source: 'hostex', channel: 'airbnb',
+          guest_name: 'Anna', guest_email: 'anna@example.com',
+          last_message_at: '2026-08-05T10:00:00.000Z',
+        }
+      : null,
+  ),
+  getMessagesByThread: vi.fn().mockReturnValue([
+    { id: 'm1', thread_id: 'hostex:a', direction: 'inbound', sent_at: '2026-08-05T09:00:00.000Z', from_name: 'Anna', body: 'Frage zum Check-in', source: 'hostex' },
+    { id: 'm2', thread_id: 'hostex:a', direction: 'outbound', sent_at: '2026-08-05T10:00:00.000Z', from_name: 'host', body: 'Antwort', source: 'hostex' },
+  ]),
+}));
+vi.mock('../utils/thread-property.js', () => ({
+  propertyForBadge: vi.fn((thread: { listing_id: string | null }) =>
+    thread.listing_id === 'L1'
+      ? { slug: 'farmhouse', name: 'Farmhouse Prasser', shortCode: 'FH' }
+      : thread.listing_id === 'L2'
+        ? { slug: 'uferstrasse', name: 'Uferstraße 19', shortCode: 'U19' }
+        : undefined,
+  ),
+}));
 
 import agentApiRoutes from './agent-api.js';
 
@@ -112,6 +148,48 @@ describe('agent-api', () => {
     expect(c.status).toBe(200);
     const x = await fetch(`${base}/api/agent/reservations/res-1/cancel`, { method: 'POST', headers: KEY });
     expect(x.status).toBe(200);
+  });
+
+  it('GET /threads → Liste mit Property/Gastname/needsReply, neueste zuerst', async () => {
+    const r = await fetch(`${base}/api/agent/threads`, { headers: KEY });
+    expect(r.status).toBe(200);
+    const body = await r.json();
+    expect(body.threads).toHaveLength(2);
+    expect(body.threads[0]).toMatchObject({
+      threadId: 'hostex:a', source: 'hostex',
+      property: { slug: 'farmhouse', name: 'Farmhouse Prasser', code: 'FH' },
+      guestName: 'Anna', needsReply: true,
+      lastMessageAt: '2026-08-05T10:00:00.000Z', lastMessageDirection: 'inbound',
+    });
+    expect(body.threads[1]).toMatchObject({
+      threadId: 'guesty:b', needsReply: false, lastMessageDirection: 'outbound',
+      property: { slug: 'uferstrasse', name: 'Uferstraße 19', code: 'U19' },
+    });
+  });
+
+  it('GET /threads ohne Key → 401', async () => {
+    const r = await fetch(`${base}/api/agent/threads`);
+    expect(r.status).toBe(401);
+  });
+
+  it('GET /threads/:id → Thread mit Nachrichten aufsteigend', async () => {
+    const r = await fetch(`${base}/api/agent/threads/hostex:a`, { headers: KEY });
+    expect(r.status).toBe(200);
+    const body = await r.json();
+    expect(body).toMatchObject({
+      threadId: 'hostex:a', source: 'hostex', channel: 'airbnb',
+      property: { slug: 'farmhouse', name: 'Farmhouse Prasser', code: 'FH' },
+      guestName: 'Anna',
+    });
+    expect(body.messages).toEqual([
+      { direction: 'inbound', sender: 'Anna', body: 'Frage zum Check-in', sentAt: '2026-08-05T09:00:00.000Z' },
+      { direction: 'outbound', sender: 'host', body: 'Antwort', sentAt: '2026-08-05T10:00:00.000Z' },
+    ]);
+  });
+
+  it('GET /threads/:id → 404 bei unbekannter ID', async () => {
+    const r = await fetch(`${base}/api/agent/threads/does-not-exist`, { headers: KEY });
+    expect(r.status).toBe(404);
   });
 
   it('AppError des Service wird als Statuscode gemappt (ValidationError→400)', async () => {

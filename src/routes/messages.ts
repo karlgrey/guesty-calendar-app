@@ -9,7 +9,8 @@ import {
   createDraft, getDraftById, getActiveDraftByThread, markDraftSent, markDraftError, discardDraft,
   claimDraftForSending, updateDraftBody,
 } from '../repositories/draft-repository.js';
-import { getPropertyByHostexId, getPropertyByGuestyId, getPropertiesByProvider, type PropertyConfig } from '../config/properties.js';
+import { getPropertiesByProvider } from '../config/properties.js';
+import { getPropertyForThread, propertyForBadge } from '../utils/thread-property.js';
 import { loadVoice, loadPropertyFacts } from '../services/vault-knowledge.js';
 import { generateDraftForThread, DRAFT_MODEL } from '../services/draft-service.js';
 import { sendReply } from '../services/message-sender.js';
@@ -41,24 +42,6 @@ function fmtDate(iso: string | null | undefined): string {
   return s.length >= 16 ? `${s.slice(0, 10)} ${s.slice(11, 16)}` : s;
 }
 
-// Provider-aware property lookup: threads store the provider-native listing id.
-function getPropertyForThread(thread: { source: string; listing_id: string | null }): PropertyConfig | undefined {
-  if (!thread.listing_id) return undefined;
-  if (thread.source === 'hostex') return getPropertyByHostexId(thread.listing_id);
-  if (thread.source === 'guesty') return getPropertyByGuestyId(thread.listing_id);
-  return undefined;
-}
-
-// Property fürs Listen-Badge/-Tint (FH, U19, AS, BH …). Gmail-Threads tragen die
-// Guesty-Listing-ID als listing_id, daher der generische Fallback über beide IDs.
-function propertyForBadge(thread: { source: string; listing_id: string | null }): PropertyConfig | undefined {
-  return (
-    getPropertyForThread(thread) ??
-    (thread.listing_id
-      ? getPropertyByGuestyId(thread.listing_id) ?? getPropertyByHostexId(thread.listing_id)
-      : undefined)
-  );
-}
 
 function directionLabel(direction: string): string {
   if (direction === 'inbound') return 'Gast';
