@@ -202,3 +202,27 @@ describe('syncAirbnbMail — per-mail resilience', () => {
     expect(setLastUidMock).toHaveBeenCalledWith('firenze-loft', 13);
   });
 });
+
+describe('syncAirbnbMail — staleness signal (#327)', () => {
+  it('still refreshes last_sync_at (via setLastUid) on a successful poll with zero new mails', async () => {
+    // A quiet mailbox (no new bookings) is a SUCCESSFUL sync, not a broken
+    // one. If setLastUid() only ran when the UID advanced, last_sync_at would
+    // go stale during any quiet period and the #327 alarm would false-fire.
+    fetchNewMailsMock.mockResolvedValue([]);
+
+    const result = await syncAirbnbMail(property);
+
+    expect(result.success).toBe(true);
+    expect(result.fetched).toBe(0);
+    expect(setLastUidMock).toHaveBeenCalledWith('firenze-loft', 10); // lastUid unchanged, but still called
+  });
+
+  it('does not touch last_sync_at when the IMAP connection itself fails', async () => {
+    connectMock.mockRejectedValueOnce(new Error('IMAP login failed'));
+
+    const result = await syncAirbnbMail(property);
+
+    expect(result.success).toBe(false);
+    expect(setLastUidMock).not.toHaveBeenCalled();
+  });
+});

@@ -199,7 +199,12 @@ export async function syncAirbnbMail(property: PropertyConfig): Promise<SyncMail
       }
     }
 
-    if (maxUid > lastUid) setLastUid(slug, maxUid);
+    // Always persist, even when maxUid === lastUid (no new mail this run).
+    // last_sync_at doubles as the "last successful poll" signal for the
+    // staleness alarm (#327) — a quiet mailbox is a successful sync, and must
+    // not look identical to a broken IMAP login just because nothing new
+    // arrived. Idempotent when the UID hasn't moved.
+    setLastUid(slug, maxUid);
 
     // No stale-delete pass: airbnb-mail is a delta-update source, not a snapshot.
     // Cancellations remove rows directly above. If a cancellation mail ever gets
