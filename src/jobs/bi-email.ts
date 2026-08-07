@@ -30,6 +30,9 @@ import { buildGanttGrid } from '../services/bi-calendar.js';
 import { buildLeadTimeCurve, forecastMonthRevenue, type RevenueForecast, type ForecastConfidence } from '../services/forecast.js';
 import { generateBiReportEmail } from '../services/bi-email-templates.js';
 import { sendEmail } from '../services/email-service.js';
+import { getLastSyncAt } from '../repositories/airbnb-mail-archive-repository.js';
+import { findStaleAirbnbMailSources } from '../services/airbnb-mail-staleness.js';
+import { config } from '../config/index.js';
 import type { BiReportModel, PropertyKpi, UpcomingArrival, PropertyForecast } from '../types/bi-report.js';
 import logger from '../utils/logger.js';
 
@@ -222,6 +225,17 @@ export function buildBiReportModel(
     ? Math.round(collected.reduce((s, c) => s + c.kpi.occupancy6wk, 0) / collected.length)
     : 0;
 
+  // Airbnb-mail staleness alarm (#327): surfaced here too so the one weekly
+  // report Micha actually reads carries the warning, not just a pm2 log line.
+  const airbnbMailProperties = properties.filter((p) => p.provider === 'airbnb-mail');
+  const lastSyncAtBySlug = new Map(airbnbMailProperties.map((p) => [p.slug, getLastSyncAt(p.slug)]));
+  const staleAirbnbMailSources = findStaleAirbnbMailSources(
+    airbnbMailProperties,
+    lastSyncAtBySlug,
+    now,
+    config.airbnbMailStalenessThresholdHours
+  );
+
   return {
     generatedAt: now.toISOString(),
     weekLabel: format(now, 'd. MMM yyyy'),
@@ -238,6 +252,7 @@ export function buildBiReportModel(
     kpis: collected.map((c) => c.kpi),
     portfolioForecast,
     propertyForecasts,
+    staleAirbnbMailSources,
   };
 }
 

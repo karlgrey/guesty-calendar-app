@@ -4,6 +4,7 @@
  */
 import type { GanttGrid } from '../services/bi-calendar.js';
 import type { RevenueForecast, ForecastConfidence } from '../services/forecast.js';
+import type { StaleAirbnbMailSource } from '../services/airbnb-mail-staleness.js';
 
 export interface PropertyKpi {
   slug: string;
@@ -57,4 +58,7 @@ export interface BiReportModel {
   kpis: PropertyKpi[];
   portfolioForecast: RevenueForecast[];
   propertyForecasts: PropertyForecast[];
+  // Airbnb-mail properties whose sync has gone stale (#327). Optional —
+  // absent/empty in fixtures that predate this field means "nothing stale".
+  staleAirbnbMailSources?: StaleAirbnbMailSource[];
 }

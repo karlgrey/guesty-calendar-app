@@ -4,6 +4,7 @@
 import type { BiReportModel, PropertyKpi, UpcomingArrival } from '../types/bi-report.js';
 import type { DayState, GanttGrid } from './bi-calendar.js';
 import type { RevenueForecast } from './forecast.js';
+import type { StaleAirbnbMailSource } from './airbnb-mail-staleness.js';
 
 const COLORS: Record<DayState, string> = {
   booked: '#e07a5f',
@@ -181,6 +182,21 @@ function renderForecastByProperty(forecasts: BiReportModel['propertyForecasts'])
     </table>`;
 }
 
+/** #327: airbnb-mail properties whose sync has gone stale. */
+function stalenessLine(s: StaleAirbnbMailSource): string {
+  return s.hoursSinceSync === null
+    ? `${s.name}: nie erfolgreich synchronisiert`
+    : `${s.name}: seit ${s.hoursSinceSync}h kein erfolgreicher Sync mehr`;
+}
+
+function renderStalenessWarning(sources: StaleAirbnbMailSource[]): string {
+  const items = sources.map((s) => `<li>${h(stalenessLine(s))}</li>`).join('');
+  return `<div style="margin:0 18px 16px;background:#fdf1ea;border-left:3px solid #c0573f;padding:10px 14px;font:12px sans-serif;color:#7a3d2a;border-radius:0 6px 6px 0">
+      <strong>⚠️ Airbnb-Mail-Sync gestört</strong>
+      <ul style="margin:6px 0 0;padding-left:18px">${items}</ul>
+    </div>`;
+}
+
 export function generateBiReportEmail(model: BiReportModel): { html: string; text: string } {
   const year = new Date(model.generatedAt).getFullYear();
   const propertyNames = model.kpis.map((k) => h(k.name)).join(', ');
@@ -206,6 +222,7 @@ export function generateBiReportEmail(model: BiReportModel): { html: string; tex
       <div style="padding:8px 18px 0;font:10px sans-serif;color:#999">
         „Umsatz ${year}" = gesamtes Kalenderjahr ${year} inkl. bereits gebuchter zukünftiger Aufenthalte (nicht nur bis heute). „fest gebucht" = bestätigter Umsatz der kommenden Monate.
       </div>
+      ${model.staleAirbnbMailSources?.length ? renderStalenessWarning(model.staleAirbnbMailSources) : ''}
       <div style="padding:16px 18px">
         <h3 style="font:700 13px sans-serif;margin:0 0 10px">① Übersichtskalender · 6 Wochen</h3>
         ${renderCalendar(model.calendar)}
@@ -245,6 +262,9 @@ export function generateBiReportEmail(model: BiReportModel): { html: string; tex
     `AirBnB Portfolio Report · ${model.weekLabel}`,
     `${model.kpis.length} Properties: ${model.kpis.map((k) => k.name).join(', ')}`,
     `Umsatz ${year} (ganzes Kalenderjahr inkl. gebuchter Zukunft): ${eur(model.portfolio.revenueYtd)} · Ø Belegung 6Wo: ${pct(model.portfolio.avgOccupancy6wk)} · Buchungen ${year}: ${model.portfolio.bookingsYtd} · fest gebucht: ${eur(model.portfolio.committedRevenueHorizon)}`,
+    ...(model.staleAirbnbMailSources?.length
+      ? ['', '⚠️ Airbnb-Mail-Sync gestört:', ...model.staleAirbnbMailSources.map((s) => `  ${stalenessLine(s)}`)]
+      : []),
     '',
     'Kennzahlen:',
     ...model.kpis.map(

@@ -67,4 +67,33 @@ describe('generateBiReportEmail', () => {
     expect(html).not.toContain('±');                 // old band markup gone
     expect(html).not.toContain('position:absolute'); // range bar must be email-safe (table-based)
   });
+
+  it('does not render a staleness warning when nothing is stale (field absent)', () => {
+    const { html, text } = generateBiReportEmail(model); // model has no staleAirbnbMailSources field
+    expect(html.toLowerCase()).not.toContain('airbnb-mail');
+    expect(text.toLowerCase()).not.toContain('airbnb-mail');
+  });
+
+  it('renders a staleness warning banner for stale airbnb-mail properties (#327)', () => {
+    const staleModel: BiReportModel = {
+      ...model,
+      staleAirbnbMailSources: [{ slug: 'firenze-loft', name: 'Florence', hoursSinceSync: 240 }],
+    };
+    const { html, text } = generateBiReportEmail(staleModel);
+    expect(html).toContain('Florence');
+    expect(html.toLowerCase()).toContain('airbnb-mail');
+    expect(html).toMatch(/240/);
+    expect(text).toContain('Florence');
+    expect(text.toLowerCase()).toContain('airbnb-mail');
+  });
+
+  it('renders "nie erfolgreich synchronisiert" for a property that never synced', () => {
+    const staleModel: BiReportModel = {
+      ...model,
+      staleAirbnbMailSources: [{ slug: 'firenze-loft', name: 'Florence', hoursSinceSync: null }],
+    };
+    const { html, text } = generateBiReportEmail(staleModel);
+    expect(html.toLowerCase()).toContain('nie');
+    expect(text.toLowerCase()).toContain('nie');
+  });
 });

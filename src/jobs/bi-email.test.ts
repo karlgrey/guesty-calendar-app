@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../repositories/listings-repository.js', () => ({
   getListingById: vi.fn(() => ({ title: 'T', nickname: null, currency: 'EUR' })),
@@ -17,6 +17,10 @@ vi.mock('../repositories/reservation-repository.js', () => ({
   getReservationsInRange: vi.fn(() => []),
   getLeadTimeSamples: vi.fn(() => Array.from({ length: 30 }, () => ({ checkIn: '2026-07-01', reservedAt: '2026-06-01' }))),
   getRevenueForCheckInMonth: vi.fn(() => 4000),
+}));
+const getLastSyncAtMock = vi.fn(() => null);
+vi.mock('../repositories/airbnb-mail-archive-repository.js', () => ({
+  getLastSyncAt: (...args: unknown[]) => getLastSyncAtMock(...args),
 }));
 
 import { buildBiReportModel } from './bi-email.js';
@@ -62,5 +66,43 @@ describe('buildBiReportModel', () => {
     const model = buildBiReportModel([ok, broken], new Date('2026-06-02T06:00:00Z'), 6);
     // broken property has no listing id -> skipped, but model still builds
     expect(model.kpis.length).toBe(1);
+  });
+});
+
+describe('buildBiReportModel — airbnb-mail staleness (#327)', () => {
+  const airbnbMailProp = (slug: string, name: string): PropertyConfig => ({
+    ...prop(slug, name),
+    provider: 'airbnb-mail',
+    airbnbListingId: `airbnb-${slug}`,
+  });
+
+  beforeEach(() => {
+    getLastSyncAtMock.mockReset();
+    getLastSyncAtMock.mockReturnValue(null);
+  });
+
+  it('surfaces a stale airbnb-mail property on the model', () => {
+    getLastSyncAtMock.mockImplementation((slug: string) =>
+      slug === 'firenze-loft' ? '2026-05-01 00:00:00' : null
+    );
+
+    const model = buildBiReportModel(
+      [prop('farmhouse', 'Farmhouse'), airbnbMailProp('firenze-loft', 'Florence')],
+      new Date('2026-06-02T06:00:00Z'),
+      6
+    );
+
+    expect(model.staleAirbnbMailSources).toEqual([
+      { slug: 'firenze-loft', name: 'Florence', hoursSinceSync: expect.any(Number) },
+    ]);
+  });
+
+  it('does not call getLastSyncAt for non-airbnb-mail properties, and is empty when nothing is stale', () => {
+    getLastSyncAtMock.mockReturnValue('2026-06-02T05:00:00Z'); // 1h ago, fresh
+
+    const model = buildBiReportModel([prop('farmhouse', 'Farmhouse')], new Date('2026-06-02T06:00:00Z'), 6);
+
+    expect(getLastSyncAtMock).not.toHaveBeenCalled();
+    expect(model.staleAirbnbMailSources).toEqual([]);
   });
 });
