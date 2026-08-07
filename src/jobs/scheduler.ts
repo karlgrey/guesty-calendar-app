@@ -9,6 +9,7 @@ import { sendWeeklySummaryEmailForProperty, shouldSendWeeklyEmailForProperty } f
 import { sendBiReportEmail, shouldSendBiReport } from './bi-email.js';
 import { syncAnalytics, shouldSyncAnalytics } from './sync-analytics.js';
 import { syncGoogleCalendarForProperty } from './sync-google-calendar.js';
+import { checkAirbnbMailStaleness } from './airbnb-mail/check-staleness.js';
 import { config } from '../config/index.js';
 import { getAllProperties, getBiReportConfig, type PropertyConfig } from '../config/properties.js';
 import logger from '../utils/logger.js';
@@ -39,6 +40,7 @@ interface SchedulerState {
   propertyGoogleCalendarLastSync: Map<string, Date>;
   biReportIntervalId: NodeJS.Timeout | null;
   biReportSent: Date | null;
+  airbnbMailStalenessIntervalId: NodeJS.Timeout | null;
 }
 
 const state: SchedulerState = {
@@ -63,6 +65,7 @@ const state: SchedulerState = {
   propertyGoogleCalendarLastSync: new Map(),
   biReportIntervalId: null,
   biReportSent: null,
+  airbnbMailStalenessIntervalId: null,
 };
 
 /**
@@ -303,6 +306,19 @@ async function checkAndSyncGoogleCalendar() {
 }
 
 /**
+ * Check for stale airbnb-mail syncs and log an error per stale property
+ * (#327). Runs independently of ETL success/failure — it looks at how long
+ * it's been since the last GOOD sync, not whether today's run worked.
+ */
+async function checkAndLogAirbnbMailStaleness() {
+  try {
+    checkAirbnbMailStaleness();
+  } catch (error) {
+    logger.error({ error }, 'Error in airbnb-mail staleness check');
+  }
+}
+
+/**
  * Check if daily forced sync should run (at 2 AM)
  */
 function shouldRunDailyForceSync(): boolean {
@@ -467,6 +483,14 @@ export function startScheduler() {
     state.biReportIntervalId = setInterval(checkAndSendBiReport, 60 * 60 * 1000);
   }
 
+  // Start airbnb-mail staleness checker (runs every hour; #327)
+  logger.info(
+    { thresholdHours: config.airbnbMailStalenessThresholdHours },
+    '🩺 Starting airbnb-mail staleness scheduler'
+  );
+  checkAndLogAirbnbMailStaleness();
+  state.airbnbMailStalenessIntervalId = setInterval(checkAndLogAirbnbMailStaleness, 60 * 60 * 1000);
+
   // Start daily forced sync checker (runs every hour, executes at 2 AM)
   logger.info('🔄 Starting daily forced sync scheduler (runs at 2 AM)');
 
@@ -552,6 +576,11 @@ export function stopScheduler() {
   if (state.biReportIntervalId) {
     clearInterval(state.biReportIntervalId);
     state.biReportIntervalId = null;
+  }
+
+  if (state.airbnbMailStalenessIntervalId) {
+    clearInterval(state.airbnbMailStalenessIntervalId);
+    state.airbnbMailStalenessIntervalId = null;
   }
 
   state.running = false;
