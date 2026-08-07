@@ -336,6 +336,20 @@ Dritter Booking-Provider für Properties, die nur über Airbnb laufen. Daten kom
 
 **Rollback**: Property aus `properties.json` entfernen, restart. DB-Rows können bleiben, Migration ist additive.
 
+**Staleness-Alarm (#327, seit 08/2026):** #324 verhindert das WEDGE (eine kaputte Mail blockiert
+den UID-Fortschritt dauerhaft), aber nicht das unbemerkte STEHEN — z. B. ein kaputter IMAP-Login,
+der einfach nie wieder erfolgreich pollt (Florence stand so 10 Wochen unbemerkt still).
+- `src/services/airbnb-mail-staleness.ts` — reine Kernlogik (`findStaleAirbnbMailSources`)
+- `src/jobs/airbnb-mail/check-staleness.ts` — DB+Config-Wrapper, läuft stündlich im Scheduler
+  (`src/jobs/scheduler.ts`), loggt pro stale Property ein `logger.error` (pm2-Monitoring sieht das,
+  anders als das bestehende `WARN` im normalen ETL-Lauf, das in stündlichem Rauschen untergeht)
+- Schwellwert: `AIRBNB_MAIL_STALENESS_THRESHOLD_HOURS` (Default 26h), `src/config/index.ts`
+- `airbnb_mail_state.last_sync_at` wird jetzt bei JEDEM erfolgreichen Poll aktualisiert, auch wenn
+  keine neue Mail da war (vorher nur bei UID-Fortschritt) — sonst hätte eine ruhige Mailbox
+  (keine neuen Buchungen) fälschlich wie ein kaputter Sync ausgesehen
+- Die BI-Report-Mail (`src/jobs/bi-email.ts` → `staleAirbnbMailSources` auf `BiReportModel`,
+  gerendert in `src/services/bi-email-templates.ts`) zeigt eine Warnzeile, falls etwas stale ist
+
 ### Authentication
 - Google OAuth 2.0 via Passport.js (`src/config/auth.ts`)
 - Email whitelist: `ADMIN_ALLOWED_EMAILS` env var
