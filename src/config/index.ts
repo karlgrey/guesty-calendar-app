@@ -47,6 +47,10 @@ const configSchema = z.object({
   airbnbMailPort: z.coerce.number().int().min(1).max(65535).default(993),
   airbnbMailUser: z.string().optional(),
   airbnbMailPassword: z.string().optional(),
+  // Staleness alarm (#327): flag airbnb-mail properties whose last successful
+  // sync is older than this — catches a silently broken IMAP login that #324
+  // (per-mail error isolation) would not (it prevents wedging, not silence).
+  airbnbMailStalenessThresholdHours: z.coerce.number().int().min(1).default(26),
 
   // Property
   propertyCurrency: z.string().length(3).toUpperCase().default('EUR'),
@@ -143,6 +147,7 @@ function parseConfig() {
     airbnbMailPort: process.env.AIRBNB_MAIL_PORT,
     airbnbMailUser: process.env.AIRBNB_MAIL_USER,
     airbnbMailPassword: process.env.AIRBNB_MAIL_PASSWORD,
+    airbnbMailStalenessThresholdHours: process.env.AIRBNB_MAIL_STALENESS_THRESHOLD_HOURS,
     propertyCurrency: process.env.PROPERTY_CURRENCY,
     propertyTimezone: process.env.PROPERTY_TIMEZONE,
     bookingRecipientEmail: process.env.BOOKING_RECIPIENT_EMAIL,

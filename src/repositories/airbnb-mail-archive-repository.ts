@@ -120,6 +120,23 @@ export function setLastUid(propertySlug: string, uid: number): void {
   }
 }
 
+/**
+ * Last successful sync timestamp for a property's airbnb-mail channel (raw
+ * SQLite `datetime('now')` string, e.g. `2026-08-07 10:00:00` — UTC, no
+ * timezone marker). Null if the property has never synced (no state row).
+ * Used by the staleness alarm (#327).
+ */
+export function getLastSyncAt(propertySlug: string): string | null {
+  const db = getDatabase();
+  try {
+    const row = db.prepare(`SELECT last_sync_at FROM airbnb_mail_state WHERE property_slug = ?`).get(propertySlug) as { last_sync_at: string } | undefined;
+    return row?.last_sync_at ?? null;
+  } catch (error) {
+    logger.error({ error, propertySlug }, 'Failed to get last sync timestamp');
+    throw new DatabaseError(`Failed to get last sync timestamp: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
 export function getErrorMails(propertySlug?: string): MailRow[] {
   const db = getDatabase();
   try {
