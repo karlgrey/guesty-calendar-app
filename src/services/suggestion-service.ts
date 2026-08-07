@@ -1,6 +1,6 @@
 import { callClaudeTool, type ClaudeToolDefinition } from './anthropic-client.js';
 
-const DRAFT_MODEL = 'claude-sonnet-4-6';
+const DRAFT_MODEL = 'claude-sonnet-5';
 
 export const PROPOSE_VAULT_EDIT_TOOL: ClaudeToolDefinition = {
   name: 'propose_vault_edit',

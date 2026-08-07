@@ -1,7 +1,7 @@
 import { callClaudeTool, type ClaudeToolDefinition } from './anthropic-client.js';
 import type { MessageThread, Message } from '../types/messages.js';
 
-export const DRAFT_MODEL = 'claude-sonnet-4-6';
+export const DRAFT_MODEL = 'claude-sonnet-5';
 
 export const SUBMIT_REPLY_TOOL: ClaudeToolDefinition = {
   name: 'submit_reply',

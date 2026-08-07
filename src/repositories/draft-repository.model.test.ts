@@ -19,9 +19,9 @@ afterEach(() => { resetDatabase(); db.close(); });
 
 describe('draft-repository model + updateDraftBody', () => {
   it('stores model on llm drafts and null when omitted', () => {
-    createDraft({ id: 'd1', thread_id: 't1', provider: 'hostex', body: 'x', generated_by: 'llm', model: 'claude-sonnet-4-6' });
+    createDraft({ id: 'd1', thread_id: 't1', provider: 'hostex', body: 'x', generated_by: 'llm', model: 'claude-sonnet-5' });
     createDraft({ id: 'd2', thread_id: 't2', provider: 'hostex', body: 'y', generated_by: 'manual' });
-    expect(getDraftById('d1')?.model).toBe('claude-sonnet-4-6');
+    expect(getDraftById('d1')?.model).toBe('claude-sonnet-5');
     expect(getDraftById('d2')?.model).toBeNull();
   });
 

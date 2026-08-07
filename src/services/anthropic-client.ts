@@ -14,7 +14,7 @@ import { config } from '../config/index.js';
 import { ConfigError } from '../utils/errors.js';
 import logger from '../utils/logger.js';
 
-const DEFAULT_MODEL = 'claude-sonnet-4-6';
+const DEFAULT_MODEL = 'claude-sonnet-5';
 const DEFAULT_MAX_TOKENS = 512;
 const MAX_RETRIES = 5;
 const BASE_BACKOFF_MS = 500;
@@ -72,6 +72,7 @@ export async function callClaudeTool({
       const response = await client.messages.create({
         model,
         max_tokens: maxTokens,
+        thinking: { type: 'disabled' },
         system: [
           { type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } },
         ],

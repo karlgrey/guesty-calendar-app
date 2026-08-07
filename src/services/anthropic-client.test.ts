@@ -71,6 +71,7 @@ describe('callClaudeTool', () => {
     ]);
     expect(callArgs.tool_choice).toEqual({ type: 'tool', name: 'classify_thread' });
     expect(callArgs.tools).toEqual([dummyTool]);
+    expect(callArgs.thinking).toEqual({ type: 'disabled' });
   });
 
   it('throws a clear error when the response has no tool_use block', async () => {
