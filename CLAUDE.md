@@ -17,7 +17,7 @@ npm run dev              # Development with hot reload (tsx watch)
 npm run build            # Compile TypeScript to dist/
 npm start               # Run production build from dist/
 npm run lint            # ESLint on src/**/*.ts
-npm test               # Run tests with Vitest
+npm test               # ACHTUNG: startet Vitest im WATCH-Modus (beendet nie) — fuer Einmal-Laeufe IMMER `npx vitest run`
 
 # Data sync
 npm run sync            # Sync all properties (respects cache)
