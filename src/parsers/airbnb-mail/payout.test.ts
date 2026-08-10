@@ -53,4 +53,35 @@ describe('parsePayoutMail', () => {
   it('returns null when subject does not match', () => {
     expect(parsePayoutMail({ ...topUpMail, subject: 'Buchung aktualisiert' })).toBeNull();
   });
+
+  it('parses real Airbnb HTML where adjacent elements have no whitespace between them', () => {
+    // Regression (backfill run, Aug 2026): live Airbnb payout HTML puts each
+    // piece of a line item in its own sibling tag with NO whitespace text
+    // node between them, so cheerio's flattened body text reads
+    // "...EURUnterkunft" / "8.8.2026Elegance & Design..." — the inline
+    // fixture above (with spaces inserted between "pieces") does not catch
+    // this; only a real <p>/<span>-adjacency fixture does.
+    const html =
+      '<html><body>' +
+      '<p><span>-31,50&nbsp;€ EUR</span></p>' +
+      '<p>Steuereinbehalt bei Einkünften in Italien • 2.8.2026 - 8.8.2026</p>' +
+      '<p>Elegance &amp; Design Duplex - Manifattura Tabacchi (1678837365136764301)</p>' +
+      '<p>HME9WZFQTY</p>' +
+      '<p><span>122,33&nbsp;€ EUR</span></p>' +
+      '<p>Unterkunft • 2.8.2026 - 8.8.2026</p>' +
+      '<p>Elegance &amp; Design Duplex - Manifattura Tabacchi (1678837365136764301)</p>' +
+      '<p>HME9WZFQTY</p>' +
+      '</body></html>';
+    const out = parsePayoutMail({ ...topUpMail, htmlBody: html, textBody: '' });
+    expect(out?.items).toHaveLength(2);
+    expect(out?.items[0]).toEqual({
+      amount: -31.5,
+      category: 'Steuereinbehalt bei Einkünften in Italien',
+      stayStart: '2026-08-02',
+      stayEnd: '2026-08-08',
+      listingId: '1678837365136764301',
+      reservationCode: 'HME9WZFQTY',
+    });
+    expect(out?.items[1].category).toBe('Unterkunft');
+  });
 });

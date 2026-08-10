@@ -31,8 +31,14 @@ const SUBJECT_TOTAL_RE = /^Wir haben eine Auszahlung in H[öo]he von\s*([\d.,]+)
 // "-31,50 € EUR Steuereinbehalt bei Einkünften in Italien • 2.8.2026 - 8.8.2026 … (1678837365136764301) HME9WZFQTY"
 // Category excludes "€" so the match can't run on past the leading "{total} € EUR wurden … versendet"
 // preamble (which contains its own "€"/"(EUR)" tokens) into the first real line item.
+// NOTE: gaps after "EUR" and after the end-date use \s* (zero-or-more), not \s+ —
+// live Airbnb HTML puts each piece (amount / category+dates / listing name / HM-code)
+// in its own sibling tag with NO whitespace text node between them, so cheerio's
+// flattened body text reads "...EURUnterkunft" / "8.8.2026Elegance & Design..." with
+// zero spaces at exactly those two joints (calibrated against a real backfill run,
+// Aug 2026 — the hand-written inline fixture above has spaces there and missed this).
 const ITEM_RE =
-  /(-?[\d.,]+)\s*€\s*EUR\s+([^€]+?)\s*•\s*(\d{1,2})\.(\d{1,2})\.(\d{4})\s*-\s*(\d{1,2})\.(\d{1,2})\.(\d{4})\s+[^()]*\((\d{10,25})\)\s*(HM[A-Z0-9]{8})/g;
+  /(-?[\d.,]+)\s*€\s*EUR\s*([^€]+?)\s*•\s*(\d{1,2})\.(\d{1,2})\.(\d{4})\s*-\s*(\d{1,2})\.(\d{1,2})\.(\d{4})\s*[^()]*\((\d{10,25})\)\s*(HM[A-Z0-9]{8})/g;
 
 function parseGermanAmount(s: string): number {
   return parseFloat(s.replace(/\./g, '').replace(',', '.'));
