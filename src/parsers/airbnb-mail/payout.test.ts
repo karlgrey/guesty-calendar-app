@@ -84,4 +84,19 @@ describe('parsePayoutMail', () => {
     });
     expect(out?.items[1].category).toBe('Unterkunft');
   });
+
+  it('parses reservation codes longer than 10 chars (review finding #2)', () => {
+    // ical-parser.ts's DESCRIPTION_CODE_RE (HM[A-Za-z0-9]+) has no length cap;
+    // the payout item regex must not silently truncate/drop longer codes.
+    const mail: RawMail = {
+      ...topUpMail,
+      textBody:
+        '72,48 € EUR wurden heute versendet' +
+        ' Egbert Witteveen 72,33 € EUR Unterkunft • 2.8.2026 - 8.8.2026' +
+        ' Elegance & Design Duplex - Manifattura Tabacchi (1678837365136764301) HMLONGERCODE123',
+    };
+    const out = parsePayoutMail(mail);
+    expect(out?.items).toHaveLength(1);
+    expect(out?.items[0].reservationCode).toBe('HMLONGERCODE123');
+  });
 });
