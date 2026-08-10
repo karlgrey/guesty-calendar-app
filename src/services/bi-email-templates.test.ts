@@ -120,4 +120,17 @@ describe('generateBiReportEmail — estimate markers & data-quality warnings', (
     expect(html).not.toContain('Datenqualität');
     expect(text).not.toContain('Datenqualität');
   });
+
+  it('marks revenueMonth AND adr with ≈ too, not just revenueYtd, for an estimated KPI row (review finding #5)', () => {
+    // All three figures (Umsatz YTD, Umsatz Monat, ADR) are derived from the
+    // same underlying reservations, so an unconfirmed-payout row must mark
+    // all of them, not just the YTD column.
+    const withWarnings: BiReportModel = {
+      ...model,
+      kpis: [{ ...model.kpis[0], estimatedCount: 1 }], // revenueMonth: 4850, adr: 168
+    };
+    const { html } = generateBiReportEmail(withWarnings);
+    expect(html).toContain('≈ 4.850 €'); // revenueMonth cell
+    expect(html).toContain('≈ 168 €');   // adr cell
+  });
 });

@@ -90,13 +90,14 @@ function renderKpiTable(kpis: PropertyKpi[], portfolio: BiReportModel['portfolio
   const td = (t: string, align = 'right') =>
     `<td style="font:12px sans-serif;padding:6px 8px;border-bottom:1px solid #eee;text-align:${align}">${t}</td>`;
   const body = kpis
-    .map(
-      (k) => `<tr>
+    .map((k) => {
+      const approx = k.estimatedCount > 0 ? '≈ ' : '';
+      return `<tr>
         ${td(h(k.name), 'left')}${td(pct(k.occupancy6wk))}${td(pct(k.occupancy30d))}
-        ${td(`${k.estimatedCount > 0 ? '≈ ' : ''}${eur(k.revenueYtd)}`)}${td(eur(k.revenueMonth))}${td(deltaCell(k.revenueChangePct))}
-        ${td(String(k.bookingsYtd))}${td(eur(k.adr))}${td(String(k.blockedDays6wk))}
-      </tr>`
-    )
+        ${td(`${approx}${eur(k.revenueYtd)}`)}${td(`${approx}${eur(k.revenueMonth)}`)}${td(deltaCell(k.revenueChangePct))}
+        ${td(String(k.bookingsYtd))}${td(`${approx}${eur(k.adr)}`)}${td(String(k.blockedDays6wk))}
+      </tr>`;
+    })
     .join('');
   const hasEstimates = kpis.some((k) => k.estimatedCount > 0);
   const total = `<tr style="background:#f7f8f6;font-weight:700">
@@ -287,9 +288,10 @@ export function generateBiReportEmail(model: BiReportModel): { html: string; tex
       : []),
     '',
     'Kennzahlen:',
-    ...model.kpis.map(
-      (k) => `  ${k.name}: Bel ${pct(k.occupancy6wk)}/${pct(k.occupancy30d)}, Umsatz ${year} ${k.estimatedCount > 0 ? '≈ ' : ''}${eur(k.revenueYtd)} (Monat ${eur(k.revenueMonth)}, ${k.revenueChangePct >= 0 ? '+' : ''}${k.revenueChangePct}%), Buchungen ${k.bookingsYtd}, ADR ${eur(k.adr)}`
-    ),
+    ...model.kpis.map((k) => {
+      const approx = k.estimatedCount > 0 ? '≈ ' : '';
+      return `  ${k.name}: Bel ${pct(k.occupancy6wk)}/${pct(k.occupancy30d)}, Umsatz ${year} ${approx}${eur(k.revenueYtd)} (Monat ${approx}${eur(k.revenueMonth)}, ${k.revenueChangePct >= 0 ? '+' : ''}${k.revenueChangePct}%), Buchungen ${k.bookingsYtd}, ADR ${approx}${eur(k.adr)}`;
+    }),
     '',
     'Nächste Anreisen:',
     ...model.arrivals.map(
