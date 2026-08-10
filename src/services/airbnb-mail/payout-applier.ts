@@ -25,6 +25,12 @@ export function applyPayout(parsed: ParsedPayoutMail): ApplyPayoutResult {
     const cur = byCode.get(item.reservationCode);
     if (cur) {
       cur.amount = r2(cur.amount + item.amount);
+      // Different line items of the same code (tax line vs. accommodation
+      // line, etc.) can carry slightly different stay ranges — take the
+      // widest span (min start / max end), not whichever item happened to
+      // come first in the mail.
+      if (item.stayStart < cur.stayStart) cur.stayStart = item.stayStart;
+      if (item.stayEnd > cur.stayEnd) cur.stayEnd = item.stayEnd;
     } else {
       byCode.set(item.reservationCode, {
         amount: item.amount, listingId: item.listingId,

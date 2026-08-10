@@ -72,4 +72,27 @@ describe('applyPayout', () => {
     expect(r.unmatchedCodes).toEqual(['HMRONY00001']);
     expect(db.prepare(`SELECT COUNT(*) c FROM airbnb_payouts WHERE reservation_code='HMRONY00001'`).get()).toEqual({ c: 1 });
   });
+
+  it('groups same-code items in one mail by min(stayStart)/max(stayEnd), not first-wins (review finding #6)', () => {
+    // Two line items of the SAME payout mail for the same reservation can
+    // carry slightly different stay ranges (e.g. a tax-withholding line vs.
+    // the accommodation line after a mid-stay extension). Taking the first
+    // item's dates ("first-wins") silently drops a later/earlier item's more
+    // accurate range.
+    const m: ParsedPayoutMail = {
+      totalAmount: 72.48, payoutDate: '2026-08-03', messageId: 'm-range',
+      items: [
+        { amount: 50, category: 'Unterkunft', stayStart: '2026-08-02', stayEnd: '2026-08-08', listingId: 'L1', reservationCode: 'HME9WZFQTY' },
+        { amount: 22.48, category: 'Steuereinbehalt', stayStart: '2026-08-03', stayEnd: '2026-08-10', listingId: 'L1', reservationCode: 'HME9WZFQTY' },
+      ],
+    };
+    const r = applyPayout(m);
+    expect(r.dateCorrections).toEqual(['HME9WZFQTY']);
+    const row = db.prepare(`SELECT check_in_localized, check_out_localized FROM reservations WHERE reservation_id='HME9WZFQTY'`).get() as Record<string, unknown>;
+    expect(row.check_in_localized).toBe('2026-08-02'); // min(2.8., 3.8.)
+    expect(row.check_out_localized).toBe('2026-08-10'); // max(8.8., 10.8.)
+    const stored = db.prepare(`SELECT stay_start, stay_end FROM airbnb_payouts WHERE reservation_code='HME9WZFQTY'`).get() as Record<string, unknown>;
+    expect(stored.stay_start).toBe('2026-08-02');
+    expect(stored.stay_end).toBe('2026-08-10');
+  });
 });
