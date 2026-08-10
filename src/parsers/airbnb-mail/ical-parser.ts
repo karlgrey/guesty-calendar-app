@@ -18,6 +18,21 @@ function formatDate(d: Date): string {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+// Real Airbnb private-iCal feeds use an OPAQUE UID (e.g.
+// "1418fb94e984-b0b674ed8d98a9a821c0af037a6b643e@airbnb.com") that does NOT
+// contain the HM reservation code — the code only appears inside DESCRIPTION's
+// "Reservation URL: https://www.airbnb.com/…/reservations/details/HMxxxxx"
+// line. Calibrated against a live export (Firenze, Aug 2026).
+const DESCRIPTION_CODE_RE = /reservations\/details\/(HM[A-Za-z0-9]+)/;
+
+function extractReservationCode(uid: string, description: string | undefined): string {
+  const match = description?.match(DESCRIPTION_CODE_RE);
+  if (match) return match[1];
+  // Owner/block events (and any malformed/old-format entry) have no
+  // Reservation URL — fall back to the UID prefix as before.
+  return uid.split('@')[0];
+}
+
 export function parseAirbnbIcal(icsBody: string): AirbnbIcalEvent[] {
   const parsed = ical.sync.parseICS(icsBody);
   const out: AirbnbIcalEvent[] = [];
@@ -26,7 +41,7 @@ export function parseAirbnbIcal(icsBody: string): AirbnbIcalEvent[] {
     if (!entry || entry.type !== 'VEVENT') continue;
     const vevent = entry as VEvent;
     const uid = (vevent.uid ?? key) as string;
-    const reservationCode = uid.split('@')[0];
+    const reservationCode = extractReservationCode(uid, vevent.description as string | undefined);
     out.push({
       uid,
       reservationCode,

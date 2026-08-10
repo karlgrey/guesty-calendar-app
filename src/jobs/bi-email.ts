@@ -32,6 +32,8 @@ import { generateBiReportEmail } from '../services/bi-email-templates.js';
 import { sendEmail } from '../services/email-service.js';
 import { getLastSyncAt } from '../repositories/airbnb-mail-archive-repository.js';
 import { findStaleAirbnbMailSources } from '../services/airbnb-mail-staleness.js';
+import { getEstimatedYearStats, getUnmatchedPayouts } from '../repositories/airbnb-payout-repository.js';
+import { findReservationsMissingInIcal } from './airbnb-mail/reconcile-ical.js';
 import { config } from '../config/index.js';
 import type { BiReportModel, PropertyKpi, UpcomingArrival, PropertyForecast } from '../types/bi-report.js';
 import logger from '../utils/logger.js';
@@ -67,6 +69,7 @@ export function buildBiReportModel(
   const curve = buildLeadTimeCurve(getLeadTimeSamples());
 
   const collected: PropertyData[] = [];
+  const dataWarnings: string[] = [];
 
   for (const property of properties) {
     try {
@@ -95,6 +98,21 @@ export function buildBiReportModel(
       // and same-day turnover detection.
       const windowReservations = getReservationsInRange(listingId, today, in6Weeks);
 
+      // Airbnb-mail provider only: unconfirmed payout amounts + data-quality
+      // warnings (unmatched payouts, bookings vanished from the calendar).
+      let estimatedCount = 0;
+      if (property.airbnbListingId) {
+        estimatedCount = getEstimatedYearStats(listingId, now.getFullYear()).count;
+        for (const p of getUnmatchedPayouts(listingId)) {
+          dataWarnings.push(
+            `${property.name}: Auszahlung ${p.amount} € vom ${p.payout_date} keiner Buchung zuordenbar (${p.reservation_code})`
+          );
+        }
+        for (const code of findReservationsMissingInIcal(listingId, today)) {
+          dataWarnings.push(`${property.name}: Buchung ${code} fehlt im Airbnb-Kalender — prüfen (Storno?)`);
+        }
+      }
+
       collected.push({
         property,
         listingId,
@@ -114,6 +132,7 @@ export function buildBiReportModel(
           adr,
           blockedDays6wk,
           currency: listing.currency || property.currency || 'EUR',
+          estimatedCount,
         },
       });
     } catch (error) {
@@ -253,6 +272,7 @@ export function buildBiReportModel(
     portfolioForecast,
     propertyForecasts,
     staleAirbnbMailSources,
+    dataWarnings,
   };
 }
 

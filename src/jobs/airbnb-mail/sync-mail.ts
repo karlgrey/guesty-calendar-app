@@ -19,6 +19,13 @@ import { detectMailType } from '../../parsers/airbnb-mail/index.js';
 import { parseConfirmedBooking } from '../../parsers/airbnb-mail/confirmed-booking.js';
 import { parseBookingInquiry } from '../../parsers/airbnb-mail/booking-inquiry.js';
 import { parseCancellation } from '../../parsers/airbnb-mail/cancellation.js';
+import { parsePayoutMail } from '../../parsers/airbnb-mail/payout.js';
+import { applyPayout } from '../../services/airbnb-mail/payout-applier.js';
+import {
+  getPayoutSumByCode,
+  setReservationPayoutConfirmed,
+  setPayoutStatus,
+} from '../../repositories/airbnb-payout-repository.js';
 import { mapAirbnbReservation } from '../../mappers/airbnb-mail/reservation-mapper.js';
 import { upsertReservation } from '../../repositories/reservation-repository.js';
 import { getDatabase } from '../../db/index.js';
@@ -138,11 +145,36 @@ export async function syncAirbnbMail(property: PropertyConfig): Promise<SyncMail
           continue;
         }
         if (type === 'modification') {
-          // Modification mails (Deine Buchungsänderung wurde bestätigt) carry no
-          // reservation code or dates — the iCal sync reconciles the change.
-          // Archive for audit and skip parsing.
+          // Modification mails (Buchungsänderung/aktualisiert/"möchte die Buchung
+          // ändern") carry no reliable reservation code or dates — the iCal
+          // reconciliation (reconcile-ical.ts) corrects dates, payout mails
+          // correct amounts. Archive for audit and skip parsing.
           updateParseStatus(raw.messageId, 'ignored', 'modification: handled by iCal reconciliation', null, type);
           ignoredCount++;
+          continue;
+        }
+        if (type === 'payout') {
+          const payout = parsePayoutMail(raw);
+          if (!payout) {
+            updateParseStatus(raw.messageId, 'error', 'Payout parser returned null', null, type);
+            parsedError++;
+          } else if (payout.items.length === 0) {
+            // Subject matched but the body yielded no line items — likely an
+            // HTML format drift in the item regex, not a "nothing to apply"
+            // mail. Flag it as an error so it surfaces for a look, instead of
+            // silently swallowing a payout that was never actually applied.
+            updateParseStatus(raw.messageId, 'error', 'Payout mail parsed but 0 line items — format drift?', null, type);
+            parsedError++;
+            logger.warn({ slug, messageId: raw.messageId }, 'Airbnb mail: payout mail parsed but 0 line items — format drift?');
+          } else {
+            const applied = applyPayout(payout);
+            updateParseStatus(
+              raw.messageId, 'ok', null,
+              applied.matchedCodes[0] ?? applied.unmatchedCodes[0] ?? null, type
+            );
+            parsedOk++;
+            logger.info({ slug, ...applied, total: payout.totalAmount }, 'Airbnb mail: payout applied');
+          }
           continue;
         }
 
@@ -175,6 +207,17 @@ export async function syncAirbnbMail(property: PropertyConfig): Promise<SyncMail
         if (asReservation) {
           upsertReservation(asReservation);
           confirmedCount++;
+          // Migration 022's column DEFAULT 'confirmed' only covers rows that
+          // existed at migration time — upsertReservation() doesn't know the
+          // payout_status column (kept out of the Reservation TS type on
+          // purpose), so every NEW confirmed booking must be explicitly set
+          // here, same as reconcile-ical.ts / payout-applier.ts do.
+          const sum = getPayoutSumByCode(parsed.reservationCode);
+          if (sum.count > 0) {
+            setReservationPayoutConfirmed(parsed.reservationCode, sum.sum);
+          } else {
+            setPayoutStatus(parsed.reservationCode, 'estimated');
+          }
         } else if (type === 'cancellation') {
           // Cancellation mail → remove any existing reservation row
           deleteReservation.run(parsed.reservationCode);

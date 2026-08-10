@@ -13,8 +13,13 @@ import type { AirbnbMailType } from '../../types/airbnb-mail.js';
 // Dash may be en-dash (–) or hyphen (-).
 const CONFIRMED_RE = /^Buchung\s+best[äa]tigt\s*[–-]\s+.+\s+kommt\s+am\s+/i;
 
-// "Deine Buchungsänderung wurde bestätigt"
-const MODIFICATION_RE = /^Deine\s+Buchungs[äa]nderung\s+wurde\s+best[äa]tigt/i;
+// "Wir haben eine Auszahlung in Höhe von 425,40 € EUR gesendet"
+const PAYOUT_RE = /^Wir haben eine Auszahlung in H[öo]he von\s*[\d.,]+\s*€/i;
+
+// "Deine Buchungsänderung wurde bestätigt" | "Buchung aktualisiert" |
+// "{Gast} möchte die Buchung ändern" — all alteration-related notifications.
+const MODIFICATION_RE =
+  /^Deine\s+Buchungs[äa]nderung\s+wurde\s+best[äa]tigt|^Buchung\s+aktualisiert|m[öo]chte\s+die\s+Buchung\s+[äa]ndern/i;
 
 // "Anfrage für „{Listing}" für den {Datum}"
 const INQUIRY_RE = /^Anfrage\s+für\s+[„"]/i;
@@ -25,6 +30,7 @@ const CANCELLATION_RE = /(storniert|stornierung|abgesagt)/i;
 
 export function detectMailType(subject: string): AirbnbMailType {
   if (!subject) return 'unknown';
+  if (PAYOUT_RE.test(subject)) return 'payout';
   if (CANCELLATION_RE.test(subject)) return 'cancellation';
   if (MODIFICATION_RE.test(subject)) return 'modification';
   if (CONFIRMED_RE.test(subject)) return 'confirmed';

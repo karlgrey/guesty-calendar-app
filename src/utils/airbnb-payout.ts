@@ -41,7 +41,10 @@ export interface PayoutBreakdown {
 
 // Banker's rounding (round half to even) — matches Airbnb's displayed cents.
 // Example: 138.585 → 138.58 (8 is even), not 138.59 as Math.round would give.
-function r2(n: number): number {
+// Exported so every other airbnb-mail module (payout-applier.ts,
+// reconcile-ical.ts, airbnb-payout-repository.ts) rounds money the same way
+// instead of keeping its own local Math.round-based copy.
+export function r2(n: number): number {
   const cents = n * 100;
   const floor = Math.floor(cents);
   const diff = cents - floor;

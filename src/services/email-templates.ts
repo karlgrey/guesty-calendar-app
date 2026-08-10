@@ -125,6 +125,9 @@ interface WeeklySummaryData {
   conversionRate: ConversionRate;
   websiteAnalytics?: WebsiteAnalytics;
   upcomingBookings: Booking[];
+  // Reservations whose payout amount is not yet confirmed by an Airbnb payout
+  // mail (airbnb-mail provider only) — count + summed estimated revenue.
+  estimateInfo?: { count: number; revenue: number };
 }
 
 /**
@@ -228,7 +231,7 @@ function generateTrendChartUrl(trendData: TrendData): string {
  * Generate weekly summary email HTML
  */
 export function generateWeeklySummaryEmail(data: WeeklySummaryData): { html: string; text: string } {
-  const { propertyTitle, currency, allTimeStats, currentYearStats, bookingComparison, occupancyRates, conversionRate, websiteAnalytics, upcomingBookings } = data;
+  const { propertyTitle, currency, allTimeStats, currentYearStats, bookingComparison, occupancyRates, conversionRate, websiteAnalytics, upcomingBookings, estimateInfo } = data;
 
   const html = `
 <!DOCTYPE html>
@@ -360,13 +363,19 @@ export function generateWeeklySummaryEmail(data: WeeklySummaryData): { html: str
       </div>
       <div class="stat-card" style="border-left-color: #27ae60;">
         <div class="stat-label">Revenue ${currentYearStats.year}</div>
-        <div class="stat-value revenue">${formatCurrency(currentYearStats.total_revenue, currency)}</div>
+        <div class="stat-value revenue">${estimateInfo ? '≈ ' : ''}${formatCurrency(currentYearStats.total_revenue, currency)}</div>
       </div>
       <div class="stat-card" style="border-left-color: #27ae60;">
         <div class="stat-label">Booked Days ${currentYearStats.year}</div>
         <div class="stat-value">${currentYearStats.total_booked_days}</div>
       </div>
     </div>
+    ${estimateInfo ? `
+    <div style="margin-top: 8px; padding: 10px 14px; background: #fff8e1; border-left: 4px solid #f6a609; font-size: 13px;">
+      ⚠️ ${estimateInfo.count} Buchung(en) mit geschätztem Betrag (zusammen ${formatCurrency(estimateInfo.revenue, currency)}) —
+      Airbnb-Auszahlung noch nicht bestätigt. Werte korrigieren sich automatisch mit der Auszahlungs-Mail.
+    </div>
+    ` : ''}
     ` : ''}
 
     ${bookingComparison ? `
@@ -546,9 +555,11 @@ ${currentYearStats ? `${currentYearStats.year} REVENUE
 ${'='.repeat(60)}
 
 - Bookings: ${currentYearStats.total_bookings}
-- Revenue: ${formatCurrency(currentYearStats.total_revenue, currency)}
+- Revenue: ${estimateInfo ? '≈ ' : ''}${formatCurrency(currentYearStats.total_revenue, currency)}
 - Booked Days: ${currentYearStats.total_booked_days}
-
+${estimateInfo ? `
+⚠️ ${estimateInfo.count} Buchung(en) mit geschätztem Betrag (${formatCurrency(estimateInfo.revenue, currency)}) — Auszahlung ausstehend.
+` : ''}
 ` : ''}${bookingComparison ? `BOOKINGS: ${bookingComparison.currentMonth.label} vs ${bookingComparison.previousMonth.label}
 ${'='.repeat(60)}
 

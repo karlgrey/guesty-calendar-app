@@ -10,6 +10,7 @@ import { getAllProperties, getListingId, type PropertyConfig } from '../config/p
 import { getListingById } from '../repositories/listings-repository.js';
 import { getAllTimeStats, getOccupancyRate, getAllTimeConversionRate, getCurrentYearStats, getMonthlyBookingComparison } from '../repositories/availability-repository.js';
 import { getReservationsByPeriod } from '../repositories/reservation-repository.js';
+import { getEstimatedYearStats } from '../repositories/airbnb-payout-repository.js';
 import { getAnalyticsSummary, hasAnalyticsData, getMonthlyAnalyticsComparison, getTopRegions, getAnalyticsRange } from '../repositories/analytics-repository.js';
 import { sendEmail } from '../services/email-service.js';
 import { generateWeeklySummaryEmail } from '../services/email-templates.js';
@@ -96,6 +97,14 @@ export async function sendWeeklySummaryEmailForProperty(property: PropertyConfig
 
     // Get monthly booking comparison
     const bookingComparison = getMonthlyBookingComparison(propertyId);
+
+    // Airbnb-mail provider only: reservations whose payout amount is not yet
+    // confirmed by an Airbnb payout mail (still estimated from booking mail/iCal).
+    let estimateInfo: { count: number; revenue: number } | undefined;
+    if (property.airbnbListingId) {
+      const stats = getEstimatedYearStats(propertyId, new Date().getFullYear());
+      if (stats.count > 0) estimateInfo = stats;
+    }
 
     // Get next 5 upcoming bookings
     const allUpcomingBookings = getReservationsByPeriod(propertyId, 365, 'future');
@@ -186,6 +195,7 @@ export async function sendWeeklySummaryEmailForProperty(property: PropertyConfig
         plannedArrival: r.planned_arrival || undefined,
         plannedDeparture: r.planned_departure || undefined,
       })),
+      estimateInfo,
     };
 
     // Generate email content

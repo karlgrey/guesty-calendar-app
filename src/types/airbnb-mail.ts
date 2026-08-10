@@ -25,13 +25,14 @@ export type AirbnbMailType =
   | 'inquiry'
   | 'cancellation'
   | 'modification'
+  | 'payout'
   | 'unknown';
 
 /**
  * Parsed structured mail data — output of any parser.
  */
 export interface ParsedAirbnbMail {
-  type: Exclude<AirbnbMailType, 'unknown'>;
+  type: Exclude<AirbnbMailType, 'unknown' | 'payout'>;
   reservationCode: string; // Airbnb HM-code, e.g. "HMABCXYZ"
   guestName: string;
   checkIn: string; // YYYY-MM-DD

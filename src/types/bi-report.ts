@@ -18,6 +18,9 @@ export interface PropertyKpi {
   adr: number;               // avg daily rate (YTD revenue / booked nights)
   blockedDays6wk: number;   // owner/blocked days in the next 6 weeks
   currency: string;
+  // reservations in the YTD stats above with unconfirmed payout amounts
+  // (airbnb-mail provider only; always 0 for API providers).
+  estimatedCount: number;
 }
 
 export interface UpcomingArrival {
@@ -61,4 +64,7 @@ export interface BiReportModel {
   // Airbnb-mail properties whose sync has gone stale (#327). Optional —
   // absent/empty in fixtures that predate this field means "nothing stale".
   staleAirbnbMailSources?: StaleAirbnbMailSource[];
+  // Human-readable data-quality warnings (e.g. unmatched payouts, bookings
+  // missing from the Airbnb calendar) — surfaced as a "Datenqualität" section.
+  dataWarnings: string[];
 }
