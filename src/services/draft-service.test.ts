@@ -44,3 +44,33 @@ describe('generateDraftForThread', () => {
     expect(await generateDraftForThread({ thread: thread(), messages, voice: 'v', facts: 'f' }, { call: call2 })).toBeNull();
   });
 });
+
+describe('generateDraftForThread — booking context (#364)', () => {
+  it('includes the Buchungskontext block + the never-ask-again rule when bookingContext is set', async () => {
+    const call = vi.fn().mockResolvedValue({ reply: 'Klar, bis dann!' });
+    await generateDraftForThread(
+      { thread: thread(), messages, voice: 'v', facts: 'f', bookingContext: 'Bestätigte Buchung: Zeitraum 02.08.2026–07.08.2026, 5 Nächte, 2 Personen.' },
+      { call }
+    );
+    const prompt = call.mock.calls[0][0].systemPrompt;
+    expect(prompt).toContain('--- BUCHUNGSKONTEXT (liegt der Plattform bereits vor) ---');
+    expect(prompt).toContain('Bestätigte Buchung: Zeitraum 02.08.2026–07.08.2026, 5 Nächte, 2 Personen.');
+    expect(prompt).toContain('--- ENDE BUCHUNGSKONTEXT ---');
+    expect(prompt).toContain('frage den Gast NIEMALS erneut nach Zeitraum, Nächten oder Personenzahl');
+  });
+
+  it('omits the Buchungskontext block entirely when bookingContext is null', async () => {
+    const call = vi.fn().mockResolvedValue({ reply: 'Klar!' });
+    await generateDraftForThread({ thread: thread(), messages, voice: 'v', facts: 'f', bookingContext: null }, { call });
+    const prompt = call.mock.calls[0][0].systemPrompt;
+    expect(prompt).not.toContain('BUCHUNGSKONTEXT');
+    expect(prompt).not.toContain('NIEMALS erneut nach Zeitraum');
+  });
+
+  it('omits the Buchungskontext block when bookingContext is not passed at all', async () => {
+    const call = vi.fn().mockResolvedValue({ reply: 'Klar!' });
+    await generateDraftForThread({ thread: thread(), messages, voice: 'v', facts: 'f' }, { call });
+    const prompt = call.mock.calls[0][0].systemPrompt;
+    expect(prompt).not.toContain('BUCHUNGSKONTEXT');
+  });
+});

@@ -18,23 +18,38 @@ export interface DraftInput {
   messages: Message[];
   voice: string;
   facts: string;
+  // #364: what the platform already knows about this thread's booking
+  // (dates, nights, guests, confirmation code) — see booking-context.ts.
+  // null when the thread isn't linked to a reservation/inquiry.
+  bookingContext: string | null;
 }
 export interface DraftDeps {
   call: typeof callClaudeTool;
 }
 const defaultDeps: DraftDeps = { call: callClaudeTool };
 
-function buildSystemPrompt(voice: string, facts: string): string {
-  return [
+function buildSystemPrompt(voice: string, facts: string, bookingContext: string | null): string {
+  const lines = [
     'Du entwirfst eine Antwort auf eine Gastnachricht für eine Ferienunterkunft, in Michas Stimme.',
     'Halte dich strikt an den folgenden Ton/Stil (Voice):',
     '--- VOICE ---', voice, '--- ENDE VOICE ---',
     'Nutze ausschließlich die folgenden Objektfakten. Erfinde nichts; fehlt ein Fakt, bleib allgemein.',
     '--- OBJEKTWISSEN ---', facts, '--- ENDE OBJEKTWISSEN ---',
+  ];
+  if (bookingContext) {
+    lines.push(
+      '--- BUCHUNGSKONTEXT (liegt der Plattform bereits vor) ---',
+      bookingContext,
+      '--- ENDE BUCHUNGSKONTEXT ---',
+      'Diese Buchungsdaten sind der Plattform bekannt — frage den Gast NIEMALS erneut nach Zeitraum, Nächten oder Personenzahl; beziehe dich stattdessen direkt darauf (z. B. bei Bestätigungen den Zeitraum nennen).'
+    );
+  }
+  lines.push(
     'Regeln: Kein Auto-Versand von Zugangscodes. Antworte in der Sprache des Gastes (Default Deutsch). Kurz und konkret.',
     'Wenn keine Antwort nötig ist (z. B. reine Dankes-/Bestätigungsnachricht ohne Frage oder Anliegen), gib über submit_reply einen leeren String zurück.',
-    'Gib die Antwort über das Tool submit_reply zurück (nur den Nachrichtentext, keine Anrede-Meta).',
-  ].join('\n');
+    'Gib die Antwort über das Tool submit_reply zurück (nur den Nachrichtentext, keine Anrede-Meta).'
+  );
+  return lines.join('\n');
 }
 
 function buildConversation(messages: Message[], guestName: string | null): string {
@@ -53,7 +68,7 @@ export async function generateDraftForThread(
   deps: DraftDeps = defaultDeps,
 ): Promise<string | null> {
   const out = await deps.call({
-    systemPrompt: buildSystemPrompt(input.voice, input.facts),
+    systemPrompt: buildSystemPrompt(input.voice, input.facts, input.bookingContext ?? null),
     userMessage: buildConversation(input.messages, input.thread.guest_name),
     tool: SUBMIT_REPLY_TOOL,
     model: DRAFT_MODEL,

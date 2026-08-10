@@ -13,6 +13,7 @@ import { getPropertiesByProvider } from '../config/properties.js';
 import { getPropertyForThread, propertyForBadge } from '../utils/thread-property.js';
 import { loadVoice, loadPropertyFacts } from '../services/vault-knowledge.js';
 import { generateDraftForThread, DRAFT_MODEL } from '../services/draft-service.js';
+import { buildBookingContext } from '../services/booking-context.js';
 import { sendReply } from '../services/message-sender.js';
 import { resolveOutboundModuleType } from '../services/guesty-channel.js';
 import { getHostexClient, type HostexConversationDetail } from '../services/hostex-client.js';
@@ -262,7 +263,10 @@ router.post('/:threadId/regenerate', async (req, res, next) => {
     const facts = property?.vaultNote ? loadPropertyFacts(property.vaultNote) : null;
     if (!voice || !facts) { res.status(400).send('Kein Vault-Wissen verfügbar (VAULT_PATH/vaultNote prüfen)'); return; }
 
-    const reply = await generateDraftForThread({ thread, messages: getMessagesByThread(thread.id), voice, facts });
+    const reply = await generateDraftForThread({
+      thread, messages: getMessagesByThread(thread.id), voice, facts,
+      bookingContext: buildBookingContext(thread),
+    });
     if (reply) {
       const existing = getActiveDraftByThread(thread.id);
       if (existing) discardDraft(existing.id);
