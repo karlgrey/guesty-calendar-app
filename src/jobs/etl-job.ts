@@ -22,6 +22,7 @@ import { syncVault } from '../services/vault-sync.js';
 import { syncAirbnbProperty } from './airbnb-mail/sync-properties.js';
 import { syncAirbnbMail } from './airbnb-mail/sync-mail.js';
 import { syncAirbnbIcal } from './airbnb-mail/sync-ical.js';
+import { reconcileAirbnbReservations } from './airbnb-mail/reconcile-ical.js';
 
 export interface ETLJobResult {
   success: boolean;
@@ -74,6 +75,16 @@ async function runAirbnbMailETL(property: PropertyConfig, force: boolean): Promi
   const icalResult = propertyResult.success
     ? await syncAirbnbIcal(property)
     : { success: false, daysCount: 0, events: 0, error: 'Skipped: property sync failed' };
+
+  // Step 4: reconcile reservations against the iCal calendar (dates + missing bookings)
+  if (propertyResult.success && icalResult.success) {
+    try {
+      const recon = reconcileAirbnbReservations(property);
+      logger.info({ propertySlug: slug, ...recon }, 'Airbnb iCal reconciliation done');
+    } catch (error) {
+      logger.error({ propertySlug: slug, error }, 'Airbnb iCal reconciliation failed');
+    }
+  }
 
   const success = propertyResult.success && mailResult.success && icalResult.success;
   const duration = Date.now() - startTime;
