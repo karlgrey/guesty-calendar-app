@@ -55,11 +55,11 @@ export class AirbnbImapClient {
     const out: RawMail[] = [];
     const searchRange = sinceUid > 0 ? `${sinceUid + 1}:*` : '1:*';
 
-    for await (const msg of this.client.fetch(searchRange, {
-      uid: true,
-      envelope: true,
-      source: true,
-    })) {
+    for await (const msg of this.client.fetch(
+      searchRange,
+      { uid: true, envelope: true, source: true },
+      { uid: true }
+    )) {
       try {
         const parsed = await simpleParser(msg.source as Buffer);
         out.push({
