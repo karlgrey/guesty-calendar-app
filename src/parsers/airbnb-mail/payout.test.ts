@@ -61,16 +61,23 @@ describe('parsePayoutMail', () => {
     // "...EURUnterkunft" / "8.8.2026Elegance & Design..." — the inline
     // fixture above (with spaces inserted between "pieces") does not catch
     // this; only a real <p>/<span>-adjacency fixture does.
+    // Real element order: guest name, amount, category•dates, listing(id), code —
+    // then immediately the NEXT item's guest name (or "Gesamtbetrag"), all as
+    // adjacent tags with zero whitespace between them.
     const html =
       '<html><body>' +
+      '<p>Details</p>' +
+      '<p>Egbert Witteveen</p>' +
       '<p><span>-31,50&nbsp;€ EUR</span></p>' +
       '<p>Steuereinbehalt bei Einkünften in Italien • 2.8.2026 - 8.8.2026</p>' +
       '<p>Elegance &amp; Design Duplex - Manifattura Tabacchi (1678837365136764301)</p>' +
       '<p>HME9WZFQTY</p>' +
+      '<p>Egbert Witteveen</p>' +
       '<p><span>122,33&nbsp;€ EUR</span></p>' +
       '<p>Unterkunft • 2.8.2026 - 8.8.2026</p>' +
       '<p>Elegance &amp; Design Duplex - Manifattura Tabacchi (1678837365136764301)</p>' +
       '<p>HME9WZFQTY</p>' +
+      '<p>Gesamtbetrag der Auszahlung: 72,48 € EUR</p>' +
       '</body></html>';
     const out = parsePayoutMail({ ...topUpMail, htmlBody: html, textBody: '' });
     expect(out?.items).toHaveLength(2);
@@ -83,6 +90,26 @@ describe('parsePayoutMail', () => {
       reservationCode: 'HME9WZFQTY',
     });
     expect(out?.items[1].category).toBe('Unterkunft');
+  });
+
+  it('regression: code immediately followed by next guest name with zero whitespace (prod backfill, 10.08.2026)', () => {
+    // Exact flattened shape observed in production: ")HME9WZFQTYEgbert" and
+    // "HME9WZFQTYGesamtbetrag" — the code's boundary is only detectable by the
+    // Uppercase-lowercase start of the following word. The first prod backfill
+    // run returned "0 items" for all 12 archived payout mails because of this.
+    const mail: RawMail = {
+      ...topUpMail,
+      textBody:
+        'DetailsEgbert Witteveen-31,50 € EURSteuereinbehalt bei Einkünften in Italien • 2.8.2026 - 8.8.2026' +
+        'Elegance & Design Duplex - Manifattura Tabacchi (1678837365136764301)HME9WZFQTY' +
+        'Egbert Witteveen122,33 € EURUnterkunft • 2.8.2026 - 8.8.2026' +
+        'Elegance & Design Duplex - Manifattura Tabacchi (1678837365136764301)HME9WZFQTY' +
+        'Gesamtbetrag der Auszahlung: 90,83 € EUR',
+    };
+    const out = parsePayoutMail(mail);
+    expect(out?.items).toHaveLength(2);
+    expect(out?.items.map((i) => i.reservationCode)).toEqual(['HME9WZFQTY', 'HME9WZFQTY']);
+    expect(out?.items.map((i) => i.amount)).toEqual([-31.5, 122.33]);
   });
 
   it('parses reservation codes longer than 10 chars (review finding #2)', () => {

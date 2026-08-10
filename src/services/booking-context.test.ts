@@ -105,4 +105,28 @@ describe('buildBookingContext', () => {
     expect(ctx).toContain('02.08.2026');
     expect(ctx).not.toContain('Buchungsanfrage');
   });
+
+  it('falls through to the inquiry row when reservation_id has no reservation (guesty inquiry threads carry both ids)', () => {
+    // Prod case (Ezgi, 10.08.2026): guesty sync sets reservation_id AND
+    // inquiry_id to the same Guesty id, but until confirmation only an
+    // inquiries row exists — the context must come from there, not be null.
+    db.prepare(`
+      INSERT INTO inquiries (inquiry_id, status, check_in, check_out, guest_name, guests_count)
+      VALUES (?,?,?,?,?,?)
+    `).run('6a7989b2c42a6be54ce73e03', 'inquiry', '2027-07-02', '2027-07-03', 'Ezgi', 10);
+
+    const t = thread({
+      reservation_id: '6a7989b2c42a6be54ce73e03',
+      inquiry_id: '6a7989b2c42a6be54ce73e03',
+      reservation_status: 'inquiry',
+    });
+    const ctx = buildBookingContext(t);
+
+    expect(ctx).not.toBeNull();
+    expect(ctx).toContain('Buchungsanfrage');
+    expect(ctx).toContain('02.07.2027');
+    expect(ctx).toContain('03.07.2027');
+    expect(ctx).toContain('10 Personen');
+  });
+
 });
