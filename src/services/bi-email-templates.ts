@@ -93,20 +93,24 @@ function renderKpiTable(kpis: PropertyKpi[], portfolio: BiReportModel['portfolio
     .map(
       (k) => `<tr>
         ${td(h(k.name), 'left')}${td(pct(k.occupancy6wk))}${td(pct(k.occupancy30d))}
-        ${td(eur(k.revenueYtd))}${td(eur(k.revenueMonth))}${td(deltaCell(k.revenueChangePct))}
+        ${td(`${k.estimatedCount > 0 ? '≈ ' : ''}${eur(k.revenueYtd)}`)}${td(eur(k.revenueMonth))}${td(deltaCell(k.revenueChangePct))}
         ${td(String(k.bookingsYtd))}${td(eur(k.adr))}${td(String(k.blockedDays6wk))}
       </tr>`
     )
     .join('');
+  const hasEstimates = kpis.some((k) => k.estimatedCount > 0);
   const total = `<tr style="background:#f7f8f6;font-weight:700">
       ${td('Portfolio', 'left')}${td(pct(portfolio.avgOccupancy6wk))}${td('')}
-      ${td(eur(portfolio.revenueYtd))}${td('')}${td('')}${td(String(portfolio.bookingsYtd))}${td('')}${td(String(portfolio.blockedDays6wk))}
+      ${td(`${hasEstimates ? '≈ ' : ''}${eur(portfolio.revenueYtd)}`)}${td('')}${td('')}${td(String(portfolio.bookingsYtd))}${td('')}${td(String(portfolio.blockedDays6wk))}
     </tr>`;
+  const legend = hasEstimates
+    ? `<p style="font:11px sans-serif;color:#888;margin:6px 0 0">≈ enthält geschätzte Beträge — Airbnb-Auszahlung noch nicht bestätigt.</p>`
+    : '';
   return `<table style="border-collapse:collapse;width:100%">
       <tr><th style="text-align:left;font:600 11px sans-serif;color:#888;padding:6px 8px;border-bottom:2px solid #ddd">Property</th>
         ${th('Bel. 6Wo')}${th('Bel. 30Tg')}${th(`Umsatz ${year}`)}${th('Umsatz Monat')}${th('Δ Vormon.')}${th(`Buch. ${year}`)}${th('ADR')}${th('Block-Tg')}</tr>
       ${body}${total}
-    </table>`;
+    </table>${legend}`;
 }
 
 const CONF_BADGE: Record<RevenueForecast['confidence'], string> = {
@@ -197,9 +201,21 @@ function renderStalenessWarning(sources: StaleAirbnbMailSource[]): string {
     </div>`;
 }
 
+/** Unmatched payouts / bookings missing from the Airbnb calendar — human review needed. */
+function renderDataWarnings(warnings: string[]): string {
+  const items = warnings.map((w) => `<li>${h(w)}</li>`).join('');
+  return `<div style="padding:0 18px 16px">
+      <h3 style="font:700 13px sans-serif;margin:0 0 10px">⚠️ Datenqualität</h3>
+      <div style="margin:0;background:#fdf1ea;border-left:3px solid #c0573f;padding:10px 14px;font:12px sans-serif;color:#7a3d2a;border-radius:0 6px 6px 0">
+        <ul style="margin:0;padding-left:18px">${items}</ul>
+      </div>
+    </div>`;
+}
+
 export function generateBiReportEmail(model: BiReportModel): { html: string; text: string } {
   const year = new Date(model.generatedAt).getFullYear();
   const propertyNames = model.kpis.map((k) => h(k.name)).join(', ');
+  const hasEstimates = model.kpis.some((k) => k.estimatedCount > 0);
   const stat = (value: string, label: string) =>
     `<td style="background:#f7f8f6;padding:12px;text-align:center">
       <div style="font:700 16px sans-serif">${value}</div>
@@ -214,7 +230,7 @@ export function generateBiReportEmail(model: BiReportModel): { html: string; tex
         <div style="font:11px sans-serif;opacity:.7;margin-top:2px">${model.kpis.length} Properties: ${propertyNames}</div>
       </div>
       <table style="border-collapse:separate;border-spacing:1px;width:100%"><tr>
-        ${stat(eur(model.portfolio.revenueYtd), `Umsatz ${year}`)}
+        ${stat(`${hasEstimates ? '≈ ' : ''}${eur(model.portfolio.revenueYtd)}`, `Umsatz ${year}`)}
         ${stat(pct(model.portfolio.avgOccupancy6wk), 'Ø Belegung 6 Wo')}
         ${stat(String(model.portfolio.bookingsYtd), `Buchungen ${year}`)}
         ${stat(eur(model.portfolio.committedRevenueHorizon), 'fest gebucht')}
@@ -223,6 +239,7 @@ export function generateBiReportEmail(model: BiReportModel): { html: string; tex
         „Umsatz ${year}" = gesamtes Kalenderjahr ${year} inkl. bereits gebuchter zukünftiger Aufenthalte (nicht nur bis heute). „fest gebucht" = bestätigter Umsatz der kommenden Monate.
       </div>
       ${model.staleAirbnbMailSources?.length ? renderStalenessWarning(model.staleAirbnbMailSources) : ''}
+      ${model.dataWarnings.length ? renderDataWarnings(model.dataWarnings) : ''}
       <div style="padding:16px 18px">
         <h3 style="font:700 13px sans-serif;margin:0 0 10px">① Übersichtskalender · 6 Wochen</h3>
         ${renderCalendar(model.calendar)}
@@ -261,14 +278,17 @@ export function generateBiReportEmail(model: BiReportModel): { html: string; tex
   const textLines = [
     `AirBnB Portfolio Report · ${model.weekLabel}`,
     `${model.kpis.length} Properties: ${model.kpis.map((k) => k.name).join(', ')}`,
-    `Umsatz ${year} (ganzes Kalenderjahr inkl. gebuchter Zukunft): ${eur(model.portfolio.revenueYtd)} · Ø Belegung 6Wo: ${pct(model.portfolio.avgOccupancy6wk)} · Buchungen ${year}: ${model.portfolio.bookingsYtd} · fest gebucht: ${eur(model.portfolio.committedRevenueHorizon)}`,
+    `Umsatz ${year} (ganzes Kalenderjahr inkl. gebuchter Zukunft): ${hasEstimates ? '≈ ' : ''}${eur(model.portfolio.revenueYtd)} · Ø Belegung 6Wo: ${pct(model.portfolio.avgOccupancy6wk)} · Buchungen ${year}: ${model.portfolio.bookingsYtd} · fest gebucht: ${eur(model.portfolio.committedRevenueHorizon)}`,
     ...(model.staleAirbnbMailSources?.length
       ? ['', '⚠️ Airbnb-Mail-Sync gestört:', ...model.staleAirbnbMailSources.map((s) => `  ${stalenessLine(s)}`)]
+      : []),
+    ...(model.dataWarnings.length
+      ? ['', '⚠️ Datenqualität:', ...model.dataWarnings.map((w) => `  ${w}`)]
       : []),
     '',
     'Kennzahlen:',
     ...model.kpis.map(
-      (k) => `  ${k.name}: Bel ${pct(k.occupancy6wk)}/${pct(k.occupancy30d)}, Umsatz ${year} ${eur(k.revenueYtd)} (Monat ${eur(k.revenueMonth)}, ${k.revenueChangePct >= 0 ? '+' : ''}${k.revenueChangePct}%), Buchungen ${k.bookingsYtd}, ADR ${eur(k.adr)}`
+      (k) => `  ${k.name}: Bel ${pct(k.occupancy6wk)}/${pct(k.occupancy30d)}, Umsatz ${year} ${k.estimatedCount > 0 ? '≈ ' : ''}${eur(k.revenueYtd)} (Monat ${eur(k.revenueMonth)}, ${k.revenueChangePct >= 0 ? '+' : ''}${k.revenueChangePct}%), Buchungen ${k.bookingsYtd}, ADR ${eur(k.adr)}`
     ),
     '',
     'Nächste Anreisen:',

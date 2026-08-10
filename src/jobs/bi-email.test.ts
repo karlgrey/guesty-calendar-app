@@ -22,6 +22,16 @@ const getLastSyncAtMock = vi.fn(() => null);
 vi.mock('../repositories/airbnb-mail-archive-repository.js', () => ({
   getLastSyncAt: (...args: unknown[]) => getLastSyncAtMock(...args),
 }));
+const getEstimatedYearStatsMock = vi.fn(() => ({ count: 0, revenue: 0 }));
+const getUnmatchedPayoutsMock = vi.fn(() => []);
+vi.mock('../repositories/airbnb-payout-repository.js', () => ({
+  getEstimatedYearStats: (...args: unknown[]) => getEstimatedYearStatsMock(...args),
+  getUnmatchedPayouts: (...args: unknown[]) => getUnmatchedPayoutsMock(...args),
+}));
+const findReservationsMissingInIcalMock = vi.fn(() => []);
+vi.mock('./airbnb-mail/reconcile-ical.js', () => ({
+  findReservationsMissingInIcal: (...args: unknown[]) => findReservationsMissingInIcalMock(...args),
+}));
 
 import { buildBiReportModel } from './bi-email.js';
 import type { PropertyConfig } from '../config/properties.js';
@@ -104,5 +114,52 @@ describe('buildBiReportModel — airbnb-mail staleness (#327)', () => {
 
     expect(getLastSyncAtMock).not.toHaveBeenCalled();
     expect(model.staleAirbnbMailSources).toEqual([]);
+  });
+});
+
+describe('buildBiReportModel — payout estimates & data-quality warnings (#361)', () => {
+  const airbnbMailProp = (slug: string, name: string): PropertyConfig => ({
+    ...prop(slug, name),
+    provider: 'airbnb-mail',
+    airbnbListingId: `airbnb-${slug}`,
+  });
+
+  beforeEach(() => {
+    getEstimatedYearStatsMock.mockReset();
+    getEstimatedYearStatsMock.mockReturnValue({ count: 0, revenue: 0 });
+    getUnmatchedPayoutsMock.mockReset();
+    getUnmatchedPayoutsMock.mockReturnValue([]);
+    findReservationsMissingInIcalMock.mockReset();
+    findReservationsMissingInIcalMock.mockReturnValue([]);
+  });
+
+  it('leaves estimatedCount at 0 and skips payout lookups for non-airbnb-mail properties', () => {
+    const model = buildBiReportModel([prop('farmhouse', 'Farmhouse')], new Date('2026-06-02T06:00:00Z'), 6);
+
+    expect(getEstimatedYearStatsMock).not.toHaveBeenCalled();
+    expect(getUnmatchedPayoutsMock).not.toHaveBeenCalled();
+    expect(findReservationsMissingInIcalMock).not.toHaveBeenCalled();
+    expect(model.kpis[0].estimatedCount).toBe(0);
+    expect(model.dataWarnings).toEqual([]);
+  });
+
+  it('carries estimatedCount and collects data-quality warnings for airbnb-mail properties', () => {
+    getEstimatedYearStatsMock.mockReturnValue({ count: 2, revenue: 512.38 });
+    getUnmatchedPayoutsMock.mockReturnValue([
+      { reservation_code: 'HMORPHAN01', payout_date: '2026-05-20', amount: 42.5 },
+    ]);
+    findReservationsMissingInIcalMock.mockReturnValue(['HMGONE00001']);
+
+    const model = buildBiReportModel(
+      [airbnbMailProp('firenze-loft', 'Florence')],
+      new Date('2026-06-02T06:00:00Z'),
+      6
+    );
+
+    expect(model.kpis[0].estimatedCount).toBe(2);
+    expect(model.dataWarnings).toEqual([
+      'Florence: Auszahlung 42.5 € vom 2026-05-20 keiner Buchung zuordenbar (HMORPHAN01)',
+      'Florence: Buchung HMGONE00001 fehlt im Airbnb-Kalender — prüfen (Storno?)',
+    ]);
   });
 });

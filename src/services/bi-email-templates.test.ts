@@ -16,8 +16,9 @@ const model: BiReportModel = {
     { date: '2026-06-03', propertySlug: 'u19', propertyName: 'Uferstrasse 19', guestName: 'Max M.', nights: 4, guests: 2, source: 'direct', isTurnover: false },
   ],
   kpis: [
-    { slug: 'farmhouse', name: 'Farmhouse', occupancy6wk: 74, occupancy30d: 68, revenueYtd: 32400, revenueMonth: 4850, revenueChangePct: 12, bookingsYtd: 41, adr: 168, blockedDays6wk: 3, currency: 'EUR' },
+    { slug: 'farmhouse', name: 'Farmhouse', occupancy6wk: 74, occupancy30d: 68, revenueYtd: 32400, revenueMonth: 4850, revenueChangePct: 12, bookingsYtd: 41, adr: 168, blockedDays6wk: 3, currency: 'EUR', estimatedCount: 0 },
   ],
+  dataWarnings: [],
   portfolioForecast: [
     { monthLabel: 'Jun', committedRevenue: 18000, expectedRevenue: 19500, lowRevenue: 18000, highRevenue: 21000, confidence: 'hoch', method: 'historical', isOpen: false },
     { monthLabel: 'Jul', committedRevenue: 0, expectedRevenue: 0, lowRevenue: 0, highRevenue: 0, confidence: 'niedrig', method: 'pickup', isOpen: true },
@@ -95,5 +96,28 @@ describe('generateBiReportEmail', () => {
     const { html, text } = generateBiReportEmail(staleModel);
     expect(html.toLowerCase()).toContain('nie');
     expect(text.toLowerCase()).toContain('nie');
+  });
+});
+
+describe('generateBiReportEmail — estimate markers & data-quality warnings', () => {
+  it('renders the ≈ prefix and a Datenqualität section when there are estimates/warnings', () => {
+    const withWarnings: BiReportModel = {
+      ...model,
+      kpis: [{ ...model.kpis[0], estimatedCount: 1 }],
+      dataWarnings: ['Urban Luxury Loft - Florence: Buchung HMGONE00001 fehlt im Airbnb-Kalender — prüfen (Storno?)'],
+    };
+    const { html, text } = generateBiReportEmail(withWarnings);
+    expect(html).toContain('≈');
+    expect(html).toContain('Datenqualität');
+    expect(html).toContain('HMGONE00001');
+    expect(text).toContain('Datenqualität');
+    expect(text).toContain('HMGONE00001');
+  });
+
+  it('omits the ≈ prefix and Datenqualität section when nothing is estimated/warned', () => {
+    const { html, text } = generateBiReportEmail(model); // estimatedCount 0 everywhere, no warnings
+    expect(html).not.toContain('≈');
+    expect(html).not.toContain('Datenqualität');
+    expect(text).not.toContain('Datenqualität');
   });
 });
