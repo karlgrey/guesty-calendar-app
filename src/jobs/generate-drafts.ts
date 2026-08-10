@@ -3,6 +3,7 @@ import { getThreadsNeedingDraft, getMessagesByThread, markThreadAiNoReply } from
 import { createDraft } from '../repositories/draft-repository.js';
 import { loadVoice, loadPropertyFacts } from '../services/vault-knowledge.js';
 import { generateDraftForThread, DRAFT_MODEL } from '../services/draft-service.js';
+import { buildBookingContext } from '../services/booking-context.js';
 import type { MessageThread, Message, NewDraft } from '../types/messages.js';
 import type { PropertyConfig } from '../config/properties.js';
 import logger from '../utils/logger.js';
@@ -34,9 +35,12 @@ export interface DraftGenDeps {
   getMessages: (threadId: string) => Message[];
   loadVoice: () => string | null;
   loadFacts: (vaultNote: string) => string | null;
-  generate: (input: { thread: MessageThread; messages: Message[]; voice: string; facts: string }) => Promise<string | null>;
+  generate: (input: { thread: MessageThread; messages: Message[]; voice: string; facts: string; bookingContext: string | null }) => Promise<string | null>;
   create: (d: NewDraft) => void;
   markNoReply: (threadId: string) => void;
+  // #364: what the platform already knows about this thread's booking
+  // (reservation/inquiry link) — see booking-context.ts.
+  buildBookingContext: (thread: MessageThread) => string | null;
 }
 
 const realDeps: DraftGenDeps = {
@@ -47,6 +51,7 @@ const realDeps: DraftGenDeps = {
   generate: (input) => generateDraftForThread(input),
   create: createDraft,
   markNoReply: markThreadAiNoReply,
+  buildBookingContext,
 };
 
 export async function generateDraftsForProperty(
@@ -67,7 +72,8 @@ export async function generateDraftsForProperty(
   let skipped = 0;
   for (const thread of threads) {
     try {
-      const reply = await deps.generate({ thread, messages: deps.getMessages(thread.id), voice, facts });
+      const bookingContext = deps.buildBookingContext(thread);
+      const reply = await deps.generate({ thread, messages: deps.getMessages(thread.id), voice, facts, bookingContext });
       if (reply) {
         deps.create({ id: randomUUID(), thread_id: thread.id, provider: target.source, body: reply, generated_by: 'llm', model: DRAFT_MODEL });
         generated++;

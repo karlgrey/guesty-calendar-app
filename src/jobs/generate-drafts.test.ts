@@ -23,6 +23,7 @@ function deps(over: Partial<DraftGenDeps> = {}): DraftGenDeps {
     generate: vi.fn().mockResolvedValue('REPLY'),
     create: vi.fn(),
     markNoReply: vi.fn(),
+    buildBookingContext: vi.fn().mockReturnValue(null),
     ...over,
   };
 }
@@ -82,6 +83,25 @@ describe('generateDraftsForProperty', () => {
     const res = await generateDraftsForProperty(property, d);
     expect(res.generated).toBe(0);
     expect(res.skipped).toBe(2);
+  });
+
+  it('builds and passes bookingContext through to generate for each thread (#364)', async () => {
+    const threadA = mkThread('hostex:a');
+    const threadB = mkThread('hostex:b');
+    const buildBookingContext = vi.fn((t: MessageThread) => (t.id === 'hostex:a' ? 'CTX-A' : null));
+    const generate = vi.fn().mockResolvedValue('REPLY');
+    const d = deps({
+      getThreads: vi.fn().mockReturnValue([threadA, threadB]),
+      buildBookingContext,
+      generate,
+    });
+
+    await generateDraftsForProperty(property, d);
+
+    expect(buildBookingContext).toHaveBeenCalledWith(threadA);
+    expect(buildBookingContext).toHaveBeenCalledWith(threadB);
+    expect(generate).toHaveBeenCalledWith(expect.objectContaining({ thread: threadA, bookingContext: 'CTX-A' }));
+    expect(generate).toHaveBeenCalledWith(expect.objectContaining({ thread: threadB, bookingContext: null }));
   });
 });
 
