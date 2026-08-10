@@ -181,6 +181,40 @@ export function getReservationById(reservationId: string): Reservation | null {
 }
 
 /**
+ * Not-yet-confirmed booking request (inquiries table). Distinct from
+ * Reservation — no nights_count/confirmation_code, dates are plain
+ * YYYY-MM-DD strings (no separate _localized variant).
+ */
+export interface Inquiry {
+  inquiry_id: string;
+  status: string;
+  check_in: string;
+  check_out: string;
+  guest_name: string | null;
+  guests_count: number | null;
+}
+
+/**
+ * Get a booking inquiry by ID (pre-confirmation — see the `inquiries` table).
+ */
+export function getInquiryById(inquiryId: string): Inquiry | null {
+  const db = getDatabase();
+
+  try {
+    const row = db
+      .prepare('SELECT inquiry_id, status, check_in, check_out, guest_name, guests_count FROM inquiries WHERE inquiry_id = ?')
+      .get(inquiryId) as Inquiry | undefined;
+
+    return row ?? null;
+  } catch (error) {
+    logger.error({ error, inquiryId }, 'Failed to get inquiry');
+    throw new DatabaseError(
+      `Failed to get inquiry: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
+  }
+}
+
+/**
  * Get all upcoming reservations for a listing
  */
 export function getUpcomingReservations(listingId: string): Reservation[] {
