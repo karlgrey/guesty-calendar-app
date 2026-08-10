@@ -274,6 +274,24 @@ describe('reconcileAirbnbReservations', () => {
     const res = reconcileAirbnbReservations(prop, '2026-08-10');
     expect(res.missingInIcal).toEqual(['HMGONE00001']);
   });
+
+  it('skips intervals whose block_ref is an opaque iCal UID, not an HM code (review finding #4)', () => {
+    // ical-parser.ts falls back to the raw iCal UID prefix when a VEVENT's
+    // DESCRIPTION has no "Reservation URL: .../details/HMxxxxx" line (e.g.
+    // an unparseable/format-drifted entry). Such a code must never be
+    // treated as a reservation — no placeholder, no update, and it must not
+    // pollute the "still on the calendar" set used by missingInIcal either.
+    insertListing('L1', 250);
+    insertAvailability('L1', '2026-10-10', '2026-10-15', '1418fb94e984-321bd4662974eb45b01bdff1e85f0927');
+
+    const res = reconcileAirbnbReservations(prop, '2026-08-10');
+
+    expect(res.created).toEqual([]);
+    expect(res.updated).toEqual([]);
+    expect(res.missingInIcal).toEqual([]);
+    const row = db.prepare(`SELECT COUNT(*) c FROM reservations`).get() as { c: number };
+    expect(row.c).toBe(0);
+  });
 });
 
 describe('findReservationsMissingInIcal', () => {

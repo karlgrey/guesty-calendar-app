@@ -22,6 +22,7 @@
  *     (likely cancellations whose mail we never saw) as a data-quality
  *     warning — never auto-deleted, that stays a human decision.
  */
+import { toZonedTime } from 'date-fns-tz';
 import { getDatabase } from '../../db/index.js';
 import { getReservationById, upsertReservation } from '../../repositories/reservation-repository.js';
 import {
@@ -60,6 +61,23 @@ function nightsBetween(start: string, endExclusive: string): number {
     (Date.parse(`${endExclusive}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86_400_000
   );
 }
+
+/** "Today" as YYYY-MM-DD in the property's own timezone, not the server's/UTC's. */
+function todayInPropertyTimezone(timezone: string): string {
+  const zoned = toZonedTime(new Date(), timezone);
+  const yyyy = zoned.getFullYear();
+  const mm = String(zoned.getMonth() + 1).padStart(2, '0');
+  const dd = String(zoned.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+// ical-parser.ts extracts the HM code from DESCRIPTION's "Reservation URL:
+// .../details/HMxxxxx" line, falling back to the raw (opaque) iCal UID
+// prefix when that line is missing (format drift / owner-block events).
+// Such a fallback code can never match a real reservation_id — treat it as
+// "not a reservation" entirely: no placeholder, no update, and it must not
+// occupy the "still on the calendar" set used by missingInIcal either.
+const HM_CODE_RE = /^HM[A-Z0-9]+$/;
 
 /**
  * Groups consecutive booked days sharing the same block_ref into stay
@@ -103,7 +121,20 @@ function getBookedIntervals(listingId: string): BookedInterval[] {
        ORDER BY date`
     )
     .all(listingId) as Array<{ date: string; block_ref: string | null }>;
-  return groupBookedIntervals(rows);
+
+  const intervals = groupBookedIntervals(rows);
+  const valid: BookedInterval[] = [];
+  for (const interval of intervals) {
+    if (!HM_CODE_RE.test(interval.code)) {
+      logger.warn(
+        { listingId, code: interval.code, start: interval.start, endExclusive: interval.endExclusive },
+        'Airbnb iCal reconciliation: skipping interval with non-HM block_ref (opaque UID fallback, unparseable DESCRIPTION)'
+      );
+      continue;
+    }
+    valid.push(interval);
+  }
+  return valid;
 }
 
 /** Scales a reservation's host_payout proportionally to a nights_count change. */
@@ -120,7 +151,7 @@ function scaleReservationPayout(reservationCode: string, oldNights: number, newN
 
 export function reconcileAirbnbReservations(
   property: PropertyConfig,
-  todayStr: string = new Date().toISOString().slice(0, 10)
+  todayStr: string = todayInPropertyTimezone(property.timezone ?? 'UTC')
 ): ReconcileResult {
   const listingId = property.airbnbListingId!;
   const intervals = getBookedIntervals(listingId);
