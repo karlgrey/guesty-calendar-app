@@ -9,6 +9,7 @@ import {
 } from '../../repositories/airbnb-payout-repository.js';
 import { getReservationById } from '../../repositories/reservation-repository.js';
 import type { ParsedPayoutMail } from '../../parsers/airbnb-mail/payout.js';
+import { r2 } from '../../utils/airbnb-payout.js';
 import logger from '../../utils/logger.js';
 
 export interface ApplyPayoutResult {
@@ -16,8 +17,6 @@ export interface ApplyPayoutResult {
   unmatchedCodes: string[];
   dateCorrections: string[];
 }
-
-const r2 = (n: number) => Math.round(n * 100) / 100;
 
 export function applyPayout(parsed: ParsedPayoutMail): ApplyPayoutResult {
   const byCode = new Map<string, { amount: number; listingId: string; stayStart: string; stayEnd: string }>();

@@ -32,7 +32,7 @@ import {
   updateReservationStay,
 } from '../../repositories/airbnb-payout-repository.js';
 import { getListingById } from '../../repositories/listings-repository.js';
-import { computeEffectivePayout } from '../../utils/airbnb-payout.js';
+import { computeEffectivePayout, r2 } from '../../utils/airbnb-payout.js';
 import logger from '../../utils/logger.js';
 import type { PropertyConfig } from '../../config/properties.js';
 
@@ -47,8 +47,6 @@ interface BookedInterval {
   start: string; // YYYY-MM-DD, inclusive
   endExclusive: string; // YYYY-MM-DD, exclusive (= check-out date)
 }
-
-const r2 = (n: number) => Math.round(n * 100) / 100;
 
 function addOneDay(dateStr: string): string {
   const d = new Date(`${dateStr}T00:00:00Z`);

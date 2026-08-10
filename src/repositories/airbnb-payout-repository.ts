@@ -9,6 +9,7 @@
  * written here so Guesty/Hostex code paths stay untouched.
  */
 import { getDatabase } from '../db/index.js';
+import { r2 } from '../utils/airbnb-payout.js';
 
 export interface PayoutItemRow {
   message_id: string;
@@ -20,8 +21,6 @@ export interface PayoutItemRow {
   stay_end: string | null;    // YYYY-MM-DD (check-out date as printed)
   total_mail_amount: number;
 }
-
-const r2 = (n: number) => Math.round(n * 100) / 100;
 
 export function insertPayoutItems(items: PayoutItemRow[]): number {
   const db = getDatabase();

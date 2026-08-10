@@ -203,7 +203,11 @@ describe('reconcileAirbnbReservations', () => {
     expect(row.check_in_localized).toBe('2026-12-27');
     expect(row.check_out_localized).toBe('2027-01-03');
     expect(row.nights_count).toBe(7);
-    expect(row.host_payout).toBeCloseTo(896.67, 2);
+    // 512.38/4*7 = 896.665 exactly at the rounding boundary — banker's
+    // rounding (round-half-to-even, review finding #9's shared r2 from
+    // utils/airbnb-payout.ts) gives 896.66 (6 is even), not 896.67 as plain
+    // Math.round would.
+    expect(row.host_payout).toBeCloseTo(896.66, 2);
     expect(row.payout_status).toBe('estimated');
   });
 
