@@ -112,7 +112,15 @@ beforeEach(() => {
       internal_guest_id TEXT,
       guest_company TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      payout_status TEXT NOT NULL DEFAULT 'confirmed'
+    );
+    CREATE TABLE airbnb_payouts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, message_id TEXT NOT NULL, listing_id TEXT NOT NULL,
+      reservation_code TEXT, payout_date TEXT NOT NULL, amount REAL NOT NULL,
+      stay_start TEXT, stay_end TEXT, total_mail_amount REAL NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(message_id, reservation_code)
     );
   `);
   setDatabase(db);
@@ -224,5 +232,51 @@ describe('syncAirbnbMail — staleness signal (#327)', () => {
 
     expect(result.success).toBe(false);
     expect(setLastUidMock).not.toHaveBeenCalled();
+  });
+});
+
+function payoutMail(uid: number, totalEur: string, bodyText: string) {
+  return {
+    uid,
+    messageId: `payout-${uid}@airbnb.com`,
+    subject: `Wir haben eine Auszahlung in Höhe von ${totalEur} € EUR gesendet`,
+    fromAddress: 'express@airbnb.com',
+    receivedAt: '2026-08-03T13:52:27.000Z',
+    htmlBody: '',
+    textBody: bodyText,
+  };
+}
+
+describe('syncAirbnbMail — payout_status on ingest (review finding #1)', () => {
+  it('marks a newly confirmed booking as payout_status=estimated (no payout mail seen yet)', async () => {
+    // Migration 022's DEFAULT 'confirmed' only covers pre-existing rows —
+    // upsertReservation doesn't know the column, so every NEW confirmed
+    // booking must be explicitly flipped to 'estimated' here.
+    fetchNewMailsMock.mockResolvedValue([confirmedMail(20, 'HMNEWCODE1', 'Nina Neu', '5', 'August')]);
+
+    const result = await syncAirbnbMail(property);
+
+    expect(result.confirmedCount).toBe(1);
+    const row = db
+      .prepare(`SELECT payout_status FROM reservations WHERE confirmation_code = 'HMNEWCODE1'`)
+      .get() as { payout_status: string };
+    expect(row.payout_status).toBe('estimated');
+  });
+});
+
+describe('syncAirbnbMail — payout mail with 0 line items (review finding #3)', () => {
+  it('marks the mail as a parse error, not ok, when the payout parser finds 0 line items', async () => {
+    fetchNewMailsMock.mockResolvedValue([payoutMail(21, '72,48', 'no parseable line items in this body at all')]);
+
+    const result = await syncAirbnbMail(property);
+
+    expect(result.parsedError).toBeGreaterThanOrEqual(1);
+    expect(updateParseStatusMock).toHaveBeenCalledWith(
+      'payout-21@airbnb.com',
+      'error',
+      expect.stringContaining('0 line items'),
+      null,
+      'payout'
+    );
   });
 });

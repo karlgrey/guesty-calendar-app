@@ -21,6 +21,11 @@ import { parseBookingInquiry } from '../../parsers/airbnb-mail/booking-inquiry.j
 import { parseCancellation } from '../../parsers/airbnb-mail/cancellation.js';
 import { parsePayoutMail } from '../../parsers/airbnb-mail/payout.js';
 import { applyPayout } from '../../services/airbnb-mail/payout-applier.js';
+import {
+  getPayoutSumByCode,
+  setReservationPayoutConfirmed,
+  setPayoutStatus,
+} from '../../repositories/airbnb-payout-repository.js';
 import { mapAirbnbReservation } from '../../mappers/airbnb-mail/reservation-mapper.js';
 import { upsertReservation } from '../../repositories/reservation-repository.js';
 import { getDatabase } from '../../db/index.js';
@@ -153,6 +158,14 @@ export async function syncAirbnbMail(property: PropertyConfig): Promise<SyncMail
           if (!payout) {
             updateParseStatus(raw.messageId, 'error', 'Payout parser returned null', null, type);
             parsedError++;
+          } else if (payout.items.length === 0) {
+            // Subject matched but the body yielded no line items — likely an
+            // HTML format drift in the item regex, not a "nothing to apply"
+            // mail. Flag it as an error so it surfaces for a look, instead of
+            // silently swallowing a payout that was never actually applied.
+            updateParseStatus(raw.messageId, 'error', 'Payout mail parsed but 0 line items — format drift?', null, type);
+            parsedError++;
+            logger.warn({ slug, messageId: raw.messageId }, 'Airbnb mail: payout mail parsed but 0 line items — format drift?');
           } else {
             const applied = applyPayout(payout);
             updateParseStatus(
@@ -194,6 +207,17 @@ export async function syncAirbnbMail(property: PropertyConfig): Promise<SyncMail
         if (asReservation) {
           upsertReservation(asReservation);
           confirmedCount++;
+          // Migration 022's column DEFAULT 'confirmed' only covers rows that
+          // existed at migration time — upsertReservation() doesn't know the
+          // payout_status column (kept out of the Reservation TS type on
+          // purpose), so every NEW confirmed booking must be explicitly set
+          // here, same as reconcile-ical.ts / payout-applier.ts do.
+          const sum = getPayoutSumByCode(parsed.reservationCode);
+          if (sum.count > 0) {
+            setReservationPayoutConfirmed(parsed.reservationCode, sum.sum);
+          } else {
+            setPayoutStatus(parsed.reservationCode, 'estimated');
+          }
         } else if (type === 'cancellation') {
           // Cancellation mail → remove any existing reservation row
           deleteReservation.run(parsed.reservationCode);
