@@ -14,6 +14,17 @@ describe('detectMailType (calibrated against live data)', () => {
     expect(detectMailType('Deine Buchungsänderung wurde bestätigt')).toBe('modification');
   });
 
+  it('classifies payout mails', () => {
+    expect(detectMailType('Wir haben eine Auszahlung in Höhe von 425,40 € EUR gesendet')).toBe('payout');
+    expect(detectMailType('Wir haben eine Auszahlung in Höhe von 1.068,00 € EUR gesendet')).toBe('payout');
+  });
+
+  it('classifies real alteration subjects as modification', () => {
+    expect(detectMailType('Buchung aktualisiert')).toBe('modification');
+    expect(detectMailType('Puneet möchte die Buchung ändern')).toBe('modification');
+    expect(detectMailType('Deine Buchungsänderung wurde bestätigt')).toBe('modification');
+  });
+
   it('detects inquiries', () => {
     expect(detectMailType('Anfrage für „Art-Filled Duplex Loft · Florence Design District" für den 23.–25. Mai 2026')).toBe('inquiry');
   });
@@ -32,7 +43,6 @@ describe('detectMailType (calibrated against live data)', () => {
     expect(detectMailType('RE: Buchung für „Urban Luxury Loft - Florence Interior Design Hub", 17.–22. Mai')).toBe('unknown');
     expect(detectMailType('Buchungserinnerung: Angela kommt bald an')).toBe('unknown');
     expect(detectMailType('Erinnerung: Du kannst den Aufenthalt von M.C im Voraus bestätigen')).toBe('unknown');
-    expect(detectMailType('Wir haben eine Auszahlung in Höhe von 636,52 € EUR gesendet')).toBe('unknown');
     expect(detectMailType('Account-Aktivität: Name geändert')).toBe('unknown');
     expect(detectMailType('Nutzungsbedingungen für europäische Nutzer')).toBe('unknown');
   });

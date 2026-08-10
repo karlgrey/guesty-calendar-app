@@ -8,8 +8,8 @@
  * Patterns calibrated against live German Airbnb host mail (May 2026).
  */
 
-import * as cheerio from 'cheerio';
 import type { RawMail, ParsedAirbnbMail } from '../../types/airbnb-mail.js';
+import { getBodyText } from './body-text.js';
 
 // Subject: "Buchung bestätigt – {Guest Full Name} kommt am {D}. {Month} an"
 const SUBJECT_RE = /^Buchung\s+best[äa]tigt\s*[–-]\s+(.+?)\s+kommt\s+am\s+(\d{1,2})\.\s*([A-Za-zäöüÄÖÜ.]+?)\s+an/i;
@@ -71,16 +71,6 @@ function buildDate(day: number, monthNum: string, year: number): string {
 
 function parseAmount(s: string): number {
   return parseFloat(s.replace(/\./g, '').replace(',', '.'));
-}
-
-function getBodyText(raw: RawMail): string {
-  if (raw.htmlBody && raw.htmlBody.length > 0) {
-    const $ = cheerio.load(raw.htmlBody);
-    $('style,script').remove();
-    return $('body').text().replace(/\s+/g, ' ').trim();
-  }
-  if (raw.textBody) return raw.textBody.replace(/\s+/g, ' ').trim();
-  return '';
 }
 
 export function parseConfirmedBooking(raw: RawMail): ParsedAirbnbMail | null {
