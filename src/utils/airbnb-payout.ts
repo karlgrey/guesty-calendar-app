@@ -20,6 +20,15 @@
  *         Auszahlung in Höhe von 636,52 € EUR gesendet" mail).
  */
 
+/**
+ * Parses a German-formatted amount string ("1.310,00" → 1310, "-31,50" → -31.5)
+ * — thousands separator ".", decimal separator ",". Shared by every airbnb-mail
+ * parser that reads money off a mail body (confirmed-booking.ts, payout.ts).
+ */
+export function parseGermanAmount(s: string): number {
+  return parseFloat(s.replace(/\./g, '').replace(',', '.'));
+}
+
 export interface PayoutInputs {
   hostPayoutBrutto: number | undefined;
   cleaningFee: number | undefined;

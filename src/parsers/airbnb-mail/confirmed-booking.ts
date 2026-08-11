@@ -10,6 +10,7 @@
 
 import type { RawMail, ParsedAirbnbMail } from '../../types/airbnb-mail.js';
 import { getBodyText } from './body-text.js';
+import { parseGermanAmount } from '../../utils/airbnb-payout.js';
 
 // Subject: "Buchung bestätigt – {Guest Full Name} kommt am {D}. {Month} an"
 const SUBJECT_RE = /^Buchung\s+best[äa]tigt\s*[–-]\s+(.+?)\s+kommt\s+am\s+(\d{1,2})\.\s*([A-Za-zäöüÄÖÜ.]+?)\s+an/i;
@@ -69,10 +70,6 @@ function buildDate(day: number, monthNum: string, year: number): string {
   return `${year}-${monthNum}-${String(day).padStart(2, '0')}`;
 }
 
-function parseAmount(s: string): number {
-  return parseFloat(s.replace(/\./g, '').replace(',', '.'));
-}
-
 export function parseConfirmedBooking(raw: RawMail): ParsedAirbnbMail | null {
   const subjectMatch = raw.subject.match(SUBJECT_RE);
   if (!subjectMatch) return null;
@@ -113,11 +110,11 @@ export function parseConfirmedBooking(raw: RawMail): ParsedAirbnbMail | null {
     checkIn: buildDate(inDay, inMonth, inYear),
     checkOut: buildDate(outDay, outMonth, outYear),
     numberOfGuests: guestsMatch ? parseInt(guestsMatch[1], 10) : undefined,
-    cleaningFee: cleaningMatch ? parseAmount(cleaningMatch[1]) : undefined,
-    serviceFee: serviceMatch ? parseAmount(serviceMatch[1]) : undefined,
-    occupancyTax: occupancyTaxMatch ? parseAmount(occupancyTaxMatch[1]) : undefined,
-    hostPayout: hostPayoutMatch ? parseAmount(hostPayoutMatch[1]) : undefined,
-    totalPrice: totalMatch ? parseAmount(totalMatch[1]) : undefined,
+    cleaningFee: cleaningMatch ? parseGermanAmount(cleaningMatch[1]) : undefined,
+    serviceFee: serviceMatch ? parseGermanAmount(serviceMatch[1]) : undefined,
+    occupancyTax: occupancyTaxMatch ? parseGermanAmount(occupancyTaxMatch[1]) : undefined,
+    hostPayout: hostPayoutMatch ? parseGermanAmount(hostPayoutMatch[1]) : undefined,
+    totalPrice: totalMatch ? parseGermanAmount(totalMatch[1]) : undefined,
     receivedAt: raw.receivedAt,
     messageId: raw.messageId,
   };

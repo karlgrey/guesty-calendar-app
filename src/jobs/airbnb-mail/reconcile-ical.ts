@@ -33,6 +33,7 @@ import {
 } from '../../repositories/airbnb-payout-repository.js';
 import { getListingById } from '../../repositories/listings-repository.js';
 import { computeEffectivePayout, r2 } from '../../utils/airbnb-payout.js';
+import { addOneDay, nightsBetween } from '../../utils/date.js';
 import logger from '../../utils/logger.js';
 import type { PropertyConfig } from '../../config/properties.js';
 
@@ -46,18 +47,6 @@ interface BookedInterval {
   code: string;
   start: string; // YYYY-MM-DD, inclusive
   endExclusive: string; // YYYY-MM-DD, exclusive (= check-out date)
-}
-
-function addOneDay(dateStr: string): string {
-  const d = new Date(`${dateStr}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + 1);
-  return d.toISOString().split('T')[0];
-}
-
-function nightsBetween(start: string, endExclusive: string): number {
-  return Math.round(
-    (Date.parse(`${endExclusive}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86_400_000
-  );
 }
 
 /** "Today" as YYYY-MM-DD in the property's own timezone, not the server's/UTC's. */

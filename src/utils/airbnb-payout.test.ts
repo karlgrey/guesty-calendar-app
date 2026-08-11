@@ -1,5 +1,19 @@
 import { describe, it, expect } from 'vitest';
-import { computeEffectivePayout } from './airbnb-payout.js';
+import { computeEffectivePayout, parseGermanAmount } from './airbnb-payout.js';
+
+describe('parseGermanAmount', () => {
+  it('parses a thousands-separated amount with comma decimal', () => {
+    expect(parseGermanAmount('1.310,00')).toBe(1310);
+  });
+
+  it('parses a plain amount without thousands separator', () => {
+    expect(parseGermanAmount('636,52')).toBe(636.52);
+  });
+
+  it('parses a negative amount (withholding line item)', () => {
+    expect(parseGermanAmount('-31,50')).toBe(-31.5);
+  });
+});
 
 describe('computeEffectivePayout', () => {
   it('Angela: matches the actual Airbnb payout of 636,52 €', () => {

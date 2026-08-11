@@ -8,6 +8,7 @@
  * estimate. Calibrated against live Firenze payout mail (Aug 2026).
  */
 import { getBodyText } from './body-text.js';
+import { parseGermanAmount } from '../../utils/airbnb-payout.js';
 import type { RawMail } from '../../types/airbnb-mail.js';
 
 export interface ParsedPayoutItem {
@@ -49,10 +50,6 @@ const SUBJECT_TOTAL_RE = /^Wir haben eine Auszahlung in H[öo]he von\s*([\d.,]+)
 // 10.08.2026: all 12 archived payout mails parsed to 0 items).
 const ITEM_RE =
   /(-?[\d.,]+)\s*€\s*EUR\s*([^€]+?)\s*•\s*(\d{1,2})\.(\d{1,2})\.(\d{4})\s*-\s*(\d{1,2})\.(\d{1,2})\.(\d{4})\s*[^()]*\((\d{10,25})\)\s*(HM[A-Z0-9]{8,})(?=$|\s|[A-ZÄÖÜ][a-zäöü])/g;
-
-function parseGermanAmount(s: string): number {
-  return parseFloat(s.replace(/\./g, '').replace(',', '.'));
-}
 
 const iso = (y: string, m: string, d: string) => `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
 

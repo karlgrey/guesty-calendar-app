@@ -4,23 +4,12 @@
  */
 import type { calendar_v3 } from 'googleapis';
 import { toGoogleEventId } from './google-event-id.js';
+import { addOneDay, nightsBetween } from '../utils/date.js';
 
 export interface BlockSpan {
   startDate: string;     // YYYY-MM-DD, inclusive
   endExclusive: string;  // YYYY-MM-DD, exclusive (Google all-day end)
   blockType: string | null;
-}
-
-function addOneDay(dateStr: string): string {
-  const [y, m, d] = dateStr.split('-').map(Number);
-  const dt = new Date(Date.UTC(y, m - 1, d + 1));
-  return dt.toISOString().split('T')[0];
-}
-
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-
-function nightsBetween(startDate: string, endExclusive: string): number {
-  return Math.round((new Date(`${endExclusive}T00:00:00Z`).getTime() - new Date(`${startDate}T00:00:00Z`).getTime()) / MS_PER_DAY);
 }
 
 /** German DD.MM. for a YYYY-MM-DD date. */
