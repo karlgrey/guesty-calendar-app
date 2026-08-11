@@ -321,6 +321,12 @@ Doku `read_only`) — bleibt beim Copy-Paste-Flow. Spec:
   `resolveDraftSource()` 1:1 (nur `provider: guesty|hostex`) — Florenz/Manifattura
   läuft auf `provider: airbnb-mail` ohne Rückkanal und fällt damit automatisch raus
   (Design-Entscheidung Micha 11.08.2026), kein eigenes Opt-out-Feld nötig.
+  **Airbnb-only** (Nachbesserung 11.08.2026, Bugfix): `getRecentCheckoutIdsNeedingReview`
+  filtert zusätzlich `source LIKE '%airbnb%'` (Guesty `reservation.source` bzw. Hostex
+  `channel_type`, case-insensitiv, gleiche Substring-Konvention wie in
+  `document-service.ts`/`pdf-generator.ts`) — Direktbuchungen (`source: 'manual'`) und
+  andere Kanäle (Booking.com, Landfolk, VRBO) bekommen keinen Entwurf, dafür gibt es
+  keine Airbnb-Bewertung (Bug-Fall: Direktbuchung „S. Fischer Verlag" am Farmhouse).
 - **Thread-Zuordnung:** Guesty-Threads tragen `reservation_id`
   (`getThreadsByReservationId`); Hostex-Conversations NIE (API-Limitierung, siehe
   Guest-Reply-System oben) — Fallback ist ein Guest-Name-Match innerhalb des
@@ -338,16 +344,29 @@ Doku `read_only`) — bleibt beim Copy-Paste-Flow. Spec:
   Vault, keine Objektfakten, keine Textbank) — schreibt 2–4 Sätze frei aus
   Gastname/Zeitraum/Objekt/Thread-Verlauf, spiegelt die Sprache des Gastes,
   kein Markdown, erfindet nichts über den Zustand der Unterkunft nach Abreise.
-- **Status-Flow** (`review_drafts.status`): `pending` (Entwurf da) →
-  `done`/`discarded` (Freigabe/Verwerfen); `needs_review` = Problemfall ODER
-  LLM-Fehlschlag, `body` bleibt NULL, `flag_reason` erklärt warum.
+  **Problemfälle bekommen seit 11.08.2026 trotzdem einen Entwurf**
+  (Nachbesserung Micha): `generateReviewForStay({ …, flagged: true })` setzt
+  eine HARTE Prompt-Regel (Vorrang vor allen anderen Regeln) — Schäden,
+  Beschwerden, Streit, Vorfälle dürfen im Text NICHT erwähnt/angedeutet
+  werden, nur neutral-freundlich über die unproblematischen Aspekte
+  schreiben (bei fast nichts Unproblematischem: kurz und neutral bleiben).
+- **Status-Flow** (`review_drafts.status`): `pending` (Entwurf da, ggf. MIT
+  `flag_reason` bei einem gedrafteten Problemfall) → `done`/`discarded`
+  (Freigabe/Verwerfen); `needs_review` bleibt die Reserve für „LLM lieferte
+  keinen Text" (egal ob Problemfall oder nicht) — `body` bleibt NULL,
+  `flag_reason` erklärt warum. D. h. `flag_reason` ist NICHT mehr an
+  `needs_review` gebunden: `pending` + `flag_reason` gesetzt = Problemfall
+  MIT Entwurf, der im UI als Warnhinweis auffallen muss (siehe Admin-UI).
 - **Admin-UI** (`src/routes/reviews.ts`, `/admin/reviews`, Nav-Button "⭐
   Bewertungen" in `/admin`): offene Entwürfe (`pending`+`needs_review`), pro
   Eintrag Verfallsdatum = Checkout + 14 Tage (nur Anzeige/Badge "Frist
   abgelaufen" — kein Auto-Discard). Aktionen: Erledigt (kopiert/gepostet, Text
   editierbar) · Verwerfen · Neu generieren (reklassifiziert + generiert frisch,
   ruft dieselben Bausteine direkt auf wie der Job, nicht den Batch-Wrapper —
-  Muster wie `/admin/messages`' Regenerate).
+  Muster wie `/admin/messages`' Regenerate). Ein `pending`-Entwurf mit
+  gesetztem `flag_reason` (Problemfall) bekommt in Liste UND Detail einen
+  eigenen roten „Problemfall — prüfen"-Badge/Warnblock, deutlich abgesetzt
+  vom normalen amberfarbenen „KI-Entwurf bereit" und vom `needs_review`-Badge.
 - Läuft NICHT über den manuellen "Jetzt syncen"-Button auf `/admin/messages`
   (nur über den periodischen/täglichen ETL-Zyklus) — bewusste Abgrenzung, damit
   der Messaging-Sync-Button nicht überraschend auch Bewertungen anstößt.

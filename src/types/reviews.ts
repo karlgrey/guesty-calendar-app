@@ -16,8 +16,13 @@ export interface ReviewDraft {
   guest_name: string | null;
   check_out: string; // YYYY-MM-DD (localized)
   status: ReviewDraftStatus;
-  body: string | null; // NULL when status='needs_review'
-  flag_reason: string | null; // set when status='needs_review'
+  body: string | null; // NULL when status='needs_review' (LLM produced no text)
+  // Set when status='needs_review' (why nothing was produced), OR when
+  // status='pending' AND the stay was classified 'flagged' — a drafted
+  // review for a problem case (#377-Nachbesserung, Micha 11.08.2026): the
+  // review text itself stays neutral (hard prompt rule), flag_reason is how
+  // the admin UI still surfaces the warning. NULL = normal, unflagged draft.
+  flag_reason: string | null;
   generated_by: 'manual' | 'llm';
   model: string | null;
   created_at: string;

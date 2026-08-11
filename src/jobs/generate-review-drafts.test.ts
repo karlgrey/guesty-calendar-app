@@ -112,22 +112,45 @@ describe('generateReviewDraftsForProperty', () => {
     expect(d.generate).toHaveBeenCalledTimes(1);
   });
 
-  it('creates a needs_review draft (no body) when the classifier flags the stay — and skips generation', async () => {
+  it('still drafts a review for a flagged (problem-case) stay — pending status, flag_reason set, prompt marked flagged', async () => {
     const d = deps({
       getThreadsByGuestName: vi.fn().mockReturnValue([mkThread('hostex:t1')]),
       getMessages: vi.fn().mockReturnValue([mkMessage('hostex:t1', 'inbound', 'Die Heizung ging nicht!')]),
       classify: vi.fn().mockResolvedValue({ classification: 'flagged', reasoning: 'Beschwerde über Heizung.' }),
+      generate: vi.fn().mockResolvedValue('Ein unkomplizierter, kurzer Aufenthalt.'),
     });
     const res = await generateReviewDraftsForProperty(hostexProperty, d);
-    expect(res).toEqual({ generated: 0, flagged: 1, skipped: 0 });
-    expect(d.generate).not.toHaveBeenCalled();
+    expect(res).toEqual({ generated: 1, flagged: 0, skipped: 0 });
+    expect(d.generate).toHaveBeenCalledWith(expect.objectContaining({ flagged: true }));
     const created = (d.create as any).mock.calls[0][0] as NewReviewDraft;
-    expect(created.status).toBe('needs_review');
-    expect(created.body).toBeNull();
+    expect(created.status).toBe('pending');
+    expect(created.body).toBe('Ein unkomplizierter, kurzer Aufenthalt.');
     expect(created.flag_reason).toBe('Beschwerde über Heizung.');
   });
 
-  it('creates a needs_review draft when the LLM fails to produce review text', async () => {
+  it('falls back to needs_review (no body) when the LLM fails to produce text for a flagged stay', async () => {
+    const d = deps({
+      getThreadsByGuestName: vi.fn().mockReturnValue([mkThread('hostex:t1')]),
+      getMessages: vi.fn().mockReturnValue([mkMessage('hostex:t1', 'inbound', 'Die Heizung ging nicht!')]),
+      classify: vi.fn().mockResolvedValue({ classification: 'flagged', reasoning: 'Beschwerde über Heizung.' }),
+      generate: vi.fn().mockResolvedValue(null),
+    });
+    const res = await generateReviewDraftsForProperty(hostexProperty, d);
+    expect(res).toEqual({ generated: 0, flagged: 1, skipped: 0 });
+    const created = (d.create as any).mock.calls[0][0] as NewReviewDraft;
+    expect(created.status).toBe('needs_review');
+    expect(created.body).toBeNull();
+    // needs_review keeps the classifier's reasoning — still the most useful signal for manual review.
+    expect(created.flag_reason).toBe('Beschwerde über Heizung.');
+  });
+
+  it('passes flagged=false to generate for an ok-classified stay', async () => {
+    const d = deps();
+    await generateReviewDraftsForProperty(hostexProperty, d);
+    expect(d.generate).toHaveBeenCalledWith(expect.objectContaining({ flagged: false }));
+  });
+
+  it('creates a needs_review draft when the LLM fails to produce review text for an ok stay', async () => {
     const d = deps({ generate: vi.fn().mockResolvedValue(null) });
     const res = await generateReviewDraftsForProperty(hostexProperty, d);
     expect(res).toEqual({ generated: 0, flagged: 1, skipped: 0 });

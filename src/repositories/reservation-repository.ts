@@ -506,6 +506,19 @@ export function deleteStaleReservationsInRange(
  * we look (e.g. '-13 days') — checkouts older than that are past/near the
  * Airbnb review deadline and not worth drafting for. Only confirmed/reserved
  * bookings count (mirrors getReservationsByPeriod's active-status filter).
+ *
+ * **Airbnb-only** (Micha, 11.08.2026 — bug: a direct/manual Farmhouse booking
+ * got a review draft even though there is no Airbnb review to write for it).
+ * `source` is the raw Guesty `reservation.source` / Hostex `channel_type`
+ * string; inventory against the live DB on 2026-08-11 (properties reaching
+ * this query are guesty+hostex only — airbnb-mail properties are already
+ * excluded upstream in resolveReviewSource):
+ *   Guesty:  airbnb2 (Airbnb), manual (direct), Booking.com, Landfolk, vrboLite
+ *   Hostex:  airbnb (Hostex's channel_type for all its Airbnb-only listings)
+ * `LIKE '%airbnb%'` (SQLite LIKE is ASCII case-insensitive) catches both
+ * 'airbnb' and 'airbnb2' — same substring-match convention already used for
+ * Airbnb detection in document-service.ts/pdf-generator.ts. NULL source never
+ * matches, so unset/unknown sources are excluded conservatively.
  */
 export function getRecentCheckoutIdsNeedingReview(
   listingId: string,
@@ -520,6 +533,7 @@ export function getRecentCheckoutIdsNeedingReview(
          AND status IN ('confirmed','reserved')
          AND date(check_out) <= date('now')
          AND date(check_out) >= date('now', ?)
+         AND source LIKE '%airbnb%'
          AND NOT EXISTS (SELECT 1 FROM review_drafts d WHERE d.reservation_id = reservations.reservation_id)
        ORDER BY check_out DESC
        LIMIT ?`,

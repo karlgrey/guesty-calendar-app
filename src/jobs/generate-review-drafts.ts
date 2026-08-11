@@ -129,12 +129,16 @@ export async function generateReviewDraftsForProperty(
         });
       }
 
-      if (classification.classification === 'flagged') {
-        deps.create({ ...base, status: 'needs_review', body: null, flag_reason: classification.reasoning });
-        flagged++;
-        continue;
-      }
+      const isFlagged = classification.classification === 'flagged';
 
+      // Problem cases (Micha, 11.08.2026) also get a drafted review now — with
+      // the hard "don't mention the problem" rule baked into the prompt (see
+      // review-draft-service.ts's buildSystemPrompt). The flag itself stays
+      // visible to Micha via flag_reason, never in the review text. status
+      // stays 'pending' (not 'needs_review') so the existing compose/approve
+      // flow just works; needs_review remains the reserve for "LLM produced
+      // nothing" (flagged or not) — see routes/reviews.ts for how the admin
+      // UI tells a flagged-but-drafted 'pending' apart from a normal one.
       const review = await deps.generate({
         guestName: reservation.guest_name,
         propertyName: property.name,
@@ -143,13 +147,25 @@ export async function generateReviewDraftsForProperty(
         nights: reservation.nights_count ?? null,
         voice,
         threadHighlights: buildThreadHighlights(messages),
+        flagged: isFlagged,
       });
 
       if (review) {
-        deps.create({ ...base, status: 'pending', body: review, flag_reason: null, model: REVIEW_MODEL });
+        deps.create({
+          ...base,
+          status: 'pending',
+          body: review,
+          flag_reason: isFlagged ? classification.reasoning : null,
+          model: REVIEW_MODEL,
+        });
         generated++;
       } else {
-        deps.create({ ...base, status: 'needs_review', body: null, flag_reason: 'LLM konnte keine Bewertung erzeugen.' });
+        deps.create({
+          ...base,
+          status: 'needs_review',
+          body: null,
+          flag_reason: isFlagged ? classification.reasoning : 'LLM konnte keine Bewertung erzeugen.',
+        });
         flagged++;
       }
     } catch (err) {

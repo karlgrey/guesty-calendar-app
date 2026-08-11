@@ -57,6 +57,22 @@ describe('generateReviewForStay', () => {
     expect(call.mock.calls[0][0].userMessage).toContain('Name unbekannt');
   });
 
+  it('adds a hard problem-case rule to the prompt when flagged=true, and omits it otherwise', async () => {
+    const call = vi.fn().mockResolvedValue({ review: 'x' });
+    await generateReviewForStay(baseInput({ flagged: true }), { call });
+    const flaggedPrompt = call.mock.calls[0][0].systemPrompt;
+    expect(flaggedPrompt).toMatch(/HARTE REGEL/);
+    expect(flaggedPrompt).toMatch(/Problemfall/);
+
+    const call2 = vi.fn().mockResolvedValue({ review: 'x' });
+    await generateReviewForStay(baseInput({ flagged: false }), { call: call2 });
+    expect(call2.mock.calls[0][0].systemPrompt).not.toMatch(/HARTE REGEL/);
+
+    const call3 = vi.fn().mockResolvedValue({ review: 'x' });
+    await generateReviewForStay(baseInput(), { call: call3 }); // flagged omitted -> defaults to false
+    expect(call3.mock.calls[0][0].systemPrompt).not.toMatch(/HARTE REGEL/);
+  });
+
   it('returns null on an empty/malformed reply', async () => {
     const call = vi.fn().mockResolvedValue({ review: '   ' });
     expect(await generateReviewForStay(baseInput(), { call })).toBeNull();

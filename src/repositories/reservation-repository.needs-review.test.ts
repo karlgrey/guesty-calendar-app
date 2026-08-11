@@ -10,7 +10,7 @@ beforeEach(() => {
   db.exec(`
     CREATE TABLE reservations (
       id INTEGER PRIMARY KEY, reservation_id TEXT, listing_id TEXT,
-      check_in TEXT, check_out TEXT, status TEXT
+      check_in TEXT, check_out TEXT, status TEXT, source TEXT
     );
     CREATE TABLE review_drafts (
       id TEXT PRIMARY KEY, reservation_id TEXT NOT NULL
@@ -20,9 +20,9 @@ beforeEach(() => {
 });
 afterEach(() => { resetDatabase(); db.close(); });
 
-function ins(reservation_id: string, checkOutExpr: string, status = 'confirmed', listingId = 'L1') {
-  db.prepare(`INSERT INTO reservations (reservation_id,listing_id,check_in,check_out,status)
-    VALUES (?, ?, date('now', '-20 day'), date('now', ?), ?)`).run(reservation_id, listingId, checkOutExpr, status);
+function ins(reservation_id: string, checkOutExpr: string, status = 'confirmed', listingId = 'L1', source = 'airbnb2') {
+  db.prepare(`INSERT INTO reservations (reservation_id,listing_id,check_in,check_out,status,source)
+    VALUES (?, ?, date('now', '-20 day'), date('now', ?), ?, ?)`).run(reservation_id, listingId, checkOutExpr, status, source);
 }
 
 describe('getRecentCheckoutIdsNeedingReview', () => {
@@ -36,6 +36,19 @@ describe('getRecentCheckoutIdsNeedingReview', () => {
 
     const ids = getRecentCheckoutIdsNeedingReview('L1', '-13 days', 10);
     expect(ids.sort()).toEqual(['recent', 'today'].sort());
+  });
+
+  it('only includes Airbnb-sourced reservations (#377 bug: manual/direct bookings got review drafts)', () => {
+    ins('is-airbnb2', '-1 day', 'confirmed', 'L1', 'airbnb2');   // Guesty Airbnb channel -> included
+    ins('is-hostex-airbnb', '-1 day', 'confirmed', 'L1', 'airbnb'); // Hostex channel_type -> included
+    ins('is-manual', '-1 day', 'confirmed', 'L1', 'manual');     // direct booking (the S. Fischer Verlag bug case) -> excluded
+    ins('is-booking-com', '-1 day', 'confirmed', 'L1', 'Booking.com'); // -> excluded
+    ins('is-landfolk', '-1 day', 'confirmed', 'L1', 'Landfolk'); // -> excluded
+    ins('is-vrbo', '-1 day', 'confirmed', 'L1', 'vrboLite');     // -> excluded
+    ins('is-null-source', '-1 day', 'confirmed', 'L1', null as unknown as string); // unset -> excluded conservatively
+
+    const ids = getRecentCheckoutIdsNeedingReview('L1', '-13 days', 10);
+    expect(ids.sort()).toEqual(['is-airbnb2', 'is-hostex-airbnb'].sort());
   });
 
   it('excludes non-active statuses (canceled/declined/expired)', () => {

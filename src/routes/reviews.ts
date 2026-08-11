@@ -67,9 +67,14 @@ router.get('/', (_req, res) => {
         ? `<span class="badge"${property?.uiColor ? ` style="background:${esc(property.uiColor)};color:var(--color-charcoal)"` : ''}>${esc(code)}</span>`
         : '';
       const { label, expired } = deadline(d.check_out);
+      // Drei Zustände: needs_review (LLM lieferte nichts) · pending+flag_reason
+      // (Problemfall, aber trotzdem gedraftet, #377-Nachbesserung 11.08.2026) ·
+      // normaler pending-Entwurf. Alle drei müssen sich optisch unterscheiden.
       const statusBadge = d.status === 'needs_review'
         ? `<span class="badge" style="background:var(--color-red);color:#fff;border:none">Manuell prüfen</span>`
-        : `<span class="badge" style="background:var(--color-amber);color:#fff;border:none">KI-Entwurf bereit</span>`;
+        : d.flag_reason
+          ? `<span class="badge" style="background:var(--color-red);color:#fff;border:none">Problemfall — prüfen</span>`
+          : `<span class="badge" style="background:var(--color-amber);color:#fff;border:none">KI-Entwurf bereit</span>`;
       const expiryBadge = expired
         ? `<span class="badge" style="background:var(--color-warm-gray);color:#fff;border:none">Frist abgelaufen</span>`
         : `<span>Frist: ${esc(label)}</span>`;
@@ -99,12 +104,22 @@ router.get('/:id', (req, res) => {
   const { label, expired } = deadline(draft.check_out);
   const name = esc(draft.guest_name) || esc(draft.reservation_id);
 
+  // needs_review = LLM lieferte keinen Text (egal ob Problemfall oder nicht) — hier fehlt body,
+  // Micha muss von Hand verfassen. pending+flag_reason = Problemfall MIT Entwurf (#377-Nachbesserung
+  // 11.08.2026): der Entwurf existiert und ist im Text neutral gehalten (harte Prompt-Regel), aber
+  // der Warnhinweis muss vor dem Posten auffallen.
   const flagBlock = draft.status === 'needs_review'
     ? `<div class="section" style="border-left:4px solid var(--color-red)">
          <h3>Bewertung: manuell entscheiden</h3>
          <p>${esc(draft.flag_reason) || 'Kein Grund hinterlegt.'}</p>
        </div>`
-    : '';
+    : draft.flag_reason
+      ? `<div class="section" style="border-left:4px solid var(--color-red)">
+           <h3>Problemfall — bitte vor dem Posten prüfen</h3>
+           <p>${esc(draft.flag_reason)}</p>
+           <p class="subtitle">Der Entwurf unten erwähnt den Problemfall bewusst nicht (harte Prompt-Regel) — trotzdem vor Freigabe gegenlesen.</p>
+         </div>`
+      : '';
 
   const canAct = draft.status === 'pending' || draft.status === 'needs_review';
   const composeBlock = canAct
@@ -166,24 +181,25 @@ router.post('/:id/regenerate', async (req, res, next) => {
     const classification = messages.length === 0
       ? { classification: 'ok' as const, reasoning: 'Kein Nachrichtenverlauf für diesen Aufenthalt gefunden.' }
       : await classifyStayForReview({ messages: messages.map((m) => ({ direction: m.direction, body: m.body })) });
+    const isFlagged = classification.classification === 'flagged';
 
-    if (classification.classification === 'flagged') {
-      setReviewDraftContent(draft.id, { status: 'needs_review', body: null, flag_reason: classification.reasoning, model: null });
+    // Mirrors generate-review-drafts.ts's flagged handling (#377-Nachbesserung 11.08.2026):
+    // flagged stays still get a drafted review (hard prompt rule bans mentioning the problem),
+    // needs_review stays reserved for "LLM produced nothing".
+    const review = await generateReviewForStay({
+      guestName: reservation.guest_name,
+      propertyName: property.name,
+      checkInLabel: deDate(reservation.check_in_localized ?? reservation.check_in),
+      checkOutLabel: deDate(reservation.check_out_localized ?? reservation.check_out),
+      nights: reservation.nights_count ?? null,
+      voice,
+      threadHighlights: messages.filter((m) => m.direction !== 'system').map((m) => `${m.direction === 'inbound' ? 'Gast' : 'Host'}: ${m.body}`).join('\n'),
+      flagged: isFlagged,
+    });
+    if (review) {
+      setReviewDraftContent(draft.id, { status: 'pending', body: review, flag_reason: isFlagged ? classification.reasoning : null, model: REVIEW_MODEL });
     } else {
-      const review = await generateReviewForStay({
-        guestName: reservation.guest_name,
-        propertyName: property.name,
-        checkInLabel: deDate(reservation.check_in_localized ?? reservation.check_in),
-        checkOutLabel: deDate(reservation.check_out_localized ?? reservation.check_out),
-        nights: reservation.nights_count ?? null,
-        voice,
-        threadHighlights: messages.filter((m) => m.direction !== 'system').map((m) => `${m.direction === 'inbound' ? 'Gast' : 'Host'}: ${m.body}`).join('\n'),
-      });
-      if (review) {
-        setReviewDraftContent(draft.id, { status: 'pending', body: review, flag_reason: null, model: REVIEW_MODEL });
-      } else {
-        setReviewDraftContent(draft.id, { status: 'needs_review', body: null, flag_reason: 'LLM konnte keine Bewertung erzeugen.', model: null });
-      }
+      setReviewDraftContent(draft.id, { status: 'needs_review', body: null, flag_reason: isFlagged ? classification.reasoning : 'LLM konnte keine Bewertung erzeugen.', model: null });
     }
     res.redirect(`/admin/reviews/${encodeURIComponent(draft.id)}`);
   } catch (e) {
