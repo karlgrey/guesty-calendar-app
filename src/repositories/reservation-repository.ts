@@ -501,6 +501,34 @@ export function deleteStaleReservationsInRange(
 }
 
 /**
+ * Reservation IDs that checked out recently and don't have a review draft yet
+ * (#377). `sinceModifier` is a SQLite datetime modifier bounding how far back
+ * we look (e.g. '-13 days') — checkouts older than that are past/near the
+ * Airbnb review deadline and not worth drafting for. Only confirmed/reserved
+ * bookings count (mirrors getReservationsByPeriod's active-status filter).
+ */
+export function getRecentCheckoutIdsNeedingReview(
+  listingId: string,
+  sinceModifier: string,
+  limit: number,
+): string[] {
+  const db = getDatabase();
+  const rows = db
+    .prepare(
+      `SELECT reservation_id FROM reservations
+       WHERE listing_id = ?
+         AND status IN ('confirmed','reserved')
+         AND date(check_out) <= date('now')
+         AND date(check_out) >= date('now', ?)
+         AND NOT EXISTS (SELECT 1 FROM review_drafts d WHERE d.reservation_id = reservations.reservation_id)
+       ORDER BY check_out DESC
+       LIMIT ?`,
+    )
+    .all(listingId, sinceModifier, limit) as Array<{ reservation_id: string }>;
+  return rows.map((r) => r.reservation_id);
+}
+
+/**
  * Lead-time samples for the pickup forecast, pooled across ALL listings.
  * Only rows with a real booking date and a future-relative check_in count.
  */

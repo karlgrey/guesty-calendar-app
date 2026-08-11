@@ -17,6 +17,7 @@ import { syncHostexCalendar } from './hostex/sync-calendar.js';
 import { syncHostexMessagesForProperty } from './hostex/sync-hostex-messages.js';
 import { syncGuestyMessagesForProperty } from './sync-guesty-messages.js';
 import { generateDraftsForProperty } from './generate-drafts.js';
+import { generateReviewDraftsForProperty } from './generate-review-drafts.js';
 import { getHostexClient } from '../services/hostex-client.js';
 import { syncVault } from '../services/vault-sync.js';
 import { syncAirbnbProperty } from './airbnb-mail/sync-properties.js';
@@ -155,6 +156,11 @@ async function runHostexETL(property: PropertyConfig, force: boolean): Promise<E
     } catch (error) {
       logger.error({ error, propertySlug: property.slug }, 'Hostex: draft-gen error (non-fatal)');
     }
+    try {
+      await generateReviewDraftsForProperty(property);
+    } catch (error) {
+      logger.error({ error, propertySlug: property.slug }, 'Hostex: review-draft-gen error (non-fatal)');
+    }
   }
 
   // Step 4: calendar
@@ -253,6 +259,11 @@ export async function runETLJobForProperty(
       await generateDraftsForProperty(property);
     } catch (error) {
       logger.error({ error, propertySlug: slug }, 'Guesty: draft-gen error (non-fatal)');
+    }
+    try {
+      await generateReviewDraftsForProperty(property);
+    } catch (error) {
+      logger.error({ error, propertySlug: slug }, 'Guesty: review-draft-gen error (non-fatal)');
     }
 
     const duration = Date.now() - startTime;

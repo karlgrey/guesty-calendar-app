@@ -301,6 +301,57 @@ Spec: `TheBrain2/docs/superpowers/specs/2026-07-06-brainstem-sync-design.md`.
 
 **Server-Setup:** → siehe `docs/vault-deployment.md`
 
+### Gäste-Bewertungen: Auto-Draft nach Checkout (Migration 023, #377)
+
+Zweites Freigabe-Gate-System neben dem Guest-Reply-System oben — eigene Tabelle
+(`review_drafts`, ein Eintrag pro Reservierung statt pro Thread), eigener Prompt,
+eigene Route. Kein Auto-Post: kein Anbieter (Guesty Open API, Hostex API) bietet
+einen dokumentierten Endpoint, über den ein Host eine Gäste-Bewertung veröffentlicht
+(Guesty: nur `PUT /reviews/{id}/reply` = Antwort auf eine Gast-Bewertung der
+Unterkunft, nicht die Host-Bewertung des Gastes; Hostex: `GET /reviews` ist laut
+Doku `read_only`) — bleibt beim Copy-Paste-Flow. Spec:
+`TheBrain2/docs/superpowers/specs/2026-08-11-gaeste-bewertungen-design.md`.
+
+- **Trigger** (`src/jobs/generate-review-drafts.ts`, non-fatal, läuft in
+  `runETLJobForProperty`/`runHostexETL` direkt nach der Draft-Generierung für
+  Gästenachrichten): pro ETL-Lauf werden bis zu `REVIEW_DRAFT_CAP` (10) frisch
+  ausgecheckte Reservierungen ohne `review_drafts`-Zeile gefunden
+  (`getRecentCheckoutIdsNeedingReview`, Lookback `REVIEW_LOOKBACK_DAYS` = 13
+  Tage — knapp unter der 14-Tage-Airbnb-Frist). `resolveReviewSource()` spiegelt
+  `resolveDraftSource()` 1:1 (nur `provider: guesty|hostex`) — Florenz/Manifattura
+  läuft auf `provider: airbnb-mail` ohne Rückkanal und fällt damit automatisch raus
+  (Design-Entscheidung Micha 11.08.2026), kein eigenes Opt-out-Feld nötig.
+- **Thread-Zuordnung:** Guesty-Threads tragen `reservation_id`
+  (`getThreadsByReservationId`); Hostex-Conversations NIE (API-Limitierung, siehe
+  Guest-Reply-System oben) — Fallback ist ein Guest-Name-Match innerhalb des
+  Listings (`getThreadsByListingAndGuestName`, case/whitespace-insensitiv).
+  **Bekannte Lücke:** weicht der Thread-Gastname vom Reservierungs-Gastnamen ab,
+  sieht die Generierung fälschlich "kein Verlauf" statt der echten Konversation.
+- **Klassifikation** (`src/utils/review-classifier.ts` + `review-classifier-prompt.ts`,
+  Tool `classify_stay`, `ok`|`flagged`, eigener Prompt/eigene Few-Shots, getrennt vom
+  Conversion-Classifier oben): Problemfall (Beschwerde/Schaden/Storno-Streit/
+  Eskalation) → `flagged`, kein Draft. Bewusst konservativ (im Zweifel `flagged`).
+  Threads ohne jede Nachricht werden NICHT ans LLM geschickt — automatisch `ok`
+  (kein Anlass zur Sorge, kein API-Call).
+- **Generierung** (`src/services/review-draft-service.ts`, Tool `submit_review`,
+  Modell `claude-sonnet-5`): eigener Prompt-Baustein (nutzt NUR die Voice aus dem
+  Vault, keine Objektfakten, keine Textbank) — schreibt 2–4 Sätze frei aus
+  Gastname/Zeitraum/Objekt/Thread-Verlauf, spiegelt die Sprache des Gastes,
+  kein Markdown, erfindet nichts über den Zustand der Unterkunft nach Abreise.
+- **Status-Flow** (`review_drafts.status`): `pending` (Entwurf da) →
+  `done`/`discarded` (Freigabe/Verwerfen); `needs_review` = Problemfall ODER
+  LLM-Fehlschlag, `body` bleibt NULL, `flag_reason` erklärt warum.
+- **Admin-UI** (`src/routes/reviews.ts`, `/admin/reviews`, Nav-Button "⭐
+  Bewertungen" in `/admin`): offene Entwürfe (`pending`+`needs_review`), pro
+  Eintrag Verfallsdatum = Checkout + 14 Tage (nur Anzeige/Badge "Frist
+  abgelaufen" — kein Auto-Discard). Aktionen: Erledigt (kopiert/gepostet, Text
+  editierbar) · Verwerfen · Neu generieren (reklassifiziert + generiert frisch,
+  ruft dieselben Bausteine direkt auf wie der Job, nicht den Batch-Wrapper —
+  Muster wie `/admin/messages`' Regenerate).
+- Läuft NICHT über den manuellen "Jetzt syncen"-Button auf `/admin/messages`
+  (nur über den periodischen/täglichen ETL-Zyklus) — bewusste Abgrenzung, damit
+  der Messaging-Sync-Button nicht überraschend auch Bewertungen anstößt.
+
 ### Airbnb-Mail Integration (Migration 013)
 
 Dritter Booking-Provider für Properties, die nur über Airbnb laufen. Daten kommen aus:
@@ -391,8 +442,9 @@ if (!propertyId) throw new NotFoundError('No property configured');
 - `src/routes/admin.ts` - `/admin` dashboard + `/admin/system`
 - `src/routes/listing.ts`, `availability.ts`, `quote.ts` - Legacy routes (default property)
 - `src/routes/messages.ts` - `/admin/messages*` — Hostex thread list, detail, send, feedback
+- `src/routes/reviews.ts` - `/admin/reviews*` — guest-review drafts (#377): list, detail, done/discard/regenerate
 - `src/routes/suggestions.ts` - `/admin/suggestions*` — vault suggestion review + approve/discard
-- `src/routes/admin-layout.ts` - Shared HTML page shell used by messages + suggestions routes
+- `src/routes/admin-layout.ts` - Shared HTML page shell used by messages + reviews + suggestions routes
 
 ### Guest-Reply Services
 - `src/services/draft-service.ts` - `generateDraftForThread()`: builds prompt, calls Claude, returns reply text or null
@@ -406,6 +458,14 @@ if (!propertyId) throw new NotFoundError('No property configured');
 - `src/jobs/sync-guesty-messages.ts` - Per-property Guesty conversation sync (läuft non-fatal im Guesty-ETL + Sync-Button)
 - `src/jobs/generate-drafts.ts` - Provider-agnostic draft generation with cap + age gate
 - `src/services/guesty-channel.ts` - `resolveOutboundModuleType()`: Kanal-Spiegelung für Guesty-Sends
+
+### Guest-Review Services (#377)
+- `src/jobs/generate-review-drafts.ts` - `generateReviewDraftsForProperty()`: finds fresh checkouts, classifies, generates, caps
+- `src/services/review-draft-service.ts` - `generateReviewForStay()`: own prompt block, Tool `submit_review`
+- `src/utils/review-classifier.ts` + `review-classifier-prompt.ts` - `classifyStayForReview()`: `ok`/`flagged`, own prompt/few-shots
+- `src/repositories/review-draft-repository.ts` - CRUD for `review_drafts` (migration 023)
+- `src/repositories/reservation-repository.ts` - `getRecentCheckoutIdsNeedingReview()`
+- `src/repositories/message-repository.ts` - `getThreadsByReservationId()` (Guesty) + `getThreadsByListingAndGuestName()` (Hostex fallback)
 
 ### Frontend
 - `public/calendar.js` - Calendar with property context (`window.__PROPERTY_SLUG__`, `__PROPERTY_NAME__`, `__BOOKING_EMAIL__`)

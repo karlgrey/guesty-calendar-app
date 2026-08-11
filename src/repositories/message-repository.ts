@@ -286,6 +286,41 @@ export function getThreadsNeedingDraft(
 }
 
 /**
+ * Threads linked to a reservation (Guesty conversations carry the Guesty
+ * reservation _id in `reservation_id` — see sync-guesty-messages.ts). Used by
+ * review-draft generation (#377) to gather the guest conversation for a
+ * checked-out stay. Hostex conversations never set reservation_id (the Hostex
+ * API doesn't expose it on conversation activities) — see
+ * getThreadsByListingAndGuestName for the Hostex fallback.
+ */
+export function getThreadsByReservationId(reservationId: string): MessageThread[] {
+  const db = getDatabase();
+  return db
+    .prepare(`SELECT * FROM message_threads WHERE reservation_id = ? ORDER BY first_message_at ASC`)
+    .all(reservationId) as MessageThread[];
+}
+
+/**
+ * Best-effort Hostex fallback for getThreadsByReservationId: Hostex threads
+ * carry no reservation_id, so we match on listing + exact guest name
+ * (case/whitespace-insensitive). Documented limitation (#377): if the guest's
+ * conversation thread's name differs from the reservation's guest_name (e.g.
+ * a name correction on one side only), this misses it — review-draft
+ * generation then sees an empty thread and treats the stay as unremarkable.
+ */
+export function getThreadsByListingAndGuestName(listingId: string, guestName: string): MessageThread[] {
+  const db = getDatabase();
+  return db
+    .prepare(
+      `SELECT * FROM message_threads
+       WHERE listing_id = ? AND source = 'hostex'
+         AND guest_name IS NOT NULL AND lower(trim(guest_name)) = lower(trim(?))
+       ORDER BY first_message_at ASC`,
+    )
+    .all(listingId, guestName) as MessageThread[];
+}
+
+/**
  * Remember that the LLM decided this thread needs no reply right now. The
  * marker is only meaningful while newer than last_message_at — a new guest
  * message implicitly invalidates it (see getThreadsNeedingDraft + UI).
