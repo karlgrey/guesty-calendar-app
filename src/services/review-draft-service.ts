@@ -95,6 +95,9 @@ export async function generateReviewForStay(
     userMessage: buildUserMessage(input),
     tool: SUBMIT_REVIEW_TOOL,
     model: REVIEW_MODEL,
+    // Bewertungen sind kurz, aber das 512-Default lag zu nah an der Kante
+    // (vgl. #379-Nachbefund bei den Message-Drafts) — Puffer.
+    maxTokens: 1000,
   });
   const review = (out as { review?: unknown } | null)?.review;
   return typeof review === 'string' && review.trim() ? review.trim() : null;

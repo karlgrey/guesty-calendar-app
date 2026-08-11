@@ -105,6 +105,9 @@ export async function generateDraftForThread(
       userMessage: buildConversation(input.messages, input.thread.guest_name),
       tool: SUBMIT_REPLY_TOOL,
       model: DRAFT_MODEL,
+      // 512-Default reichte nicht für Antworten auf mehrteilige Gastfragen —
+      // Tool-JSON wurde am Limit abgeschnitten (#379-Nachbefund, Fall Johannes).
+      maxTokens: 1500,
     });
   } catch (err) {
     return { kind: 'failed', error: err instanceof Error ? err.message : String(err) };

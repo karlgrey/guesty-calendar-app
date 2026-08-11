@@ -80,6 +80,13 @@ export async function callClaudeTool({
         tool_choice: { type: 'tool', name: tool.name },
         messages: [{ role: 'user', content: userMessage }],
       });
+      // Am Token-Limit abgeschnittene Antworten liefern verstümmeltes
+      // Tool-JSON (z. B. input ohne reply) — das ist ein harter Fehler,
+      // kein verwertbarer Output (#379-Nachbefund, Fall Johannes: lange
+      // Gastantwort sprengte die 512 Default-Tokens).
+      if (response.stop_reason === 'max_tokens') {
+        throw new Error(`Antwort am Token-Limit abgeschnitten (max_tokens=${maxTokens}) — Limit für diesen Aufruf erhöhen`);
+      }
       const block = response.content.find((b) => b.type === 'tool_use');
       if (!block || block.type !== 'tool_use') {
         throw new Error(
