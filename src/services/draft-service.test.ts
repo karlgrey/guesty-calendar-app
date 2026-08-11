@@ -16,10 +16,10 @@ const messages: Message[] = [
 ];
 
 describe('generateDraftForThread', () => {
-  it('passes voice+facts into the system prompt and returns the reply', async () => {
-    const call = vi.fn().mockResolvedValue({ reply: 'Hallo Darleen, gern!' });
+  it('passes voice+facts into the system prompt and returns a text result', async () => {
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'Hallo Darleen, gern!' });
     const out = await generateDraftForThread({ thread: thread(), messages, voice: 'VOICE-X', facts: 'FACTS-Y' }, { call });
-    expect(out).toBe('Hallo Darleen, gern!');
+    expect(out).toEqual({ kind: 'text', body: 'Hallo Darleen, gern!' });
     const arg = call.mock.calls[0][0];
     expect(arg.systemPrompt).toContain('VOICE-X');
     expect(arg.systemPrompt).toContain('FACTS-Y');
@@ -29,7 +29,7 @@ describe('generateDraftForThread', () => {
   });
 
   it('instructs a nameless greeting when the guest name is unknown', async () => {
-    const call = vi.fn().mockResolvedValue({ reply: 'Hallo!' });
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'Hallo!' });
     const anon = { ...thread(), guest_name: null };
     await generateDraftForThread({ thread: anon, messages, voice: 'v', facts: 'f' }, { call });
     const arg = call.mock.calls[0][0];
@@ -37,17 +37,70 @@ describe('generateDraftForThread', () => {
     expect(arg.userMessage).not.toContain('Darleen');
   });
 
-  it('returns null on an empty/malformed reply', async () => {
-    const call = vi.fn().mockResolvedValue({ reply: '   ' });
-    expect(await generateDraftForThread({ thread: thread(), messages, voice: 'v', facts: 'f' }, { call })).toBeNull();
-    const call2 = vi.fn().mockResolvedValue({});
-    expect(await generateDraftForThread({ thread: thread(), messages, voice: 'v', facts: 'f' }, { call: call2 })).toBeNull();
+  it('states the explicit no-reply criterion in the system prompt (#385)', async () => {
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'x' });
+    await generateDraftForThread({ thread: thread(), messages, voice: 'v', facts: 'f' }, { call });
+    const prompt = call.mock.calls[0][0].systemPrompt;
+    expect(prompt).toContain('WEDER eine Frage NOCH ein');
+    expect(prompt).toContain('KEIN');
+    expect(prompt).toContain('Im Zweifel antworten');
+  });
+
+  it('returns kind "no_reply" with reason when the model explicitly signals no_reply_needed (#385)', async () => {
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: true, reason: 'reine Dankesnachricht ohne Frage' });
+    const out = await generateDraftForThread({ thread: thread(), messages, voice: 'v', facts: 'f' }, { call });
+    expect(out).toEqual({ kind: 'no_reply', reason: 'reine Dankesnachricht ohne Frage' });
+  });
+
+  it('defaults the reason when no_reply_needed=true without a reason', async () => {
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: true });
+    const out = await generateDraftForThread({ thread: thread(), messages, voice: 'v', facts: 'f' }, { call });
+    expect(out).toEqual({ kind: 'no_reply', reason: '(kein Grund angegeben)' });
+  });
+
+  it('answers even when a thank-you message is followed by a question (#385, Bug 11.08.)', async () => {
+    // Regression for the bug where "Vielen Dank für die Bestätigung." followed by explicit
+    // questions produced an empty string under the old prompt rule. Under the new contract the
+    // model must set no_reply_needed=false + reply whenever a question/anliegen is present —
+    // this asserts the prompt instructs exactly that (actual LLM judgment isn't unit-testable).
+    const call = vi.fn().mockResolvedValue({
+      no_reply_needed: false,
+      reply: 'Sehr gern, hier die Antworten auf deine Fragen …',
+    });
+    const thanksThenQuestions: Message[] = [
+      { id: 'm1', thread_id: 'hostex:c1', direction: 'inbound', sent_at: '2026-08-11T10:00Z', from_name: 'Darleen', from_address: null, to_address: null, subject: null, body: 'Vielen Dank für die Bestätigung. Können wir früher einchecken? Gibt es Parkplätze?', body_html: null, source: 'hostex', raw_meta: null },
+    ];
+    const out = await generateDraftForThread({ thread: thread(), messages: thanksThenQuestions, voice: 'v', facts: 'f' }, { call });
+    expect(out.kind).toBe('text');
+    const prompt = call.mock.calls[0][0].systemPrompt;
+    expect(prompt).toContain('Beginnt eine Nachricht mit Dank');
+    expect(prompt).toContain('antworte auf die Frage/das Anliegen');
+  });
+
+  it('returns kind "failed" on a malformed/unusable tool output (technical failure, #385)', async () => {
+    const call = vi.fn().mockResolvedValue({ reply: '   ' }); // no_reply_needed missing, reply blank
+    const out = await generateDraftForThread({ thread: thread(), messages, voice: 'v', facts: 'f' }, { call });
+    expect(out.kind).toBe('failed');
+
+    const call2 = vi.fn().mockResolvedValue({}); // nothing usable at all
+    const out2 = await generateDraftForThread({ thread: thread(), messages, voice: 'v', facts: 'f' }, { call: call2 });
+    expect(out2.kind).toBe('failed');
+
+    const call3 = vi.fn().mockResolvedValue(null);
+    const out3 = await generateDraftForThread({ thread: thread(), messages, voice: 'v', facts: 'f' }, { call: call3 });
+    expect(out3.kind).toBe('failed');
+  });
+
+  it('returns kind "failed" when the call itself throws (e.g. API error after retries)', async () => {
+    const call = vi.fn().mockRejectedValue(new Error('claude down'));
+    const out = await generateDraftForThread({ thread: thread(), messages, voice: 'v', facts: 'f' }, { call });
+    expect(out).toEqual({ kind: 'failed', error: 'claude down' });
   });
 });
 
 describe('generateDraftForThread — booking context (#364)', () => {
   it('includes the Buchungskontext block + the never-ask-again rule when bookingContext is set', async () => {
-    const call = vi.fn().mockResolvedValue({ reply: 'Klar, bis dann!' });
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'Klar, bis dann!' });
     await generateDraftForThread(
       { thread: thread(), messages, voice: 'v', facts: 'f', bookingContext: 'Bestätigte Buchung: Zeitraum 02.08.2026–07.08.2026, 5 Nächte, 2 Personen.' },
       { call }
@@ -60,7 +113,7 @@ describe('generateDraftForThread — booking context (#364)', () => {
   });
 
   it('omits the Buchungskontext block entirely when bookingContext is null', async () => {
-    const call = vi.fn().mockResolvedValue({ reply: 'Klar!' });
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'Klar!' });
     await generateDraftForThread({ thread: thread(), messages, voice: 'v', facts: 'f', bookingContext: null }, { call });
     const prompt = call.mock.calls[0][0].systemPrompt;
     expect(prompt).not.toContain('BUCHUNGSKONTEXT');
@@ -68,7 +121,7 @@ describe('generateDraftForThread — booking context (#364)', () => {
   });
 
   it('omits the Buchungskontext block when bookingContext is not passed at all', async () => {
-    const call = vi.fn().mockResolvedValue({ reply: 'Klar!' });
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'Klar!' });
     await generateDraftForThread({ thread: thread(), messages, voice: 'v', facts: 'f' }, { call });
     const prompt = call.mock.calls[0][0].systemPrompt;
     expect(prompt).not.toContain('BUCHUNGSKONTEXT');

@@ -171,11 +171,18 @@ router.get('/:threadId', (req, res) => {
          Sicht keine Antwort (z.&nbsp;B. reines Danke/Bestätigung). Bei Bedarf unten manuell schreiben.
        </p>`
     : '';
+  const genFailedNotice = req.query.genfailed === '1'
+    ? `<p class="subtitle" style="background:var(--color-sand);padding:10px 14px;border-radius:8px">
+         Die KI-Generierung ist technisch fehlgeschlagen (kein verwertbarer Output) — das ist KEINE
+         Entscheidung, dass keine Antwort nötig ist. Bitte nochmal „Neu generieren" versuchen oder
+         unten manuell schreiben.
+       </p>`
+    : '';
   const body = `<a class="back-link" href="/admin/messages">&larr; Alle Nachrichten</a>
     <h1>${name}</h1>
     <p class="subtitle"><span class="badge">${esc(thread.channel)}</span>${property ? ` · <strong>${esc(property.name)}</strong>` : ''} · Provider: ${esc(thread.source)}</p>
     <div class="section"><h3>Verlauf</h3>${history}</div>
-    <div class="section">${noDraftNotice}${draftBlock}</div>`;
+    <div class="section">${noDraftNotice}${genFailedNotice}${draftBlock}</div>`;
   res.type('html').send(renderAdminPage({ title: name, body, active: 'messages' }));
 });
 
@@ -263,19 +270,28 @@ router.post('/:threadId/regenerate', async (req, res, next) => {
     const facts = property?.vaultNote ? loadPropertyFacts(property.vaultNote) : null;
     if (!voice || !facts) { res.status(400).send('Kein Vault-Wissen verfügbar (VAULT_PATH/vaultNote prüfen)'); return; }
 
-    const reply = await generateDraftForThread({
+    const result = await generateDraftForThread({
       thread, messages: getMessagesByThread(thread.id), voice, facts,
       bookingContext: buildBookingContext(thread),
     });
-    if (reply) {
+    let redirectSuffix = '';
+    if (result.kind === 'text') {
       const existing = getActiveDraftByThread(thread.id);
       if (existing) discardDraft(existing.id);
-      createDraft({ id: randomUUID(), thread_id: thread.id, provider: thread.source as 'hostex' | 'guesty', body: reply, generated_by: 'llm', model: DRAFT_MODEL });
+      createDraft({ id: randomUUID(), thread_id: thread.id, provider: thread.source as 'hostex' | 'guesty', body: result.body, generated_by: 'llm', model: DRAFT_MODEL });
+    } else if (result.kind === 'no_reply') {
+      // Bewusste Modell-Entscheidung (keine Antwort nötig) — merken (graut den Button aus,
+      // verhindert erneute Cron-LLM-Calls) + Hinweis anzeigen.
+      logger.info({ threadId: thread.id, reason: result.reason }, 'regenerate: no reply needed');
+      markThreadAiNoReply(thread.id);
+      redirectSuffix = '?nodraft=1';
+    } else {
+      // Technischer Ausfall — NICHT markThreadAiNoReply (#385), sonst wäre der Thread
+      // dauerhaft von weiteren Versuchen ausgeschlossen. Eigener Hinweis in der UI.
+      logger.warn({ threadId: thread.id, error: result.error }, 'regenerate: thread failed (technical)');
+      redirectSuffix = '?genfailed=1';
     }
-    // Kein Entwurf = bewusste Modell-Entscheidung (keine Antwort nötig) — merken
-    // (graut den Button aus, verhindert erneute Cron-LLM-Calls) + Hinweis anzeigen.
-    if (!reply) markThreadAiNoReply(thread.id);
-    res.redirect(`/admin/messages/${encodeURIComponent(thread.id)}${reply ? '' : '?nodraft=1'}`);
+    res.redirect(`/admin/messages/${encodeURIComponent(thread.id)}${redirectSuffix}`);
   } catch (e) { next(e); }
 });
 

@@ -20,7 +20,7 @@ function deps(over: Partial<DraftGenDeps> = {}): DraftGenDeps {
     getMessages: vi.fn().mockReturnValue([]),
     loadVoice: vi.fn().mockReturnValue('VOICE'),
     loadFacts: vi.fn().mockReturnValue('FACTS'),
-    generate: vi.fn().mockResolvedValue('REPLY'),
+    generate: vi.fn().mockResolvedValue({ kind: 'text', body: 'REPLY' }),
     create: vi.fn(),
     markNoReply: vi.fn(),
     buildBookingContext: vi.fn().mockReturnValue(null),
@@ -42,6 +42,7 @@ describe('generateDraftsForProperty', () => {
     const d = deps({
       getThreads: vi.fn().mockReturnValue([mkThread('guesty:t1')]),
       create: (draft) => { created.push(draft); },
+      generate: vi.fn().mockResolvedValue({ kind: 'text', body: 'REPLY' }),
     });
     const guestyProperty = {
       slug: 'farmhouse', name: 'Farmhouse', provider: 'guesty',
@@ -53,13 +54,29 @@ describe('generateDraftsForProperty', () => {
     expect(created[0].provider).toBe('guesty');
   });
 
-  it('skips a thread when generate returns null and remembers the no-reply decision', async () => {
-    const d = deps({ generate: vi.fn().mockResolvedValueOnce('REPLY').mockResolvedValueOnce(null) });
+  it('skips a thread when generate reports kind "no_reply" and remembers the no-reply decision (#385)', async () => {
+    const d = deps({
+      generate: vi.fn()
+        .mockResolvedValueOnce({ kind: 'text', body: 'REPLY' })
+        .mockResolvedValueOnce({ kind: 'no_reply', reason: 'reine Dankesnachricht' }),
+    });
     const res = await generateDraftsForProperty(property, d);
     expect(res).toEqual({ generated: 1, skipped: 1 });
     expect(d.create).toHaveBeenCalledTimes(1);
     expect(d.markNoReply).toHaveBeenCalledTimes(1);
     expect(d.markNoReply).toHaveBeenCalledWith('hostex:b');
+  });
+
+  it('skips a thread on kind "failed" WITHOUT marking no-reply, so the next run retries it (#385)', async () => {
+    const d = deps({
+      generate: vi.fn()
+        .mockResolvedValueOnce({ kind: 'text', body: 'REPLY' })
+        .mockResolvedValueOnce({ kind: 'failed', error: 'Tool-Output ohne verwertbaren reply-Text' }),
+    });
+    const res = await generateDraftsForProperty(property, d);
+    expect(res).toEqual({ generated: 1, skipped: 1 });
+    expect(d.create).toHaveBeenCalledTimes(1);
+    expect(d.markNoReply).not.toHaveBeenCalled();
   });
 
   it('is a no-op when voice or facts are missing', async () => {
@@ -89,7 +106,7 @@ describe('generateDraftsForProperty', () => {
     const threadA = mkThread('hostex:a');
     const threadB = mkThread('hostex:b');
     const buildBookingContext = vi.fn((t: MessageThread) => (t.id === 'hostex:a' ? 'CTX-A' : null));
-    const generate = vi.fn().mockResolvedValue('REPLY');
+    const generate = vi.fn().mockResolvedValue({ kind: 'text', body: 'REPLY' });
     const d = deps({
       getThreads: vi.fn().mockReturnValue([threadA, threadB]),
       buildBookingContext,
