@@ -44,11 +44,20 @@ pm2 restart '$PM2_APP' --update-env
 REMOTE
 
 echo "→ Health-Check (Server-lokal, Port $HEALTH_PORT)"
-sleep 3
-code=$(ssh "$REMOTE_HOST" "curl -s -o /dev/null -w '%{http_code}' --max-time 15 localhost:$HEALTH_PORT/health" || echo 000)
+# Die App braucht nach pm2 restart ~10–15 s bis /health antwortet — ein
+# einzelner früher Versuch lieferte zweimal (11.08.2026) ein false negative.
+# Deshalb: bis zu 12 Versuche im 5-s-Abstand (max. ~60 s), ein Treffer genügt.
+code=000
+for attempt in $(seq 1 12); do
+  sleep 5
+  code=$(ssh "$REMOTE_HOST" "curl -s -o /dev/null -w '%{http_code}' --max-time 15 localhost:$HEALTH_PORT/health" || echo 000)
+  if [ "$code" = "200" ]; then
+    echo "✓ Deploy ok — /health → 200 (nach ~$((attempt * 5))s)"
+    break
+  fi
+done
 if [ "$code" != "200" ]; then
-  echo "✗ Health-Check fehlgeschlagen: localhost:$HEALTH_PORT/health → $code" >&2
+  echo "✗ Health-Check fehlgeschlagen (~60 s gewartet): localhost:$HEALTH_PORT/health → $code" >&2
   echo "  Logs: ssh $REMOTE_HOST 'pm2 logs $PM2_APP --lines 40 --nostream'" >&2
   exit 1
 fi
-echo "✓ Deploy ok — /health → $code"
