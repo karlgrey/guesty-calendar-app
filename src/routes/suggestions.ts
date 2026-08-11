@@ -34,7 +34,7 @@ router.get('/', (req, res) => {
     <p class="subtitle">Vorschläge aus deinem Feedback. Freigeben schreibt die Ergänzung in den Vault und committet.</p>
     ${pushNotice}
     ${items || '<p class="empty">Keine offenen Vorschläge.</p>'}`;
-  res.type('html').send(renderAdminPage({ title: 'Vault-Vorschläge', body }));
+  res.type('html').send(renderAdminPage({ title: 'Vault-Vorschläge', body, active: 'suggestions' }));
 });
 
 router.post('/:id/approve', (req, res, next) => {

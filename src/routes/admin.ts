@@ -24,6 +24,7 @@ import { getDocumentsByReservation, getDocumentByReservation, listDocuments, get
 import { setManualCategory } from '../repositories/message-repository.js';
 import { createOfferReservation } from '../services/reservation-service.js';
 import { AppError } from '../utils/errors.js';
+import { renderAdminNav } from './admin-layout.js';
 
 const router = express.Router();
 
@@ -709,6 +710,7 @@ router.get('/', (_req, res) => {
 </head>
 <body>
   <div class="container">
+    ${renderAdminNav('dashboard')}
     <div class="header">
       <div style="display: flex; align-items: center; gap: 20px;">
         <h1 style="margin-bottom: 0;">🛠️ Admin</h1>
@@ -717,10 +719,6 @@ router.get('/', (_req, res) => {
         </select>
       </div>
       <div style="display: flex; gap: 10px;">
-        <a href="/admin/messages"><button class="secondary">💬 Nachrichten</button></a>
-        <a href="/admin/reviews"><button class="secondary">⭐ Bewertungen</button></a>
-        <a href="/admin/conversions"><button class="secondary">🔍 Conversions</button></a>
-        <a href="/admin/system"><button class="secondary">System</button></a>
         <a href="/auth/logout"><button class="secondary">Logout</button></a>
       </div>
     </div>
@@ -1621,6 +1619,7 @@ router.get('/system', (_req, res) => {
 </head>
 <body>
   <div class="container">
+    ${renderAdminNav('system')}
     <div class="header">
       <div style="display: flex; align-items: center; gap: 20px;">
         <h1 style="margin-bottom: 0;">System</h1>
@@ -1629,7 +1628,6 @@ router.get('/system', (_req, res) => {
         </select>
       </div>
       <div style="display: flex; gap: 10px;">
-        <a href="/admin"><button class="secondary">Dashboard</button></a>
         <a href="/auth/logout"><button class="secondary">Logout</button></a>
       </div>
     </div>
@@ -2675,10 +2673,10 @@ router.get('/users', (_req, res) => {
 </head>
 <body>
   <div class="container">
+    ${renderAdminNav('users')}
     <div class="header">
       <div>
         <h1>👥 User Management</h1>
-        <a href="/admin" class="back-link">← Back to Dashboard</a>
       </div>
       <div>
         <button class="success" onclick="showAddUserModal()">+ Add New User</button>
@@ -3540,16 +3538,13 @@ router.get('/conversions', (_req, res) => {
 </head>
 <body>
   <div class="container">
+    ${renderAdminNav('conversions')}
     <div class="header">
       <div style="display: flex; align-items: center; gap: 16px;">
         <h1 style="margin-bottom: 0;">🔍 Conversions</h1>
         <select id="propertySelector" class="property-selector" onchange="onPropertyChange(this.value)">
           <option value="">Loading…</option>
         </select>
-      </div>
-      <div style="display: flex; gap: 8px;">
-        <a href="/admin" class="btn">← Dashboard</a>
-        <a href="/admin/system" class="btn">System</a>
       </div>
     </div>
 
@@ -4244,6 +4239,7 @@ router.get('/reservations/new', (_req, res) => {
   </style>
 </head>
 <body>
+  ${renderAdminNav('reservations')}
   <h1>Neue Reservierung + Angebot</h1>
   <p>Legt einen Hold (Status „reserved") in Guesty an und erzeugt das Angebots-PDF.</p>
   <form id="f">

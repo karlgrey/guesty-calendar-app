@@ -88,7 +88,7 @@ router.get('/', (_req, res) => {
     </div>
     <p class="subtitle">Nach Checkout automatisch vorgeschlagene Bewertungen — Freigabe/Copy-Paste wie bei Gästenachrichten, kein Auto-Post.</p>
     <div class="section">${list}</div>`;
-  res.type('html').send(renderAdminPage({ title: 'Gäste-Bewertungen', body }));
+  res.type('html').send(renderAdminPage({ title: 'Gäste-Bewertungen', body, active: 'reviews' }));
 });
 
 // Detail
@@ -126,7 +126,7 @@ router.get('/:id', (req, res) => {
     <p class="subtitle">${property ? `<strong>${esc(property.name)}</strong> · ` : ''}Checkout ${esc(draft.check_out)} · Bewertungsfrist ${expired ? '<strong style="color:var(--color-red)">abgelaufen</strong>' : esc(label)}</p>
     ${flagBlock}
     <div class="section">${composeBlock}</div>`;
-  res.type('html').send(renderAdminPage({ title: name, body }));
+  res.type('html').send(renderAdminPage({ title: name, body, active: 'reviews' }));
 });
 
 // Erledigt (Freigabe: Micha hat den Text kopiert/gepostet — kein Auto-Send, siehe Moduldoc)

@@ -97,7 +97,7 @@ router.get('/', (_req, res) => {
     <p class="subtitle">Threads, deren letzte Nachricht vom Gast kam und auf eine Antwort warten.</p>
     <div class="section">${list}</div>
     ${syncRunning ? '<script>setTimeout(() => location.reload(), 4000);</script>' : ''}`;
-  res.type('html').send(renderAdminPage({ title: 'Nachrichten', body }));
+  res.type('html').send(renderAdminPage({ title: 'Nachrichten', body, active: 'messages' }));
 });
 
 // Thread-Detail + Draft-Formular
@@ -176,7 +176,7 @@ router.get('/:threadId', (req, res) => {
     <p class="subtitle"><span class="badge">${esc(thread.channel)}</span>${property ? ` · <strong>${esc(property.name)}</strong>` : ''} · Provider: ${esc(thread.source)}</p>
     <div class="section"><h3>Verlauf</h3>${history}</div>
     <div class="section">${noDraftNotice}${draftBlock}</div>`;
-  res.type('html').send(renderAdminPage({ title: name, body }));
+  res.type('html').send(renderAdminPage({ title: name, body, active: 'messages' }));
 });
 
 // Draft anlegen (manuell)

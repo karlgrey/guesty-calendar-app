@@ -112,7 +112,44 @@ form { margin: 0; }
 }
 `;
 
-export function renderAdminPage(opts: { title: string; body: string }): string {
+// Route-Inventur aller /admin*-Seiten mit eigenem HTML-Rendering (#378). Single
+// source of truth für die Nav-Leiste — bei neuen Admin-Seiten hier ergänzen.
+export type AdminNavKey =
+  | 'dashboard' | 'messages' | 'reviews' | 'suggestions'
+  | 'conversions' | 'reservations' | 'system' | 'users';
+
+const ADMIN_NAV_ITEMS: Array<{ key: AdminNavKey; href: string; label: string }> = [
+  { key: 'dashboard', href: '/admin', label: 'Übersicht' },
+  { key: 'messages', href: '/admin/messages', label: 'Nachrichten' },
+  { key: 'reviews', href: '/admin/reviews', label: '⭐ Bewertungen' },
+  { key: 'suggestions', href: '/admin/suggestions', label: 'Vault-Vorschläge' },
+  { key: 'conversions', href: '/admin/conversions', label: 'Conversions' },
+  { key: 'reservations', href: '/admin/reservations/new', label: 'Reservierungen' },
+  { key: 'system', href: '/admin/system', label: 'System' },
+  { key: 'users', href: '/admin/users', label: 'Nutzer' },
+];
+
+// Schlichte Textlink-Leiste, aktive Seite fett+unterstrichen statt Link (#378:
+// aus /admin/messages kam man nicht mehr raus). Bringt ihr eigenes <style> mit
+// (literale Farbwerte statt var(--color-…)) — damit sie auch auf Seiten
+// funktioniert, die die gemeinsamen Design-Tokens nicht definieren (z.B.
+// /admin/reservations/new hat ein eigenes, minimales Stylesheet ohne :root-Vars).
+export function renderAdminNav(active: AdminNavKey): string {
+  const links = ADMIN_NAV_ITEMS.map((item) => item.key === active
+    ? `<strong class="admin-nav-active">${item.label}</strong>`
+    : `<a href="${item.href}">${item.label}</a>`
+  ).join('<span class="admin-nav-sep"> · </span>');
+  return `<style>
+    .admin-nav { font-family: 'Manrope', -apple-system, sans-serif; font-size: 14px; margin-bottom: 20px; padding-bottom: 14px; border-bottom: 1px solid #e8e4df; }
+    .admin-nav a { color: #2d5a3d; text-decoration: none; }
+    .admin-nav a:hover { text-decoration: underline; }
+    .admin-nav-active { color: #2a2a2a; }
+    .admin-nav-sep { color: #6b6560; }
+  </style>
+  <nav class="admin-nav">${links}</nav>`;
+}
+
+export function renderAdminPage(opts: { title: string; body: string; active: AdminNavKey }): string {
   return `<!DOCTYPE html>
 <html lang="de">
 <head>
@@ -123,7 +160,7 @@ export function renderAdminPage(opts: { title: string; body: string }): string {
   <style>${BASE_CSS}</style>
 </head>
 <body>
-  <div class="container">${opts.body}</div>
+  <div class="container">${renderAdminNav(opts.active)}${opts.body}</div>
 </body>
 </html>`;
 }
