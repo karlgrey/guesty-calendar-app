@@ -98,6 +98,61 @@ describe('generateDraftForThread', () => {
   });
 });
 
+describe('generateDraftForThread — Anrede nach Signatur der letzten Gastnachricht (#384)', () => {
+  it('instructs to prefer the signature name over the booking name when they differ', async () => {
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'Hey Lisa, klar doch!' });
+    const signed: Message[] = [
+      { id: 'm1', thread_id: 'hostex:c1', direction: 'inbound', sent_at: '2026-08-12T10:00Z', from_name: 'Anna', from_address: null, to_address: null, subject: null, body: 'Können wir früher einchecken?\n\nViele Grüße,\nLisa', body_html: null, source: 'hostex', raw_meta: null },
+    ];
+    const bookedAsAnna = { ...thread(), guest_name: 'Anna' };
+    const out = await generateDraftForThread({ thread: bookedAsAnna, messages: signed, voice: 'v', facts: 'f' }, { call });
+    expect(out).toEqual({ kind: 'text', body: 'Hey Lisa, klar doch!' });
+    const prompt = call.mock.calls[0][0].userMessage;
+    // Signatur der letzten Gastnachricht ist im Verlauf sichtbar …
+    expect(prompt).toContain('Viele Grüße,\nLisa');
+    // … und die Instruktion sagt explizit: Signatur schlägt Buchungsname.
+    expect(prompt).toContain('DIESEM Vornamen an');
+    expect(prompt).toContain('Das gilt auch, wenn die Signatur vom Buchungsnamen „Anna" abweicht.');
+  });
+
+  it('falls back to the booking name when the last guest message has no signature', async () => {
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'Hey Anna, klar doch!' });
+    const unsigned: Message[] = [
+      { id: 'm1', thread_id: 'hostex:c1', direction: 'inbound', sent_at: '2026-08-12T10:00Z', from_name: 'Anna', from_address: null, to_address: null, subject: null, body: 'Können wir früher einchecken?', body_html: null, source: 'hostex', raw_meta: null },
+    ];
+    const bookedAsAnna = { ...thread(), guest_name: 'Anna' };
+    const out = await generateDraftForThread({ thread: bookedAsAnna, messages: unsigned, voice: 'v', facts: 'f' }, { call });
+    expect(out).toEqual({ kind: 'text', body: 'Hey Anna, klar doch!' });
+    const prompt = call.mock.calls[0][0].userMessage;
+    expect(prompt).toContain('Ist KEINE Signatur erkennbar, nutze stattdessen den Vornamen aus „Anna".');
+  });
+
+  it('instructs to use only the first name when the signature carries a full name', async () => {
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'Hey Lisa, klar doch!' });
+    const fullNameSigned: Message[] = [
+      { id: 'm1', thread_id: 'hostex:c1', direction: 'inbound', sent_at: '2026-08-12T10:00Z', from_name: 'Anna', from_address: null, to_address: null, subject: null, body: 'Können wir früher einchecken?\n\nLG, Lisa Müller', body_html: null, source: 'hostex', raw_meta: null },
+    ];
+    const bookedAsAnna = { ...thread(), guest_name: 'Anna' };
+    const out = await generateDraftForThread({ thread: bookedAsAnna, messages: fullNameSigned, voice: 'v', facts: 'f' }, { call });
+    expect(out).toEqual({ kind: 'text', body: 'Hey Lisa, klar doch!' });
+    const prompt = call.mock.calls[0][0].userMessage;
+    expect(prompt).toContain('LG, Lisa Müller');
+    expect(prompt).toContain('bei vollem Namen (Vor- + Nachname) NUR den Vornamen verwenden (aus „Lisa Müller" wird „Lisa")');
+  });
+
+  it('still instructs the signature rule (with nameless fallback) when the booking name is unknown', async () => {
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'Hey Lisa!' });
+    const signedNoBooking: Message[] = [
+      { id: 'm1', thread_id: 'hostex:c1', direction: 'inbound', sent_at: '2026-08-12T10:00Z', from_name: null, from_address: null, to_address: null, subject: null, body: 'Frage zum Check-in.\n\nViele Grüße, Lisa', body_html: null, source: 'hostex', raw_meta: null },
+    ];
+    const anonBooking = { ...thread(), guest_name: null };
+    await generateDraftForThread({ thread: anonBooking, messages: signedNoBooking, voice: 'v', facts: 'f' }, { call });
+    const prompt = call.mock.calls[0][0].userMessage;
+    expect(prompt).toContain('Der Buchungsname ist nicht bekannt — ist auch keine Signatur erkennbar,');
+    expect(prompt).toContain('DIESEM Vornamen an');
+  });
+});
+
 describe('generateDraftForThread — booking context (#364)', () => {
   it('includes the Buchungskontext block + the never-ask-again rule when bookingContext is set', async () => {
     const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'Klar, bis dann!' });

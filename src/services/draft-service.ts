@@ -83,14 +83,42 @@ function buildSystemPrompt(voice: string, facts: string, bookingContext: string 
   return lines.join('\n');
 }
 
+/**
+ * #384: die Anrede soll immer die Person treffen, die die LETZTE eingegangene Gastnachricht
+ * unterschrieben hat (z. B. Buchung läuft auf "Anna", aber die Nachricht endet mit "Viele Grüße,
+ * Lisa" → Anrede "Lisa") — nicht pauschal den Buchungsnamen. Bewusst als Prompt-Instruktion statt
+ * deterministischer Regex-Extraktion gelöst: Signaturen sind sprachlich zu vielgestaltig (Sprache,
+ * Grußformel, mit/ohne Nachname) für zuverlässiges Pattern-Matching, und das Modell sieht die
+ * letzte Gastnachricht ohnehin im Verlauf — passt zum bestehenden Muster dieser Datei, in dem auch
+ * andere Nuancen (z. B. no_reply_needed) dem Modell per Instruktion übergeben werden statt Regex.
+ */
 function buildConversation(messages: Message[], guestName: string | null): string {
-  const nameLine = guestName
-    ? `Der Gast heißt „${guestName}". Sprich ihn direkt mit Vornamen an (Begrüßungs-Stil siehe Voice) — niemals mit „Liebe/Lieber Gast" o. Ä.`
-    : 'Der Name des Gastes ist nicht bekannt — nutze eine natürliche namenlose Begrüßung im Voice-Stil, niemals „Liebe/Lieber Gast".';
+  const hasInbound = messages.some((m) => m.direction === 'inbound');
   const lines = messages.map((m) => {
     const who = m.direction === 'inbound' ? 'Gast' : m.direction === 'outbound' ? 'Host' : 'System';
     return `${who}: ${m.body}`;
   });
+
+  let nameLine: string;
+  if (!hasInbound) {
+    // Keine Gastnachricht vorhanden (z. B. leerer Verlauf) — keine Signatur zu prüfen,
+    // altes Verhalten unverändert: Buchungsname bzw. namenlose Begrüßung.
+    nameLine = guestName
+      ? `Der Gast heißt „${guestName}". Sprich ihn direkt mit Vornamen an (Begrüßungs-Stil siehe Voice) — niemals mit „Liebe/Lieber Gast" o. Ä.`
+      : 'Der Name des Gastes ist nicht bekannt — nutze eine natürliche namenlose Begrüßung im Voice-Stil, niemals „Liebe/Lieber Gast".';
+  } else {
+    const signatureRule =
+      'Anrede-Regel: Prüfe, ob die LETZTE Gastnachricht im Verlauf unten mit einem Namen ' +
+      'unterschrieben ist (z. B. „Viele Grüße, Lisa", „LG Lisa", „Danke, Lisa Müller"). Ist eine ' +
+      'Signatur erkennbar, sprich den Gast in der Anrede mit DIESEM Vornamen an — bei vollem Namen ' +
+      '(Vor- + Nachname) NUR den Vornamen verwenden (aus „Lisa Müller" wird „Lisa").';
+    nameLine = guestName
+      ? `${signatureRule} Das gilt auch, wenn die Signatur vom Buchungsnamen „${guestName}" abweicht. ` +
+        `Ist KEINE Signatur erkennbar, nutze stattdessen den Vornamen aus „${guestName}". ` +
+        'Sprich den Gast direkt mit Vornamen an (Begrüßungs-Stil siehe Voice) — niemals mit „Liebe/Lieber Gast" o. Ä.'
+      : `${signatureRule} Der Buchungsname ist nicht bekannt — ist auch keine Signatur erkennbar, ` +
+        'nutze eine natürliche namenlose Begrüßung im Voice-Stil, niemals „Liebe/Lieber Gast".';
+  }
   return `${nameLine}\n\nBisheriger Verlauf (chronologisch), beantworte die letzte Gastnachricht:\n${lines.join('\n')}`;
 }
 
