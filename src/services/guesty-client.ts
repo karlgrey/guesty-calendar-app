@@ -854,14 +854,16 @@ export class GuestyClient {
    */
   async updateReservationStatus(
     reservationId: string,
-    status: 'confirmed' | 'canceled' | 'expired',
+    status: 'confirmed' | 'canceled' | 'expired' | 'closed',
     cancellationReason: string = 'Cancelled Due to Hold/Expiration',
   ): Promise<void> {
     // Smoke-Test-Befunde 24.07.2026: ein Hold (status 'reserved') ist NICHT
-    // 'canceled'-bar ("Reservation not cancellable") — Freigabe läuft über
-    // 'expired'. 'canceled' braucht einen cancellationReason aus fester Liste
-    // (sonst 400) und gilt für bestätigte Reservierungen. Status-Updates werden
-    // ASYNCHRON verarbeitet — ein sofortiger Read zeigt noch den alten Status.
+    // 'canceled'-bar ("Reservation not cancellable"); 'canceled' braucht einen
+    // cancellationReason aus fester Liste (sonst 400) und gilt für bestätigte
+    // Reservierungen. Freigabe eines Holds = 'closed' (räumt lt. Guesty-Doku
+    // auch die Kalender-Blöcke ab); 'expired' ließ die Blöcke stehen (Fall
+    // Büchler 14.08.2026). Status-Updates werden ASYNCHRON verarbeitet —
+    // ein sofortiger Read zeigt noch den alten Status.
     await this.request<any>(`/reservations-v3/${reservationId}/status`, {
       method: 'PUT',
       body: JSON.stringify({

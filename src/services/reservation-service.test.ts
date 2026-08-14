@@ -163,8 +163,8 @@ describe('confirm/release', () => {
     await confirmOfferReservation('res-1');
     expect(guestyClient.updateReservationStatus).toHaveBeenCalledWith('res-1', 'confirmed');
   });
-  it('release setzt Status expired (Holds sind nicht cancelbar)', async () => {
+  it('release setzt Status closed (nur closed räumt die Kalender-Blöcke ab)', async () => {
     await releaseOfferReservation('res-1');
-    expect(guestyClient.updateReservationStatus).toHaveBeenCalledWith('res-1', 'expired');
+    expect(guestyClient.updateReservationStatus).toHaveBeenCalledWith('res-1', 'closed');
   });
 });

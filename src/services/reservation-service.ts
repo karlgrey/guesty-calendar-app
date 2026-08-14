@@ -236,7 +236,9 @@ export async function confirmOfferReservation(reservationId: string): Promise<vo
 }
 
 export async function releaseOfferReservation(reservationId: string): Promise<void> {
-  // Holds sind bei Guesty nicht 'canceled'-bar — Freigabe = 'expired'
-  // (Smoke-Test 24.07.2026).
-  await guestyClient.updateReservationStatus(reservationId, 'expired');
+  // Holds sind bei Guesty nicht 'canceled'-bar. Freigabe = 'closed':
+  // nur 'closed' entfernt laut Guesty-Doku auch die Kalender-Blöcke des Holds
+  // (inkl. automatisch angelegter Puffer-Blöcke). Ein manuell gesetztes
+  // 'expired' ließ die Blöcke stehen — Fall Büchler 14.08.2026 (#329).
+  await guestyClient.updateReservationStatus(reservationId, 'closed');
 }
