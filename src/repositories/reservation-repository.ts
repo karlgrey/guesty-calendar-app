@@ -47,7 +47,9 @@ export function upsertReservation(
         nights_count = excluded.nights_count,
         guest_id = excluded.guest_id,
         guest_name = excluded.guest_name,
-        guests_count = excluded.guests_count,
+        -- NULL überschreibt keinen Bestandswert: Guestys Kalender-blockRefs liefern
+        -- bei manual-Reservierungen kein guestsCount (Fall Anna/Netlight 14.08.2026)
+        guests_count = COALESCE(excluded.guests_count, reservations.guests_count),
         adults_count = excluded.adults_count,
         children_count = excluded.children_count,
         infants_count = excluded.infants_count,
@@ -116,7 +118,9 @@ export function upsertReservationBatch(
         nights_count = excluded.nights_count,
         guest_id = excluded.guest_id,
         guest_name = excluded.guest_name,
-        guests_count = excluded.guests_count,
+        -- NULL überschreibt keinen Bestandswert: Guestys Kalender-blockRefs liefern
+        -- bei manual-Reservierungen kein guestsCount (Fall Anna/Netlight 14.08.2026)
+        guests_count = COALESCE(excluded.guests_count, reservations.guests_count),
         adults_count = excluded.adults_count,
         children_count = excluded.children_count,
         infants_count = excluded.infants_count,

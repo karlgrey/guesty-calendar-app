@@ -8,6 +8,7 @@ import type { GuestyCalendarDay } from '../types/guesty.js';
 import type { Reservation } from '../types/models.js';
 import logger from '../utils/logger.js';
 import { fingerprintGuest } from '../utils/guest-fingerprint.js';
+import { nightsBetween } from '../utils/date.js';
 
 /**
  * Extract reservation data from calendar day
@@ -26,6 +27,16 @@ export function extractReservationFromCalendar(
   const res = reservationBlock.reservation;
 
   try {
+    // Manuell/per Open API angelegte Reservierungen kommen in den Kalender-
+    // blockRefs OHNE nightsCount/guestsCount an (Channel-Buchungen haben beide)
+    // — Nächte deshalb notfalls aus den Daten ableiten (Fall Anna/Netlight
+    // 14.08.2026: „0 Nächte, 0 Gäste" im Google-Kalender-Event).
+    const checkInDay: string | null =
+      res.checkInDateLocalized || (typeof res.checkIn === 'string' ? res.checkIn.split('T')[0] : null);
+    const checkOutDay: string | null =
+      res.checkOutDateLocalized || (typeof res.checkOut === 'string' ? res.checkOut.split('T')[0] : null);
+    const derivedNights = checkInDay && checkOutDay ? nightsBetween(checkInDay, checkOutDay) : 0;
+
     return {
       reservation_id: res._id,
       listing_id: res.listingId,
@@ -35,7 +46,7 @@ export function extractReservationFromCalendar(
       check_out: res.checkOut,
       check_in_localized: res.checkInDateLocalized || null,
       check_out_localized: res.checkOutDateLocalized || null,
-      nights_count: res.nightsCount || 0,
+      nights_count: res.nightsCount || derivedNights,
 
       // Guest information
       guest_id: res.guestId || null,
