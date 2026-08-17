@@ -39,4 +39,16 @@ describe('nightsBetween', () => {
   it('counts correctly across a month boundary', () => {
     expect(nightsBetween('2026-08-30', '2026-09-02')).toBe(3);
   });
+
+  it('counts correctly across the Europe/Berlin spring DST transition (29.03.2026)', () => {
+    expect(nightsBetween('2026-03-27', '2026-03-31')).toBe(4);
+  });
+
+  it('counts correctly across the Europe/Berlin autumn DST transition (25.10.2026)', () => {
+    expect(nightsBetween('2026-10-23', '2026-10-27')).toBe(4);
+  });
+
+  it('counts correctly across a year boundary', () => {
+    expect(nightsBetween('2026-12-29', '2027-01-03')).toBe(5);
+  });
 });

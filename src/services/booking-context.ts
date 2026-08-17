@@ -9,17 +9,12 @@
  */
 import { getReservationById, getInquiryById } from '../repositories/reservation-repository.js';
 import type { MessageThread } from '../types/messages.js';
+import { nightsBetween } from '../utils/date.js';
 
 /** ISO/localized date (YYYY-MM-DD…) → German TT.MM.JJJJ. */
 function deDate(dateStr: string): string {
   const [y, m, d] = dateStr.slice(0, 10).split('-');
   return `${d}.${m}.${y}`;
-}
-
-function nightsBetween(start: string, end: string): number {
-  return Math.round(
-    (Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86_400_000
-  );
 }
 
 /**

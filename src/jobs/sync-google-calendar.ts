@@ -13,6 +13,7 @@ import type { Reservation } from '../types/models.js';
 import logger from '../utils/logger.js';
 import { getAvailability } from '../repositories/availability-repository.js';
 import { buildBlockSpans, buildBlockEvent, blockEventId } from '../services/google-calendar-blocks.js';
+import { addOneDay } from '../utils/date.js';
 
 export interface GoogleCalendarSyncResult {
   success: boolean;
@@ -22,15 +23,6 @@ export interface GoogleCalendarSyncResult {
   blockEventsDeleted?: number;
   error?: string;
   durationMs?: number;
-}
-
-/**
- * Add one day to a YYYY-MM-DD date string
- */
-function addOneDay(dateStr: string): string {
-  const [year, month, day] = dateStr.split('-').map(Number);
-  const d = new Date(year, month - 1, day + 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 /**
@@ -47,7 +39,7 @@ function formatDateDE(dateStr: string): string {
 /**
  * Build a Google Calendar event from a reservation
  */
-function buildCalendarEvent(
+export function buildCalendarEvent(
   reservation: Reservation,
   propertyName: string,
   checkInTime: string | undefined,
@@ -64,6 +56,12 @@ function buildCalendarEvent(
 
   // End date +1 day: Google all-day events use exclusive end date,
   // but guests are still present on checkout day until checkout time.
+  // UTC-basierte addOneDay (utils/date) — Google-Calendar-Ganztages-Events
+  // sind reine YYYY-MM-DD-Strings, dafür gibt es keinen fachlichen Grund für
+  // lokale Zeit. Die vormals hier lokale Variante war DST-abhängig, aber laut
+  // Charakterisierungstest (#406) über 2020-2029 inkl. beider Europe/Berlin-
+  // Übergänge byte-identisch zur UTC-Variante — Konsolidierung ist ein reiner
+  // Refactor ohne Verhaltensänderung.
   const endDate = addOneDay(checkOut);
 
   const descLines = [

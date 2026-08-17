@@ -75,6 +75,36 @@ describe('buildBookingContext', () => {
     expect(ctx).toContain('Daten stammen aus der Anfrage selbst');
   });
 
+  it('nightsBetween: zählt korrekt über den Frühjahrs-DST-Übergang Europe/Berlin (29.03.2026)', () => {
+    db.prepare(`
+      INSERT INTO inquiries (inquiry_id, status, check_in, check_out, guest_name, guests_count)
+      VALUES (?,?,?,?,?,?)
+    `).run('INQ-DST-SPRING', 'inquiry', '2026-03-27', '2026-03-31', 'DST-Test', 2);
+
+    const ctx = buildBookingContext(thread({ inquiry_id: 'INQ-DST-SPRING' }));
+    expect(ctx).toContain('4 Nächte');
+  });
+
+  it('nightsBetween: zählt korrekt über den Herbst-DST-Übergang Europe/Berlin (25.10.2026)', () => {
+    db.prepare(`
+      INSERT INTO inquiries (inquiry_id, status, check_in, check_out, guest_name, guests_count)
+      VALUES (?,?,?,?,?,?)
+    `).run('INQ-DST-AUTUMN', 'inquiry', '2026-10-23', '2026-10-27', 'DST-Test', 2);
+
+    const ctx = buildBookingContext(thread({ inquiry_id: 'INQ-DST-AUTUMN' }));
+    expect(ctx).toContain('4 Nächte');
+  });
+
+  it('nightsBetween: zählt korrekt über einen Jahreswechsel', () => {
+    db.prepare(`
+      INSERT INTO inquiries (inquiry_id, status, check_in, check_out, guest_name, guests_count)
+      VALUES (?,?,?,?,?,?)
+    `).run('INQ-NYE', 'inquiry', '2026-12-29', '2027-01-03', 'NYE-Test', 2);
+
+    const ctx = buildBookingContext(thread({ inquiry_id: 'INQ-NYE' }));
+    expect(ctx).toContain('5 Nächte');
+  });
+
   it('returns null when the thread has neither reservation_id nor inquiry_id', () => {
     expect(buildBookingContext(thread())).toBeNull();
   });
