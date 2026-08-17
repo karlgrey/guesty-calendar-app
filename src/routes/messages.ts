@@ -5,6 +5,7 @@ import {
   getThreadsNeedingReply, getThreadById, getMessagesByThread, upsertMessage,
   getLastMessageSync, markThreadAiNoReply, getMessagesSince, type MessageFeedRow,
 } from '../repositories/message-repository.js';
+import type { MessageThread } from '../types/messages.js';
 import {
   createDraft, getDraftById, getActiveDraftByThread, markDraftSent, markDraftError, discardDraft,
   claimDraftForSending, updateDraftBody,
@@ -213,6 +214,7 @@ router.get('/:threadId', (req, res) => {
     )
     .join('');
 
+  const canSendHint = '<p class="subtitle">Kanal unklar — bitte direkt in der Guesty-Inbox antworten.</p>';
   const draftBlock = draft
     ? `<h3>${draft.generated_by === 'llm' ? 'KI-Entwurf' : 'Entwurf'}</h3>
        ${canSend
@@ -221,7 +223,7 @@ router.get('/:threadId', (req, res) => {
               <div class="actions"><button type="submit" class="btn btn-primary">Senden (Freigabe)</button></div>
             </form>`
          : `<textarea rows="7" readonly>${esc(draft.body)}</textarea>
-            <p class="subtitle">Kanal unklar — bitte direkt in der Guesty-Inbox antworten.</p>`}
+            ${canSendHint}`}
        <div class="actions">
          ${draft.generated_by === 'llm' ? `<form method="POST" action="/admin/messages/${encodeURIComponent(thread.id)}/regenerate"><button type="submit" class="btn btn-ghost">Neu generieren</button></form>` : ''}
          <form method="POST" action="/admin/messages/drafts/${encodeURIComponent(draft.id)}/discard">
@@ -251,10 +253,14 @@ router.get('/:threadId', (req, res) => {
                   <button type="submit" class="btn btn-primary">KI-Entwurf generieren</button></form>
               </div>`
          : ''}
-       <form method="POST" action="/admin/messages/${encodeURIComponent(thread.id)}/draft">
+       <form method="POST" action="/admin/messages/${encodeURIComponent(thread.id)}/reply">
          <textarea name="body" rows="6" required placeholder="Antwort an ${name} …"></textarea>
-         <div class="actions"><button type="submit" class="btn ${['hostex', 'guesty'].includes(thread.source) ? 'btn-ghost' : 'btn-primary'}">Manuell speichern</button></div>
-       </form>`;
+         <div class="actions">
+           ${canSend ? '<button type="submit" class="btn btn-primary">Senden</button>' : ''}
+           <button type="submit" formaction="/admin/messages/${encodeURIComponent(thread.id)}/draft" class="btn btn-ghost">Als Entwurf speichern</button>
+         </div>
+       </form>
+       ${canSend ? '' : canSendHint}`;
 
   const noDraftNotice = req.query.nodraft === '1'
     ? `<p class="subtitle" style="background:var(--color-sand);padding:10px 14px;border-radius:8px">
@@ -269,11 +275,27 @@ router.get('/:threadId', (req, res) => {
          unten manuell schreiben.
        </p>`
     : '';
+  const sendBlockedNotice = req.query.sendblocked === '1'
+    ? `<p class="subtitle" style="background:var(--color-sand);padding:10px 14px;border-radius:8px">
+         Kanal unklar — bitte direkt in der Guesty-Inbox antworten.
+       </p>`
+    : '';
+  const draftExistsNotice = req.query.draftexists === '1'
+    ? `<p class="subtitle" style="background:var(--color-sand);padding:10px 14px;border-radius:8px">
+         Es existiert bereits ein offener Entwurf für diesen Thread — der neue Text wurde nicht
+         gesendet. Bitte den bestehenden Entwurf unten senden oder verwerfen.
+       </p>`
+    : '';
+  const sentNotice = req.query.sent === '1'
+    ? `<p class="subtitle" style="background:var(--color-sand);padding:10px 14px;border-radius:8px;border-left:4px solid var(--color-forest)">
+         Nachricht gesendet.
+       </p>`
+    : '';
   const body = `<a class="back-link" href="/admin/messages">&larr; Alle Nachrichten</a>
     <h1>${name}</h1>
     <p class="subtitle"><span class="badge">${esc(thread.channel)}</span>${property ? ` · <strong>${esc(property.name)}</strong>` : ''} · Provider: ${esc(thread.source)}</p>
     <div class="section"><h3>Verlauf</h3>${history}</div>
-    <div class="section">${noDraftNotice}${genFailedNotice}${draftBlock}</div>`;
+    <div class="section">${noDraftNotice}${genFailedNotice}${sendBlockedNotice}${draftExistsNotice}${sentNotice}${draftBlock}</div>`;
   res.type('html').send(renderAdminPage({ title: name, body, active: 'messages' }));
 });
 
@@ -293,6 +315,37 @@ router.post('/:threadId/draft', express.urlencoded({ extended: true }), (req, re
     res.redirect(`/admin/messages/${encodeURIComponent(thread.id)}`);
   } catch (e) { next(e); }
 });
+
+// Gemeinsamer Send-Kern für Freigabe-Send (POST /drafts/:draftId/send) UND Direkt-Send
+// (POST /:threadId/reply, SmartTasks #409 Nachschärfung) — beide Pfade laufen über denselben
+// geclaimten Draft, damit Audit-Trail (message_drafts) und Fehlerpfad (markDraftError) identisch
+// bleiben. Erwartet, dass der Draft VORHER erfolgreich geclaimt wurde (status pending→sending).
+async function sendClaimedDraft(
+  draftId: string,
+  thread: MessageThread,
+  bodyToSend: string,
+): Promise<{ ok: true } | { ok: false; err: unknown }> {
+  try {
+    const { externalMessageId } = await sendReply(thread, bodyToSend);
+    markDraftSent(draftId, externalMessageId);
+    // Key the local outbound row on the returned external id so the next sync that ingests
+    // the same message as {source}:{realId} hits the same row (upsert = no-op) instead of
+    // creating a duplicate. Falls back to sent:{draftId} when no external id is returned.
+    // NOTE: this collapse assumes the send response's message id equals the id the
+    // conversation later reports; confirm on first live send (hostex AND guesty).
+    const outboundId = externalMessageId ? `${thread.source}:${externalMessageId}` : `sent:${draftId}`;
+    upsertMessage({
+      id: outboundId, thread_id: thread.id, direction: 'outbound',
+      sent_at: new Date().toISOString(), from_name: 'host', from_address: null, to_address: null,
+      subject: null, body: bodyToSend, body_html: null, source: thread.source,
+      raw_meta: JSON.stringify({ draftId, externalMessageId }),
+    });
+    return { ok: true };
+  } catch (sendErr) {
+    markDraftError(draftId, sendErr instanceof Error ? sendErr.message : String(sendErr));
+    return { ok: false, err: sendErr };
+  }
+}
 
 // Freigabe: senden
 router.post('/drafts/:draftId/send', express.urlencoded({ extended: true }), async (req, res, next) => {
@@ -315,25 +368,56 @@ router.post('/drafts/:draftId/send', express.urlencoded({ extended: true }), asy
     if (edited && edited !== draft.body) updateDraftBody(draft.id, edited);
     const bodyToSend = edited || draft.body;
 
-    try {
-      const { externalMessageId } = await sendReply(thread, bodyToSend);
-      markDraftSent(draft.id, externalMessageId);
-      // Key the local outbound row on the returned external id so the next sync that ingests
-      // the same message as {source}:{realId} hits the same row (upsert = no-op) instead of
-      // creating a duplicate. Falls back to sent:{draftId} when no external id is returned.
-      // NOTE: this collapse assumes the send response's message id equals the id the
-      // conversation later reports; confirm on first live send (hostex AND guesty).
-      const outboundId = externalMessageId ? `${thread.source}:${externalMessageId}` : `sent:${draft.id}`;
-      upsertMessage({
-        id: outboundId, thread_id: thread.id, direction: 'outbound',
-        sent_at: new Date().toISOString(), from_name: 'host', from_address: null, to_address: null,
-        subject: null, body: bodyToSend, body_html: null, source: thread.source,
-        raw_meta: JSON.stringify({ draftId: draft.id, externalMessageId }),
-      });
+    const result = await sendClaimedDraft(draft.id, thread, bodyToSend);
+    if (result.ok) {
       res.redirect(`/admin/messages/${encodeURIComponent(thread.id)}`);
-    } catch (sendErr) {
-      markDraftError(draft.id, sendErr instanceof Error ? sendErr.message : String(sendErr));
-      res.status(502).send(`Versand fehlgeschlagen: ${esc(String(sendErr))}`);
+    } else {
+      res.status(502).send(`Versand fehlgeschlagen: ${esc(String(result.err))}`);
+    }
+  } catch (e) { next(e); }
+});
+
+// Direkt-Senden ohne Zwei-Schritt-Freigabe (SmartTasks #409, Nachschärfung): Micha tippt selbst —
+// sein Klick IST die Freigabe. Läuft trotzdem über dieselbe Draft-Infrastruktur (Audit-Trail,
+// claimDraftForSending-Guard, sendClaimedDraft) wie der KI-Entwurf-Pfad, nur ohne Zwischenstopp.
+router.post('/:threadId/reply', express.urlencoded({ extended: true }), async (req, res, next) => {
+  try {
+    const body = typeof req.body?.body === 'string' ? req.body.body.trim() : '';
+    if (!body) { res.status(400).send('Leere Antwort'); return; }
+    const thread = getThreadById(req.params.threadId);
+    if (!thread) { res.status(404).send('Thread nicht gefunden'); return; }
+
+    // Guesty: Senden nur, wenn der Kanal der letzten Gastnachricht spiegelbar ist (wie im GET).
+    const canSend = thread.source !== 'guesty' || resolveOutboundModuleType(getMessagesByThread(thread.id)) !== null;
+    if (!canSend) {
+      res.redirect(`/admin/messages/${encodeURIComponent(thread.id)}?sendblocked=1`);
+      return;
+    }
+
+    // Es existiert bereits ein offener Entwurf → nicht anfassen, keinen zweiten anlegen.
+    if (getActiveDraftByThread(thread.id)) {
+      res.redirect(`/admin/messages/${encodeURIComponent(thread.id)}?draftexists=1`);
+      return;
+    }
+
+    const draftId = randomUUID();
+    createDraft({
+      id: draftId, thread_id: thread.id,
+      provider: thread.source === 'guesty' ? 'guesty' : 'hostex',
+      body, generated_by: 'manual',
+    });
+    if (!claimDraftForSending(draftId)) {
+      // Praktisch nie erreichbar (Draft wurde gerade erst pending angelegt) — defensiv wie
+      // beim Freigabe-Send behandelt.
+      res.status(409).send('Entwurf ist nicht mehr offen oder wird bereits gesendet');
+      return;
+    }
+
+    const result = await sendClaimedDraft(draftId, thread, body);
+    if (result.ok) {
+      res.redirect(`/admin/messages/${encodeURIComponent(thread.id)}?sent=1`);
+    } else {
+      res.status(502).send(`Versand fehlgeschlagen: ${esc(String(result.err))}`);
     }
   } catch (e) { next(e); }
 });
