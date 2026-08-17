@@ -3,7 +3,7 @@ import express from 'express';
 import { randomUUID } from 'node:crypto';
 import {
   getThreadsNeedingReply, getThreadById, getMessagesByThread, upsertMessage,
-  getLastMessageSync, markThreadAiNoReply,
+  getLastMessageSync, markThreadAiNoReply, getMessagesSince, type MessageFeedRow,
 } from '../repositories/message-repository.js';
 import {
   createDraft, getDraftById, getActiveDraftByThread, markDraftSent, markDraftError, discardDraft,
@@ -50,8 +50,78 @@ function directionLabel(direction: string): string {
   return 'System';
 }
 
-// Liste offener Threads
-router.get('/', (_req, res) => {
+// ISO timestamp -> "08:37" (Uhrzeit ohne Datum, fürs Alle-Feed — dort steht
+// das Datum schon als Gruppen-Überschrift).
+function fmtTime(iso: string | null | undefined): string {
+  const s = String(iso ?? '');
+  return s.length >= 16 ? s.slice(11, 16) : s;
+}
+
+// ISO/SQLite-Timestamp -> "YYYY-MM-DD" (Gruppierungsschlüssel je Kalendertag).
+function dayKeyOf(iso: string | null | undefined): string {
+  return String(iso ?? '').slice(0, 10);
+}
+
+// "YYYY-MM-DD" -> "TT.MM.JJJJ" für die Datums-Überschrift im Alle-Feed.
+function dayHeading(key: string): string {
+  const parts = key.split('-');
+  return parts.length === 3 ? `${parts[2]}.${parts[1]}.${parts[0]}` : key;
+}
+
+const SNIPPET_MAX_LEN = 140;
+
+// Whitespace normalisiert, auf ~140 Zeichen gekürzt, escaped; leere Bodies
+// (z. B. reine Anhänge) werden als "[ohne Text]" markiert.
+function snippetFor(body: string | null | undefined): string {
+  const normalized = String(body ?? '').replace(/\s+/g, ' ').trim();
+  if (!normalized) return '[ohne Text]';
+  const truncated = normalized.length > SNIPPET_MAX_LEN
+    ? `${normalized.slice(0, SNIPPET_MAX_LEN)}…`
+    : normalized;
+  return esc(truncated);
+}
+
+// Chronologischer Nachrichten-Feed (nicht Thread-Liste) für die "Alle"-Ansicht:
+// alle Nachrichten über alle Threads/Kanäle, neueste zuerst, nach Kalendertag
+// gruppiert.
+function renderFeed(rows: MessageFeedRow[]): string {
+  if (!rows.length) return '<p class="empty">Keine Nachrichten in diesem Zeitraum.</p>';
+  const groups = new Map<string, MessageFeedRow[]>();
+  for (const row of rows) {
+    const key = dayKeyOf(row.sent_at);
+    const bucket = groups.get(key);
+    if (bucket) bucket.push(row); else groups.set(key, [row]);
+  }
+  return [...groups.entries()]
+    .map(([key, msgs]) => {
+      const items = msgs
+        .map((m) => {
+          const property = propertyForBadge({ source: m.source, listing_id: m.listing_id });
+          const code = property?.shortCode ?? property?.slug;
+          const codeBadge = code
+            ? `<span class="badge"${property?.uiColor ? ` style="background:${esc(property.uiColor)};color:var(--color-charcoal)"` : ''}>${esc(code)}</span>`
+            : '';
+          const name = esc(m.guest_name) || esc(m.thread_id);
+          return `<li class="feed-row">
+            <span class="feed-time">${esc(fmtTime(m.sent_at))}</span>
+            ${codeBadge}
+            <a href="/admin/messages/${encodeURIComponent(m.thread_id)}" class="feed-name">${name}</a>
+            <span class="badge">${esc(directionLabel(m.direction))}</span>
+            <span class="feed-snippet">${snippetFor(m.body)}</span>
+          </li>`;
+        })
+        .join('');
+      return `<div class="feed-day"><h3>${esc(dayHeading(key))}</h3><ul class="feed-list">${items}</ul></div>`;
+    })
+    .join('');
+}
+
+const ALLE_WINDOW_DAYS = 14;
+
+// Liste offener Threads (Default) ODER chronologischer Alle-Feed (?view=alle),
+// umgeschaltet per Query-Param auf derselben Route — siehe SmartTasks #409.
+router.get('/', (req, res) => {
+  const view = req.query.view === 'alle' ? 'alle' : 'offen';
   const threads = getThreadsNeedingReply();
   const rows = threads
     .map((t) => {
@@ -72,9 +142,30 @@ router.get('/', (_req, res) => {
       </a></li>`;
     })
     .join('');
-  const list = threads.length
+  const offenList = threads.length
     ? `<ul class="thread-list">${rows}</ul>`
     : '<p class="empty">Keine offenen Nachrichten — alles beantwortet. 🎉</p>';
+
+  // "Alle"-Feed-Zähler nur laden, wenn diese Ansicht auch gerendert wird —
+  // spart die zusätzliche Query auf der (häufiger aufgerufenen) Offen-Seite.
+  let alleCount: number | null = null;
+  let mainContent: string;
+  if (view === 'alle') {
+    const sinceIso = new Date(Date.now() - ALLE_WINDOW_DAYS * 24 * 60 * 60 * 1000).toISOString();
+    const feedMessages = getMessagesSince(sinceIso);
+    alleCount = feedMessages.length;
+    mainContent = `<p class="subtitle">Alle Nachrichten der letzten ${ALLE_WINDOW_DAYS} Tage, über alle Threads und Kanäle — neueste zuerst.</p>
+    <div class="section">${renderFeed(feedMessages)}</div>`;
+  } else {
+    mainContent = `<p class="subtitle">Threads, deren letzte Nachricht vom Gast kam und auf eine Antwort warten.</p>
+    <div class="section">${offenList}</div>`;
+  }
+
+  const tabs = `<div class="tabs">
+      <a href="/admin/messages" class="tab${view === 'offen' ? ' tab-active' : ''}">Offen <span class="count-pill">${threads.length} offen</span></a>
+      <a href="/admin/messages?view=alle" class="tab${view === 'alle' ? ' tab-active' : ''}">Alle (${ALLE_WINDOW_DAYS} Tage)${alleCount !== null ? ` <span class="count-pill">${alleCount}</span>` : ''}</a>
+    </div>`;
+
   const lastSync = getLastMessageSync();
   const lastSyncLabel = syncRunning
     ? 'Sync läuft …'
@@ -86,7 +177,7 @@ router.get('/', (_req, res) => {
       ? `<details class="sync-log"><summary>Letzter Sync-Lauf ${esc(fmtDate(syncProgress.finishedAt ?? ''))} — Details</summary>${progressLines}</details>`
       : '';
   const body = `<div class="page-head">
-      <h1>Nachrichten <span class="count-pill">${threads.length} offen</span></h1>
+      <h1>Nachrichten</h1>
       <div class="sync-bar">
         <form method="POST" action="/admin/messages/sync"><button type="submit" class="btn btn-primary">Jetzt syncen</button></form>
         <span class="sync-info">${lastSyncLabel}</span>
@@ -94,8 +185,8 @@ router.get('/', (_req, res) => {
       </div>
     </div>
     ${syncLog}
-    <p class="subtitle">Threads, deren letzte Nachricht vom Gast kam und auf eine Antwort warten.</p>
-    <div class="section">${list}</div>
+    ${tabs}
+    ${mainContent}
     ${syncRunning ? '<script>setTimeout(() => location.reload(), 4000);</script>' : ''}`;
   res.type('html').send(renderAdminPage({ title: 'Nachrichten', body, active: 'messages' }));
 });

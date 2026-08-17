@@ -13,7 +13,9 @@ import { DatabaseError } from '../utils/errors.js';
 import logger from '../utils/logger.js';
 import type {
   Message,
+  MessageChannel,
   MessageDirection,
+  MessageSource,
   MessageThread,
   NewMessage,
   NewMessageThread,
@@ -366,4 +368,44 @@ export function getLastMessageSync(): string | null {
     .prepare(`SELECT MAX(last_synced_at) AS last FROM message_threads WHERE source IN ('hostex','guesty')`)
     .get() as { last: string | null } | undefined;
   return row?.last ?? null;
+}
+
+/**
+ * One row of the flat, chronological message feed (across threads/channels)
+ * that powers the Admin-UI "Alle (N Tage)" tab — see getMessagesSince below.
+ * Carries the thread's guest_name/source/listing_id/channel alongside the
+ * message fields (via JOIN) so the route can render the same property badge
+ * as the per-thread list without a second lookup per row.
+ */
+export interface MessageFeedRow {
+  id: string;
+  thread_id: string;
+  direction: MessageDirection;
+  sent_at: string;
+  body: string;
+  guest_name: string | null;
+  source: MessageSource;
+  listing_id: string | null;
+  channel: MessageChannel;
+}
+
+/**
+ * Flat feed of all messages sent at or after `sinceIso`, newest first —
+ * unlike getThreadsNeedingReply (one row per thread), this is one row per
+ * message, across every thread/channel. `limit` guards against an unbounded
+ * result on a very chatty window (default 500).
+ */
+export function getMessagesSince(sinceIso: string, limit = 500): MessageFeedRow[] {
+  const db = getDatabase();
+  return db
+    .prepare(
+      `SELECT m.id, m.thread_id, m.direction, m.sent_at, m.body,
+              t.guest_name, t.source, t.listing_id, t.channel
+       FROM messages m
+       JOIN message_threads t ON t.id = m.thread_id
+       WHERE datetime(m.sent_at) >= datetime(?)
+       ORDER BY datetime(m.sent_at) DESC
+       LIMIT ?`,
+    )
+    .all(sinceIso, limit) as MessageFeedRow[];
 }

@@ -110,6 +110,31 @@ form { margin: 0; }
      neben die Überschrift nach rechts oben "springt". */
   min-width: 210px;
 }
+/* Reiter "Offen" / "Alle (14 Tage)" auf der Nachrichten-Seite (#409). */
+.tabs { display: flex; gap: 10px; margin: 20px 0; flex-wrap: wrap; }
+.tab {
+  display: inline-flex; align-items: center; gap: 8px; text-decoration: none;
+  font-weight: 600; font-size: 14px; padding: 9px 18px; border-radius: 999px;
+  background: var(--color-sand); color: var(--color-warm-gray); border: 1px solid var(--color-stone);
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.tab:hover { background: var(--color-stone); color: var(--color-charcoal); }
+.tab-active, .tab-active:hover { background: var(--color-terracotta); color: #fff; border-color: var(--color-terracotta); }
+.tab .count-pill { margin-left: 0; }
+/* Chronologischer Nachrichten-Feed der "Alle"-Ansicht, nach Kalendertag gruppiert. */
+.feed-day { margin-bottom: 22px; }
+.feed-day:last-child { margin-bottom: 0; }
+.feed-day h3 { margin-bottom: 10px; }
+.feed-list { list-style: none; }
+.feed-row {
+  display: flex; align-items: baseline; gap: 10px; padding: 9px 4px;
+  border-bottom: 1px solid var(--color-stone); font-size: 14px; flex-wrap: wrap;
+}
+.feed-row:last-child { border-bottom: none; }
+.feed-time { font-variant-numeric: tabular-nums; color: var(--color-warm-gray); font-size: 12px; min-width: 40px; }
+.feed-name { font-weight: 600; color: var(--color-charcoal); text-decoration: none; }
+.feed-name:hover { text-decoration: underline; }
+.feed-snippet { color: var(--color-warm-gray); flex: 1 1 100%; }
 `;
 
 // Route-Inventur aller /admin*-Seiten mit eigenem HTML-Rendering (#378). Single
