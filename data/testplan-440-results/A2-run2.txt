@@ -1,0 +1,11 @@
+Fall: A2
+Kanal: airbnb | Buchungsstatus (roh): null
+Lauf: 2/3
+Modell: claude-sonnet-5
+DraftResult.kind: text
+---
+Hey Jonas,
+
+bei Airbnb laufen Preis und Verfügbarkeit direkt über die Plattform, deshalb kann ich hier leider keine eigene Preisberechnung machen. Für 10 Personen und 3 Nächte siehst du den genauen Gesamtpreis inkl. eventueller Rabatte direkt in der Buchungsmaske, wenn du die Daten und Personenzahl einträgst.
+
+Liebe Grüße, Micha

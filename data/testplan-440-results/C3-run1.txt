@@ -1,0 +1,18 @@
+Fall: C3
+Kanal: direct_email | Buchungsstatus (roh): confirmed
+Lauf: 1/3
+Modell: claude-sonnet-5
+DraftResult.kind: text
+---
+Hey Anna,
+
+schön, dass es fix ist! Für euren Aufenthalt vom 20.–22.10. braucht ihr eigentlich nichts weiter vorzubereiten – nur zwei Dinge:
+
+- Hausordnung bitte an alle Teilnehmer weitergeben: farmhouse-prasser.de/legal/hausordnung
+- Das Gäste-Handbuch (mit allen Details zu Anreise, Zugängen, WLAN etc.) findet ihr hier: farmhouse-prasser.de/gaeste-info/
+
+Der Gesamtbetrag ist eine Woche vor Anreise fällig, die Rechnung dazu bekommt ihr rechtzeitig. Falls ihr den Konferenztisch oder Open Space nutzen wollt, gebt uns bitte eine Woche vorher Bescheid, welche Art von Nutzung geplant ist, damit wir passend umbauen können.
+
+Euch eine gute Anreise!
+
+Liebe Grüße, Micha

@@ -1,0 +1,11 @@
+Fall: D3
+Kanal: airbnb | Buchungsstatus (roh): confirmed
+Lauf: 3/3
+Modell: claude-sonnet-5
+DraftResult.kind: text
+---
+Hey Leon,
+
+klar, hier die Daten: Netz „FarmhousePrasserGast", Passwort „FarmhousePrasser". Ist Telekom Glasfaser mit bis zu 1.000 Mbit/s, sollte also gut fürs Hochladen reichen.
+
+Liebe Grüße, Micha

@@ -1,0 +1,13 @@
+Fall: D2
+Kanal: airbnb | Buchungsstatus (roh): canceled
+Lauf: 3/3
+Modell: claude-sonnet-5
+DraftResult.kind: text
+---
+Hey Karim,
+
+schön, dass ihr trotzdem Lust auf einen neuen Termin habt! Über Airbnb läuft das aber leider nicht als Angebot – hier legt ihr einfach eine neue Buchungsanfrage für den gewünschten Frühjahrstermin an, Preis und Verfügbarkeit seht ihr direkt im Kalender.
+
+Wenn ihr schon einen konkreten Zeitraum im Kopf habt, schaut gerne mal, ob er im Kalender frei ist, und schickt die Anfrage direkt los.
+
+Liebe Grüße, Micha

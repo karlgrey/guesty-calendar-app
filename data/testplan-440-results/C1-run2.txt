@@ -1,0 +1,20 @@
+Fall: C1
+Kanal: direct_email | Buchungsstatus (roh): null
+Lauf: 2/3
+Modell: claude-sonnet-5
+DraftResult.kind: text
+---
+Hey Frederike,
+
+danke für deine Anfrage! Für 8 Personen vom 5. bis 7. November (2 Nächte) sieht die Kalkulation so aus:
+
+- Grundpreis: 1.500 €/Tag (bis 5 Personen)
+- Zusatzpersonen: 3 × 100 €/Person/Tag
+- Reinigung: 350 € (einmalig)
+- Mehrnächte-Rabatt: 10 % auf die Unterkunftskosten (ab 2 Nächten)
+- Alle Preise netto, zzgl. 7 % MwSt. auf die Gesamtsumme
+
+Ich prüfe kurz die Verfügbarkeit für den Zeitraum und melde mich mit dem konkreten Angebot als PDF.
+
+Liebe Grüße,
+Micha

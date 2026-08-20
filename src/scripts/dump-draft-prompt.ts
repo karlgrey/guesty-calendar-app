@@ -32,12 +32,25 @@
  *     echte Aufrufer an callClaudeTool übergeben würde. Ebenfalls kein echter
  *     API-Call (deps.call ist ein lokaler Stub, der eine feste Dummy-Antwort liefert).
  *
+ *   Zusätzlich --live [--runs N] (Default N=3): läuft durch generateDraftForThread()
+ *     mit dem ECHTEN deps.call (callClaudeTool, App-ANTHROPIC_API_KEY aus .env) —
+ *     macht N echte Modellaufrufe, druckt jeden generierten Draft auf stdout UND
+ *     speichert ihn als data/testplan-440-results/<fall>-run<N>.txt. Für die
+ *     Abnahme-Läufe nach SmartTasks-Doc #20 (#440). ACHTUNG: echte API-Kosten,
+ *     aber KEIN Versand an Gäste — es entsteht nur ein Draft-Text lokal, es wird
+ *     nichts an Guesty/Hostex geschickt und kein message_drafts-Eintrag in der DB
+ *     angelegt (der Live-Modus ruft generateDraftForThread direkt, nicht den
+ *     Job/Route-Pfad, der Drafts persistiert).
+ *
  * Beispiele:
  *   npx tsx src/scripts/dump-draft-prompt.ts guesty:69b6fcf87c389e00131e3e75
  *   npx tsx src/scripts/dump-draft-prompt.ts --fixture data/testplan-440-fixtures/a1-catering-unconfirmed.json
  *   npx tsx src/scripts/dump-draft-prompt.ts --fixture data/testplan-440-fixtures/b2-catering-confirmed.json --via-generate
+ *   npx tsx src/scripts/dump-draft-prompt.ts --fixture data/testplan-440-fixtures/a1-catering-unconfirmed.json --live --runs 3
+ *   npx tsx src/scripts/dump-draft-prompt.ts guesty:6a821b5faf709c0013b967fa --live --runs 3
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { initDatabase } from '../db/index.js';
 import { getThreadById, getMessagesByThread } from '../repositories/message-repository.js';
@@ -46,10 +59,21 @@ import { getPropertyBySlug } from '../config/properties.js';
 import { loadVoice, loadPropertyFacts } from '../services/vault-knowledge.js';
 import { buildBookingContext } from '../services/booking-context.js';
 import {
-  buildSystemPrompt, buildConversation, generateDraftForThread, type DraftDeps,
+  buildSystemPrompt, buildConversation, generateDraftForThread, DRAFT_MODEL, type DraftDeps,
 } from '../services/draft-service.js';
-import type { CallClaudeToolInput } from '../services/anthropic-client.js';
+import { callClaudeTool, type CallClaudeToolInput } from '../services/anthropic-client.js';
 import type { MessageThread, MessageChannel, Message, MessageDirection } from '../types/messages.js';
+
+const RESULTS_DIR = 'data/testplan-440-results';
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Thread-/Fixture-Bezeichner -> dateisystemsicherer Name für die Ergebnis-Dateien.
+function sanitizeCaseName(id: string): string {
+  return id.replace(/[^a-zA-Z0-9_-]+/g, '_');
+}
 
 // --- Fixture-Schema (synthetischer Modus) -----------------------------------------
 
@@ -179,17 +203,77 @@ async function dumpViaGenerate(thread: MessageThread, messages: Message[], voice
   printSection('DraftResult (mit Dummy-Antwort des Mocks)', JSON.stringify(result, null, 2));
 }
 
+// Live-Modus (#440, SmartTasks-Doc #20, Abnahme-Lauf): ECHTER Modellaufruf über
+// callClaudeTool (App-ANTHROPIC_API_KEY). Kein Versand an Gäste, kein message_drafts-
+// Eintrag — generateDraftForThread() bleibt reine Generierung, Persistenz/Send laufen
+// im echten Betrieb über generate-drafts.ts bzw. routes/messages.ts, die hier nicht
+// aufgerufen werden. Speichert jeden Lauf zusätzlich als Datei für die Auswertung.
+async function dumpLive(
+  caseName: string,
+  thread: MessageThread,
+  messages: Message[],
+  voice: string,
+  facts: string,
+  bookingContext: string | null,
+  runs: number,
+): Promise<void> {
+  mkdirSync(RESULTS_DIR, { recursive: true });
+  for (let run = 1; run <= runs; run++) {
+    console.log(`\n--- Live-Lauf ${run}/${runs} für ${caseName} (echter API-Call, Modell ${DRAFT_MODEL}) ---`);
+    let result;
+    try {
+      result = await generateDraftForThread({ thread, messages, voice, facts, bookingContext }, { call: callClaudeTool });
+    } catch (err) {
+      // generateDraftForThread fängt API-Fehler normalerweise selbst ab (kind:'failed') —
+      // dieser catch ist nur ein zusätzliches Netz, falls doch etwas durchschlägt.
+      result = { kind: 'failed' as const, error: err instanceof Error ? err.message : String(err) };
+    }
+
+    let bodyText: string;
+    if (result.kind === 'text') bodyText = result.body;
+    else if (result.kind === 'no_reply') bodyText = `[no_reply_needed] Grund: ${result.reason}`;
+    else bodyText = `[FEHLER] ${result.error}`;
+
+    const header = [
+      `Fall: ${caseName}`,
+      `Kanal: ${thread.channel} | Buchungsstatus (roh): ${thread.reservation_status ?? 'null'}`,
+      `Lauf: ${run}/${runs}`,
+      `Modell: ${DRAFT_MODEL}`,
+      `DraftResult.kind: ${result.kind}`,
+      '---',
+    ].join('\n');
+    const fileContent = `${header}\n${bodyText}\n`;
+    const outPath = join(RESULTS_DIR, `${caseName}-run${run}.txt`);
+    writeFileSync(outPath, fileContent, 'utf8');
+    console.log(fileContent);
+    console.log(`(gespeichert: ${outPath})`);
+
+    // Kleine Pause zwischen Live-Calls — Rate-Limit-Kulanz laut Auftrag ("kurz warten,
+    // weiter" statt sofort erneut zu hämmern); generateDraftForThread/callClaudeTool
+    // haben zusätzlich eigenes Retry-mit-Backoff für 429/5xx.
+    if (run < runs) await sleep(1500);
+  }
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const viaGenerate = args.includes('--via-generate');
+  const live = args.includes('--live');
+  const runsIdx = args.indexOf('--runs');
+  const runs = runsIdx >= 0 ? Number(args[runsIdx + 1]) : 3;
   const fixtureIdx = args.indexOf('--fixture');
   const fixturePath = fixtureIdx >= 0 ? args[fixtureIdx + 1] : null;
-  const threadIdArg = args.find((a) => !a.startsWith('--') && a !== fixturePath);
+  const nonFlagArgs = args.filter((a, i) => !a.startsWith('--') && args[i - 1] !== '--fixture' && args[i - 1] !== '--runs');
+  const threadIdArg = nonFlagArgs[0] ?? null;
 
   if (!fixturePath && !threadIdArg) {
     console.error('Usage:');
-    console.error('  npx tsx src/scripts/dump-draft-prompt.ts <threadId> [--via-generate]');
-    console.error('  npx tsx src/scripts/dump-draft-prompt.ts --fixture <pfad.json> [--via-generate]');
+    console.error('  npx tsx src/scripts/dump-draft-prompt.ts <threadId> [--via-generate | --live --runs N]');
+    console.error('  npx tsx src/scripts/dump-draft-prompt.ts --fixture <pfad.json> [--via-generate | --live --runs N]');
+    process.exit(1);
+  }
+  if (live && !Number.isInteger(runs)) {
+    console.error(`--runs muss eine ganze Zahl sein (bekommen: ${args[runsIdx + 1]})`);
     process.exit(1);
   }
 
@@ -198,6 +282,7 @@ async function main(): Promise<void> {
   let voice: string | null;
   let facts: string | null;
   let bookingContext: string | null;
+  let caseName: string;
 
   if (fixturePath) {
     const fixture = loadFixture(fixturePath);
@@ -218,6 +303,7 @@ async function main(): Promise<void> {
     voice = loadVoice();
     facts = property.vaultNote ? loadPropertyFacts(property.vaultNote) : null;
     bookingContext = fixture.bookingContext ?? null;
+    caseName = sanitizeCaseName(fixture.caseId);
     console.log(`Fixture: ${fixture.caseId} — ${fixture.description}`);
     console.log(`Property: ${property.name} (${property.slug}, ${property.provider})`);
   } else {
@@ -233,6 +319,7 @@ async function main(): Promise<void> {
     voice = loadVoice();
     facts = property?.vaultNote ? loadPropertyFacts(property.vaultNote) : null;
     bookingContext = buildBookingContext(thread);
+    caseName = sanitizeCaseName(thread.id);
     console.log(`Thread: ${thread.id} (${thread.channel}, reservation_status=${thread.reservation_status ?? 'null'})`);
     console.log(`Property: ${property?.name ?? '(nicht auflösbar)'} (${property?.slug ?? '?'})`);
   }
@@ -244,7 +331,9 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (viaGenerate) {
+  if (live) {
+    await dumpLive(caseName, thread, messages, voice, facts, bookingContext, runs);
+  } else if (viaGenerate) {
     await dumpViaGenerate(thread, messages, voice, facts, bookingContext);
   } else {
     await dumpDirect(thread, messages, voice, facts, bookingContext);

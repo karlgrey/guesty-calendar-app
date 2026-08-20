@@ -1,0 +1,15 @@
+Fall: A4
+Kanal: airbnb | Buchungsstatus (roh): null
+Lauf: 2/3
+Modell: claude-sonnet-5
+DraftResult.kind: text
+---
+Hey Timo,
+
+ja, wir haben eine Sauna – die braucht ca. 45 Minuten zum Vorheizen, Bedienung ist unkompliziert und vor Ort erklärt. Saunatücher sind vorhanden.
+
+Kamin und Feuerschale gibt's auch, aber bitte nur nutzen, wenn ihr Erfahrung im Umgang mit Holz/Feuer habt, und achtet dabei auf die jeweils aktuelle Waldbrandstufe. Brennholz findet ihr auf der Terrasse und im Schuppen.
+
+Für alle weiteren Details schau gerne mal ins Inserat bzw. später ins Gäste-Handbuch – da steht alles nochmal im Detail.
+
+Liebe Grüße, Micha

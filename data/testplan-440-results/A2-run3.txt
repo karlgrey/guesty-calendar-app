@@ -1,0 +1,13 @@
+Fall: A2
+Kanal: airbnb | Buchungsstatus (roh): null
+Lauf: 3/3
+Modell: claude-sonnet-5
+DraftResult.kind: text
+---
+Hey Jonas,
+
+kurz zu deiner Frage: Preise und Verfügbarkeit laufen bei uns über Airbnb selbst – schau am besten direkt im Inserat nach den Konditionen für euren Zeitraum und die Personenzahl, da siehst du auch gleich, ob es für längere Aufenthalte einen Rabatt gibt.
+
+Wenn Zweck und Personenzahl passen, könnt ihr einfach über Airbnb buchen.
+
+Liebe Grüße, Micha

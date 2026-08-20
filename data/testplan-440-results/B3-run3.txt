@@ -1,0 +1,11 @@
+Fall: B3
+Kanal: airbnb | Buchungsstatus (roh): confirmed
+Lauf: 3/3
+Modell: claude-sonnet-5
+DraftResult.kind: text
+---
+Hey Ben,
+
+ja, klar! Da ihr über Airbnb gebucht habt, schaltet Airbnb euch das digitale Gäste-Handbuch mit allen Zugangscodes und dem WLAN-Passwort rechtzeitig vor eurer Anreise am 15.11. automatisch frei – findet ihr dann direkt im Check-in-Guide zu eurer Buchung.
+
+Liebe Grüße, Micha

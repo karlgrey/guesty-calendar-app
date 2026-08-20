@@ -1,0 +1,17 @@
+Fall: guesty_6a821b5faf709c0013b967fa
+Kanal: airbnb | Buchungsstatus (roh): inquiry
+Lauf: 2/3
+Modell: claude-sonnet-5
+DraftResult.kind: text
+---
+Hey Sophie,
+
+danke für die Erklärung, das klingt tatsächlich genau nach dem ruhigen, familiären Rahmen, für den das Farmhouse gedacht ist – kein Eventprogramm, sondern einfach Zeit zusammen mit Kindern, eigenen Zimmern und Rückzug. So verstanden passt es gut, und mit 12 Personen liegt ihr auch klar innerhalb unseres Limits von 15.
+
+Eigenes Catering für den Hochzeitsabend ist überhaupt kein Problem – die Küche steht euch dafür zur Verfügung, und für Frühstück und den zweiten Abend könnt ihr euch ganz normal selbst versorgen, wie ihr es beschreibt.
+
+Wenn ihr Lust habt, es trotzdem etwas festlicher zu gestalten, schaut gerne auch mal bei unseren Catering-Partnern vorbei, die für solche Anlässe schon öfter gebucht wurden.
+
+Wenn für euch sonst noch Fragen offen sind – Zimmeraufteilung, Außenbereich, was auch immer – meldet euch einfach, das lässt sich alles gut klären.
+
+Liebe Grüße, Micha

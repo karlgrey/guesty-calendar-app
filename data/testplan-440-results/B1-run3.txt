@@ -1,0 +1,13 @@
+Fall: B1
+Kanal: airbnb | Buchungsstatus (roh): confirmed
+Lauf: 3/3
+Modell: claude-sonnet-5
+DraftResult.kind: text
+---
+Hey Katharina,
+
+klar, hier die Hausordnung zum Weiterleiten an eure Teilnehmer: farmhouse-prasser.de/legal/hausordnung
+
+Beim Check-in läuft alles per Self-Check-in — den genauen Ablauf inkl. Codes findet ihr rechtzeitig vor Anreise in eurem Airbnb-Gäste-Handbuch, das automatisch für euch freigeschaltet wird. Solltet ihr kurzfristig Hilfe brauchen, meldet euch einfach.
+
+Liebe Grüße, Micha

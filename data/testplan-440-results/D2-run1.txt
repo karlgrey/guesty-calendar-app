@@ -1,0 +1,11 @@
+Fall: D2
+Kanal: airbnb | Buchungsstatus (roh): canceled
+Lauf: 1/3
+Modell: claude-sonnet-5
+DraftResult.kind: text
+---
+Hey Karim,
+
+schön, dass ihr trotzdem Lust auf einen neuen Termin habt! Bei Airbnb läuft die Buchung direkt über die Plattform – schaut gern im Kalender nach einem passenden Frühjahrstermin und schickt uns dafür eine neue Buchungsanfrage, dann bestätigen wir euch das gerne.
+
+Liebe Grüße, Micha

@@ -1,0 +1,13 @@
+Fall: A2
+Kanal: airbnb | Buchungsstatus (roh): null
+Lauf: 1/3
+Modell: claude-sonnet-5
+DraftResult.kind: text
+---
+Hey Jonas,
+
+bei Airbnb-Buchungen laufen Preis und Verfügbarkeit direkt über die Plattform, deshalb kann ich euch hier keinen eigenen Preis nennen. Am besten schaust du im Inserat, wie sich der Preis für 10 Personen / 3 Nächte anzeigt – Rabatte für mehrere Nächte werden dort automatisch berücksichtigt.
+
+Wenn Zweck und Personenzahl passen, könnt ihr direkt über Airbnb buchen. Bei Fragen zum Haus selbst gerne melden!
+
+Liebe Grüße, Micha

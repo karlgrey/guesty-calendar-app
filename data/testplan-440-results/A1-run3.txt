@@ -1,0 +1,13 @@
+Fall: A1
+Kanal: airbnb | Buchungsstatus (roh): inquiry
+Lauf: 3/3
+Modell: claude-sonnet-5
+DraftResult.kind: text
+---
+Hey Sophie,
+
+schön, dass ihr euer Offsite bei uns feiern wollt – 12 Personen für den 10.–12.10. passt gut ins Haus.
+
+Fürs Catering arbeiten wir mit ein paar festen Partnern zusammen: Nina Dombrovskis (regional/saisonal, auch Showkochen), Regine Freyberg (vegan), Nicola Hoppe (ayurvedisch-vegetarisch) und Chef Catering Wandlitz (Fine Dining). Einen Link zur Partnerseite kann ich euch leider erst nach der Buchung schicken – Airbnb blockt Links bei noch nicht bestätigten Anfragen. Sobald die Buchung steht, schicke ich euch die Kontakte gern nach.
+
+Liebe Grüße, Micha

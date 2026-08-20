@@ -1,0 +1,13 @@
+Fall: B1
+Kanal: airbnb | Buchungsstatus (roh): confirmed
+Lauf: 2/3
+Modell: claude-sonnet-5
+DraftResult.kind: text
+---
+Hey Katharina,
+
+klar! Die Hausordnung findet ihr hier zum Weiterleiten an alle Teilnehmer: farmhouse-prasser.de/legal/hausordnung
+
+Zum Reinkommen: Ihr checkt selbst ein, den Code für den Schlüsseltresor und alle weiteren Details bekommt ihr rechtzeitig vor eurer Anreise automatisch über euren Airbnb-Check-in-Guide bzw. das digitale Gäste-Handbuch freigeschaltet.
+
+Liebe Grüße, Micha

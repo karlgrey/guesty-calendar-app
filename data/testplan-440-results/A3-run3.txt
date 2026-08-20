@@ -1,0 +1,13 @@
+Fall: A3
+Kanal: airbnb | Buchungsstatus (roh): inquiry
+Lauf: 3/3
+Modell: claude-sonnet-5
+DraftResult.kind: text
+---
+Hey Merle,
+
+für den 12.–14.09. mit 8 Personen passt das Farmhouse gut, das ist innerhalb unserer Kapazität.
+
+Verfügbarkeit und Buchung laufen bei uns direkt über Airbnb – schaut also gerne, ob sich der Zeitraum dort für euch buchen lässt. Ein "Halten" des Termins können wir über die Plattform leider nicht anbieten, aber sobald ihr euch intern abgestimmt habt, könnt ihr direkt anfragen bzw. buchen.
+
+Liebe Grüße, Micha

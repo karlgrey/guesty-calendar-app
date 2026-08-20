@@ -1,0 +1,11 @@
+Fall: A5
+Kanal: airbnb | Buchungsstatus (roh): inquiry
+Lauf: 1/3
+Modell: claude-sonnet-5
+DraftResult.kind: text
+---
+Hey Nadja,
+
+ja, das passt super – 12 Personen für ein ruhiges Firmen-Offsite ist bei uns genau der richtige Rahmen, ihr habt sogar noch Luft nach oben bis 15. Legt die Buchung für den 05.–07.11. gerne so an, dann bestätigen wir von unserer Seite.
+
+Liebe Grüße, Micha

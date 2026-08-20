@@ -1,0 +1,15 @@
+Fall: guesty_6a821b5faf709c0013b967fa
+Kanal: airbnb | Buchungsstatus (roh): inquiry
+Lauf: 1/3
+Modell: claude-sonnet-5
+DraftResult.kind: text
+---
+Hey Sophie,
+
+das klingt eigentlich genau nach dem, wofür das Farmhouse gedacht ist – ein ruhiges Beisammensein mit der engsten Familie, kein Eventprogramm. Bei 12 Personen und diesem Charakter (Standesamt woanders, bei uns dann einfach die Zeit genießen) sehe ich das unkompliziert.
+
+Catering für den Abend selbst zu organisieren ist überhaupt kein Problem – ihr könnt frei wählen, wen ihr beauftragt. Frühstück und der zweite Abend in Eigenregie sind sowieso Standard bei uns, dafür ist die Küche voll ausgestattet.
+
+Wenn ihr mir noch sagt, für welchen Zeitraum genau ihr plant (Anreise-/Abreisetag), schaue ich gerne nach der Verfügbarkeit.
+
+Liebe Grüße, Micha

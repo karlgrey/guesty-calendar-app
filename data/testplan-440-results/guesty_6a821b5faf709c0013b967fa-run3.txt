@@ -1,0 +1,15 @@
+Fall: guesty_6a821b5faf709c0013b967fa
+Kanal: airbnb | Buchungsstatus (roh): inquiry
+Lauf: 3/3
+Modell: claude-sonnet-5
+DraftResult.kind: text
+---
+Hey Sophie,
+
+das klingt nach genau dem, wofür das Farmhouse gedacht ist – wenn es eher ein ruhiges Beisammensein mit der engsten Familie ist und keine klassische Feier mit Programm, passt das gut zu uns. Mit 12 Personen seid ihr auch gut in unserem Rahmen (max. 15).
+
+Eigenes Catering für den Abend ist überhaupt kein Problem, das entscheidet ihr ganz frei. Auch dass ihr euch sonst selbst versorgt (Frühstück, zweiter Abend), passt super – die Küche ist voll ausgestattet, ihr könnt also einfach kochen und die Zeit zusammen genießen.
+
+Falls ihr noch Fragen zu Zimmern, Außenbereich oder sonst was habt, immer gerne. Und wenn ihr bucht, meldet euch – dann klären wir alles Weitere.
+
+Liebe Grüße, Micha
