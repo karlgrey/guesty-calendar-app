@@ -1,0 +1,13 @@
+Fall: A1
+Kanal: airbnb | Buchungsstatus (roh): inquiry
+Lauf: 1/3
+Modell: claude-sonnet-5
+DraftResult.kind: text
+---
+Hey Sophie,
+
+schön, dass ihr im Oktober mit 12 Personen bei uns euer Offsite feiern wollt – das passt gut ins Haus.
+
+Fürs Catering arbeiten wir mit ein paar festen Partnern zusammen, unter anderem Nina Dombrovskis (regional/saisonal, auch Showkochen) und Regine Freyberg (vegan) – es gibt noch weitere je nach Wunsch. Einen Link kann ich euch über Airbnb leider nicht schicken, aber die Kontakte bekommt ihr direkt nach der Buchung von uns.
+
+Liebe Grüße, Micha

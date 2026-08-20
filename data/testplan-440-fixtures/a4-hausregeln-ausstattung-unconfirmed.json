@@ -1,0 +1,17 @@
+{
+  "caseId": "A4",
+  "description": "Ausstattungs-/Hausregeln-Frage, Airbnb, Buchung NICHT bestätigt — Muss: direkt aus Playbook-Fakten beantworten; Darf nicht: Verweis auf Website-URL.",
+  "propertySlug": "farmhouse",
+  "thread": {
+    "channel": "airbnb",
+    "reservation_status": null,
+    "guest_name": "Timo"
+  },
+  "bookingContext": null,
+  "messages": [
+    {
+      "direction": "inbound",
+      "body": "Habt ihr eine Sauna? Und wie ist das mit dem Feuerplatz/Kamin — gibt es da besondere Regeln, die wir beachten müssen?"
+    }
+  ]
+}

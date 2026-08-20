@@ -1,0 +1,13 @@
+Fall: D1
+Kanal: airbnb | Buchungsstatus (roh): pending
+Lauf: 3/3
+Modell: claude-sonnet-5
+DraftResult.kind: text
+---
+Hey Youssef,
+
+ich schau mir eure Anfrage gerne noch mal an und melde mich, sobald sie bestätigt ist.
+
+Zu den Details: Fotos und Infos zum Haus findet ihr direkt im Inserat hier auf Airbnb – das deckt eigentlich schon das Wichtigste ab. Sobald die Buchung bestätigt ist, schalten wir euch alles Weitere frei.
+
+Liebe Grüße, Micha

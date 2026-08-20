@@ -1,9 +1,31 @@
 // src/jobs/hostex/sync-hostex-messages.ts
 import { upsertThread, upsertMessage, getThreadById } from '../../repositories/message-repository.js';
-import { mapHostexConversation, detailBelongsToProperty } from '../../mappers/hostex/message-mapper.js';
+import { getInquiryByHostexConversationId } from '../../repositories/reservation-repository.js';
+import {
+  mapHostexConversation, detailBelongsToProperty, type HostexReservationInfo,
+} from '../../mappers/hostex/message-mapper.js';
 import type { HostexConversation, HostexConversationDetail } from '../../services/hostex-client.js';
 import type { PropertyConfig } from '../../config/properties.js';
 import logger from '../../utils/logger.js';
+
+/**
+ * #441: resolves a Hostex conversation's reservation info for the thread-facts block in the
+ * draft generator (see draft-service.ts CONFIRMED_RESERVATION_STATUSES) — mirrors what Guesty
+ * gets for free from its conversation payload. `getInquiryByHostexConversationId` reads the
+ * link persisted by sync-reservations.ts (migration 024, runs before message sync). May throw
+ * (DatabaseError) — the caller (syncHostexMessagesForProperty) is responsible for the
+ * conservative fallback, so ANY injected lookup (default or test double) gets the same
+ * error-tolerance for free, not just this one.
+ */
+export function defaultHostexReservationLookup(hostexConversationId: string): HostexReservationInfo | null {
+  const inquiry = getInquiryByHostexConversationId(hostexConversationId);
+  if (!inquiry) return null;
+  return {
+    reservation_id: inquiry.inquiry_id,
+    inquiry_id: inquiry.inquiry_id,
+    reservation_status: inquiry.status,
+  };
+}
 
 export interface HostexMessageClient {
   getConversations(o?: { limit?: number; offset?: number }): Promise<HostexConversation[]>;
@@ -42,8 +64,15 @@ export async function syncHostexMessagesForProperty(
    * empty-title inquiries, which are candidates in every pass — is fetched once.
    */
   detailCache?: Map<string, HostexConversationDetail>,
-  /** deep=true (täglicher Force-ETL): Details für ALLE Kandidaten, kein inkrementeller Skip. */
-  opts: { deep?: boolean } = {},
+  opts: {
+    /** deep=true (täglicher Force-ETL): Details für ALLE Kandidaten, kein inkrementeller Skip. */
+    deep?: boolean;
+    /**
+     * #441: injectable für Tests (Default: echter DB-Lookup via getInquiryByHostexConversationId,
+     * fehlertolerant). Erwartet den ROHEN Hostex-Conversation-Id-String (ohne `hostex:`-Prefix).
+     */
+    reservationLookup?: (hostexConversationId: string) => HostexReservationInfo | null;
+  } = {},
 ): Promise<HostexMessageSyncResult> {
   const listingId = property.hostexPropertyId;
   if (!listingId) {
@@ -57,6 +86,7 @@ export async function syncHostexMessagesForProperty(
     detailCache?.set(id, detail);
     return detail;
   };
+  const resolveReservationInfo = opts.reservationLookup ?? defaultHostexReservationLookup;
 
   try {
     const allConvs = await client.getConversations({ limit: 100 });
@@ -81,7 +111,20 @@ export async function syncHostexMessagesForProperty(
       const detail = await getDetail(conv.id);
       // Empty-title candidates (inquiries) belong to another property unless the detail confirms.
       if (!conv.property_title && !detailBelongsToProperty(detail, listingId)) continue;
-      const { thread, messages: msgs } = mapHostexConversation(detail, listingId, now);
+      // #441: a broken/throwing lookup must never abort the whole message sync — falls back to
+      // the conservative "unknown" (null), same as no match found. Deliberately scoped to just
+      // this call (not the whole loop body) so a lookup failure on one thread cannot swallow an
+      // unrelated persistence error on the same thread.
+      let reservationInfo: HostexReservationInfo | null = null;
+      try {
+        reservationInfo = resolveReservationInfo(conv.id);
+      } catch (error) {
+        logger.warn(
+          { error, slug: property.slug, hostexConversationId: conv.id },
+          'Hostex: reservation-status lookup failed, falling back to null (conservative)',
+        );
+      }
+      const { thread, messages: msgs } = mapHostexConversation(detail, listingId, now, reservationInfo);
       upsertThread(thread);
       for (const m of msgs) {
         upsertMessage(m);

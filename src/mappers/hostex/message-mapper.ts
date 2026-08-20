@@ -32,10 +32,23 @@ export function mapHostexChannel(channelType: string): MessageChannel {
   return 'other';
 }
 
+/**
+ * #441: reservation/inquiry info for this conversation, resolved by the CALLER
+ * (sync-hostex-messages.ts, via a local lookup on inquiries.hostex_conversation_id) — kept
+ * as a plain injected value rather than a lookup inside the mapper so the mapper stays a
+ * pure function. `null` (no match / not yet known) mirrors the pre-#441 default.
+ */
+export interface HostexReservationInfo {
+  reservation_id: string | null;
+  inquiry_id: string | null;
+  reservation_status: string | null;
+}
+
 export function mapHostexConversation(
   detail: HostexConversationDetail,
   listingId: string,
   now: string,
+  reservationInfo: HostexReservationInfo | null = null,
 ): { thread: NewMessageThread; messages: NewMessage[] } {
   const threadId = `hostex:${detail.id}`;
   // Only 'Text' messages are real guest/host conversation; 'Box' and
@@ -56,9 +69,9 @@ export function mapHostexConversation(
     first_message_at: firstAt,
     last_message_at: lastAt,
     message_count: posts.length,
-    reservation_id: null,
-    inquiry_id: null,
-    reservation_status: null,
+    reservation_id: reservationInfo?.reservation_id ?? null,
+    inquiry_id: reservationInfo?.inquiry_id ?? null,
+    reservation_status: reservationInfo?.reservation_status ?? null,
     conversion_category: null,
     classification_confidence: null,
     classification_keywords: null,

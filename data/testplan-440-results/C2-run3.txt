@@ -1,0 +1,13 @@
+Fall: C2
+Kanal: direct_email | Buchungsstatus (roh): null
+Lauf: 3/3
+Modell: claude-sonnet-5
+DraftResult.kind: text
+---
+Hey Malte,
+
+klar! Wir arbeiten mit festen Catering-Partnern zusammen, alle Infos und Kontakte findest du hier: https://www.farmhouse-prasser.de/catering/
+
+Da ist für jeden Geschmack was dabei – von regional/saisonal über vegan bis ayurvedisch-vegetarisch. Meldet euch da einfach direkt bei den Partnern, die zu euch passen.
+
+Liebe Grüße, Micha

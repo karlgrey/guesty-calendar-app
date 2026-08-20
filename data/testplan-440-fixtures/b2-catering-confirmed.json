@@ -1,0 +1,17 @@
+{
+  "caseId": "B2",
+  "description": "Catering-Frage, Airbnb, Buchung BESTÄTIGT — Muss: Partner namentlich + Direktlink (catering/), Playbook-Regel gilt wieder.",
+  "propertySlug": "farmhouse",
+  "thread": {
+    "channel": "airbnb",
+    "reservation_status": "confirmed",
+    "guest_name": "Sophie"
+  },
+  "bookingContext": "Bestätigte Buchung (Status: confirmed): Zeitraum 10.10.2026–12.10.2026, 2 Nächte, 12 Personen, Konfirmationscode HMTESTB2.",
+  "messages": [
+    {
+      "direction": "inbound",
+      "body": "Jetzt wo unsere Buchung fix ist: könnt ihr uns nochmal den Link zu den Catering-Partnern schicken? Wir wollten Nina Dombrovskis anfragen."
+    }
+  ]
+}

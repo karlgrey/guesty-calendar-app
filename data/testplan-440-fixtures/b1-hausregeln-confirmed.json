@@ -1,0 +1,17 @@
+{
+  "caseId": "B1",
+  "description": "Anreise naht / Hausregeln, Airbnb, Buchung BESTÄTIGT — Muss: Hausordnungs-Link erlaubt (farmhouse-prasser.de/legal/hausordnung); Darf nicht: Tresor-/Tor-Codes im Text (auf Check-in-Guide verweisen).",
+  "propertySlug": "farmhouse",
+  "thread": {
+    "channel": "airbnb",
+    "reservation_status": "confirmed",
+    "guest_name": "Katharina"
+  },
+  "bookingContext": "Bestätigte Buchung (Status: confirmed): Zeitraum 28.09.2026–30.09.2026, 2 Nächte, 12 Personen, Konfirmationscode HMTESTB1.",
+  "messages": [
+    {
+      "direction": "inbound",
+      "body": "Wir kommen nächste Woche an — gibt's eine Hausordnung, die wir vorher an alle Teilnehmer schicken können? Und wie kommen wir rein?"
+    }
+  ]
+}

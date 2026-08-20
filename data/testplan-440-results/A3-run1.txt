@@ -1,0 +1,14 @@
+Fall: A3
+Kanal: airbnb | Buchungsstatus (roh): inquiry
+Lauf: 1/3
+Modell: claude-sonnet-5
+DraftResult.kind: text
+---
+Hey Merle,
+
+danke für eure Anfrage für den 12.–14.09. mit 8 Personen! Da das über Airbnb läuft, prüft und bestätigt ihr die Verfügbarkeit direkt hier über die Buchungsanfrage – sobald ihr intern abgestimmt habt, könnt ihr einfach buchen.
+
+Falls ihr während der Abstimmung noch Fragen zum Haus habt, meldet euch gerne – die Fotos und Infos im Inserat geben schon einen guten Eindruck.
+
+Liebe Grüße,
+Micha

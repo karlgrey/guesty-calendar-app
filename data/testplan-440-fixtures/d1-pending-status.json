@@ -1,0 +1,17 @@
+{
+  "caseId": "D1",
+  "description": "Airbnb-Status \"pending\"/nicht sicher bestimmbar — Erwartung: konservativ wie \"nicht bestätigt\" behandeln. Testet resolveBookingStatusLabel() mit einem Status-Wert, der NICHT in CONFIRMED_RESERVATION_STATUSES steht (weder 'confirmed' noch 'reserved').",
+  "propertySlug": "farmhouse",
+  "thread": {
+    "channel": "airbnb",
+    "reservation_status": "pending",
+    "guest_name": "Youssef"
+  },
+  "bookingContext": null,
+  "messages": [
+    {
+      "direction": "inbound",
+      "body": "Ist unsere Anfrage schon bestätigt? Können wir schon mal die Website checken für Details?"
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+Fall: D1
+Kanal: airbnb | Buchungsstatus (roh): pending
+Lauf: 2/3
+Modell: claude-sonnet-5
+DraftResult.kind: text
+---
+Hey Youssef,
+
+schau gern mal in dein Airbnb-Postfach, dort siehst du direkt, ob die Buchung schon bestätigt ist – das läuft bei uns komplett über die Plattform.
+
+Für erste Eindrücke und Details zum Haus schau einfach in unser Inserat, da findest du Fotos und alle wichtigen Infos. Sobald die Buchung bestätigt ist, schalten wir zusätzlich das Gäste-Handbuch mit allen Details frei.
+
+Liebe Grüße, Micha

@@ -25,6 +25,16 @@ beforeEach(() => {
       from_name TEXT, from_address TEXT, to_address TEXT, subject TEXT, body TEXT NOT NULL, body_html TEXT,
       source TEXT NOT NULL, raw_meta TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+    -- #441: real shape (minus indexes, irrelevant here) so the DEFAULT reservationLookup
+    -- (getInquiryByHostexConversationId) resolves cleanly to "no match" instead of hitting the
+    -- error-fallback path in every pre-existing test below (none of them seed a matching row).
+    CREATE TABLE inquiries (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, inquiry_id TEXT NOT NULL UNIQUE, listing_id TEXT NOT NULL,
+      status TEXT NOT NULL, check_in TEXT NOT NULL, check_out TEXT NOT NULL,
+      guest_name TEXT, guests_count INTEGER, source TEXT, created_at_guesty TEXT,
+      last_synced_at TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')), hostex_conversation_id TEXT
+    );
   `);
   setDatabase(db);
 });
@@ -216,5 +226,79 @@ describe('syncHostexMessagesForProperty', () => {
     await syncHostexMessagesForProperty(propB, countingClient, '2026-07-01T00:00:00Z', cache);
     expect(detailCalls).toBe(1); // fetched once despite being a candidate in both passes
     expect(getThreadById('hostex:inq')?.listing_id).toBe('111'); // attributed to A only
+  });
+
+  // #441 Root-Cause-Fix: der Hostex-Mapper setzte reservation_status/reservation_id/inquiry_id
+  // bisher hart auf null — für Hostex-Airbnb-Threads (Bootshaus, Alte Schilderwerkstatt) war der
+  // Buchungsstatus damit nie bestimmbar, und der #440-Kanal-/Status-Block im Draft-Generator
+  // behandelte sie dauerhaft konservativ als "NICHT bestätigt". Der Job löst den Status jetzt pro
+  // Conversation über einen (per Default: DB-)Lookup auf, injizierbar für Tests via
+  // `opts.reservationLookup`.
+  describe('Hostex-Reservierungsstatus im Thread (#441)', () => {
+    it('schreibt reservation_id/inquiry_id/reservation_status, wenn der Lookup einen Treffer liefert', async () => {
+      const res = await syncHostexMessagesForProperty(property, fakeClient, '2026-07-01T00:00:00Z', undefined, {
+        reservationLookup: (id) => {
+          expect(id).toBe('c-1'); // rohe Hostex-Conversation-Id, ohne 'hostex:'-Prefix
+          return { reservation_id: 'R-001', inquiry_id: 'R-001', reservation_status: 'confirmed' };
+        },
+      });
+      expect(res.success).toBe(true);
+      const thread = getThreadById('hostex:c-1');
+      expect(thread?.reservation_id).toBe('R-001');
+      expect(thread?.inquiry_id).toBe('R-001');
+      expect(thread?.reservation_status).toBe('confirmed');
+    });
+
+    it('lässt reservation_status null, wenn der Lookup keinen Treffer liefert (kein Match)', async () => {
+      await syncHostexMessagesForProperty(property, fakeClient, '2026-07-01T00:00:00Z', undefined, {
+        reservationLookup: () => null,
+      });
+      const thread = getThreadById('hostex:c-1');
+      expect(thread?.reservation_status).toBeNull();
+      expect(thread?.reservation_id).toBeNull();
+      expect(thread?.inquiry_id).toBeNull();
+    });
+
+    it('Lookup-Fehlerfall: eine werfende Lookup-Funktion darf den Sync nicht abbrechen — Thread bleibt konservativ null', async () => {
+      // syncHostexMessagesForProperty fängt den Lookup-Aufruf PRO Conversation ab (nicht nur der
+      // produktive Default intern) — so ist JEDE Lookup-Implementierung (Default wie injizierter
+      // Test-Double) gleichermaßen fehlertolerant, statt sich auf Disziplin in jeder einzelnen
+      // Implementierung zu verlassen.
+      const res = await syncHostexMessagesForProperty(property, fakeClient, '2026-07-01T00:00:00Z', undefined, {
+        reservationLookup: () => { throw new Error('DB kaputt'); },
+      });
+      expect(res.success).toBe(true);
+      expect(res.threads).toBe(1);
+      const thread = getThreadById('hostex:c-1');
+      expect(thread?.reservation_status).toBeNull();
+      expect(thread?.reservation_id).toBeNull();
+      expect(thread?.inquiry_id).toBeNull();
+    });
+
+    it('Produktions-Default (kein reservationLookup übergeben): kein Treffer in leerer inquiries-Tabelle → konservativ null, Sync bleibt erfolgreich', async () => {
+      // Kein reservationLookup übergeben → der echte Default (defaultHostexReservationLookup)
+      // läuft gegen die inquiries-Tabelle dieses Tests (leer, aber real vorhanden) und findet
+      // schlicht keinen Treffer — der Normalfall "noch keine verknüpfte Reservierung", kein
+      // Fehlerfall. Ein DB-Fehler (Tabelle fehlt ganz) landet im selben try/catch wie oben, siehe
+      // vorherigen Test.
+      const res = await syncHostexMessagesForProperty(property, fakeClient, '2026-07-01T00:00:00Z');
+      expect(res.success).toBe(true);
+      expect(getThreadById('hostex:c-1')?.reservation_status).toBeNull();
+    });
+
+    it('findet einen Treffer über den echten Default-Lookup, wenn eine passende inquiries-Zeile existiert', async () => {
+      db.prepare(`
+        INSERT INTO inquiries (
+          inquiry_id, listing_id, status, check_in, check_out, guest_name, guests_count,
+          source, created_at_guesty, last_synced_at, hostex_conversation_id
+        ) VALUES ('R-001', 'listing-9', 'confirmed', '2026-08-01', '2026-08-03', 'Darleen', 2,
+          'airbnb', '2026-07-01T00:00:00Z', '2026-07-01T00:00:00Z', 'c-1')
+      `).run();
+      await syncHostexMessagesForProperty(property, fakeClient, '2026-07-01T00:00:00Z');
+      const thread = getThreadById('hostex:c-1');
+      expect(thread?.reservation_status).toBe('confirmed');
+      expect(thread?.reservation_id).toBe('R-001');
+      expect(thread?.inquiry_id).toBe('R-001');
+    });
   });
 });

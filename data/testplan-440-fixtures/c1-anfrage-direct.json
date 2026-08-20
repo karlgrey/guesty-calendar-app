@@ -1,0 +1,17 @@
+{
+  "caseId": "C1",
+  "description": "Anfrage mit passendem Rahmen, Direktkanal (Mail/Website) — Muss: Angebots-Flow ok (Angebot, Hold-Frist, Überweisung erlaubt).",
+  "propertySlug": "farmhouse",
+  "thread": {
+    "channel": "direct_email",
+    "reservation_status": null,
+    "guest_name": "Frederike"
+  },
+  "bookingContext": null,
+  "messages": [
+    {
+      "direction": "inbound",
+      "body": "Hallo, wir sind 8 Personen und möchten vom 5. bis 7. November anfragen. Könnt ihr uns ein Angebot schicken?"
+    }
+  ]
+}

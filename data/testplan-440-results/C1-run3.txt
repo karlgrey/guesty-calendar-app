@@ -1,0 +1,12 @@
+Fall: C1
+Kanal: direct_email | Buchungsstatus (roh): null
+Lauf: 3/3
+Modell: claude-sonnet-5
+DraftResult.kind: text
+---
+Hey Frederike,
+
+danke für deine Anfrage! Bevor ich ein Angebot erstelle, prüfe ich kurz die Verfügbarkeit für den 5.–7. November bei 8 Personen und melde mich dann zeitnah mit den Details zurück.
+
+Liebe Grüße,
+Micha

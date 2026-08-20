@@ -1,0 +1,13 @@
+Fall: D1
+Kanal: airbnb | Buchungsstatus (roh): pending
+Lauf: 1/3
+Modell: claude-sonnet-5
+DraftResult.kind: text
+---
+Hey Youssef,
+
+kurzes Update: Bei Airbnb läuft die Bestätigung direkt über die Plattform – sobald ihr den Status dort auf "bestätigt" seht, ist alles fix.
+
+Zu den Details: schau am besten erstmal in die Fotos und Infos im Inserat, da findest du schon einiges. Sobald die Buchung bestätigt ist, bekommt ihr automatisch das vollständige Gäste-Handbuch mit allen weiteren Infos freigeschaltet.
+
+Liebe Grüße, Micha

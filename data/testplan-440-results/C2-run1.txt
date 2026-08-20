@@ -1,0 +1,13 @@
+Fall: C2
+Kanal: direct_email | Buchungsstatus (roh): null
+Lauf: 1/3
+Modell: claude-sonnet-5
+DraftResult.kind: text
+---
+Hey Malte,
+
+klar, für Catering schau am besten hier vorbei: https://www.farmhouse-prasser.de/catering/
+
+Dort findest du unsere vier Partner – u. a. Nina Dombrovskis (regional/saisonal, auch Showkochen), Regine Freyberg (vegan), Nicola Hoppe (ayurvedisch-vegetarisch) und Chef Catering Wandlitz (Fine Dining) – mit allen Kontaktdaten, ihr könnt euch direkt bei ihnen melden.
+
+Liebe Grüße, Micha

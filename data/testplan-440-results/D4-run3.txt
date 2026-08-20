@@ -1,0 +1,23 @@
+Fall: D4
+Kanal: direct_email | Buchungsstatus (roh): null
+Lauf: 3/3
+Modell: claude-sonnet-5
+DraftResult.kind: text
+---
+Hey Pia,
+
+lass mich kurz rechnen:
+
+- Grundpreis: 1.500 € (bis 5 Personen) + 1 Zusatzperson × 100 €/Tag = 1.600 €/Tag
+- 4 Nächte: 4 × 1.600 € = 6.400 €
+- Mehrnächte-Rabatt ab 3 Nächten: 15 % auf die Unterkunftskosten = -960 €
+- Unterkunft nach Rabatt: 5.440 €
+- Reinigung: 350 € (kein Rabatt darauf)
+- Zwischensumme: 5.790 €
+- + 7 % MwSt auf die Gesamtsumme: 405,30 €
+
+**Gesamt: 6.195,30 €** für 6 Personen, 4 Nächte im Standard-Modus.
+
+Das liegt deutlich über eurer Kalkulation von 2.540,18 € — vielleicht war da ein anderer Zeitraum oder eine andere Personenzahl zugrunde gelegt? Sag gern Bescheid, falls ich nochmal mit anderen Eckdaten rechnen soll.
+
+Liebe Grüße, Micha

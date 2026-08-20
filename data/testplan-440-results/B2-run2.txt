@@ -1,0 +1,14 @@
+Fall: B2
+Kanal: airbnb | Buchungsstatus (roh): confirmed
+Lauf: 2/3
+Modell: claude-sonnet-5
+DraftResult.kind: text
+---
+Hey Sophie,
+
+klar, hier der Link zu unseren Catering-Partnern: https://www.farmhouse-prasser.de/catering/
+
+Nina Dombrovskis (eatucation.de) ist eine super Wahl – regional/saisonal, macht auch Showkochen. Kontaktdaten findet ihr auf der Seite, meldet euch da am besten direkt bei ihr.
+
+Liebe Grüße,
+Micha

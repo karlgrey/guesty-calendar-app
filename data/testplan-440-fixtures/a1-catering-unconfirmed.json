@@ -1,0 +1,17 @@
+{
+  "caseId": "A1",
+  "description": "Catering-Frage, Airbnb, Buchung NICHT bestätigt (Sophie-Fall als Fixture) — Muss: Partner namentlich + Hinweis auf Kontakte nach der Buchung; Darf nicht: URL, Domain (auch \"punkt de\"), Angebots-Vokabular.",
+  "propertySlug": "farmhouse",
+  "thread": {
+    "channel": "airbnb",
+    "reservation_status": "inquiry",
+    "guest_name": "Sophie"
+  },
+  "bookingContext": "Buchungsanfrage (noch nicht bestätigt): Zeitraum 10.10.2026–12.10.2026, 2 Nächte, 12 Personen — Daten stammen aus der Anfrage selbst.",
+  "messages": [
+    {
+      "direction": "inbound",
+      "body": "Hey! Wir sind eine Gruppe von 12 und würden gerne im Oktober bei euch ein kleines Offsite feiern. Könnt ihr uns sagen, wer bei euch das Catering macht? Habt ihr da vielleicht einen Link zur Partnerseite?"
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+Fall: A5
+Kanal: airbnb | Buchungsstatus (roh): inquiry
+Lauf: 2/3
+Modell: claude-sonnet-5
+DraftResult.kind: text
+---
+Hey Nadja,
+
+ja, das passt super – 12 Personen für ein Firmen-Offsite sind bei uns gut aufgehoben, das Haus ist genau für solche ruhigen Gruppen-Setups gemacht. Bei euren Daten (05.–07.11., 2 Nächte) könnt ihr die Anfrage einfach so über Airbnb stellen, wir bestätigen dann.
+
+Liebe Grüße, Micha

@@ -1,0 +1,11 @@
+Fall: D3
+Kanal: airbnb | Buchungsstatus (roh): confirmed
+Lauf: 1/3
+Modell: claude-sonnet-5
+DraftResult.kind: text
+---
+Hey Leon,
+
+klar: Netzwerk „FarmhousePrasserGast", Passwort „FarmhousePrasser". Ist Glasfaser mit bis zu 1.000 Mbit/s, also sollte das Hochladen kein Problem sein.
+
+Liebe Grüße, Micha

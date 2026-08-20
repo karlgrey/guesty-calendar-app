@@ -1,0 +1,17 @@
+{
+  "caseId": "D4",
+  "description": "Preis \"2.540,18 €\" in Direktkanal-Draft — Erwartung: darf nie als Domain/URL fehlinterpretiert werden (False-Positive-Kontrolle für einen künftigen deterministischen Guard; mit dem aktuellen prompt-basierten Fix gibt es keine Regex-Prüfung, dieses Fixture dokumentiert den Fall für später/für manuelle Prompt-Inspektion).",
+  "propertySlug": "farmhouse",
+  "thread": {
+    "channel": "direct_email",
+    "reservation_status": null,
+    "guest_name": "Pia"
+  },
+  "bookingContext": null,
+  "messages": [
+    {
+      "direction": "inbound",
+      "body": "Was würde der Aufenthalt insgesamt kosten? Wir haben schon mal grob 2.540,18 € kalkuliert — passt das ungefähr für 6 Personen, 4 Nächte im Standard-Modus?"
+    }
+  ]
+}

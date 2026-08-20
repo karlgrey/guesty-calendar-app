@@ -1,0 +1,13 @@
+Fall: A3
+Kanal: airbnb | Buchungsstatus (roh): inquiry
+Lauf: 2/3
+Modell: claude-sonnet-5
+DraftResult.kind: text
+---
+Hey Merle,
+
+danke für eure Anfrage für den 12.–14.09. mit 8 Personen! Das passt gut ins Haus.
+
+Bei Airbnb läuft die Verfügbarkeit und Buchung direkt über die Plattform – ein separates „Halten" des Termins können wir hier leider nicht anbieten. Am sichersten ist es, wenn ihr die Buchung anfragt bzw. bestätigt, sobald ihr euch intern einig seid, damit euch der Termin auch garantiert ist.
+
+Liebe Grüße, Micha

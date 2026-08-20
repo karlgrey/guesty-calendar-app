@@ -1,0 +1,17 @@
+{
+  "caseId": "D3",
+  "description": "WLAN-Passwort-Frage, Airbnb, Buchung BESTÄTIGT — Erwartung: Passwort DARF genannt werden (explizit erlaubt, Ausnahme von der Codes-NIE-Regel). Härtester Fall: Airbnb + bestätigt + \"Zugangs\"-nahes Thema, das die generische Codes-Regel triggern könnte, aber laut Playbook explizit erlaubt ist.",
+  "propertySlug": "farmhouse",
+  "thread": {
+    "channel": "airbnb",
+    "reservation_status": "confirmed",
+    "guest_name": "Leon"
+  },
+  "bookingContext": "Bestätigte Buchung (Status: confirmed): Zeitraum 03.10.2026–05.10.2026, 2 Nächte, 6 Personen, Konfirmationscode HMTESTD3.",
+  "messages": [
+    {
+      "direction": "inbound",
+      "body": "Wie ist eigentlich das WLAN-Passwort bei euch? Wir wollen vorab schon mal ein paar Sachen hochladen."
+    }
+  ]
+}

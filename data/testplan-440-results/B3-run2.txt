@@ -1,0 +1,11 @@
+Fall: B3
+Kanal: airbnb | Buchungsstatus (roh): confirmed
+Lauf: 2/3
+Modell: claude-sonnet-5
+DraftResult.kind: text
+---
+Hey Ben,
+
+ja klar! Da eure Buchung über Airbnb läuft, schaltet Airbnb euch das Gäste-Handbuch mit allen Zugangscodes und WLAN-Infos rechtzeitig vor der Anreise automatisch frei – ihr findet es dann direkt im Check-in-Guide zu eurer Buchung. Ihr müsst dafür nichts weiter tun.
+
+Liebe Grüße, Micha

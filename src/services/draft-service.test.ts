@@ -182,3 +182,66 @@ describe('generateDraftForThread — booking context (#364)', () => {
     expect(prompt).not.toContain('BUCHUNGSKONTEXT');
   });
 });
+
+describe('generateDraftForThread — Kanal-/Buchungsstatus-Fakten mit Präzedenz (#440 Root-Cause-Fix)', () => {
+  it('states the Airbnb channel and "NICHT bestätigt" when reservation_status is null', async () => {
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'x' });
+    await generateDraftForThread({ thread: thread(), messages, voice: 'v', facts: 'f' }, { call });
+    const prompt = call.mock.calls[0][0].systemPrompt;
+    expect(prompt).toContain('Kanal dieses Threads: Airbnb');
+    expect(prompt).toContain('Buchungsstatus dieses Threads: NICHT bestätigt');
+    // Präzedenz-Hinweis: kanalfremde Regeln nicht anwenden, explizite Ausnahmeklauseln vorrangig.
+    expect(prompt).toContain('AUSNAHME Airbnb vor bestätigter Buchung');
+    expect(prompt).toContain('gilt sie HIER NICHT');
+  });
+
+  it('states "bestätigt" for reservation_status "confirmed"', async () => {
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'x' });
+    const confirmed = { ...thread(), reservation_status: 'confirmed' };
+    await generateDraftForThread({ thread: confirmed, messages, voice: 'v', facts: 'f' }, { call });
+    const prompt = call.mock.calls[0][0].systemPrompt;
+    expect(prompt).toContain('Buchungsstatus dieses Threads: bestätigt');
+  });
+
+  it('states "bestätigt" for reservation_status "reserved" (Guesty-Synonym für aktiv)', async () => {
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'x' });
+    const reserved = { ...thread(), reservation_status: 'reserved' };
+    await generateDraftForThread({ thread: reserved, messages, voice: 'v', facts: 'f' }, { call });
+    const prompt = call.mock.calls[0][0].systemPrompt;
+    expect(prompt).toContain('Buchungsstatus dieses Threads: bestätigt');
+  });
+
+  it('treats an "inquiry" status conservatively as NICHT bestätigt', async () => {
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'x' });
+    const inquiry = { ...thread(), reservation_status: 'inquiry' };
+    await generateDraftForThread({ thread: inquiry, messages, voice: 'v', facts: 'f' }, { call });
+    const prompt = call.mock.calls[0][0].systemPrompt;
+    expect(prompt).toContain('Buchungsstatus dieses Threads: NICHT bestätigt');
+  });
+
+  it('treats a canceled/declined status conservatively as NICHT bestätigt', async () => {
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'x' });
+    for (const status of ['canceled', 'cancelled', 'declined', 'expired', 'closed']) {
+      const t = { ...thread(), reservation_status: status };
+      await generateDraftForThread({ thread: t, messages, voice: 'v', facts: 'f' }, { call });
+      const prompt = call.mock.calls.at(-1)![0].systemPrompt;
+      expect(prompt).toContain('Buchungsstatus dieses Threads: NICHT bestätigt');
+    }
+  });
+
+  it('labels non-Airbnb channels correctly, e.g. direct_email', async () => {
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'x' });
+    const direct = { ...thread(), channel: 'direct_email' as const };
+    await generateDraftForThread({ thread: direct, messages, voice: 'v', facts: 'f' }, { call });
+    const prompt = call.mock.calls[0][0].systemPrompt;
+    expect(prompt).toContain('Kanal dieses Threads: Direkt-E-Mail');
+  });
+
+  it('puts the Kanal-/Status-Faktenblock ahead of Voice/Objektwissen (precedence by position)', async () => {
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'x' });
+    await generateDraftForThread({ thread: thread(), messages, voice: 'VOICE-X', facts: 'FACTS-Y' }, { call });
+    const prompt: string = call.mock.calls[0][0].systemPrompt;
+    expect(prompt.indexOf('FAKTEN ZU DIESEM GESPRÄCH')).toBeLessThan(prompt.indexOf('VOICE-X'));
+    expect(prompt.indexOf('FAKTEN ZU DIESEM GESPRÄCH')).toBeLessThan(prompt.indexOf('FACTS-Y'));
+  });
+});

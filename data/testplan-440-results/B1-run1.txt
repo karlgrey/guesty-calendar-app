@@ -1,0 +1,15 @@
+Fall: B1
+Kanal: airbnb | Buchungsstatus (roh): confirmed
+Lauf: 1/3
+Modell: claude-sonnet-5
+DraftResult.kind: text
+---
+Hey Katharina,
+
+klar, hier ist die Hausordnung zum Weiterleiten an alle Teilnehmer: farmhouse-prasser.de/legal/hausordnung
+
+Zum Check-in: Ihr könnt ab 08:00 Uhr rein, alles läuft per Self-Check-in ohne persönliche Übergabe. Die genauen Zugangscodes findet ihr rechtzeitig vor Anreise im Airbnb-Guide bzw. im digitalen Gäste-Handbuch, das euch Airbnb automatisch freischaltet.
+
+Euch schon mal eine gute Anreise!
+
+Liebe Grüße, Micha
