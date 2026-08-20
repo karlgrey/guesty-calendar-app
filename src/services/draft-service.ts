@@ -54,8 +54,75 @@ export interface DraftDeps {
 }
 const defaultDeps: DraftDeps = { call: callClaudeTool };
 
-function buildSystemPrompt(voice: string, facts: string, bookingContext: string | null): string {
+// #440 Root-Cause-Fix: Der Prompt gab dem Modell VOICE+OBJEKTWISSEN bisher nur als flachen
+// Text-Dump, ohne je explizit zu sagen, auf welchem KANAL dieser Thread läuft oder ob die
+// Buchung BESTÄTIGT ist — das Modell musste beides aus dem Gesprächstext erraten und dann selbst
+// entscheiden, welche der vielen (teils kanalspezifischen, teils gegenläufigen) Regeln im
+// Vault-Text gerade gelten. Zwei Vorfälle (Fall Sophie: Domain-Link in einer Airbnb-Anfrage vor
+// Bestätigung; Fall Sophie #2: KI bietet in einer Airbnb-Anfrage ein Direktbuchungs-"Angebot" an)
+// gingen exakt darauf zurück — die richtigen (zustandsabhängigen!) Regeln standen im Vault, aber
+// ohne strukturierten Kanal-/Status-Fakt + Präzedenz-Hinweis wählte das Modell die falsche von
+// mehreren im selben Dokument stehenden Anweisungen. WICHTIG (Präzisierung Micha): Es gibt KEIN
+// pauschales Airbnb-Link-Verbot — nach bestätigter Buchung sind Links (z. B. Hausordnung)
+// ausdrücklich erwünscht, das Vault formuliert seine Regeln bereits zustandsabhängig. Dieser Block
+// macht Kanal+Status zur expliziten, nicht zu erratenden Tatsache und weist das Modell an,
+// kanalfremde/statusfremde Regeln zu ignorieren bzw. explizite Ausnahmeklauseln im Vault-Text
+// (z. B. "AUSNAHME Airbnb vor bestätigter Buchung") vorrangig zu behandeln — bewusst OHNE die
+// konkreten Regeln hier zu duplizieren (die bleiben allein im Vault, sonst zwei Quellen für
+// dieselbe Policy, die auseinanderlaufen können).
+const CHANNEL_LABELS: Record<MessageThread['channel'], string> = {
+  airbnb: 'Airbnb',
+  'booking.com': 'Booking.com',
+  vrbo: 'VRBO',
+  direct_email: 'Direkt-E-Mail',
+  manual: 'Manuell erfasst',
+  landfolk: 'Landfolk',
+  meetreet: 'Meetreet',
+  other: 'Sonstiger/unbekannter Kanal',
+};
+
+// Deckungsgleich mit reservation-repository.ts (`status IN ('confirmed','reserved')` = aktive/
+// bestätigte Buchung). Alles andere (null, 'inquiry', storniert/abgelehnt, unbekannt …) gilt
+// konservativ als NICHT bestätigt — lieber eine bestätigte Buchung fälschlich vorsichtig
+// behandeln als umgekehrt. Bekannte Grauzone: Hostex-Threads führen reservation_status aktuell
+// NIE (message-mapper.ts setzt es hart auf null) — für Hostex-Airbnb-Threads liefert dieser Block
+// deshalb immer "NICHT bestätigt", auch wenn die Buchung längst bestätigt ist (separates,
+// vorbestehendes Datenmodell-Gap, siehe Bericht — nicht Teil dieses Fixes).
+const CONFIRMED_RESERVATION_STATUSES = new Set(['confirmed', 'reserved']);
+
+function resolveBookingStatusLabel(reservationStatus: string | null): string {
+  if (reservationStatus && CONFIRMED_RESERVATION_STATUSES.has(reservationStatus)) {
+    return 'bestätigt';
+  }
+  return 'NICHT bestätigt (bzw. Status unbekannt — konservativ als unbestätigt behandeln)';
+}
+
+function buildThreadFactsBlock(thread: Pick<MessageThread, 'channel' | 'reservation_status'>): string {
+  const channelLabel = CHANNEL_LABELS[thread.channel] ?? thread.channel;
+  const statusLabel = resolveBookingStatusLabel(thread.reservation_status);
+  return [
+    '### FAKTEN ZU DIESEM GESPRÄCH — gelten VOR jeder Regel in Voice/Objektwissen unten ###',
+    `Kanal dieses Threads: ${channelLabel}`,
+    `Buchungsstatus dieses Threads: ${statusLabel}`,
+    'Voice und Objektwissen unten gelten kanal- und statusübergreifend — nicht jede Zeile darin passt ' +
+      'auf DIESES Gespräch. Eine Regel, die einen ANDEREN Kanal oder Buchungsstatus voraussetzt (z. B. ' +
+      '„bei Direktbuchung", „nach fester Buchung", „vor bestätigter Buchung", „Direktlink mitgeben"), ' +
+      'wende nur an, wenn Kanal/Status oben dazu passen — sonst gilt sie HIER NICHT. Enthält das ' +
+      'Objektwissen eine explizite Kanal-/Status-Ausnahme (z. B. „AUSNAHME Airbnb vor bestätigter ' +
+      'Buchung"), hat DIESE Ausnahme Vorrang vor der allgemeineren Regel im selben Dokument, wenn ' +
+      'Kanal/Status oben zutreffen.',
+    '### ENDE FAKTEN ###',
+  ].join('\n');
+}
+
+function buildSystemPrompt(
+  voice: string,
+  facts: string,
+  bookingContext: string | null,
+  thread: Pick<MessageThread, 'channel' | 'reservation_status'>,
+): string {
   const lines = [
+    buildThreadFactsBlock(thread),
     'Du entwirfst eine Antwort auf eine Gastnachricht für eine Ferienunterkunft, in Michas Stimme.',
     'Halte dich strikt an den folgenden Ton/Stil (Voice):',
     '--- VOICE ---', voice, '--- ENDE VOICE ---',
@@ -129,7 +196,7 @@ export async function generateDraftForThread(
   let out: unknown;
   try {
     out = await deps.call({
-      systemPrompt: buildSystemPrompt(input.voice, input.facts, input.bookingContext ?? null),
+      systemPrompt: buildSystemPrompt(input.voice, input.facts, input.bookingContext ?? null, input.thread),
       userMessage: buildConversation(input.messages, input.thread.guest_name),
       tool: SUBMIT_REPLY_TOOL,
       model: DRAFT_MODEL,
