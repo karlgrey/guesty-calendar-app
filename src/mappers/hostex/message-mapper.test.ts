@@ -63,4 +63,40 @@ describe('hostex message mapper', () => {
     } as unknown as HostexConversationDetail;
     expect(detailBelongsToProperty(detail, '12659676')).toBe(false);
   });
+
+  // #441 Root-Cause-Fix: reservation_status/reservation_id/inquiry_id used to be hardcoded to
+  // null — the mapper now takes the resolved reservation info as an explicit (optional) param,
+  // set by the caller (sync-hostex-messages.ts) via a local DB lookup. Kept as a plain injected
+  // value (not a lookup inside the mapper) so the mapper itself stays pure and unit-testable.
+  describe('reservation status (#441)', () => {
+    const baseDetail: HostexConversationDetail = {
+      id: 'c-1', channel_type: 'airbnb', guest: { name: 'Darleen', email: '' },
+      messages: [
+        { id: 'm-1', sender_role: 'guest', display_type: 'Text', content: 'Hallo', created_at: '2026-06-30T10:00:00Z' },
+      ],
+    };
+
+    it('defaults to null (no reservation info passed) — unchanged pre-#441 behavior', () => {
+      const { thread } = mapHostexConversation(baseDetail, 'listing-9', '2026-07-01T00:00:00Z');
+      expect(thread.reservation_id).toBeNull();
+      expect(thread.inquiry_id).toBeNull();
+      expect(thread.reservation_status).toBeNull();
+    });
+
+    it('writes reservation_id/inquiry_id/reservation_status from the injected lookup result', () => {
+      const { thread } = mapHostexConversation(baseDetail, 'listing-9', '2026-07-01T00:00:00Z', {
+        reservation_id: 'R-001', inquiry_id: 'R-001', reservation_status: 'confirmed',
+      });
+      expect(thread.reservation_id).toBe('R-001');
+      expect(thread.inquiry_id).toBe('R-001');
+      expect(thread.reservation_status).toBe('confirmed');
+    });
+
+    it('an explicit null lookup result (no match) leaves all three fields null', () => {
+      const { thread } = mapHostexConversation(baseDetail, 'listing-9', '2026-07-01T00:00:00Z', null);
+      expect(thread.reservation_id).toBeNull();
+      expect(thread.inquiry_id).toBeNull();
+      expect(thread.reservation_status).toBeNull();
+    });
+  });
 });

@@ -24,6 +24,11 @@ export interface MappedInquiry {
   source: string | null;
   created_at_guesty: string | null;
   last_synced_at: string;
+  // #441: join key back to the Hostex conversation this reservation belongs to
+  // (HostexReservation.conversation_id) — sync-hostex-messages.ts looks this up
+  // to resolve message_threads.reservation_status, which Hostex's conversation
+  // DETAIL never carries (unlike Guesty's, which embeds it directly).
+  hostex_conversation_id: string | null;
 }
 
 export interface MappedReservationResult {
@@ -101,6 +106,7 @@ export function mapHostexReservation(
     source: res.channel_type ?? null,
     created_at_guesty: res.created_at ?? res.booked_at ?? null,
     last_synced_at: now,
+    hostex_conversation_id: res.conversation_id ?? null,
   };
 
   if (!reservationStatus) {

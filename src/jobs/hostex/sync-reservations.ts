@@ -48,8 +48,9 @@ export async function syncHostexReservations(property: PropertyConfig): Promise<
     const upsertInquiry = db.prepare(`
       INSERT INTO inquiries (
         inquiry_id, listing_id, status, check_in, check_out,
-        guest_name, guests_count, source, created_at_guesty, last_synced_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        guest_name, guests_count, source, created_at_guesty, last_synced_at,
+        hostex_conversation_id
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(inquiry_id) DO UPDATE SET
         status = excluded.status,
         check_in = excluded.check_in,
@@ -57,7 +58,11 @@ export async function syncHostexReservations(property: PropertyConfig): Promise<
         guest_name = excluded.guest_name,
         guests_count = excluded.guests_count,
         source = excluded.source,
-        last_synced_at = excluded.last_synced_at
+        last_synced_at = excluded.last_synced_at,
+        -- #441: NULL nie über einen bekannten Link überschreiben — ein Update-Payload
+        -- ohne conversation_id (z. B. Reservation ohne zugehörige Conversation) soll
+        -- eine zuvor beobachtete Verknüpfung nicht löschen.
+        hostex_conversation_id = COALESCE(excluded.hostex_conversation_id, inquiries.hostex_conversation_id)
     `);
 
     let inquiriesCount = 0;
@@ -78,6 +83,7 @@ export async function syncHostexReservations(property: PropertyConfig): Promise<
           asInquiry.source,
           asInquiry.created_at_guesty,
           asInquiry.last_synced_at,
+          asInquiry.hostex_conversation_id,
         );
         inquiriesCount++;
         if (asReservation) {

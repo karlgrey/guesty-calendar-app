@@ -84,10 +84,10 @@ const CHANNEL_LABELS: Record<MessageThread['channel'], string> = {
 // Deckungsgleich mit reservation-repository.ts (`status IN ('confirmed','reserved')` = aktive/
 // bestätigte Buchung). Alles andere (null, 'inquiry', storniert/abgelehnt, unbekannt …) gilt
 // konservativ als NICHT bestätigt — lieber eine bestätigte Buchung fälschlich vorsichtig
-// behandeln als umgekehrt. Bekannte Grauzone: Hostex-Threads führen reservation_status aktuell
-// NIE (message-mapper.ts setzt es hart auf null) — für Hostex-Airbnb-Threads liefert dieser Block
-// deshalb immer "NICHT bestätigt", auch wenn die Buchung längst bestätigt ist (separates,
-// vorbestehendes Datenmodell-Gap, siehe Bericht — nicht Teil dieses Fixes).
+// behandeln als umgekehrt. Seit #441 gilt das auch für Hostex-Threads: sync-hostex-messages.ts
+// löst reservation_status über einen Lookup auf inquiries.hostex_conversation_id auf (Mapper
+// STATUS_TO_INQUIRY in reservation-mapper.ts nutzt exakt dasselbe Vokabular 'confirmed'/
+// 'reserved'/'inquiry'/… wie Guesty) — vorher stand hier hart null (Grauzone, siehe #440-Bericht).
 const CONFIRMED_RESERVATION_STATUSES = new Set(['confirmed', 'reserved']);
 
 function resolveBookingStatusLabel(reservationStatus: string | null): string {

@@ -145,4 +145,20 @@ describe('mapHostexReservation', () => {
       expect(asReservation!.guest_company).toBeNull();
     });
   });
+
+  // #441: conversation_id is the join key sync-hostex-messages.ts uses to resolve
+  // message_threads.reservation_status (Hostex's conversation DETAIL carries no
+  // status itself, unlike Guesty's).
+  describe('Hostex conversation link (#441)', () => {
+    it('carries conversation_id through as hostex_conversation_id on the inquiry row', () => {
+      const r = { ...baseRes, conversation_id: 'conv-123' };
+      const { asInquiry } = mapHostexReservation(r, defaultTimes);
+      expect(asInquiry.hostex_conversation_id).toBe('conv-123');
+    });
+
+    it('is null when the Hostex reservation has no conversation_id', () => {
+      const { asInquiry } = mapHostexReservation(baseRes, defaultTimes);
+      expect(asInquiry.hostex_conversation_id).toBeNull();
+    });
+  });
 });

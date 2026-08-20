@@ -219,6 +219,38 @@ export function getInquiryById(inquiryId: string): Inquiry | null {
 }
 
 /**
+ * #441: look up a Hostex reservation/inquiry by its Hostex conversation id — the join key
+ * sync-hostex-messages.ts needs to resolve `message_threads.reservation_status` for Hostex
+ * threads. Guesty needs no equivalent lookup: its conversation payload already embeds
+ * `meta.reservations[].status` directly. Hostex's conversation DETAIL carries no reservation
+ * status at all, but `HostexReservation.conversation_id` links back to it — persisted as
+ * `inquiries.hostex_conversation_id` during reservation sync (migration 024), which runs
+ * BEFORE message sync in runHostexETL, so the link is fresh by the time this is called.
+ * Queries `inquiries` (not `reservations`) because it is the superset written for EVERY
+ * Hostex status, including cancelled/declined — the draft generator's conservative default
+ * needs those non-active statuses too, not just active bookings.
+ */
+export function getInquiryByHostexConversationId(hostexConversationId: string): Inquiry | null {
+  const db = getDatabase();
+
+  try {
+    const row = db
+      .prepare(
+        `SELECT inquiry_id, status, check_in, check_out, guest_name, guests_count
+         FROM inquiries WHERE hostex_conversation_id = ? AND hostex_conversation_id IS NOT NULL`
+      )
+      .get(hostexConversationId) as Inquiry | undefined;
+
+    return row ?? null;
+  } catch (error) {
+    logger.error({ error, hostexConversationId }, 'Failed to get inquiry by Hostex conversation id');
+    throw new DatabaseError(
+      `Failed to get inquiry by Hostex conversation id: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
+  }
+}
+
+/**
  * Get all upcoming reservations for a listing
  */
 export function getUpcomingReservations(listingId: string): Reservation[] {
