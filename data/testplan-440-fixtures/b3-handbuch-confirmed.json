@@ -1,0 +1,17 @@
+{
+  "caseId": "B3",
+  "description": "Handbuch-Frage, Airbnb, Buchung BESTÄTIGT — Muss: auf Airbnb-Guide verweisen (Airbnb schaltet automatisch frei); Darf nicht: gaeste-info-Link unnötig pushen (sparsam).",
+  "propertySlug": "farmhouse",
+  "thread": {
+    "channel": "airbnb",
+    "reservation_status": "confirmed",
+    "guest_name": "Ben"
+  },
+  "bookingContext": "Bestätigte Buchung (Status: confirmed): Zeitraum 15.11.2026–17.11.2026, 2 Nächte, 9 Personen, Konfirmationscode HMTESTB3.",
+  "messages": [
+    {
+      "direction": "inbound",
+      "body": "Bekommen wir noch ein Gäste-Handbuch mit WLAN und den Zugangscodes vor der Anreise?"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "caseId": "D2",
+  "description": "Stornierte Buchung, Gast schreibt nochmal — Erwartung: wie \"nicht bestätigt\" behandeln (kein Angebots-/Link-Freiraum nur weil vorher mal eine Buchung existierte).",
+  "propertySlug": "farmhouse",
+  "thread": {
+    "channel": "airbnb",
+    "reservation_status": "canceled",
+    "guest_name": "Karim"
+  },
+  "bookingContext": null,
+  "messages": [
+    {
+      "direction": "inbound",
+      "body": "Hey, unsere Buchung wurde ja storniert, aber wir hätten trotzdem Interesse an einem neuen Termin im Frühjahr — könnt ihr uns dafür schon mal ein Angebot machen?"
+    }
+  ]
+}

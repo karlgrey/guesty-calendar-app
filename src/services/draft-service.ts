@@ -115,7 +115,10 @@ function buildThreadFactsBlock(thread: Pick<MessageThread, 'channel' | 'reservat
   ].join('\n');
 }
 
-function buildSystemPrompt(
+// Exportiert (statt privat) für das Abnahme-Werkzeug src/scripts/dump-draft-prompt.ts (#440,
+// SmartTasks-Doc #20) — der Prompt-Dump MUSS exakt dieselbe Funktion verwenden wie der echte
+// Generierungspfad, sonst könnte das Abnahme-Tool unbemerkt vom tatsächlichen Prompt abweichen.
+export function buildSystemPrompt(
   voice: string,
   facts: string,
   bookingContext: string | null,
@@ -159,7 +162,7 @@ function buildSystemPrompt(
  * letzte Gastnachricht ohnehin im Verlauf — passt zum bestehenden Muster dieser Datei, in dem auch
  * andere Nuancen (z. B. no_reply_needed) dem Modell per Instruktion übergeben werden statt Regex.
  */
-function buildConversation(messages: Message[], guestName: string | null): string {
+export function buildConversation(messages: Message[], guestName: string | null): string {
   const hasInbound = messages.some((m) => m.direction === 'inbound');
   const lines = messages.map((m) => {
     const who = m.direction === 'inbound' ? 'Gast' : m.direction === 'outbound' ? 'Host' : 'System';

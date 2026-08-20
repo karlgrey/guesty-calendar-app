@@ -1,0 +1,17 @@
+{
+  "caseId": "A2",
+  "description": "Preisfrage, Airbnb, Buchung NICHT bestätigt — Muss: auf Airbnb-Preisanzeige verweisen; Darf nicht: eigene Preisnennung, Rabatt, \"Angebot\".",
+  "propertySlug": "farmhouse",
+  "thread": {
+    "channel": "airbnb",
+    "reservation_status": null,
+    "guest_name": "Jonas"
+  },
+  "bookingContext": null,
+  "messages": [
+    {
+      "direction": "inbound",
+      "body": "Was würde es kosten, wenn wir zu 10 Personen für 3 Nächte kommen? Gibt's da noch Rabatt, wenn wir länger bleiben?"
+    }
+  ]
+}

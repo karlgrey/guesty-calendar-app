@@ -1,0 +1,17 @@
+{
+  "caseId": "C3",
+  "description": "Nach fester Buchung, Direktkanal (Mail/Website) — Muss: Hausordnung + gaeste-info-Link (Pflicht-Anhang-Regel).",
+  "propertySlug": "farmhouse",
+  "thread": {
+    "channel": "direct_email",
+    "reservation_status": "confirmed",
+    "guest_name": "Anna"
+  },
+  "bookingContext": "Bestätigte Buchung (Status: confirmed): Zeitraum 20.10.2026–22.10.2026, 2 Nächte, 11 Personen, Konfirmationscode DIRECT-C3.",
+  "messages": [
+    {
+      "direction": "inbound",
+      "body": "Die Buchung ist jetzt fix, danke euch! Was brauchen wir noch alles vor der Anreise?"
+    }
+  ]
+}

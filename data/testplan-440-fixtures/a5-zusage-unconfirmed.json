@@ -1,0 +1,17 @@
+{
+  "caseId": "A5",
+  "description": "Zweck+Personenzahl passen, Airbnb, Buchung NICHT bestätigt — Muss: zusagen, Buchung über Airbnb; Darf nicht: Angebots-/Rechnungs-/Überweisungs-Flow.",
+  "propertySlug": "farmhouse",
+  "thread": {
+    "channel": "airbnb",
+    "reservation_status": "inquiry",
+    "guest_name": "Nadja"
+  },
+  "bookingContext": "Buchungsanfrage (noch nicht bestätigt): Zeitraum 05.11.2026–07.11.2026, 2 Nächte, 12 Personen — Daten stammen aus der Anfrage selbst.",
+  "messages": [
+    {
+      "direction": "inbound",
+      "body": "Wir sind 12 Personen, ein kleines ruhiges Firmen-Offsite, keine Party. Passt das für euch, können wir so anfragen?"
+    }
+  ]
+}

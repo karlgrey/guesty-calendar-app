@@ -1,0 +1,17 @@
+{
+  "caseId": "C2",
+  "description": "Catering-Frage, Direktkanal (Mail/Website), unabhängig vom Status — Muss: Partner namentlich + Direktlink.",
+  "propertySlug": "farmhouse",
+  "thread": {
+    "channel": "direct_email",
+    "reservation_status": null,
+    "guest_name": "Malte"
+  },
+  "bookingContext": null,
+  "messages": [
+    {
+      "direction": "inbound",
+      "body": "Könnt ihr uns eure Catering-Kontakte schicken? Wir planen noch, wissen aber schon, dass wir Verpflegung brauchen."
+    }
+  ]
+}
