@@ -10,6 +10,7 @@ import { sendBiReportEmail, shouldSendBiReport } from './bi-email.js';
 import { syncAnalytics, shouldSyncAnalytics } from './sync-analytics.js';
 import { syncGoogleCalendarForProperty } from './sync-google-calendar.js';
 import { checkAirbnbMailStaleness } from './airbnb-mail/check-staleness.js';
+import { runDailyConsistencyJob } from './consistency-check.js';
 import { config } from '../config/index.js';
 import { getAllProperties, getBiReportConfig, type PropertyConfig } from '../config/properties.js';
 import logger from '../utils/logger.js';
@@ -41,6 +42,8 @@ interface SchedulerState {
   biReportIntervalId: NodeJS.Timeout | null;
   biReportSent: Date | null;
   airbnbMailStalenessIntervalId: NodeJS.Timeout | null;
+  consistencyCheckIntervalId: NodeJS.Timeout | null;
+  lastConsistencyCheck: Date | null;
 }
 
 const state: SchedulerState = {
@@ -66,6 +69,8 @@ const state: SchedulerState = {
   biReportIntervalId: null,
   biReportSent: null,
   airbnbMailStalenessIntervalId: null,
+  consistencyCheckIntervalId: null,
+  lastConsistencyCheck: null,
 };
 
 /**
@@ -319,6 +324,34 @@ async function checkAndLogAirbnbMailStaleness() {
 }
 
 /**
+ * Check if the daily calendar consistency check should run (at 6 AM, #484).
+ */
+function shouldRunDailyConsistencyCheck(): boolean {
+  const now = new Date();
+  if (now.getHours() !== 6) return false;
+
+  const today = now.toDateString();
+  const lastRun = state.lastConsistencyCheck?.toDateString();
+  return lastRun !== today;
+}
+
+/**
+ * Run the calendar consistency check + hold-sweep, with alert-mail-on-finding
+ * (non-fatal — a failure here must never take down the scheduler, #484).
+ */
+async function checkAndRunDailyConsistencyCheck() {
+  try {
+    if (!shouldRunDailyConsistencyCheck()) return;
+
+    logger.info('🔍 Daily calendar consistency check triggered');
+    await runDailyConsistencyJob();
+    state.lastConsistencyCheck = new Date();
+  } catch (error) {
+    logger.error({ error }, '❌ Error in daily calendar consistency check');
+  }
+}
+
+/**
  * Check if daily forced sync should run (at 2 AM)
  */
 function shouldRunDailyForceSync(): boolean {
@@ -537,6 +570,15 @@ export function startScheduler() {
     const gcalInterval = 30 * 60 * 1000;
     state.googleCalendarIntervalId = setInterval(checkAndSyncGoogleCalendar, gcalInterval);
   }
+
+  // Start daily calendar consistency check scheduler (runs every hour, executes at 6 AM, #484)
+  logger.info('🔍 Starting daily calendar consistency check scheduler (runs at 6 AM)');
+
+  // Check immediately on start
+  checkAndRunDailyConsistencyCheck();
+
+  // Check every hour
+  state.consistencyCheckIntervalId = setInterval(checkAndRunDailyConsistencyCheck, hourlyInterval);
 }
 
 /**
@@ -583,6 +625,11 @@ export function stopScheduler() {
     state.airbnbMailStalenessIntervalId = null;
   }
 
+  if (state.consistencyCheckIntervalId) {
+    clearInterval(state.consistencyCheckIntervalId);
+    state.consistencyCheckIntervalId = null;
+  }
+
   state.running = false;
   state.nextRun = null;
 
@@ -605,6 +652,7 @@ export function getSchedulerStatus() {
     intervalMinutes: getJobInterval() / (60 * 1000),
     lastDailyForceSync: state.lastDailyForceSync?.toISOString() || null,
     lastAnalyticsSync: state.lastAnalyticsSync?.toISOString() || null,
+    lastConsistencyCheck: state.lastConsistencyCheck?.toISOString() || null,
     googleCalendarLastSync: Object.fromEntries(
       Array.from(state.propertyGoogleCalendarLastSync.entries()).map(
         ([slug, date]) => [slug, date.toISOString()]
