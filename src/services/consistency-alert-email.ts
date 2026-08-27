@@ -65,9 +65,11 @@ export function shouldSendConsistencyAlert(report: ConsistencyAlertReport, stale
   return report.totalIssues > 0 || staleHolds.length > 0;
 }
 
+// F8(e): auch " escapen (Konsolidierung aller 5 Escaper im Repo ist NICHT
+// Teil dieses Fixes — nur dieser).
 function esc(s: string | null | undefined): string {
   if (s == null) return '';
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 function propertyHasFindings(p: ConsistencyAlertProperty): boolean {

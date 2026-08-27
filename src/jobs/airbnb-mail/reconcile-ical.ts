@@ -49,8 +49,12 @@ interface BookedInterval {
   endExclusive: string; // YYYY-MM-DD, exclusive (= check-out date)
 }
 
-/** "Today" as YYYY-MM-DD in the property's own timezone, not the server's/UTC's. */
-function todayInPropertyTimezone(timezone: string): string {
+/**
+ * "Today" as YYYY-MM-DD in a given timezone, not the server's/UTC's (F8:
+ * geteilt mit dem Konsistenz-Check, der dieselbe "heute"-Logik pro
+ * Property-Timezone braucht).
+ */
+export function todayInTimezone(timezone: string): string {
   const zoned = toZonedTime(new Date(), timezone);
   const yyyy = zoned.getFullYear();
   const mm = String(zoned.getMonth() + 1).padStart(2, '0');
@@ -64,7 +68,9 @@ function todayInPropertyTimezone(timezone: string): string {
 // Such a fallback code can never match a real reservation_id — treat it as
 // "not a reservation" entirely: no placeholder, no update, and it must not
 // occupy the "still on the calendar" set used by missingInIcal either.
-const HM_CODE_RE = /^HM[A-Z0-9]+$/;
+// Exported (F8): der Konsistenz-Check braucht dieselbe Definition, um
+// UID-Präfix-Fallback-"Codes" nie als echte Reservierung zu behandeln.
+export const HM_CODE_RE = /^HM[A-Z0-9]+$/;
 
 /**
  * Groups consecutive booked days sharing the same block_ref into stay
@@ -138,7 +144,7 @@ function scaleReservationPayout(reservationCode: string, oldNights: number, newN
 
 export function reconcileAirbnbReservations(
   property: PropertyConfig,
-  todayStr: string = todayInPropertyTimezone(property.timezone ?? 'UTC')
+  todayStr: string = todayInTimezone(property.timezone ?? 'UTC')
 ): ReconcileResult {
   const listingId = property.airbnbListingId!;
   const intervals = getBookedIntervals(listingId);

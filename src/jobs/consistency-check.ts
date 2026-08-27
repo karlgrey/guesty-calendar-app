@@ -13,7 +13,6 @@
  *
  * See docs/superpowers/specs/2026-08-27-calendar-consistency-check.md
  */
-import { toZonedTime } from 'date-fns-tz';
 import { guestyClient } from '../services/guesty-client.js';
 import { getHostexClient } from '../services/hostex-client.js';
 import { fetchAirbnbIcal } from '../services/airbnb-mail/ical-fetcher.js';
@@ -22,13 +21,15 @@ import { buildAvailabilityRows } from '../mappers/airbnb-mail/availability-mappe
 import { mapAvailabilityBatch } from '../mappers/availability-mapper.js';
 import { mapHostexReservation } from '../mappers/hostex/reservation-mapper.js';
 import { mapHostexCalendarDay } from '../mappers/hostex/calendar-mapper.js';
-import { groupBookedIntervals } from './airbnb-mail/reconcile-ical.js';
+import { groupBookedIntervals, HM_CODE_RE, todayInTimezone } from './airbnb-mail/reconcile-ical.js';
 import { buildBlockSpans, blockEventId } from '../services/google-calendar-blocks.js';
 import { toGoogleEventId } from '../services/google-event-id.js';
 import { googleCalendarClient } from '../services/google-calendar-client.js';
-import { addOneDay } from '../utils/date.js';
+import { reservationEventSpan } from './sync-google-calendar.js';
+import { addOneDay, addDays } from '../utils/date.js';
 import { getListingById } from '../repositories/listings-repository.js';
 import { getAvailabilityLastSyncedAt } from '../repositories/availability-repository.js';
+import { ACTIVE_RESERVATION_STATUSES } from '../repositories/reservation-repository.js';
 import {
   getAllProperties,
   getListingId,
@@ -53,25 +54,10 @@ import { config } from '../config/index.js';
 import type { HostexReservation, HostexProperty } from '../types/hostex.js';
 import logger from '../utils/logger.js';
 
-// Real Airbnb-iCal-Codes sind immer "HM…" (siehe reconcile-ical.ts) — der
-// UID-Präfix-Fallback für owner-block-Events (kein Reservation-URL) ist NIE
-// eine echte Reservierung und darf nie ein "missing" auslösen.
-const HM_CODE_RE = /^HM[A-Z0-9]+$/;
-
-/** "Heute" als YYYY-MM-DD in der übergebenen Zeitzone (wie reconcile-ical.ts). */
-function todayInTimezone(timezone: string): string {
-  const zoned = toZonedTime(new Date(), timezone);
-  const yyyy = zoned.getFullYear();
-  const mm = String(zoned.getMonth() + 1).padStart(2, '0');
-  const dd = String(zoned.getDate()).padStart(2, '0');
-  return `${yyyy}-${mm}-${dd}`;
-}
-
-function addDays(dateStr: string, days: number): string {
-  const d = new Date(`${dateStr}T00:00:00Z`);
-  d.setUTCDate(d.getUTCDate() + days);
-  return d.toISOString().split('T')[0];
-}
+// HM_CODE_RE + todayInTimezone (F8): geteilt mit reconcile-ical.ts statt
+// dupliziert — "Real Airbnb-iCal-Codes sind immer HM…" und "heute in
+// Property-Timezone" müssen identisch bleiben, sonst driften Check und Sync
+// auseinander.
 
 function toGoogleEventLite(events: Array<{
   id?: string | null;
@@ -118,7 +104,7 @@ async function buildGuestyExpectedEvents(
     const batch =
       (await guestyClient.getReservations({
         listingId,
-        status: ['confirmed', 'reserved'],
+        status: [...ACTIVE_RESERVATION_STATUSES],
         limit: pageSize,
         checkOutGte: from,
         ...(page > 0 ? { skip: page * pageSize } : {}),
@@ -205,8 +191,7 @@ async function buildHostexExpectedEvents(
     if (!asReservation) continue;
     activeRaw.push(r);
 
-    const start = asReservation.check_in_localized ?? asReservation.check_in.split('T')[0];
-    const endExclusive = addOneDay(asReservation.check_out_localized ?? asReservation.check_out.split('T')[0]);
+    const { start, endExclusive } = reservationEventSpan(asReservation);
     if (!overlapsWindow(start, endExclusive, from, to)) continue;
 
     reservationEvents.push({

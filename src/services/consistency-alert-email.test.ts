@@ -115,6 +115,22 @@ describe('buildConsistencyAlertEmail', () => {
     expect(text).toContain('Alte Anfrage GmbH');
   });
 
+  it('F8(e): esc() escaped auch Anführungszeichen (Gastname mit ")', () => {
+    const report = emptyReport({
+      totalIssues: 1,
+      properties: [
+        {
+          slug: 'farmhouse', name: 'Farmhouse Prasser', ok: false,
+          missing: [{ type: 'reservation', start: '2026-10-04', endExclusive: '2026-10-07', guestName: 'Anna "Ännchen" Muster' }],
+          extra: [], mismatched: [], error: null,
+        },
+      ],
+    });
+    const { html } = buildConsistencyAlertEmail(report, []);
+    expect(html).not.toContain('"Ännchen"');
+    expect(html).toContain('&quot;Ännchen&quot;');
+  });
+
   it('F4: erwähnt Hold-Sweep-Provider-Fehler in HTML und Text', () => {
     const { html, text } = buildConsistencyAlertEmail(emptyReport(), [], [
       { provider: 'hostex', error: 'Hostex 500' },
