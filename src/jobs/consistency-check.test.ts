@@ -224,6 +224,36 @@ describe('buildExpectedEventsForProperty — guesty', () => {
     expect(getReservationsMock).toHaveBeenNthCalledWith(1, expect.objectContaining({ limit: 100 }));
     expect(getReservationsMock).toHaveBeenNthCalledWith(2, expect.objectContaining({ limit: 100, skip: 100 }));
   });
+
+  it('F5: begrenzt den Guesty-Reservations-Fetch mit checkOutGte=from', async () => {
+    getReservationsMock.mockResolvedValueOnce([]);
+    getCalendarMock.mockResolvedValueOnce([]);
+
+    await buildExpectedEventsForProperty(guestyProperty(), '2026-09-01', '2026-09-29');
+    expect(getReservationsMock).toHaveBeenCalledWith(expect.objectContaining({ checkOutGte: '2026-09-01' }));
+  });
+
+  it('F5: Guesty-Paginierungs-Sicherheitsgrenze erreicht -> warnt und markiert das Property-Ergebnis mit error', async () => {
+    getReservationsMock.mockImplementation(async () =>
+      Array.from({ length: 100 }, (_, i) => ({
+        _id: `pageres${String(i).padStart(16, '0')}`,
+        listingId: 'listing-guesty-1',
+        status: 'confirmed',
+        checkInDateLocalized: '2026-09-05',
+        checkOutDateLocalized: '2026-09-06',
+        guest: { fullName: 'Gast' },
+      }))
+    );
+    getCalendarMock.mockResolvedValueOnce([]);
+
+    const logger = (await import('../utils/logger.js')).default;
+    const { error } = await buildExpectedEventsForProperty(guestyProperty(), '2026-09-01', '2026-09-29');
+    expect(error).toBe('Guesty-Paginierung abgeschnitten — Ergebnis unvollständig');
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ listingId: 'listing-guesty-1' }),
+      expect.stringContaining('Seiten-Sicherheitsgrenze erreicht')
+    );
+  });
 });
 
 describe('buildExpectedEventsForProperty — hostex', () => {
@@ -283,6 +313,27 @@ describe('buildExpectedEventsForProperty — hostex', () => {
     expect(events).toEqual([]);
     expect(sourceCounts).toEqual({ reservations: 0, blockSpans: 0 });
     expect(hostexGetListingCalendarsMock).not.toHaveBeenCalled();
+  });
+
+  it('F9: begrenzt getReservations mit endCheckIn=to (kein startCheckIn)', async () => {
+    hostexGetReservationsMock.mockResolvedValueOnce([]);
+    hostexGetPropertiesMock.mockResolvedValueOnce([{ id: 12659676, title: 'X', channels: [] }]);
+
+    await buildExpectedEventsForProperty(hostexProperty(), '2026-09-01', '2026-09-29');
+    expect(hostexGetReservationsMock).toHaveBeenCalledWith(
+      expect.objectContaining({ endCheckIn: '2026-09-29' })
+    );
+    expect(hostexGetReservationsMock).toHaveBeenCalledWith(
+      expect.not.objectContaining({ startCheckIn: expect.anything() })
+    );
+  });
+
+  it('F9: nutzt übergebene hostexProperties statt selbst getProperties() zu rufen', async () => {
+    hostexGetReservationsMock.mockResolvedValueOnce([]);
+    const preloaded = [{ id: 12659676, title: 'X', channels: [] }] as any;
+
+    await buildExpectedEventsForProperty(hostexProperty(), '2026-09-01', '2026-09-29', preloaded);
+    expect(hostexGetPropertiesMock).not.toHaveBeenCalled();
   });
 });
 
@@ -360,6 +411,37 @@ describe('runConsistencyCheck', () => {
     expect(report.totalIssues).toBe(1);
   });
 
+  it('F5: Guesty-Paginierungs-Abbruch markiert die Property mit error und zählt als Befund, ohne die anderen Properties zu blockieren', async () => {
+    getAllPropertiesMock.mockReturnValue([
+      guestyProperty({ slug: 'truncated', name: 'Truncated Property', guestyPropertyId: 'listing-truncated' }),
+      guestyProperty({ slug: 'ok-prop', name: 'OK Property', guestyPropertyId: 'listing-ok' }),
+    ]);
+    getReservationsMock.mockImplementation(async ({ listingId }: { listingId: string }) => {
+      if (listingId === 'listing-truncated') {
+        return Array.from({ length: 100 }, (_, i) => ({
+          _id: `pageres${String(i).padStart(16, '0')}`,
+          listingId,
+          status: 'confirmed',
+          checkInDateLocalized: '2026-09-05',
+          checkOutDateLocalized: '2026-09-06',
+          guest: { fullName: 'Gast' },
+        }));
+      }
+      return [];
+    });
+    getCalendarMock.mockResolvedValue([]);
+    listEventsMock.mockResolvedValue([]);
+    getAvailabilityLastSyncedAtMock.mockReturnValue(null);
+
+    const report = await runConsistencyCheck(28);
+    const truncated = report.properties.find((p) => p.slug === 'truncated')!;
+    const ok = report.properties.find((p) => p.slug === 'ok-prop')!;
+    expect(truncated.ok).toBe(false);
+    expect(truncated.error).toBe('Guesty-Paginierung abgeschnitten — Ergebnis unvollständig');
+    expect(ok.ok).toBe(true);
+    expect(report.totalIssues).toBeGreaterThan(0);
+  });
+
   it('zählt missing/extra/mismatched korrekt in totalIssues', async () => {
     getAllPropertiesMock.mockReturnValue([guestyProperty({ guestyPropertyId: 'listing-x' })]);
     getReservationsMock.mockResolvedValueOnce([
@@ -383,6 +465,24 @@ describe('runConsistencyCheck', () => {
     expect(report.properties[0].missing).toHaveLength(1);
     expect(report.properties[0].extra).toHaveLength(1);
     expect(report.properties[0].cacheLastSyncedAt).toBeNull();
+  });
+
+  it('F9: lädt Hostex-getProperties() nur einmal pro Run, auch bei mehreren Hostex-Properties', async () => {
+    getAllPropertiesMock.mockReturnValue([
+      hostexProperty({ slug: 'hostex-a', hostexPropertyId: '111', googleCalendar: { enabled: true, calendarId: 'cal-a' } }),
+      hostexProperty({ slug: 'hostex-b', hostexPropertyId: '222', googleCalendar: { enabled: true, calendarId: 'cal-b' } }),
+    ]);
+    hostexGetReservationsMock.mockResolvedValue([]);
+    hostexGetPropertiesMock.mockResolvedValue([
+      { id: 111, title: 'A', channels: [] },
+      { id: 222, title: 'B', channels: [] },
+    ]);
+    listEventsMock.mockResolvedValue([]);
+    getAvailabilityLastSyncedAtMock.mockReturnValue(null);
+
+    const report = await runConsistencyCheck(28);
+    expect(report.properties).toHaveLength(2);
+    expect(hostexGetPropertiesMock).toHaveBeenCalledTimes(1);
   });
 
   it('ignoriert Properties ohne aktiviertes Google Calendar', async () => {
@@ -445,6 +545,22 @@ describe('listOpenReservations', () => {
 
     const result = await listOpenReservations(['reserved'], true);
     expect(result.reservations).toHaveLength(1);
+  });
+
+  it('F5: nutzt checkOutGte=heute bei includePast=false', async () => {
+    getReservationsMock.mockResolvedValueOnce([]);
+    getPropertiesByProviderMock.mockReturnValue([]);
+
+    await listOpenReservations(['reserved'], false);
+    expect(getReservationsMock).toHaveBeenCalledWith(expect.objectContaining({ checkOutGte: '2026-08-27' }));
+  });
+
+  it('F5: kein checkOutGte-Filter bei includePast=true', async () => {
+    getReservationsMock.mockResolvedValueOnce([]);
+    getPropertiesByProviderMock.mockReturnValue([]);
+
+    await listOpenReservations(['reserved'], true);
+    expect(getReservationsMock).toHaveBeenCalledWith(expect.not.objectContaining({ checkOutGte: expect.anything() }));
   });
 
   it('kombiniert Guesty + Hostex, sortiert nach createdAt aufsteigend', async () => {

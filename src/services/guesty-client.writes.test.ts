@@ -75,4 +75,23 @@ describe('GuestyClient writes', () => {
     expect(options.method).toBe('PUT');
     expect(JSON.parse(options.body)).toEqual({ status: 'canceled', cancellationReason: 'Cancelled Due to Hold/Expiration' });
   });
+
+  it('F5: getReservations mit checkOutGte fügt einen zusätzlichen $gte-Filter neben dem Statusfilter hinzu', async () => {
+    const { client, spy } = clientWithMockedRequest({ results: [] });
+    await client.getReservations({ listingId: 'l1', status: ['confirmed', 'reserved'], checkOutGte: '2026-08-27' });
+    const [endpoint] = spy.mock.calls[0];
+    const url = new URL(`http://x${endpoint}`);
+    const filters = JSON.parse(url.searchParams.get('filters')!);
+    expect(filters).toContainEqual({ operator: '$gte', field: 'checkOut', value: '2026-08-27' });
+    expect(filters).toContainEqual({ operator: '$in', field: 'status', value: ['confirmed', 'reserved'] });
+  });
+
+  it('F5: getReservations ohne checkOutGte fügt keinen checkOut-Filter hinzu', async () => {
+    const { client, spy } = clientWithMockedRequest({ results: [] });
+    await client.getReservations({ listingId: 'l1' });
+    const [endpoint] = spy.mock.calls[0];
+    const url = new URL(`http://x${endpoint}`);
+    const filters = JSON.parse(url.searchParams.get('filters')!);
+    expect(filters.some((f: any) => f.field === 'checkOut')).toBe(false);
+  });
 });

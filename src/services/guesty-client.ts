@@ -481,6 +481,7 @@ export class GuestyClient {
     status?: string[];
     limit?: number;
     skip?: number;
+    checkOutGte?: string;
   }): Promise<any[]> {
     logger.debug({ params }, 'Fetching reservations from Guesty API');
 
@@ -511,6 +512,16 @@ export class GuestyClient {
           value: params.status,
         });
       }
+    }
+
+    // F5: begrenzt die Historie (z. B. auf das Konsistenz-Check-Fenster) —
+    // in-house-Aufenthalte (check-out in der Zukunft) bleiben drin.
+    if (params?.checkOutGte) {
+      filters.push({
+        operator: '$gte',
+        field: 'checkOut',
+        value: params.checkOutGte,
+      });
     }
 
     // Add filters to query params (JSON stringified)

@@ -50,7 +50,7 @@ import {
 } from '../services/consistency-alert-email.js';
 import { sendEmail } from '../services/email-service.js';
 import { config } from '../config/index.js';
-import type { HostexReservation } from '../types/hostex.js';
+import type { HostexReservation, HostexProperty } from '../types/hostex.js';
 import logger from '../utils/logger.js';
 
 // Real Airbnb-iCal-Codes sind immer "HM…" (siehe reconcile-ical.ts) — der
@@ -104,23 +104,34 @@ async function buildGuestyExpectedEvents(
   property: PropertyConfig,
   from: string,
   to: string
-): Promise<{ events: ExpectedEvent[]; sourceCounts: SourceCounts }> {
+): Promise<{ events: ExpectedEvent[]; sourceCounts: SourceCounts; error?: string | null }> {
   const listingId = getListingId(property);
 
-  // Paginierung wie sync-inquiries.ts, pageSize 100.
+  // Paginierung wie sync-inquiries.ts, pageSize 100. checkOutGte=from (F5)
+  // begrenzt die Historie auf das Check-Fenster — in-house-Aufenthalte
+  // (check-out in der Zukunft) bleiben drin.
   const pageSize = 100;
   const maxPages = 50;
   const allReservations: any[] = [];
+  let truncated = false;
   for (let page = 0; page < maxPages; page++) {
     const batch =
       (await guestyClient.getReservations({
         listingId,
         status: ['confirmed', 'reserved'],
         limit: pageSize,
+        checkOutGte: from,
         ...(page > 0 ? { skip: page * pageSize } : {}),
       })) ?? [];
     allReservations.push(...batch);
     if (batch.length < pageSize) break;
+    if (page === maxPages - 1) {
+      truncated = true;
+      logger.warn(
+        { listingId, fetched: allReservations.length },
+        'Consistency check: Guesty-Reservations-Seiten-Sicherheitsgrenze erreicht — Ergebnis evtl. unvollständig'
+      );
+    }
   }
 
   const reservationEvents: ExpectedEvent[] = [];
@@ -164,13 +175,17 @@ async function buildGuestyExpectedEvents(
   return {
     events: [...reservationEvents, ...blockEvents],
     sourceCounts: { reservations: reservationEvents.length, blockSpans: blockEvents.length },
+    // F5: Property bekommt einen Hinweis, damit ein abgeschnittenes
+    // Ergebnis nicht als stiller False-Positive-Extra-Sturm durchgeht.
+    error: truncated ? 'Guesty-Paginierung abgeschnitten — Ergebnis unvollständig' : null,
   };
 }
 
 async function buildHostexExpectedEvents(
   property: PropertyConfig,
   from: string,
-  to: string
+  to: string,
+  hostexProperties?: HostexProperty[]
 ): Promise<{ events: ExpectedEvent[]; sourceCounts: SourceCounts }> {
   const hostexId = getListingId(property);
   const client = getHostexClient();
@@ -179,7 +194,9 @@ async function buildHostexExpectedEvents(
     checkOut: property.googleCalendar?.checkOutTime ?? '12:00',
   };
 
-  const reservations = await client.getReservations({ propertyId: hostexId });
+  // F9: endCheckIn begrenzt auf das Check-Fenster (kein startCheckIn — ein
+  // laufender in-house-Aufenthalt mit Check-in vor `from` muss drinbleiben).
+  const reservations = await client.getReservations({ propertyId: hostexId, endCheckIn: to });
 
   const reservationEvents: ExpectedEvent[] = [];
   const activeRaw: HostexReservation[] = [];
@@ -204,8 +221,11 @@ async function buildHostexExpectedEvents(
   }
 
   let blockEvents: ExpectedEvent[] = [];
-  const hostexProperties = await client.getProperties();
-  const hostexProperty = hostexProperties.find((p) => String(p.id) === hostexId);
+  // F9: getProperties() wird EINMAL pro Run geladen und hier durchgereicht
+  // (kein Modul-Cache) — Fallback fetcht selbst, falls kein Aufrufer die
+  // Liste mitgibt (z. B. Direktaufruf/Tests).
+  const properties = hostexProperties ?? (await client.getProperties());
+  const hostexProperty = properties.find((p) => String(p.id) === hostexId);
   const channel = hostexProperty?.channels?.[0];
 
   if (channel) {
@@ -306,10 +326,11 @@ async function buildAirbnbExpectedEvents(
 export async function buildExpectedEventsForProperty(
   property: PropertyConfig,
   from: string,
-  to: string
-): Promise<{ events: ExpectedEvent[]; sourceCounts: SourceCounts }> {
+  to: string,
+  hostexProperties?: HostexProperty[]
+): Promise<{ events: ExpectedEvent[]; sourceCounts: SourceCounts; error?: string | null }> {
   if (property.provider === 'guesty') return buildGuestyExpectedEvents(property, from, to);
-  if (property.provider === 'hostex') return buildHostexExpectedEvents(property, from, to);
+  if (property.provider === 'hostex') return buildHostexExpectedEvents(property, from, to, hostexProperties);
   return buildAirbnbExpectedEvents(property, from, to);
 }
 
@@ -345,9 +366,18 @@ export async function runConsistencyCheck(days: number): Promise<ConsistencyRepo
   const reportFrom = todayInTimezone(config.propertyTimezone);
   const reportTo = addDays(reportFrom, days);
 
+  // F9: Hostex client.getProperties() EINMAL pro Run laden (kein
+  // Modul-Cache) und an jeden Builder-Aufruf durchreichen, statt es pro
+  // Hostex-Property erneut zu holen.
+  const hostexProperties = properties.some((p) => p.provider === 'hostex')
+    ? await getHostexClient().getProperties()
+    : undefined;
+
   const results: PropertyConsistencyResult[] = [];
   let totalIssues = 0;
 
+  // Die Properties selbst bleiben sequenziell (Rate-Limits) — pro Property
+  // laufen Provider-Fetch und googleCalendarClient.listEvents parallel (F9).
   for (const property of properties) {
     const calendarId = property.googleCalendar!.calendarId!;
     const listingId = getListingId(property);
@@ -355,11 +385,13 @@ export async function runConsistencyCheck(days: number): Promise<ConsistencyRepo
     const to = addDays(from, days);
 
     try {
-      const { events, sourceCounts } = await buildExpectedEventsForProperty(property, from, to);
-      const googleEventsRaw = await googleCalendarClient.listEvents(calendarId, `${from}T00:00:00Z`, `${to}T00:00:00Z`);
+      const [{ events, sourceCounts, error: truncationError }, googleEventsRaw] = await Promise.all([
+        buildExpectedEventsForProperty(property, from, to, hostexProperties),
+        googleCalendarClient.listEvents(calendarId, `${from}T00:00:00Z`, `${to}T00:00:00Z`),
+      ]);
       const googleEvents = toGoogleEventLite(googleEventsRaw as any);
       const diff = diffCalendarEvents(events, googleEvents, from, to);
-      const issueCount = diff.missing.length + diff.extra.length + diff.mismatched.length;
+      const issueCount = diff.missing.length + diff.extra.length + diff.mismatched.length + (truncationError ? 1 : 0);
       totalIssues += issueCount;
 
       results.push({
@@ -373,7 +405,7 @@ export async function runConsistencyCheck(days: number): Promise<ConsistencyRepo
         missing: diff.missing,
         extra: diff.extra,
         mismatched: diff.mismatched,
-        error: null,
+        error: truncationError ?? null,
       });
     } catch (error) {
       totalIssues += 1;
@@ -399,6 +431,18 @@ export async function runConsistencyCheck(days: number): Promise<ConsistencyRepo
 }
 
 // ─── Endpoint 2: offene Reservierungen (Hold-Sweep) ─────────────────────────
+//
+// F9 (dokumentierte Abweichung): "Hostex-Reservierungen EINMAL pro Property
+// fetchen und für Diff und Hold-Sweep wiederverwenden" wurde NICHT umgesetzt.
+// runConsistencyCheck (Diff, Fenster [from,to), endCheckIn-begrenzt) und
+// listOpenReservations (Hold-Sweep, offenes Fenster nach vorn, andere
+// Statusfilter, eigener Endpoint ohne vorherigen Check-Lauf) sind zwei
+// unabhängige Top-Level-Aufrufe mit unterschiedlicher Semantik — ein
+// gemeinsamer Cache dafür bräuchte entweder Modul-State (bewusst vermieden,
+// s. getProperties()-Fix oben) oder eine Kopplung beider Funktionen, die
+// den eigenständigen Aufruf von /api/agent/reservations verkomplizieren
+// würde. Bei aktueller Property-Zahl fällt der doppelte Fetch nicht ins
+// Rate-Limit-Gewicht — daher bewusst nicht konsolidiert.
 
 export interface OpenReservation {
   provider: string;
@@ -427,10 +471,19 @@ async function listOpenGuestyReservations(statuses: string[], includePast: boole
       (await guestyClient.getReservations({
         status: statuses,
         limit: pageSize,
+        // F5: nur bei includePast=false begrenzen — mit includePast=true soll
+        // explizit auch Vergangenes durchkommen.
+        ...(includePast ? {} : { checkOutGte: todayStr }),
         ...(page > 0 ? { skip: page * pageSize } : {}),
       })) ?? [];
     all.push(...batch);
     if (batch.length < pageSize) break;
+    if (page === maxPages - 1) {
+      logger.warn(
+        { fetched: all.length },
+        'Hold-Sweep: Guesty-Reservations-Seiten-Sicherheitsgrenze erreicht — Ergebnis evtl. unvollständig'
+      );
+    }
   }
 
   const out: OpenReservation[] = [];
