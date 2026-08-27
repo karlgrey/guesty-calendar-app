@@ -37,6 +37,28 @@ function formatDateDE(dateStr: string): string {
 }
 
 /**
+ * Zeitspanne eines Reservierungs-Events wie es der Sync nach Google
+ * schreibt: Start = Check-in-Tag, Ende exklusiv = Check-out-Tag + 1 (Google
+ * All-Day-Events sind exklusiv am Ende). Geteilt mit dem Konsistenz-Check
+ * (F8) — der muss dieselbe Erwartung berechnen wie der Sync schreibt, sonst
+ * entstehen False Positives.
+ *
+ * UTC-basierte addOneDay (utils/date) — Google-Calendar-Ganztages-Events
+ * sind reine YYYY-MM-DD-Strings, dafür gibt es keinen fachlichen Grund für
+ * lokale Zeit. Die vormals hier lokale Variante war DST-abhängig, aber laut
+ * Charakterisierungstest (#406) über 2020-2029 inkl. beider Europe/Berlin-
+ * Übergänge byte-identisch zur UTC-Variante — Konsolidierung ist ein reiner
+ * Refactor ohne Verhaltensänderung.
+ */
+export function reservationEventSpan(
+  reservation: Pick<Reservation, 'check_in' | 'check_in_localized' | 'check_out' | 'check_out_localized'>
+): { start: string; endExclusive: string } {
+  const start = (reservation.check_in_localized || reservation.check_in).split('T')[0];
+  const checkOut = (reservation.check_out_localized || reservation.check_out).split('T')[0];
+  return { start, endExclusive: addOneDay(checkOut) };
+}
+
+/**
  * Build a Google Calendar event from a reservation
  */
 export function buildCalendarEvent(
@@ -51,18 +73,8 @@ export function buildCalendarEvent(
   const status = reservation.status.charAt(0).toUpperCase() + reservation.status.slice(1);
   const source = reservation.source || reservation.platform || 'Direct';
 
-  const checkIn = (reservation.check_in_localized || reservation.check_in).split('T')[0];
   const checkOut = (reservation.check_out_localized || reservation.check_out).split('T')[0];
-
-  // End date +1 day: Google all-day events use exclusive end date,
-  // but guests are still present on checkout day until checkout time.
-  // UTC-basierte addOneDay (utils/date) — Google-Calendar-Ganztages-Events
-  // sind reine YYYY-MM-DD-Strings, dafür gibt es keinen fachlichen Grund für
-  // lokale Zeit. Die vormals hier lokale Variante war DST-abhängig, aber laut
-  // Charakterisierungstest (#406) über 2020-2029 inkl. beider Europe/Berlin-
-  // Übergänge byte-identisch zur UTC-Variante — Konsolidierung ist ein reiner
-  // Refactor ohne Verhaltensänderung.
-  const endDate = addOneDay(checkOut);
+  const { start: checkIn, endExclusive: endDate } = reservationEventSpan(reservation);
 
   const descLines = [
     `Status: ${status}`,

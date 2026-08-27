@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { addOneDay, nightsBetween } from './date.js';
+import { addOneDay, nightsBetween, addDays } from './date.js';
 
 describe('addOneDay', () => {
   it('adds one day within a month', () => {
@@ -50,5 +50,19 @@ describe('nightsBetween', () => {
 
   it('counts correctly across a year boundary', () => {
     expect(nightsBetween('2026-12-29', '2027-01-03')).toBe(5);
+  });
+});
+
+describe('addDays', () => {
+  it('adds a positive number of days', () => {
+    expect(addDays('2026-08-27', 28)).toBe('2026-09-24');
+  });
+
+  it('adds zero days -> unverändert', () => {
+    expect(addDays('2026-08-27', 0)).toBe('2026-08-27');
+  });
+
+  it('rolls over a year boundary', () => {
+    expect(addDays('2026-12-20', 15)).toBe('2027-01-04');
   });
 });

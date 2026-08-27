@@ -52,6 +52,13 @@ const configSchema = z.object({
   // (per-mail error isolation) would not (it prevents wedging, not silence).
   airbnbMailStalenessThresholdHours: z.coerce.number().int().min(1).default(26),
 
+  // Kalender-Konsistenz-Check (#484): Empfänger der täglichen Alert-Mail bei
+  // Befund (Diff und/oder überfällige Holds). Ohne Wert: kein Mailversand,
+  // stattdessen logger.error (Muster check-staleness.ts).
+  consistencyAlertRecipients: z.string().optional().transform((val) =>
+    val ? val.split(',').map((email) => email.trim()).filter((email) => email.length > 0) : []
+  ),
+
   // Property
   propertyCurrency: z.string().length(3).toUpperCase().default('EUR'),
   propertyTimezone: z.string().default('Europe/Berlin'),
@@ -148,6 +155,7 @@ function parseConfig() {
     airbnbMailUser: process.env.AIRBNB_MAIL_USER,
     airbnbMailPassword: process.env.AIRBNB_MAIL_PASSWORD,
     airbnbMailStalenessThresholdHours: process.env.AIRBNB_MAIL_STALENESS_THRESHOLD_HOURS,
+    consistencyAlertRecipients: process.env.CONSISTENCY_ALERT_RECIPIENTS,
     propertyCurrency: process.env.PROPERTY_CURRENCY,
     propertyTimezone: process.env.PROPERTY_TIMEZONE,
     bookingRecipientEmail: process.env.BOOKING_RECIPIENT_EMAIL,

@@ -18,3 +18,10 @@ export function nightsBetween(start: string, endExclusive: string): number {
     (Date.parse(`${endExclusive}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86_400_000
   );
 }
+
+/** Add N calendar days to a YYYY-MM-DD date string (UTC, no DST). */
+export function addDays(dateStr: string, days: number): string {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().split('T')[0];
+}

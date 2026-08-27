@@ -1,0 +1,648 @@
+/**
+ * Kalender-Konsistenz-Check + Hold-Sweep (#484)
+ *
+ * Orchestriert den Live-Abgleich zwischen den Provider-Quellen (bewusst am
+ * DB-Cache vorbei) und dem tatsächlichen Google-Kalenderinhalt, sowie den
+ * Sweep über offene/unbestätigte Reservierungen (vergessene Holds).
+ * Read-only: keine Schreib-Calls auf Google/Guesty/Hostex.
+ *
+ * Die Erwartungsberechnung MUSS exakt der Schreiblogik von
+ * `sync-google-calendar.ts` entsprechen (Event-IDs via
+ * toGoogleEventId/blockEventId, Datumslogik addOneDay, *_localized-Fallback)
+ * — sonst entstehen False Positives.
+ *
+ * See docs/superpowers/specs/2026-08-27-calendar-consistency-check.md
+ */
+import { guestyClient } from '../services/guesty-client.js';
+import { getHostexClient } from '../services/hostex-client.js';
+import { fetchAirbnbIcal } from '../services/airbnb-mail/ical-fetcher.js';
+import { parseAirbnbIcal } from '../parsers/airbnb-mail/ical-parser.js';
+import { buildAvailabilityRows } from '../mappers/airbnb-mail/availability-mapper.js';
+import { mapAvailabilityBatch } from '../mappers/availability-mapper.js';
+import { mapHostexReservation } from '../mappers/hostex/reservation-mapper.js';
+import { mapHostexCalendarDay } from '../mappers/hostex/calendar-mapper.js';
+import { groupBookedIntervals, HM_CODE_RE, todayInTimezone } from './airbnb-mail/reconcile-ical.js';
+import { buildBlockSpans, blockEventId } from '../services/google-calendar-blocks.js';
+import { toGoogleEventId } from '../services/google-event-id.js';
+import { googleCalendarClient } from '../services/google-calendar-client.js';
+import { reservationEventSpan } from './sync-google-calendar.js';
+import { addOneDay, addDays } from '../utils/date.js';
+import { getListingById } from '../repositories/listings-repository.js';
+import { getAvailabilityLastSyncedAt } from '../repositories/availability-repository.js';
+import { ACTIVE_RESERVATION_STATUSES } from '../repositories/reservation-repository.js';
+import {
+  getAllProperties,
+  getListingId,
+  getPropertyByGuestyId,
+  getPropertiesByProvider,
+  type PropertyConfig,
+} from '../config/properties.js';
+import {
+  diffCalendarEvents,
+  overlapsWindow,
+  type ExpectedEvent,
+  type GoogleEventLite,
+  type ConsistencyDiff,
+} from '../services/calendar-consistency.js';
+import {
+  buildConsistencyAlertEmail,
+  shouldSendConsistencyAlert,
+  type StaleHold,
+} from '../services/consistency-alert-email.js';
+import { sendEmail } from '../services/email-service.js';
+import { config } from '../config/index.js';
+import type { HostexReservation, HostexProperty } from '../types/hostex.js';
+import logger from '../utils/logger.js';
+
+// HM_CODE_RE + todayInTimezone (F8): geteilt mit reconcile-ical.ts statt
+// dupliziert — "Real Airbnb-iCal-Codes sind immer HM…" und "heute in
+// Property-Timezone" müssen identisch bleiben, sonst driften Check und Sync
+// auseinander.
+
+function toGoogleEventLite(events: Array<{
+  id?: string | null;
+  summary?: string | null;
+  start?: { date?: string | null; dateTime?: string | null } | null;
+  end?: { date?: string | null; dateTime?: string | null } | null;
+  extendedProperties?: { private?: Record<string, string> | null } | null;
+}>): GoogleEventLite[] {
+  return events
+    .filter((e): e is typeof e & { id: string } => !!e.id)
+    .map((e) => ({
+      id: e.id,
+      summary: e.summary ?? undefined,
+      start: e.start ? { date: e.start.date ?? undefined, dateTime: e.start.dateTime ?? undefined } : undefined,
+      end: e.end ? { date: e.end.date ?? undefined, dateTime: e.end.dateTime ?? undefined } : undefined,
+      extendedProperties: e.extendedProperties?.private
+        ? { private: e.extendedProperties.private }
+        : undefined,
+    }));
+}
+
+export interface SourceCounts {
+  reservations: number;
+  blockSpans: number;
+}
+
+// ─── Erwartungsbild pro Property (LIVE, am DB-Cache vorbei) ─────────────────
+
+async function buildGuestyExpectedEvents(
+  property: PropertyConfig,
+  from: string,
+  to: string
+): Promise<{ events: ExpectedEvent[]; sourceCounts: SourceCounts; error?: string | null }> {
+  const listingId = getListingId(property);
+
+  // Paginierung wie sync-inquiries.ts, pageSize 100. checkOutGte=from (F5)
+  // begrenzt die Historie auf das Check-Fenster — in-house-Aufenthalte
+  // (check-out in der Zukunft) bleiben drin.
+  const pageSize = 100;
+  const maxPages = 50;
+  const allReservations: any[] = [];
+  let truncated = false;
+  for (let page = 0; page < maxPages; page++) {
+    const batch =
+      (await guestyClient.getReservations({
+        listingId,
+        status: [...ACTIVE_RESERVATION_STATUSES],
+        limit: pageSize,
+        checkOutGte: from,
+        ...(page > 0 ? { skip: page * pageSize } : {}),
+      })) ?? [];
+    allReservations.push(...batch);
+    if (batch.length < pageSize) break;
+    if (page === maxPages - 1) {
+      truncated = true;
+      logger.warn(
+        { listingId, fetched: allReservations.length },
+        'Consistency check: Guesty-Reservations-Seiten-Sicherheitsgrenze erreicht — Ergebnis evtl. unvollständig'
+      );
+    }
+  }
+
+  const reservationEvents: ExpectedEvent[] = [];
+  for (const r of allReservations) {
+    if (!r?._id) continue;
+    const checkInDay: string | null =
+      r.checkInDateLocalized || (typeof r.checkIn === 'string' ? r.checkIn.split('T')[0] : null);
+    const checkOutDay: string | null =
+      r.checkOutDateLocalized || (typeof r.checkOut === 'string' ? r.checkOut.split('T')[0] : null);
+    if (!checkInDay || !checkOutDay) continue;
+
+    const start = checkInDay;
+    const endExclusive = addOneDay(checkOutDay);
+    if (!overlapsWindow(start, endExclusive, from, to)) continue;
+
+    reservationEvents.push({
+      type: 'reservation',
+      eventId: toGoogleEventId(r._id),
+      reservationId: r._id,
+      guestName: r.guest?.fullName ?? null,
+      status: r.status,
+      start,
+      endExclusive,
+    });
+  }
+
+  const calendar = await guestyClient.getCalendar(listingId, from, to);
+  const availability = mapAvailabilityBatch(calendar);
+  const spans = buildBlockSpans(
+    availability.map((a) => ({ date: a.date, status: a.status, block_type: a.block_type }))
+  );
+  const blockEvents: ExpectedEvent[] = spans
+    .filter((s) => overlapsWindow(s.startDate, s.endExclusive, from, to))
+    .map((s) => ({
+      type: 'block',
+      eventId: blockEventId(listingId, s.startDate),
+      start: s.startDate,
+      endExclusive: s.endExclusive,
+    }));
+
+  return {
+    events: [...reservationEvents, ...blockEvents],
+    sourceCounts: { reservations: reservationEvents.length, blockSpans: blockEvents.length },
+    // F5: Property bekommt einen Hinweis, damit ein abgeschnittenes
+    // Ergebnis nicht als stiller False-Positive-Extra-Sturm durchgeht.
+    error: truncated ? 'Guesty-Paginierung abgeschnitten — Ergebnis unvollständig' : null,
+  };
+}
+
+async function buildHostexExpectedEvents(
+  property: PropertyConfig,
+  from: string,
+  to: string,
+  hostexProperties?: HostexProperty[]
+): Promise<{ events: ExpectedEvent[]; sourceCounts: SourceCounts }> {
+  const hostexId = getListingId(property);
+  const client = getHostexClient();
+  const defaultTimes = {
+    checkIn: property.googleCalendar?.checkInTime ?? '15:00',
+    checkOut: property.googleCalendar?.checkOutTime ?? '12:00',
+  };
+
+  // F9: endCheckIn begrenzt auf das Check-Fenster (kein startCheckIn — ein
+  // laufender in-house-Aufenthalt mit Check-in vor `from` muss drinbleiben).
+  const reservations = await client.getReservations({ propertyId: hostexId, endCheckIn: to });
+
+  const reservationEvents: ExpectedEvent[] = [];
+  const activeRaw: HostexReservation[] = [];
+  for (const r of reservations) {
+    const { asReservation } = mapHostexReservation(r, defaultTimes);
+    if (!asReservation) continue;
+    activeRaw.push(r);
+
+    const { start, endExclusive } = reservationEventSpan(asReservation);
+    if (!overlapsWindow(start, endExclusive, from, to)) continue;
+
+    reservationEvents.push({
+      type: 'reservation',
+      eventId: toGoogleEventId(asReservation.reservation_id),
+      reservationId: asReservation.reservation_id,
+      guestName: asReservation.guest_name,
+      status: asReservation.status,
+      start,
+      endExclusive,
+    });
+  }
+
+  let blockEvents: ExpectedEvent[] = [];
+  // F9: getProperties() wird EINMAL pro Run geladen und hier durchgereicht
+  // (kein Modul-Cache) — Fallback fetcht selbst, falls kein Aufrufer die
+  // Liste mitgibt (z. B. Direktaufruf/Tests).
+  const properties = hostexProperties ?? (await client.getProperties());
+  const hostexProperty = properties.find((p) => String(p.id) === hostexId);
+  const channel = hostexProperty?.channels?.[0];
+
+  if (channel) {
+    const calResp = await client.getListingCalendars({
+      startDate: from,
+      endDate: to,
+      listings: [{ channel_type: channel.channel_type, listing_id: channel.listing_id }],
+    });
+    const listingCal = calResp.listings.find((l) => l.listing_id === channel.listing_id);
+    if (listingCal) {
+      const lastSyncedAt = new Date().toISOString();
+      const rows = listingCal.calendar.map((day) =>
+        mapHostexCalendarDay({
+          day,
+          listingId: hostexId,
+          reservationsForDate: activeRaw.filter(
+            (r) => r.check_in_date <= day.date && day.date < r.check_out_date
+          ),
+          lastSyncedAt,
+        })
+      );
+      const spans = buildBlockSpans(
+        rows.map((row) => ({ date: row.date, status: row.status, block_type: row.block_type }))
+      );
+      blockEvents = spans
+        .filter((s) => overlapsWindow(s.startDate, s.endExclusive, from, to))
+        .map((s) => ({
+          type: 'block',
+          eventId: blockEventId(hostexId, s.startDate),
+          start: s.startDate,
+          endExclusive: s.endExclusive,
+        }));
+    }
+  } else {
+    logger.warn(
+      { propertySlug: property.slug, hostexId },
+      'Consistency check: Hostex-Property ohne Channel — Block-Diff übersprungen'
+    );
+  }
+
+  return {
+    events: [...reservationEvents, ...blockEvents],
+    sourceCounts: { reservations: reservationEvents.length, blockSpans: blockEvents.length },
+  };
+}
+
+async function buildAirbnbExpectedEvents(
+  property: PropertyConfig,
+  from: string,
+  to: string
+): Promise<{ events: ExpectedEvent[]; sourceCounts: SourceCounts }> {
+  const listingId = getListingId(property);
+  const url = property.airbnbIcalUrl!;
+
+  const ics = await fetchAirbnbIcal(url);
+  const events = parseAirbnbIcal(ics);
+
+  const listing = getListingById(listingId);
+  const basePrice = listing?.base_price ?? 0;
+  const minNights = listing?.min_nights ?? 1;
+
+  const rows = buildAvailabilityRows({
+    listingId,
+    windowStart: from,
+    windowEnd: to,
+    events,
+    basePrice,
+    defaultMinNights: minNights,
+    lastSyncedAt: new Date().toISOString(),
+  });
+
+  const bookedIntervals = groupBookedIntervals(rows.map((r) => ({ date: r.date, block_ref: r.block_ref })));
+  const reservationEvents: ExpectedEvent[] = bookedIntervals
+    .filter((iv) => HM_CODE_RE.test(iv.code))
+    .map((iv) => {
+      const start = iv.start;
+      const endExclusive = addOneDay(iv.endExclusive);
+      return { type: 'reservation' as const, eventId: toGoogleEventId(iv.code), reservationId: iv.code, guestName: null, status: 'confirmed', start, endExclusive };
+    })
+    .filter((e) => overlapsWindow(e.start, e.endExclusive, from, to));
+
+  const spans = buildBlockSpans(rows.map((r) => ({ date: r.date, status: r.status, block_type: r.block_type })));
+  const blockEvents: ExpectedEvent[] = spans
+    .filter((s) => overlapsWindow(s.startDate, s.endExclusive, from, to))
+    .map((s) => ({
+      type: 'block',
+      eventId: blockEventId(listingId, s.startDate),
+      start: s.startDate,
+      endExclusive: s.endExclusive,
+    }));
+
+  return {
+    events: [...reservationEvents, ...blockEvents],
+    sourceCounts: { reservations: reservationEvents.length, blockSpans: blockEvents.length },
+  };
+}
+
+export async function buildExpectedEventsForProperty(
+  property: PropertyConfig,
+  from: string,
+  to: string,
+  hostexProperties?: HostexProperty[]
+): Promise<{ events: ExpectedEvent[]; sourceCounts: SourceCounts; error?: string | null }> {
+  if (property.provider === 'guesty') return buildGuestyExpectedEvents(property, from, to);
+  if (property.provider === 'hostex') return buildHostexExpectedEvents(property, from, to, hostexProperties);
+  return buildAirbnbExpectedEvents(property, from, to);
+}
+
+// ─── Endpoint 1: Konsistenz-Check ───────────────────────────────────────────
+
+export interface PropertyConsistencyResult {
+  slug: string;
+  name: string;
+  provider: string;
+  ok: boolean;
+  sourceCounts: SourceCounts;
+  googleEventCount: number;
+  cacheLastSyncedAt: string | null;
+  missing: ExpectedEvent[];
+  extra: ConsistencyDiff['extra'];
+  mismatched: ConsistencyDiff['mismatched'];
+  error: string | null;
+}
+
+export interface ConsistencyReport {
+  checkedAt: string;
+  windowDays: number;
+  from: string;
+  to: string;
+  totalIssues: number;
+  properties: PropertyConsistencyResult[];
+}
+
+export async function runConsistencyCheck(days: number): Promise<ConsistencyReport> {
+  const checkedAt = new Date().toISOString();
+  const properties = getAllProperties().filter((p) => p.googleCalendar?.enabled && p.googleCalendar.calendarId);
+
+  const reportFrom = todayInTimezone(config.propertyTimezone);
+  const reportTo = addDays(reportFrom, days);
+
+  // F9: Hostex client.getProperties() EINMAL pro Run laden (kein
+  // Modul-Cache) und an jeden Builder-Aufruf durchreichen, statt es pro
+  // Hostex-Property erneut zu holen.
+  const hostexProperties = properties.some((p) => p.provider === 'hostex')
+    ? await getHostexClient().getProperties()
+    : undefined;
+
+  const results: PropertyConsistencyResult[] = [];
+  let totalIssues = 0;
+
+  // Die Properties selbst bleiben sequenziell (Rate-Limits) — pro Property
+  // laufen Provider-Fetch und googleCalendarClient.listEvents parallel (F9).
+  for (const property of properties) {
+    const calendarId = property.googleCalendar!.calendarId!;
+    const listingId = getListingId(property);
+    const from = todayInTimezone(property.timezone);
+    const to = addDays(from, days);
+
+    try {
+      const [{ events, sourceCounts, error: truncationError }, googleEventsRaw] = await Promise.all([
+        buildExpectedEventsForProperty(property, from, to, hostexProperties),
+        googleCalendarClient.listEvents(calendarId, `${from}T00:00:00Z`, `${to}T00:00:00Z`),
+      ]);
+      const googleEvents = toGoogleEventLite(googleEventsRaw as any);
+      const diff = diffCalendarEvents(events, googleEvents, from, to);
+      const issueCount = diff.missing.length + diff.extra.length + diff.mismatched.length + (truncationError ? 1 : 0);
+      totalIssues += issueCount;
+
+      results.push({
+        slug: property.slug,
+        name: property.name,
+        provider: property.provider,
+        ok: issueCount === 0,
+        sourceCounts,
+        googleEventCount: googleEvents.length,
+        cacheLastSyncedAt: getAvailabilityLastSyncedAt(listingId),
+        missing: diff.missing,
+        extra: diff.extra,
+        mismatched: diff.mismatched,
+        error: truncationError ?? null,
+      });
+    } catch (error) {
+      totalIssues += 1;
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      logger.error({ error, propertySlug: property.slug }, 'Consistency check: Property fehlgeschlagen (non-fatal)');
+      results.push({
+        slug: property.slug,
+        name: property.name,
+        provider: property.provider,
+        ok: false,
+        sourceCounts: { reservations: 0, blockSpans: 0 },
+        googleEventCount: 0,
+        cacheLastSyncedAt: null,
+        missing: [],
+        extra: [],
+        mismatched: [],
+        error: message,
+      });
+    }
+  }
+
+  return { checkedAt, windowDays: days, from: reportFrom, to: reportTo, totalIssues, properties: results };
+}
+
+// ─── Endpoint 2: offene Reservierungen (Hold-Sweep) ─────────────────────────
+//
+// F9 (dokumentierte Abweichung): "Hostex-Reservierungen EINMAL pro Property
+// fetchen und für Diff und Hold-Sweep wiederverwenden" wurde NICHT umgesetzt.
+// runConsistencyCheck (Diff, Fenster [from,to), endCheckIn-begrenzt) und
+// listOpenReservations (Hold-Sweep, offenes Fenster nach vorn, andere
+// Statusfilter, eigener Endpoint ohne vorherigen Check-Lauf) sind zwei
+// unabhängige Top-Level-Aufrufe mit unterschiedlicher Semantik — ein
+// gemeinsamer Cache dafür bräuchte entweder Modul-State (bewusst vermieden,
+// s. getProperties()-Fix oben) oder eine Kopplung beider Funktionen, die
+// den eigenständigen Aufruf von /api/agent/reservations verkomplizieren
+// würde. Bei aktueller Property-Zahl fällt der doppelte Fetch nicht ins
+// Rate-Limit-Gewicht — daher bewusst nicht konsolidiert.
+
+export interface OpenReservation {
+  provider: string;
+  reservationId: string;
+  property: { slug: string; name: string; code: string } | null;
+  listingId: string;
+  status: string;
+  guestName: string | null;
+  checkIn: string;
+  checkOut: string;
+  source: string | null;
+  confirmationCode: string | null;
+  createdAt: string;
+}
+
+function propertyBadge(property: PropertyConfig): { slug: string; name: string; code: string } {
+  return { slug: property.slug, name: property.name, code: property.shortCode ?? property.slug };
+}
+
+async function listOpenGuestyReservations(statuses: string[], includePast: boolean, todayStr: string): Promise<OpenReservation[]> {
+  const pageSize = 100;
+  const maxPages = 50;
+  const all: any[] = [];
+  for (let page = 0; page < maxPages; page++) {
+    const batch =
+      (await guestyClient.getReservations({
+        status: statuses,
+        limit: pageSize,
+        // F5: nur bei includePast=false begrenzen — mit includePast=true soll
+        // explizit auch Vergangenes durchkommen.
+        ...(includePast ? {} : { checkOutGte: todayStr }),
+        ...(page > 0 ? { skip: page * pageSize } : {}),
+      })) ?? [];
+    all.push(...batch);
+    if (batch.length < pageSize) break;
+    if (page === maxPages - 1) {
+      logger.warn(
+        { fetched: all.length },
+        'Hold-Sweep: Guesty-Reservations-Seiten-Sicherheitsgrenze erreicht — Ergebnis evtl. unvollständig'
+      );
+    }
+  }
+
+  const out: OpenReservation[] = [];
+  for (const r of all) {
+    if (!r?._id || !r?.listingId) continue;
+    const checkIn = r.checkInDateLocalized || (typeof r.checkIn === 'string' ? r.checkIn.split('T')[0] : null);
+    const checkOut = r.checkOutDateLocalized || (typeof r.checkOut === 'string' ? r.checkOut.split('T')[0] : null);
+    if (!checkIn || !checkOut) continue;
+    if (!includePast && checkIn < todayStr) continue;
+
+    const property = getPropertyByGuestyId(r.listingId);
+    out.push({
+      provider: 'guesty',
+      reservationId: r._id,
+      property: property ? propertyBadge(property) : null,
+      listingId: r.listingId,
+      status: r.status,
+      guestName: r.guest?.fullName ?? null,
+      checkIn,
+      checkOut,
+      source: r.source ?? null,
+      confirmationCode: r.confirmationCode ?? null,
+      createdAt: r.createdAt ?? checkIn,
+    });
+  }
+  return out;
+}
+
+async function listOpenHostexReservations(statuses: string[], includePast: boolean, todayStr: string): Promise<OpenReservation[]> {
+  const hostexProperties = getPropertiesByProvider('hostex');
+  // getHostexClient() wirft, wenn HOSTEX_ACCESS_TOKEN fehlt — erst NACH der
+  // Prüfung konstruieren, dass überhaupt Hostex-Properties existieren (F4):
+  // Konten ohne Hostex-Objekte brauchen den Token gar nicht.
+  if (hostexProperties.length === 0) return [];
+  const client = getHostexClient();
+  const out: OpenReservation[] = [];
+
+  for (const property of hostexProperties) {
+    const hostexId = getListingId(property);
+    const defaultTimes = {
+      checkIn: property.googleCalendar?.checkInTime ?? '15:00',
+      checkOut: property.googleCalendar?.checkOutTime ?? '12:00',
+    };
+
+    const reservations = await client.getReservations({ propertyId: hostexId });
+    for (const r of reservations) {
+      const { asInquiry } = mapHostexReservation(r, defaultTimes);
+      if (!statuses.includes(asInquiry.status)) continue;
+      if (!includePast && asInquiry.check_in < todayStr) continue;
+
+      out.push({
+        provider: 'hostex',
+        reservationId: r.reservation_code,
+        property: propertyBadge(property),
+        listingId: hostexId,
+        status: asInquiry.status,
+        guestName: asInquiry.guest_name,
+        checkIn: asInquiry.check_in,
+        checkOut: asInquiry.check_out,
+        source: asInquiry.source,
+        confirmationCode: r.channel_id ?? null,
+        createdAt: asInquiry.created_at_guesty ?? asInquiry.check_in,
+      });
+    }
+  }
+  return out;
+}
+
+export interface HoldSweepError {
+  provider: string;
+  error: string;
+}
+
+export interface ListOpenReservationsResult {
+  reservations: OpenReservation[];
+  errors: HoldSweepError[];
+}
+
+/**
+ * F4: pro Provider try/catch — ein fehlschlagender Provider (z. B. Guesty
+ * down) darf das Ergebnis der anderen Provider nicht wegwerfen. Fehler
+ * werden gesammelt statt geworfen (Route + Alert-Mail melden sie).
+ */
+export async function listOpenReservations(statuses: string[], includePast: boolean): Promise<ListOpenReservationsResult> {
+  const todayStr = todayInTimezone(config.propertyTimezone);
+  const errors: HoldSweepError[] = [];
+
+  const [guesty, hostex] = await Promise.all([
+    listOpenGuestyReservations(statuses, includePast, todayStr).catch((error) => {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      logger.error({ error }, 'Hold-Sweep: Guesty fehlgeschlagen (non-fatal)');
+      errors.push({ provider: 'guesty', error: message });
+      return [] as OpenReservation[];
+    }),
+    listOpenHostexReservations(statuses, includePast, todayStr).catch((error) => {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      logger.error({ error }, 'Hold-Sweep: Hostex fehlgeschlagen (non-fatal)');
+      errors.push({ provider: 'hostex', error: message });
+      return [] as OpenReservation[];
+    }),
+  ]);
+
+  const reservations = [...guesty, ...hostex].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  return { reservations, errors };
+}
+
+// ─── Täglicher Cron-Job: Check + Hold-Sweep + Alert ─────────────────────────
+
+const STALE_HOLD_THRESHOLD_MS = 7 * 24 * 60 * 60 * 1000;
+const DAILY_CHECK_WINDOW_DAYS = 28;
+
+export async function runDailyConsistencyJob(): Promise<void> {
+  const report = await runConsistencyCheck(DAILY_CHECK_WINDOW_DAYS);
+
+  // F4: Hold-Sweep-Fehler dürfen den Report-Versand NIE verhindern — die
+  // Provider-Fehler sind bereits pro Provider isoliert (listOpenReservations),
+  // dieser try/catch ist die zusätzliche Absicherung gegen einen komplett
+  // unerwarteten Absturz des Hold-Sweeps selbst.
+  let openReservations: OpenReservation[] = [];
+  let holdSweepErrors: HoldSweepError[] = [];
+  try {
+    const result = await listOpenReservations(['reserved', 'inquiry'], false);
+    openReservations = result.reservations;
+    holdSweepErrors = result.errors;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    logger.error({ error }, 'Konsistenz-Check: Hold-Sweep komplett fehlgeschlagen (non-fatal) — Report-Mail geht trotzdem raus');
+    holdSweepErrors = [{ provider: 'hold-sweep', error: message }];
+  }
+
+  const now = Date.now();
+  const staleHolds: StaleHold[] = openReservations
+    .filter((r) => now - new Date(r.createdAt).getTime() > STALE_HOLD_THRESHOLD_MS)
+    .map((r) => ({
+      provider: r.provider,
+      guestName: r.guestName,
+      property: r.property ? { slug: r.property.slug, name: r.property.name } : null,
+      checkIn: r.checkIn,
+      createdAt: r.createdAt,
+    }));
+
+  // Ein Hold-Sweep-Fehler ist selbst ein Alert-würdiger Befund (genau das
+  // Silent-Failure-Risiko, vor dem der Check schützen soll) — auch wenn
+  // Report und Stale-Holds sonst leer wären.
+  if (!shouldSendConsistencyAlert(report, staleHolds) && holdSweepErrors.length === 0) {
+    logger.info(
+      { totalIssues: report.totalIssues, staleHolds: staleHolds.length },
+      'Konsistenz-Check: keine Befunde, kein Alert'
+    );
+    return;
+  }
+
+  const recipients = config.consistencyAlertRecipients;
+  if (recipients.length === 0) {
+    logger.error(
+      {
+        totalIssues: report.totalIssues,
+        staleHolds: staleHolds.length,
+        holdSweepErrors,
+        affectedProperties: report.properties.filter((p) => !p.ok).map((p) => p.slug),
+      },
+      '🚨 Kalender-Konsistenz-Befund ohne konfigurierte Alert-Empfänger (CONSISTENCY_ALERT_RECIPIENTS) — siehe Logs für Details'
+    );
+    return;
+  }
+
+  const { subject, html, text } = buildConsistencyAlertEmail(report, staleHolds, holdSweepErrors);
+  const sent = await sendEmail({ to: recipients, subject, html, text });
+  if (sent) {
+    logger.info(
+      { recipients: recipients.length, totalIssues: report.totalIssues, staleHolds: staleHolds.length },
+      '✅ Konsistenz-Alert-Mail gesendet'
+    );
+  } else {
+    logger.error({ totalIssues: report.totalIssues }, '❌ Konsistenz-Alert-Mail konnte nicht gesendet werden');
+  }
+}

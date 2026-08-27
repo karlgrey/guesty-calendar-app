@@ -11,6 +11,14 @@ import type { Reservation, ReservationRow } from '../types/models.js';
 import { rowToReservation } from '../types/models.js';
 
 /**
+ * Aktive Reservierungsstatus (nicht storniert/abgelehnt) — als Konstante
+ * geteilt statt an mehreren SQL-Stellen dupliziert (F8), inklusive dem
+ * Konsistenz-Check-Statusfilter für Guesty.
+ */
+export const ACTIVE_RESERVATION_STATUSES = ['confirmed', 'reserved'] as const;
+const ACTIVE_STATUS_SQL_LIST = ACTIVE_RESERVATION_STATUSES.map((s) => `'${s}'`).join(',');
+
+/**
  * Insert or update a single reservation record
  */
 export function upsertReservation(
@@ -300,7 +308,7 @@ export function getReservationsByPeriod(
                WHERE listing_id = ?
                AND date(check_out) >= ?
                AND date(check_out) < date('now')
-               AND status IN ('confirmed', 'reserved')
+               AND status IN (${ACTIVE_STATUS_SQL_LIST})
                ORDER BY check_out DESC`;
       params = [listingId, startDateStr];
     } else {
@@ -310,7 +318,7 @@ export function getReservationsByPeriod(
       query = `SELECT * FROM reservations
                WHERE listing_id = ?
                AND date(check_in) >= date('now')
-               AND status IN ('confirmed', 'reserved')
+               AND status IN (${ACTIVE_STATUS_SQL_LIST})
                ORDER BY check_in ASC`;
       params = [listingId];
     }
@@ -341,7 +349,7 @@ export function getCurrentReservations(listingId: string): Reservation[] {
          WHERE listing_id = ?
            AND date(check_in) <= date('now')
            AND date(check_out) > date('now')
-           AND status IN ('confirmed','reserved')
+           AND status IN (${ACTIVE_STATUS_SQL_LIST})
          ORDER BY check_in ASC`
       )
       .all(listingId) as ReservationRow[];
@@ -566,7 +574,7 @@ export function getRecentCheckoutIdsNeedingReview(
     .prepare(
       `SELECT reservation_id FROM reservations
        WHERE listing_id = ?
-         AND status IN ('confirmed','reserved')
+         AND status IN (${ACTIVE_STATUS_SQL_LIST})
          AND date(check_out) <= date('now')
          AND date(check_out) >= date('now', ?)
          AND source LIKE '%airbnb%'
@@ -589,7 +597,7 @@ export function getLeadTimeSamples(): Array<{ checkIn: string; reservedAt: strin
       `SELECT date(check_in) AS checkIn, reserved_at AS reservedAt
        FROM reservations
        WHERE reserved_at IS NOT NULL
-         AND status IN ('confirmed','reserved')
+         AND status IN (${ACTIVE_STATUS_SQL_LIST})
          AND date(check_in) > date(reserved_at)`
     )
     .all() as Array<{ checkIn: string; reservedAt: string }>;
@@ -607,7 +615,7 @@ export function getRevenueForCheckInMonth(listingId: string, yyyymm: string): nu
       `SELECT SUM(COALESCE(host_payout, total_price, 0)) AS revenue
        FROM reservations
        WHERE listing_id = ?
-         AND status IN ('confirmed','reserved')
+         AND status IN (${ACTIVE_STATUS_SQL_LIST})
          AND strftime('%Y-%m', date(check_in)) = ?`
     )
     .get(listingId, yyyymm) as { revenue: number | null };
