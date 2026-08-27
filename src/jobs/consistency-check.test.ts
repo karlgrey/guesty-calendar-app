@@ -24,12 +24,13 @@ vi.mock('../services/guesty-client.js', () => ({
 const hostexGetReservationsMock = vi.fn();
 const hostexGetPropertiesMock = vi.fn();
 const hostexGetListingCalendarsMock = vi.fn();
+const getHostexClientMock = vi.fn(() => ({
+  getReservations: (...args: unknown[]) => hostexGetReservationsMock(...args),
+  getProperties: (...args: unknown[]) => hostexGetPropertiesMock(...args),
+  getListingCalendars: (...args: unknown[]) => hostexGetListingCalendarsMock(...args),
+}));
 vi.mock('../services/hostex-client.js', () => ({
-  getHostexClient: () => ({
-    getReservations: (...args: unknown[]) => hostexGetReservationsMock(...args),
-    getProperties: (...args: unknown[]) => hostexGetPropertiesMock(...args),
-    getListingCalendars: (...args: unknown[]) => hostexGetListingCalendarsMock(...args),
-  }),
+  getHostexClient: (...args: unknown[]) => getHostexClientMock(...args),
 }));
 
 const fetchAirbnbIcalMock = vi.fn();
@@ -410,9 +411,10 @@ describe('listOpenReservations', () => {
     getPropertiesByProviderMock.mockReturnValue([]);
     getPropertyByGuestyIdMock.mockReturnValue(undefined);
 
-    const list = await listOpenReservations(['reserved', 'inquiry'], false);
-    expect(list).toHaveLength(1);
-    expect(list[0]).toMatchObject({ provider: 'guesty', reservationId: 'res-1', property: null, listingId: 'unknown-listing' });
+    const result = await listOpenReservations(['reserved', 'inquiry'], false);
+    expect(result.reservations).toHaveLength(1);
+    expect(result.reservations[0]).toMatchObject({ provider: 'guesty', reservationId: 'res-1', property: null, listingId: 'unknown-listing' });
+    expect(result.errors).toEqual([]);
   });
 
   it('includePast=false filtert vergangene Check-ins raus', async () => {
@@ -426,8 +428,8 @@ describe('listOpenReservations', () => {
     getPropertiesByProviderMock.mockReturnValue([]);
     getPropertyByGuestyIdMock.mockReturnValue(undefined);
 
-    const list = await listOpenReservations(['reserved'], false);
-    expect(list).toEqual([]);
+    const result = await listOpenReservations(['reserved'], false);
+    expect(result.reservations).toEqual([]);
   });
 
   it('includePast=true behält vergangene Check-ins', async () => {
@@ -441,8 +443,8 @@ describe('listOpenReservations', () => {
     getPropertiesByProviderMock.mockReturnValue([]);
     getPropertyByGuestyIdMock.mockReturnValue(undefined);
 
-    const list = await listOpenReservations(['reserved'], true);
-    expect(list).toHaveLength(1);
+    const result = await listOpenReservations(['reserved'], true);
+    expect(result.reservations).toHaveLength(1);
   });
 
   it('kombiniert Guesty + Hostex, sortiert nach createdAt aufsteigend', async () => {
@@ -464,8 +466,52 @@ describe('listOpenReservations', () => {
       },
     ]);
 
-    const list = await listOpenReservations(['reserved', 'inquiry'], false);
-    expect(list.map((r) => r.reservationId)).toEqual(['h-1', 'g-1']);
+    const result = await listOpenReservations(['reserved', 'inquiry'], false);
+    expect(result.reservations.map((r) => r.reservationId)).toEqual(['h-1', 'g-1']);
+  });
+
+  it('F4: Guesty-Fehler isoliert — Hostex-Ergebnis bleibt erhalten, Fehler landet in errors', async () => {
+    getReservationsMock.mockRejectedValueOnce(new Error('Guesty API 503'));
+    getPropertiesByProviderMock.mockReturnValue([hostexProperty()]);
+    getPropertyByGuestyIdMock.mockReturnValue(undefined);
+    hostexGetReservationsMock.mockResolvedValueOnce([
+      {
+        reservation_code: 'h-1', stay_code: 'h-1', channel_id: 'CH1', channel_type: 'airbnb',
+        listing_id: '12659676', property_id: 12659676, status: 'wait_pay',
+        check_in_date: '2026-10-05', check_out_date: '2026-10-07',
+        guest_name: 'Hold', booked_at: '2026-08-01T00:00:00.000Z',
+      },
+    ]);
+
+    const result = await listOpenReservations(['reserved', 'inquiry'], false);
+    expect(result.reservations.map((r) => r.reservationId)).toEqual(['h-1']);
+    expect(result.errors).toEqual([{ provider: 'guesty', error: 'Guesty API 503' }]);
+  });
+
+  it('F4: Hostex-Fehler isoliert — Guesty-Ergebnis bleibt erhalten, Fehler landet in errors', async () => {
+    getReservationsMock.mockResolvedValueOnce([
+      {
+        _id: 'g-1', listingId: 'L1', status: 'reserved',
+        checkInDateLocalized: '2026-10-01', checkOutDateLocalized: '2026-10-03',
+        createdAt: '2026-08-15T00:00:00.000Z',
+      },
+    ]);
+    getPropertyByGuestyIdMock.mockReturnValue(undefined);
+    getPropertiesByProviderMock.mockReturnValue([hostexProperty()]);
+    hostexGetReservationsMock.mockRejectedValueOnce(new Error('Hostex 500'));
+
+    const result = await listOpenReservations(['reserved', 'inquiry'], false);
+    expect(result.reservations.map((r) => r.reservationId)).toEqual(['g-1']);
+    expect(result.errors).toEqual([{ provider: 'hostex', error: 'Hostex 500' }]);
+  });
+
+  it('F4: konstruiert keinen Hostex-Client, wenn keine Hostex-Properties existieren', async () => {
+    getReservationsMock.mockResolvedValueOnce([]);
+    getPropertiesByProviderMock.mockReturnValue([]);
+
+    const result = await listOpenReservations(['reserved', 'inquiry'], false);
+    expect(result.reservations).toEqual([]);
+    expect(getHostexClientMock).not.toHaveBeenCalled();
   });
 });
 
@@ -477,5 +523,28 @@ describe('runDailyConsistencyJob', () => {
 
     await runDailyConsistencyJob();
     expect(sendEmailMock).not.toHaveBeenCalled();
+  });
+
+  it('F4: Hold-Sweep-Fehler (leerer Report, keine Stale Holds) löst trotzdem einen Alert aus', async () => {
+    getAllPropertiesMock.mockReturnValue([]); // Report selbst ohne Befund
+    getReservationsMock.mockRejectedValue(new Error('Guesty komplett down'));
+    getPropertiesByProviderMock.mockReturnValue([]);
+
+    const { config } = await import('../config/index.js');
+    const originalRecipients = config.consistencyAlertRecipients;
+    (config as any).consistencyAlertRecipients = ['ops@example.com'];
+    sendEmailMock.mockResolvedValueOnce(true);
+
+    try {
+      await runDailyConsistencyJob();
+    } finally {
+      (config as any).consistencyAlertRecipients = originalRecipients;
+    }
+
+    // Ein isolierter Hold-Sweep-Fehler (per-Provider try/catch, F4) darf den
+    // Report-Versand nicht verhindern — im Gegenteil, er ist selbst ein
+    // Alert-würdiger Befund (silent-failure-Risiko genau das, wovor der
+    // Check schützen soll).
+    expect(sendEmailMock).toHaveBeenCalled();
   });
 });

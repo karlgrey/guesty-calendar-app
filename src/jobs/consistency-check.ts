@@ -461,6 +461,10 @@ async function listOpenGuestyReservations(statuses: string[], includePast: boole
 
 async function listOpenHostexReservations(statuses: string[], includePast: boolean, todayStr: string): Promise<OpenReservation[]> {
   const hostexProperties = getPropertiesByProvider('hostex');
+  // getHostexClient() wirft, wenn HOSTEX_ACCESS_TOKEN fehlt — erst NACH der
+  // Prüfung konstruieren, dass überhaupt Hostex-Properties existieren (F4):
+  // Konten ohne Hostex-Objekte brauchen den Token gar nicht.
+  if (hostexProperties.length === 0) return [];
   const client = getHostexClient();
   const out: OpenReservation[] = [];
 
@@ -495,13 +499,42 @@ async function listOpenHostexReservations(statuses: string[], includePast: boole
   return out;
 }
 
-export async function listOpenReservations(statuses: string[], includePast: boolean): Promise<OpenReservation[]> {
+export interface HoldSweepError {
+  provider: string;
+  error: string;
+}
+
+export interface ListOpenReservationsResult {
+  reservations: OpenReservation[];
+  errors: HoldSweepError[];
+}
+
+/**
+ * F4: pro Provider try/catch — ein fehlschlagender Provider (z. B. Guesty
+ * down) darf das Ergebnis der anderen Provider nicht wegwerfen. Fehler
+ * werden gesammelt statt geworfen (Route + Alert-Mail melden sie).
+ */
+export async function listOpenReservations(statuses: string[], includePast: boolean): Promise<ListOpenReservationsResult> {
   const todayStr = todayInTimezone(config.propertyTimezone);
+  const errors: HoldSweepError[] = [];
+
   const [guesty, hostex] = await Promise.all([
-    listOpenGuestyReservations(statuses, includePast, todayStr),
-    listOpenHostexReservations(statuses, includePast, todayStr),
+    listOpenGuestyReservations(statuses, includePast, todayStr).catch((error) => {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      logger.error({ error }, 'Hold-Sweep: Guesty fehlgeschlagen (non-fatal)');
+      errors.push({ provider: 'guesty', error: message });
+      return [] as OpenReservation[];
+    }),
+    listOpenHostexReservations(statuses, includePast, todayStr).catch((error) => {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      logger.error({ error }, 'Hold-Sweep: Hostex fehlgeschlagen (non-fatal)');
+      errors.push({ provider: 'hostex', error: message });
+      return [] as OpenReservation[];
+    }),
   ]);
-  return [...guesty, ...hostex].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+
+  const reservations = [...guesty, ...hostex].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  return { reservations, errors };
 }
 
 // ─── Täglicher Cron-Job: Check + Hold-Sweep + Alert ─────────────────────────
@@ -511,7 +544,22 @@ const DAILY_CHECK_WINDOW_DAYS = 28;
 
 export async function runDailyConsistencyJob(): Promise<void> {
   const report = await runConsistencyCheck(DAILY_CHECK_WINDOW_DAYS);
-  const openReservations = await listOpenReservations(['reserved', 'inquiry'], false);
+
+  // F4: Hold-Sweep-Fehler dürfen den Report-Versand NIE verhindern — die
+  // Provider-Fehler sind bereits pro Provider isoliert (listOpenReservations),
+  // dieser try/catch ist die zusätzliche Absicherung gegen einen komplett
+  // unerwarteten Absturz des Hold-Sweeps selbst.
+  let openReservations: OpenReservation[] = [];
+  let holdSweepErrors: HoldSweepError[] = [];
+  try {
+    const result = await listOpenReservations(['reserved', 'inquiry'], false);
+    openReservations = result.reservations;
+    holdSweepErrors = result.errors;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    logger.error({ error }, 'Konsistenz-Check: Hold-Sweep komplett fehlgeschlagen (non-fatal) — Report-Mail geht trotzdem raus');
+    holdSweepErrors = [{ provider: 'hold-sweep', error: message }];
+  }
 
   const now = Date.now();
   const staleHolds: StaleHold[] = openReservations
@@ -524,7 +572,10 @@ export async function runDailyConsistencyJob(): Promise<void> {
       createdAt: r.createdAt,
     }));
 
-  if (!shouldSendConsistencyAlert(report, staleHolds)) {
+  // Ein Hold-Sweep-Fehler ist selbst ein Alert-würdiger Befund (genau das
+  // Silent-Failure-Risiko, vor dem der Check schützen soll) — auch wenn
+  // Report und Stale-Holds sonst leer wären.
+  if (!shouldSendConsistencyAlert(report, staleHolds) && holdSweepErrors.length === 0) {
     logger.info(
       { totalIssues: report.totalIssues, staleHolds: staleHolds.length },
       'Konsistenz-Check: keine Befunde, kein Alert'
@@ -538,6 +589,7 @@ export async function runDailyConsistencyJob(): Promise<void> {
       {
         totalIssues: report.totalIssues,
         staleHolds: staleHolds.length,
+        holdSweepErrors,
         affectedProperties: report.properties.filter((p) => !p.ok).map((p) => p.slug),
       },
       '🚨 Kalender-Konsistenz-Befund ohne konfigurierte Alert-Empfänger (CONSISTENCY_ALERT_RECIPIENTS) — siehe Logs für Details'
@@ -545,7 +597,7 @@ export async function runDailyConsistencyJob(): Promise<void> {
     return;
   }
 
-  const { subject, html, text } = buildConsistencyAlertEmail(report, staleHolds);
+  const { subject, html, text } = buildConsistencyAlertEmail(report, staleHolds, holdSweepErrors);
   const sent = await sendEmail({ to: recipients, subject, html, text });
   if (sent) {
     logger.info(

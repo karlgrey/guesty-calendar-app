@@ -54,6 +54,12 @@ export interface StaleHold {
   createdAt: string;
 }
 
+/** F4: ein Provider im Hold-Sweep ist komplett fehlgeschlagen (isoliert, non-fatal). */
+export interface HoldSweepAlertError {
+  provider: string;
+  error: string;
+}
+
 /** Alert-Mail nur bei Befund: totalIssues > 0 ODER mindestens ein Hold mit Treffern. */
 export function shouldSendConsistencyAlert(report: ConsistencyAlertReport, staleHolds: StaleHold[]): boolean {
   return report.totalIssues > 0 || staleHolds.length > 0;
@@ -125,10 +131,24 @@ function renderStaleHoldsText(staleHolds: StaleHold[]): string {
   return `\nOffene Holds > 7 Tage:\n${rows}`;
 }
 
+/** F4: Hold-Sweep-Provider-Fehler — non-fatal isoliert, aber alert-würdig (Silent-Failure-Risiko). */
+function renderHoldSweepErrorsHtml(errors: HoldSweepAlertError[]): string {
+  if (errors.length === 0) return '';
+  const rows = errors.map((e) => `<li>${esc(e.provider)}: ${esc(e.error)}</li>`).join('');
+  return `<h3>Hold-Sweep-Fehler</h3><ul>${rows}</ul>`;
+}
+
+function renderHoldSweepErrorsText(errors: HoldSweepAlertError[]): string {
+  if (errors.length === 0) return '';
+  const rows = errors.map((e) => `  ${e.provider}: ${e.error}`).join('\n');
+  return `\nHold-Sweep-Fehler:\n${rows}`;
+}
+
 /** Baut Betreff/HTML/Text der täglichen Konsistenz-Alert-Mail. */
 export function buildConsistencyAlertEmail(
   report: ConsistencyAlertReport,
-  staleHolds: StaleHold[]
+  staleHolds: StaleHold[],
+  holdSweepErrors: HoldSweepAlertError[] = []
 ): { subject: string; html: string; text: string } {
   const holdSuffix = staleHolds.length > 0 ? ` + ${staleHolds.length} überfällige Hold${staleHolds.length === 1 ? '' : 's'}` : '';
   const subject = `⚠️ Kalender-Konsistenz: ${report.totalIssues} Abweichungen${holdSuffix}`;
@@ -139,6 +159,7 @@ export function buildConsistencyAlertEmail(
     `<p>Kalender-Konsistenz-Check ${esc(report.checkedAt)} · Fenster ${esc(report.from)}–${esc(report.to)} (${report.windowDays} Tage).</p>`,
     ...propertiesWithFindings.map(renderPropertyHtml),
     renderStaleHoldsHtml(staleHolds),
+    renderHoldSweepErrorsHtml(holdSweepErrors),
   ]
     .filter(Boolean)
     .join('\n');
@@ -147,6 +168,7 @@ export function buildConsistencyAlertEmail(
     `Kalender-Konsistenz-Check ${report.checkedAt} · Fenster ${report.from}–${report.to} (${report.windowDays} Tage).`,
     ...propertiesWithFindings.map(renderPropertyText),
     renderStaleHoldsText(staleHolds),
+    renderHoldSweepErrorsText(holdSweepErrors),
   ]
     .filter(Boolean)
     .join('\n\n');

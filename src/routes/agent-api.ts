@@ -192,8 +192,8 @@ router.get('/reservations', async (req, res) => {
       }
     }
     const includePast = req.query.includePast === 'true' || req.query.includePast === '1';
-    const reservations = await listOpenReservations(statuses, includePast);
-    res.json({ fetchedAt: new Date().toISOString(), statuses, reservations });
+    const { reservations, errors } = await listOpenReservations(statuses, includePast);
+    res.json({ fetchedAt: new Date().toISOString(), statuses, reservations, errors });
   } catch (err) { handleError(res, err); }
 });
 

@@ -115,6 +115,16 @@ describe('buildConsistencyAlertEmail', () => {
     expect(text).toContain('Alte Anfrage GmbH');
   });
 
+  it('F4: erwähnt Hold-Sweep-Provider-Fehler in HTML und Text', () => {
+    const { html, text } = buildConsistencyAlertEmail(emptyReport(), [], [
+      { provider: 'hostex', error: 'Hostex 500' },
+    ]);
+    expect(html).toContain('hostex');
+    expect(html).toContain('Hostex 500');
+    expect(text).toContain('hostex');
+    expect(text).toContain('Hostex 500');
+  });
+
   it('property ohne Befunde und ohne Fehler wird nicht aufgeführt', () => {
     const report = reportWithIssues();
     report.properties.push({

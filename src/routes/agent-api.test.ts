@@ -241,19 +241,34 @@ describe('agent-api', () => {
 
   describe('GET /reservations (offene Holds)', () => {
     it('200 mit Default-Status reserved,inquiry', async () => {
-      listOpenReservationsMock.mockResolvedValueOnce([
-        { provider: 'guesty', reservationId: 'r1', property: null, listingId: 'L', status: 'reserved', guestName: 'X', checkIn: '2026-09-01', checkOut: '2026-09-03', source: null, confirmationCode: null, createdAt: '2026-08-01T00:00:00.000Z' },
-      ]);
+      listOpenReservationsMock.mockResolvedValueOnce({
+        reservations: [
+          { provider: 'guesty', reservationId: 'r1', property: null, listingId: 'L', status: 'reserved', guestName: 'X', checkIn: '2026-09-01', checkOut: '2026-09-03', source: null, confirmationCode: null, createdAt: '2026-08-01T00:00:00.000Z' },
+        ],
+        errors: [],
+      });
       const r = await fetch(`${base}/api/agent/reservations?status=reserved,inquiry`, { headers: KEY });
       expect(r.status).toBe(200);
       expect(listOpenReservationsMock).toHaveBeenCalledWith(['reserved', 'inquiry'], false);
       const body = await r.json();
       expect(body.statuses).toEqual(['reserved', 'inquiry']);
       expect(body.reservations).toHaveLength(1);
+      expect(body.errors).toEqual([]);
+    });
+
+    it('F4: gibt Provider-Fehler aus listOpenReservations im Response-JSON mit aus', async () => {
+      listOpenReservationsMock.mockResolvedValueOnce({
+        reservations: [],
+        errors: [{ provider: 'hostex', error: 'Hostex 500' }],
+      });
+      const r = await fetch(`${base}/api/agent/reservations`, { headers: KEY });
+      expect(r.status).toBe(200);
+      const body = await r.json();
+      expect(body.errors).toEqual([{ provider: 'hostex', error: 'Hostex 500' }]);
     });
 
     it('includePast=true wird durchgereicht', async () => {
-      listOpenReservationsMock.mockResolvedValueOnce([]);
+      listOpenReservationsMock.mockResolvedValueOnce({ reservations: [], errors: [] });
       const r = await fetch(`${base}/api/agent/reservations?includePast=true`, { headers: KEY });
       expect(r.status).toBe(200);
       expect(listOpenReservationsMock).toHaveBeenCalledWith(['reserved', 'inquiry'], true);
