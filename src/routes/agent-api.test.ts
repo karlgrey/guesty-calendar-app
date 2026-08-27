@@ -55,6 +55,12 @@ vi.mock('../repositories/message-repository.js', () => ({
     { id: 'm2', thread_id: 'hostex:a', direction: 'outbound', sent_at: '2026-08-05T10:00:00.000Z', from_name: 'host', body: 'Antwort', source: 'hostex' },
   ]),
 }));
+const runConsistencyCheckMock = vi.fn();
+const listOpenReservationsMock = vi.fn();
+vi.mock('../jobs/consistency-check.js', () => ({
+  runConsistencyCheck: (...args: unknown[]) => runConsistencyCheckMock(...args),
+  listOpenReservations: (...args: unknown[]) => listOpenReservationsMock(...args),
+}));
 vi.mock('../utils/thread-property.js', () => ({
   propertyForBadge: vi.fn((thread: { listing_id: string | null }) =>
     thread.listing_id === 'L1'
@@ -198,5 +204,71 @@ describe('agent-api', () => {
     (createOfferReservation as any).mockRejectedValueOnce(new ValidationError('bad input'));
     const r = await fetch(`${base}/api/agent/reservations`, { method: 'POST', headers: KEY, body: '{}' });
     expect(r.status).toBe(400);
+  });
+
+  describe('GET /consistency-check', () => {
+    it('200 mit Default days=28', async () => {
+      runConsistencyCheckMock.mockResolvedValueOnce({
+        checkedAt: '2026-08-27T06:00:00.000Z', windowDays: 28, from: '2026-08-27', to: '2026-09-24',
+        totalIssues: 0, properties: [],
+      });
+      const r = await fetch(`${base}/api/agent/consistency-check`, { headers: KEY });
+      expect(r.status).toBe(200);
+      expect(runConsistencyCheckMock).toHaveBeenCalledWith(28);
+      const body = await r.json();
+      expect(body).toMatchObject({ windowDays: 28, totalIssues: 0 });
+    });
+
+    it('nutzt den übergebenen days-Parameter', async () => {
+      runConsistencyCheckMock.mockResolvedValueOnce({
+        checkedAt: 'x', windowDays: 7, from: 'a', to: 'b', totalIssues: 0, properties: [],
+      });
+      const r = await fetch(`${base}/api/agent/consistency-check?days=7`, { headers: KEY });
+      expect(r.status).toBe(200);
+      expect(runConsistencyCheckMock).toHaveBeenCalledWith(7);
+    });
+
+    it.each(['0', '91', 'abc'])('400 bei ungültigem days=%s', async (days) => {
+      const r = await fetch(`${base}/api/agent/consistency-check?days=${days}`, { headers: KEY });
+      expect(r.status).toBe(400);
+    });
+
+    it('401 ohne Key', async () => {
+      const r = await fetch(`${base}/api/agent/consistency-check`);
+      expect(r.status).toBe(401);
+    });
+  });
+
+  describe('GET /reservations (offene Holds)', () => {
+    it('200 mit Default-Status reserved,inquiry', async () => {
+      listOpenReservationsMock.mockResolvedValueOnce([
+        { provider: 'guesty', reservationId: 'r1', property: null, listingId: 'L', status: 'reserved', guestName: 'X', checkIn: '2026-09-01', checkOut: '2026-09-03', source: null, confirmationCode: null, createdAt: '2026-08-01T00:00:00.000Z' },
+      ]);
+      const r = await fetch(`${base}/api/agent/reservations?status=reserved,inquiry`, { headers: KEY });
+      expect(r.status).toBe(200);
+      expect(listOpenReservationsMock).toHaveBeenCalledWith(['reserved', 'inquiry'], false);
+      const body = await r.json();
+      expect(body.statuses).toEqual(['reserved', 'inquiry']);
+      expect(body.reservations).toHaveLength(1);
+    });
+
+    it('includePast=true wird durchgereicht', async () => {
+      listOpenReservationsMock.mockResolvedValueOnce([]);
+      const r = await fetch(`${base}/api/agent/reservations?includePast=true`, { headers: KEY });
+      expect(r.status).toBe(200);
+      expect(listOpenReservationsMock).toHaveBeenCalledWith(['reserved', 'inquiry'], true);
+    });
+
+    it('400 bei unbekanntem Status', async () => {
+      const callsBefore = listOpenReservationsMock.mock.calls.length;
+      const r = await fetch(`${base}/api/agent/reservations?status=reserved,quatsch`, { headers: KEY });
+      expect(r.status).toBe(400);
+      expect(listOpenReservationsMock.mock.calls.length).toBe(callsBefore);
+    });
+
+    it('401 ohne Key', async () => {
+      const r = await fetch(`${base}/api/agent/reservations`);
+      expect(r.status).toBe(401);
+    });
   });
 });

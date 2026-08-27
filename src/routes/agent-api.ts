@@ -14,6 +14,7 @@ import { createOrGetDocument, refreshDocument } from '../services/document-servi
 import { guestyClient } from '../services/guesty-client.js';
 import { getThreadsUpdatedSince, getThreadById, getMessagesByThread } from '../repositories/message-repository.js';
 import { propertyForBadge } from '../utils/thread-property.js';
+import { runConsistencyCheck, listOpenReservations } from '../jobs/consistency-check.js';
 import type { PropertyConfig } from '../config/properties.js';
 import { AppError, NotFoundError, ValidationError } from '../utils/errors.js';
 import logger from '../utils/logger.js';
@@ -155,6 +156,44 @@ router.get('/threads/:threadId', (req, res) => {
         sentAt: m.sent_at,
       })),
     });
+  } catch (err) { handleError(res, err); }
+});
+
+// Kalender-Konsistenz-Check + Hold-Sweep (#484) — read-only Diagnose für
+// Standup/Cron. Siehe docs/superpowers/specs/2026-08-27-calendar-consistency-check.md
+const VALID_RESERVATION_STATUSES = ['confirmed', 'reserved', 'inquiry'];
+const DEFAULT_RESERVATION_STATUSES = ['reserved', 'inquiry'];
+const DEFAULT_CONSISTENCY_WINDOW_DAYS = 28;
+
+router.get('/consistency-check', async (req, res) => {
+  try {
+    let days = DEFAULT_CONSISTENCY_WINDOW_DAYS;
+    if (typeof req.query.days === 'string' && req.query.days !== '') {
+      const parsed = Number(req.query.days);
+      if (!Number.isInteger(parsed) || parsed < 1 || parsed > 90) {
+        throw new ValidationError('days muss eine ganze Zahl zwischen 1 und 90 sein');
+      }
+      days = parsed;
+    }
+    const report = await runConsistencyCheck(days);
+    res.json(report);
+  } catch (err) { handleError(res, err); }
+});
+
+router.get('/reservations', async (req, res) => {
+  try {
+    let statuses = DEFAULT_RESERVATION_STATUSES;
+    if (typeof req.query.status === 'string' && req.query.status !== '') {
+      statuses = req.query.status.split(',').map((s) => s.trim());
+      for (const s of statuses) {
+        if (!VALID_RESERVATION_STATUSES.includes(s)) {
+          throw new ValidationError(`Unbekannter Status: ${s} (erlaubt: ${VALID_RESERVATION_STATUSES.join('|')})`);
+        }
+      }
+    }
+    const includePast = req.query.includePast === 'true' || req.query.includePast === '1';
+    const reservations = await listOpenReservations(statuses, includePast);
+    res.json({ fetchedAt: new Date().toISOString(), statuses, reservations });
   } catch (err) { handleError(res, err); }
 });
 
