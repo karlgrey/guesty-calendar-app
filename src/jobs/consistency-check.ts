@@ -180,9 +180,14 @@ async function buildHostexExpectedEvents(
     checkOut: property.googleCalendar?.checkOutTime ?? '12:00',
   };
 
-  // F9: endCheckIn begrenzt auf das Check-Fenster (kein startCheckIn — ein
-  // laufender in-house-Aufenthalt mit Check-in vor `from` muss drinbleiben).
-  const reservations = await client.getReservations({ propertyId: hostexId, endCheckIn: to });
+  // F9: endCheckIn begrenzt auf das Check-Fenster. Hostex verlangt startCheckIn,
+  // sobald endCheckIn gesetzt ist (400 sonst — Live-Befund 27.08.2026); 60 Tage
+  // Rückgriff hält laufende in-house-Aufenthalte mit Check-in vor `from` drin.
+  const reservations = await client.getReservations({
+    propertyId: hostexId,
+    startCheckIn: addDays(from, -60),
+    endCheckIn: to,
+  });
 
   const reservationEvents: ExpectedEvent[] = [];
   const activeRaw: HostexReservation[] = [];

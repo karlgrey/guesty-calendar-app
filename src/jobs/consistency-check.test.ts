@@ -315,16 +315,13 @@ describe('buildExpectedEventsForProperty — hostex', () => {
     expect(hostexGetListingCalendarsMock).not.toHaveBeenCalled();
   });
 
-  it('F9: begrenzt getReservations mit endCheckIn=to (kein startCheckIn)', async () => {
+  it('F9: begrenzt getReservations mit endCheckIn=to und startCheckIn=from-60d (Hostex-Pflichtfeld)', async () => {
     hostexGetReservationsMock.mockResolvedValueOnce([]);
     hostexGetPropertiesMock.mockResolvedValueOnce([{ id: 12659676, title: 'X', channels: [] }]);
 
     await buildExpectedEventsForProperty(hostexProperty(), '2026-09-01', '2026-09-29');
     expect(hostexGetReservationsMock).toHaveBeenCalledWith(
-      expect.objectContaining({ endCheckIn: '2026-09-29' })
-    );
-    expect(hostexGetReservationsMock).toHaveBeenCalledWith(
-      expect.not.objectContaining({ startCheckIn: expect.anything() })
+      expect.objectContaining({ endCheckIn: '2026-09-29', startCheckIn: '2026-07-03' })
     );
   });
 
