@@ -29,14 +29,16 @@ function reportWithIssues(): ConsistencyAlertReport {
         missing: [
           {
             type: 'reservation',
+            eventId: 'ev-res-1',
             start: '2026-10-04',
             endExclusive: '2026-10-07',
             guestName: 'Louisa Strasser',
           },
         ],
-        extra: [{ start: '2026-09-01', end: '2026-09-02', summary: 'Handwerker vor Ort' }],
+        extra: [{ googleEventId: 'manual-1', start: '2026-09-01', end: '2026-09-02', summary: 'Handwerker vor Ort', isOwnerBlockEvent: false }],
         mismatched: [
           {
+            eventId: 'ev-mis-1',
             summary: 'Max Mustermann (2N, 2 Gäste)',
             expected: { start: '2026-09-12', endExclusive: '2026-09-14' },
             actual: { start: '2026-09-12', endExclusive: '2026-09-15' },
@@ -121,7 +123,7 @@ describe('buildConsistencyAlertEmail', () => {
       properties: [
         {
           slug: 'farmhouse', name: 'Farmhouse Prasser', ok: false,
-          missing: [{ type: 'reservation', start: '2026-10-04', endExclusive: '2026-10-07', guestName: 'Anna "Ännchen" Muster' }],
+          missing: [{ type: 'reservation', eventId: 'ev-quote-1', start: '2026-10-04', endExclusive: '2026-10-07', guestName: 'Anna "Ännchen" Muster' }],
           extra: [], mismatched: [], error: null,
         },
       ],

@@ -8,24 +8,19 @@
  * See docs/superpowers/specs/2026-08-27-calendar-consistency-check.md
  */
 
-export interface ConsistencyAlertMissingEntry {
-  type: string;
-  start: string;
-  endExclusive: string;
-  guestName?: string | null;
-}
+import type { ExpectedEvent, ConsistencyDiff } from './calendar-consistency.js';
 
-export interface ConsistencyAlertExtraEntry {
-  start: string | null;
-  end: string | null;
-  summary: string | null;
-}
-
-export interface ConsistencyAlertMismatchEntry {
-  summary: string | null;
-  expected: { start: string; endExclusive: string };
-  actual: { start: string | null; endExclusive: string | null };
-}
+// F10: die drei Eintrags-Typen sind die echten Diff-Typen aus
+// calendar-consistency.ts statt lokaler Kopien — die Property-/Report-Hülle
+// (ConsistencyAlertProperty/-Report) bleibt bewusst lokal: ein Import von
+// PropertyConsistencyResult/ConsistencyReport aus jobs/consistency-check.ts
+// wäre nur mit einem Typ-only-Re-Import in die Gegenrichtung (dieses Modul
+// wird von dort bereits per Wert importiert) möglich und würde für den
+// Mail-Renderer irrelevante Felder (sourceCounts, googleEventCount,
+// provider, cacheLastSyncedAt) in jede Test-Fixture ziehen.
+export type ConsistencyAlertMissingEntry = ExpectedEvent;
+export type ConsistencyAlertExtraEntry = ConsistencyDiff['extra'][number];
+export type ConsistencyAlertMismatchEntry = ConsistencyDiff['mismatched'][number];
 
 export interface ConsistencyAlertProperty {
   slug: string;
