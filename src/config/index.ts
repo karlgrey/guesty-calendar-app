@@ -56,7 +56,7 @@ const configSchema = z.object({
   // Befund (Diff und/oder überfällige Holds). Ohne Wert: kein Mailversand,
   // stattdessen logger.error (Muster check-staleness.ts).
   consistencyAlertRecipients: z.string().optional().transform((val) =>
-    val ? val.split(',').map((email) => email.trim()) : []
+    val ? val.split(',').map((email) => email.trim()).filter((email) => email.length > 0) : []
   ),
 
   // Property
