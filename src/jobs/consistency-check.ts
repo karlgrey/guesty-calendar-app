@@ -358,7 +358,7 @@ export async function runConsistencyCheck(days: number): Promise<ConsistencyRepo
       const { events, sourceCounts } = await buildExpectedEventsForProperty(property, from, to);
       const googleEventsRaw = await googleCalendarClient.listEvents(calendarId, `${from}T00:00:00Z`, `${to}T00:00:00Z`);
       const googleEvents = toGoogleEventLite(googleEventsRaw as any);
-      const diff = diffCalendarEvents(events, googleEvents);
+      const diff = diffCalendarEvents(events, googleEvents, from, to);
       const issueCount = diff.missing.length + diff.extra.length + diff.mismatched.length;
       totalIssues += issueCount;
 
