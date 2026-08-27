@@ -258,6 +258,27 @@ export function getAvailabilityDateRange(listingId: string): { minDate: string; 
 }
 
 /**
+ * Cache-Frische als Diagnose-Info (#484): jüngster last_synced_at für eine
+ * Listing, unabhängig vom Datum. `null` wenn noch nie synced.
+ */
+export function getAvailabilityLastSyncedAt(listingId: string): string | null {
+  const db = getDatabase();
+
+  try {
+    const result = db
+      .prepare(`SELECT MAX(last_synced_at) as last_synced_at FROM availability WHERE listing_id = ?`)
+      .get(listingId) as { last_synced_at: string | null };
+
+    return result.last_synced_at ?? null;
+  } catch (error) {
+    logger.error({ error, listingId }, 'Failed to get availability last_synced_at');
+    throw new DatabaseError(
+      `Failed to get availability last_synced_at: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
+  }
+}
+
+/**
  * Booking/Reservation summary
  */
 export interface BookingSummary {
