@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Database from 'better-sqlite3';
 import { setDatabase, resetDatabase } from '../db/index.js';
-import { getThreadsNeedingDraft, markThreadAiNoReply } from './message-repository.js';
+import { getThreadsNeedingDraft, markThreadAiNoReply, markThreadDiscarded } from './message-repository.js';
 
 let db: Database.Database;
 
@@ -13,7 +13,7 @@ beforeEach(() => {
       guest_name TEXT, guest_email TEXT, first_message_at TEXT NOT NULL, last_message_at TEXT NOT NULL,
       message_count INTEGER NOT NULL DEFAULT 0, reservation_id TEXT, inquiry_id TEXT, reservation_status TEXT,
       conversion_category TEXT, classification_confidence REAL, classification_keywords TEXT,
-      raw_meta TEXT, ai_no_reply_at TEXT, last_synced_at TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      raw_meta TEXT, ai_no_reply_at TEXT, discarded_at TEXT, last_synced_at TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     CREATE TABLE messages (
       id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, direction TEXT NOT NULL, sent_at TEXT NOT NULL,
@@ -92,6 +92,15 @@ describe('getThreadsNeedingDraft', () => {
     markThreadAiNoReply('guesty:g1');
     expect(getThreadsNeedingDraft('guesty', 'GL1', 10, '-72 hours')).toEqual([]);
     // A newer guest message invalidates the marker (last_message_at moves past it).
+    db.prepare(`UPDATE message_threads SET last_message_at = datetime('now','+1 minute') WHERE id='guesty:g1'`).run();
+    expect(getThreadsNeedingDraft('guesty', 'GL1', 10, '-72 hours').map((r) => r.id)).toEqual(['guesty:g1']);
+  });
+
+  it('excludes threads whose draft was manually discarded, until a newer guest message arrives (#497)', () => {
+    markThreadDiscarded('guesty:g1');
+    expect(getThreadsNeedingDraft('guesty', 'GL1', 10, '-72 hours')).toEqual([]);
+    // A newer guest message invalidates the marker (last_message_at moves past it) —
+    // same convention as ai_no_reply_at, so a fresh guest reply DOES get a fresh draft.
     db.prepare(`UPDATE message_threads SET last_message_at = datetime('now','+1 minute') WHERE id='guesty:g1'`).run();
     expect(getThreadsNeedingDraft('guesty', 'GL1', 10, '-72 hours').map((r) => r.id)).toEqual(['guesty:g1']);
   });

@@ -136,6 +136,7 @@ function threadFromFixture(fixture: Fixture, listingId: string, source: 'guesty'
     manual_note: null,
     linked_thread_id: null,
     ai_no_reply_at: null,
+    discarded_at: null,
     last_synced_at: now,
   };
 }

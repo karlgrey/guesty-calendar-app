@@ -3,7 +3,7 @@ import express from 'express';
 import { randomUUID } from 'node:crypto';
 import {
   getThreadsNeedingReply, getThreadById, getMessagesByThread, upsertMessage,
-  getLastMessageSync, markThreadAiNoReply, getMessagesSince, type MessageFeedRow,
+  getLastMessageSync, markThreadAiNoReply, markThreadDiscarded, getMessagesSince, type MessageFeedRow,
 } from '../repositories/message-repository.js';
 import type { MessageThread } from '../types/messages.js';
 import {
@@ -422,12 +422,22 @@ router.post('/:threadId/reply', express.urlencoded({ extended: true }), async (r
   } catch (e) { next(e); }
 });
 
-// Verwerfen
+// Verwerfen — heißt verwerfen (SmartTasks #497): der Thread bleibt draftlos.
+// Ohne den markThreadDiscarded-Marker würde der nächste Cron-/Sync-Lauf
+// (generateDraftsForProperty -> getThreadsNeedingDraft) den Thread sofort
+// wieder bedraften, weil dort nur "kein pending-Draft" geprüft wird — das
+// unterscheidet nicht zwischen "noch nie gedraftet" und "Mensch hat bewusst
+// verworfen" (häufigster Grund laut Micha: zeitkritischer Entwurf, z.B. "gute
+// Heimreise", nicht mehr rechtzeitig abgeschickt). Ein neuer Entwurf entsteht
+// danach nur noch durch eine neue Gastnachricht (invalidiert den Marker
+// implizit, siehe getThreadsNeedingDraft) oder den expliziten
+// "Neu generieren"-Button (POST /:threadId/regenerate, umgeht die Query ganz).
 router.post('/drafts/:draftId/discard', (req, res, next) => {
   try {
     const draft = getDraftById(req.params.draftId);
     if (!draft) { res.status(404).send('Entwurf nicht gefunden'); return; }
     discardDraft(draft.id);
+    markThreadDiscarded(draft.thread_id);
     res.redirect(`/admin/messages/${encodeURIComponent(draft.thread_id)}`);
   } catch (e) { next(e); }
 });

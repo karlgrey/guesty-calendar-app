@@ -56,6 +56,7 @@ export interface MessageThread {
   manual_note: string | null;
   linked_thread_id: string | null;         // cross-link to another thread (e.g. Gmail ↔ Meetreet)
   ai_no_reply_at: string | null;            // LLM decided "no reply needed" at this time (valid while newer than last_message_at)
+  discarded_at: string | null;              // human discarded the draft at this time (valid while newer than last_message_at) — #497
   last_synced_at: string;
   created_at?: string;
 }
@@ -76,13 +77,14 @@ export interface Message {
   created_at?: string;
 }
 
-export type NewMessageThread = Omit<MessageThread, 'created_at' | 'manually_categorized' | 'manual_note' | 'linked_thread_id' | 'classification_reasoning' | 'ai_no_reply_at'> & {
+export type NewMessageThread = Omit<MessageThread, 'created_at' | 'manually_categorized' | 'manual_note' | 'linked_thread_id' | 'classification_reasoning' | 'ai_no_reply_at' | 'discarded_at'> & {
   // DB has DEFAULT 0 / NULL; sync jobs don't need to set these.
   manually_categorized?: number;
   manual_note?: string | null;
   linked_thread_id?: string | null;
   classification_reasoning?: string | null; // set only by LLM classifier, not sync jobs
   ai_no_reply_at?: string | null;           // set only by draft generation, not sync jobs
+  discarded_at?: string | null;             // set only by the discard route, not sync jobs — #497
 };
 export type NewMessage = Omit<Message, 'created_at'>;
 

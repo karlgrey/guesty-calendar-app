@@ -281,6 +281,7 @@ export function getThreadsNeedingDraft(
            SELECT 1 FROM message_drafts d WHERE d.thread_id = t.id AND d.status = 'pending'
          )
          AND (t.ai_no_reply_at IS NULL OR datetime(t.ai_no_reply_at) < datetime(t.last_message_at))
+         AND (t.discarded_at IS NULL OR datetime(t.discarded_at) < datetime(t.last_message_at))
        ORDER BY t.last_message_at DESC
        LIMIT ?`,
     )
@@ -330,6 +331,20 @@ export function getThreadsByListingAndGuestName(listingId: string, guestName: st
 export function markThreadAiNoReply(threadId: string, at: string = new Date().toISOString()): void {
   const db = getDatabase();
   db.prepare(`UPDATE message_threads SET ai_no_reply_at = ? WHERE id = ?`).run(at, threadId);
+}
+
+/**
+ * Remember that a human manually discarded this thread's draft (SmartTasks
+ * #497) — most often because the reply was time-sensitive and the window
+ * passed (e.g. "gute Heimreise"), so a fresh auto-draft would be pointless.
+ * Same convention as markThreadAiNoReply: the marker is only meaningful while
+ * newer than last_message_at — a new guest message implicitly invalidates it
+ * (see getThreadsNeedingDraft). Explicit re-drafting via the "Neu generieren"
+ * button bypasses getThreadsNeedingDraft entirely, so it is unaffected.
+ */
+export function markThreadDiscarded(threadId: string, at: string = new Date().toISOString()): void {
+  const db = getDatabase();
+  db.prepare(`UPDATE message_threads SET discarded_at = ? WHERE id = ?`).run(at, threadId);
 }
 
 /**
