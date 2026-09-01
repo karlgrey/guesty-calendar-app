@@ -285,5 +285,30 @@ describe('agent-api', () => {
       const r = await fetch(`${base}/api/agent/reservations`);
       expect(r.status).toBe(401);
     });
+
+    it('#521: property-Filter laesst nur Reservierungen des angefragten Slugs durch', async () => {
+      listOpenReservationsMock.mockResolvedValueOnce({
+        reservations: [
+          { provider: 'guesty', reservationId: 'r1', property: { slug: 'farmhouse', name: 'Farmhouse Prasser', code: 'FH' }, listingId: 'L1', status: 'reserved', guestName: 'X', checkIn: '2026-09-01', checkOut: '2026-09-03', source: null, confirmationCode: null, createdAt: '2026-08-01T00:00:00.000Z' },
+          { provider: 'airbnb-mail', reservationId: 'r2', property: { slug: 'firenze-loft', name: 'Urban Luxury Loft - Florence', code: 'FL' }, listingId: 'L2', status: 'reserved', guestName: 'Y', checkIn: '2026-09-05', checkOut: '2026-09-08', source: null, confirmationCode: null, createdAt: '2026-08-02T00:00:00.000Z' },
+        ],
+        errors: [],
+      });
+      const r = await fetch(`${base}/api/agent/reservations?property=firenze-loft`, { headers: KEY });
+      expect(r.status).toBe(200);
+      const body = await r.json();
+      expect(body.reservations).toHaveLength(1);
+      expect(body.reservations[0].reservationId).toBe('r2');
+    });
+
+    it('#521: 400 bei unbekanntem property-Slug mit Liste der gueltigen Slugs', async () => {
+      const callsBefore = listOpenReservationsMock.mock.calls.length;
+      const r = await fetch(`${base}/api/agent/reservations?property=florenz`, { headers: KEY });
+      expect(r.status).toBe(400);
+      const body = await r.json();
+      expect(body.error).toMatch(/florenz/);
+      expect(body.error).toMatch(/firenze-loft/);
+      expect(listOpenReservationsMock.mock.calls.length).toBe(callsBefore);
+    });
   });
 });

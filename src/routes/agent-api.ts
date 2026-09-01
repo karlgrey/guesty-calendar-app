@@ -15,6 +15,7 @@ import { guestyClient } from '../services/guesty-client.js';
 import { getThreadsUpdatedSince, getThreadById, getMessagesByThread } from '../repositories/message-repository.js';
 import { propertyForBadge } from '../utils/thread-property.js';
 import { runConsistencyCheck, listOpenReservations } from '../jobs/consistency-check.js';
+import { getPropertyBySlug, getPropertySlugs } from '../config/properties.js';
 import type { PropertyConfig } from '../config/properties.js';
 import { AppError, NotFoundError, ValidationError } from '../utils/errors.js';
 import logger from '../utils/logger.js';
@@ -192,7 +193,21 @@ router.get('/reservations', async (req, res) => {
       }
     }
     const includePast = req.query.includePast === 'true' || req.query.includePast === '1';
-    const { reservations, errors } = await listOpenReservations(statuses, includePast);
+
+    // #521: property-Filter (Slug wie in data/properties.json, z. B. firenze-loft
+    // fuer Florenz). Unbekannter Slug -> 400 mit Liste statt stillem Leerfilter.
+    let propertySlug: string | undefined;
+    if (typeof req.query.property === 'string' && req.query.property !== '') {
+      propertySlug = req.query.property;
+      if (!getPropertyBySlug(propertySlug)) {
+        throw new ValidationError(`Unbekanntes property: ${propertySlug} (erlaubt: ${getPropertySlugs().join('|')})`);
+      }
+    }
+
+    const { reservations: allReservations, errors } = await listOpenReservations(statuses, includePast);
+    const reservations = propertySlug
+      ? allReservations.filter((r) => r.property?.slug === propertySlug)
+      : allReservations;
     res.json({ fetchedAt: new Date().toISOString(), statuses, reservations, errors });
   } catch (err) { handleError(res, err); }
 });
