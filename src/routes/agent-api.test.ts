@@ -107,6 +107,24 @@ describe('agent-api', () => {
     expect(await r.json()).toMatchObject({ status: 'reserved' });
   });
 
+  it('GET /reservations/:id → guestId aus guest._id (#557)', async () => {
+    const { guestyClient } = await import('../services/guesty-client.js');
+    (guestyClient.getReservation as any).mockResolvedValueOnce({
+      _id: 'res-1', status: 'reserved', guest: { _id: 'guest-42', fullName: 'Anna' },
+    });
+    const r = await fetch(`${base}/api/agent/reservations/res-1`, { headers: KEY });
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({ guestId: 'guest-42' });
+  });
+
+  it('GET /reservations/:id → guestId null ohne Guest-Daten', async () => {
+    const { guestyClient } = await import('../services/guesty-client.js');
+    (guestyClient.getReservation as any).mockResolvedValueOnce({ _id: 'res-1', status: 'reserved' });
+    const r = await fetch(`${base}/api/agent/reservations/res-1`, { headers: KEY });
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({ guestId: null });
+  });
+
   it('GET /reservations/:id/offer.pdf → PDF mit Nummer im Header', async () => {
     const r = await fetch(`${base}/api/agent/reservations/res-1/offer.pdf`, { headers: KEY });
     expect(r.status).toBe(200);

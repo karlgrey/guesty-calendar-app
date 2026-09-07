@@ -47,6 +47,7 @@ router.get('/reservations/:id', async (req, res) => {
       checkIn: r?.checkInDateLocalized ?? null,
       checkOut: r?.checkOutDateLocalized ?? null,
       guestsCount: r?.guestsCount ?? null,
+      guestId: r?.guest?._id ?? r?.guestId ?? null,
     });
   } catch (err) { handleError(res, err); }
 });
