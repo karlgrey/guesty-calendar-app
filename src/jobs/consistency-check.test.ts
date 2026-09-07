@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../config/index.js', async (importOriginal) => {
   const mod: any = await importOriginal();
@@ -378,6 +378,18 @@ END:VCALENDAR
 });
 
 describe('runConsistencyCheck', () => {
+  // Fixtures unten sind auf ein festes "heute" datiert (#559) — todayInTimezone()
+  // driftet sonst mit dem echten Kalenderdatum vom Check-Fenster weg und lässt
+  // Fixtures aus dem Fenster fallen (False Negative statt echtem Befund).
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-27T10:00:00.000Z'));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('meldet Diffs pro Property und isoliert Fehler einer Property (andere laufen weiter)', async () => {
     getAllPropertiesMock.mockReturnValue([
       guestyProperty({ slug: 'ok-prop', name: 'OK Property', guestyPropertyId: 'listing-ok' }),
@@ -493,6 +505,17 @@ describe('runConsistencyCheck', () => {
 });
 
 describe('listOpenReservations', () => {
+  // Gleiche Begründung wie im runConsistencyCheck-Block: Fixtures/Assertions
+  // hängen an einem festen "heute" (#559), todayInTimezone() muss also gepinnt sein.
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-08-27T10:00:00.000Z'));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('filtert nach Status und mappt unbekanntes Guesty-Listing auf property: null', async () => {
     getReservationsMock.mockResolvedValueOnce([
       {
