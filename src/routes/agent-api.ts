@@ -15,8 +15,9 @@ import { guestyClient } from '../services/guesty-client.js';
 import { getThreadsUpdatedSince, getThreadById, getMessagesByThread } from '../repositories/message-repository.js';
 import { propertyForBadge } from '../utils/thread-property.js';
 import { runConsistencyCheck, listOpenReservations } from '../jobs/consistency-check.js';
-import { getPropertyBySlug, getPropertySlugs } from '../config/properties.js';
+import { getPropertyBySlug, getPropertySlugs, getListingId } from '../config/properties.js';
 import type { PropertyConfig } from '../config/properties.js';
+import { listDocumentsForAgent } from '../repositories/document-repository.js';
 import { AppError, NotFoundError, ValidationError } from '../utils/errors.js';
 import logger from '../utils/logger.js';
 
@@ -210,6 +211,70 @@ router.get('/reservations', async (req, res) => {
       ? allReservations.filter((r) => r.property?.slug === propertySlug)
       : allReservations;
     res.json({ fetchedAt: new Date().toISOString(), statuses, reservations, errors });
+  } catch (err) { handleError(res, err); }
+});
+
+const VALID_DOCUMENT_TYPES = ['invoice', 'quote'] as const;
+
+// Zahlungsabgleich (#425, monatlicher Kontoabgleich statt Einzelcheck je
+// Buchung) — read-only Liste aus der documents-Tabelle. HARTE REGEL: dieser
+// Endpunkt ruft NIE createOrGetDocument/refreshDocument/Guesty auf und
+// erzeugt NIE Dokumente oder Nummern (Vorfall 08.09.2026: die PDF-Endpunkte
+// legen fehlende Dokumente an — genau das darf hier nicht passieren).
+router.get('/documents', (req, res) => {
+  try {
+    let type: 'invoice' | 'quote' | undefined;
+    if (typeof req.query.type === 'string' && req.query.type !== '') {
+      if (!VALID_DOCUMENT_TYPES.includes(req.query.type as (typeof VALID_DOCUMENT_TYPES)[number])) {
+        throw new ValidationError(`Unbekannter type: ${req.query.type} (erlaubt: ${VALID_DOCUMENT_TYPES.join('|')})`);
+      }
+      type = req.query.type as 'invoice' | 'quote';
+    }
+
+    let year: number | undefined;
+    if (typeof req.query.year === 'string' && req.query.year !== '') {
+      const parsed = Number(req.query.year);
+      if (!Number.isInteger(parsed) || parsed < 2000 || parsed > 2100) {
+        throw new ValidationError('year muss eine vierstellige Jahreszahl sein');
+      }
+      year = parsed;
+    }
+
+    // property-Filter wie bei GET /reservations: Slug-Validierung via
+    // getPropertyBySlug. Zuordnung Dokument -> Property läuft rein lokal
+    // über documents.reservation_id -> reservations.listing_id (kein
+    // Guesty-API-Call) — Dokumente ohne (mehr vorhandene) lokale
+    // reservations-Zeile fallen bei diesem Filter raus.
+    let listingId: string | undefined;
+    if (typeof req.query.property === 'string' && req.query.property !== '') {
+      const property = getPropertyBySlug(req.query.property);
+      if (!property) {
+        throw new ValidationError(`Unbekanntes property: ${req.query.property} (erlaubt: ${getPropertySlugs().join('|')})`);
+      }
+      listingId = getListingId(property);
+    }
+
+    const documents = listDocumentsForAgent({ type, year, listingId });
+    res.json({
+      fetchedAt: new Date().toISOString(),
+      count: documents.length,
+      documents: documents.map((d) => ({
+        id: d.id,
+        documentNumber: d.documentNumber,
+        documentType: d.documentType,
+        reservationId: d.reservationId,
+        customerName: d.customer.name,
+        customerCompany: d.customer.company,
+        checkIn: d.checkIn,
+        checkOut: d.checkOut,
+        nights: d.nights,
+        guestsCount: d.guestsCount,
+        total: d.total / 100,
+        currency: d.currency,
+        source: d.source ?? null,
+        createdAt: d.createdAt,
+      })),
+    });
   } catch (err) { handleError(res, err); }
 });
 

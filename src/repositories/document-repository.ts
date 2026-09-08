@@ -518,6 +518,69 @@ export function listDocuments(type?: DocumentType, limit: number = 100): Documen
   }
 }
 
+export interface ListDocumentsForAgentFilters {
+  type?: DocumentType;
+  /** Filtert auf Dokumentnummern des Jahres (invoice 'YYYY-…' bzw. quote 'A-YYYY-…'). */
+  year?: number;
+  /**
+   * Guesty/Hostex/Airbnb-Listing-ID (`getListingId(property)`), gejoint über die
+   * lokale reservations-Tabelle (reservation_id -> listing_id). KEIN Guesty-API-Call.
+   * Dokumente ohne (mehr vorhandene) lokale reservations-Zeile fallen bei diesem
+   * Filter raus — sie sind ohne API-Call keiner Property zuzuordnen.
+   */
+  listingId?: string;
+}
+
+/**
+ * Liest Dokumente read-only für die Agent-API (GET /api/agent/documents,
+ * Zahlungsabgleich-Regel #425 — monatlicher Kontoabgleich statt Einzelcheck
+ * je Buchung). Ruft NIE createOrGetDocument/refreshDocument/Guesty auf und
+ * erzeugt NIE Dokumente oder Nummern — reine Projektion der documents-Tabelle,
+ * ohne Limit. Liest nie aus/schreibt nie in document_sequences.
+ */
+export function listDocumentsForAgent(filters: ListDocumentsForAgentFilters = {}): Document[] {
+  const db = getDatabase();
+
+  try {
+    let query = 'SELECT d.* FROM documents d';
+    const conditions: string[] = [];
+    const params: any[] = [];
+
+    if (filters.listingId) {
+      query += ' JOIN reservations r ON r.reservation_id = d.reservation_id';
+      conditions.push('r.listing_id = ?');
+      params.push(filters.listingId);
+    }
+
+    if (filters.type) {
+      conditions.push('d.document_type = ?');
+      params.push(filters.type);
+    }
+
+    if (filters.year) {
+      // Nummernkreise: Rechnung 'YYYY-NNNN', Angebot 'A-YYYY-NNNN' — beide
+      // Präfixe abdecken, ohne dass sich die Muster gegenseitig kreuzen.
+      conditions.push('(d.document_number LIKE ? OR d.document_number LIKE ?)');
+      params.push(`${filters.year}-%`, `A-${filters.year}-%`);
+    }
+
+    if (conditions.length > 0) {
+      query += ' WHERE ' + conditions.join(' AND ');
+    }
+
+    query += ' ORDER BY d.document_number ASC';
+
+    const rows = db.prepare(query).all(...params) as DocumentRow[];
+
+    return rows.map(rowToDocument);
+  } catch (error) {
+    logger.error({ error, filters }, 'Failed to list documents for agent');
+    throw new DatabaseError(
+      `Failed to list documents for agent: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
+  }
+}
+
 export interface DocumentSequenceTypeInfo {
   lastNumber: number;
   nextNumber: number;
