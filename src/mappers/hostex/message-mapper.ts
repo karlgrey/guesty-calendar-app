@@ -53,9 +53,15 @@ export function mapHostexConversation(
   const threadId = `hostex:${detail.id}`;
   // Only 'Text' messages are real guest/host conversation; 'Box' and
   // 'ReservationAlteration' are system cards (Task-1-Fixture bestätigt).
-  const posts = (detail.messages ?? []).filter((p) => p.display_type === 'Text');
+  const allMessages = detail.messages ?? [];
+  const posts = allMessages.filter((p) => p.display_type === 'Text');
   const guestName = detail.guest?.name ?? null;
-  const times = posts.map((p) => p.created_at).filter(Boolean).sort();
+  // #577: thread-level first/last activity is derived from ALL messages (incl. system
+  // cards like 'Box'/'ReservationAlteration'), not just Text ones — a conversation can have
+  // real activity (e.g. a cancellation) with no chat text at all. Using only Text posts made
+  // such threads fall back to `now` on every sync, permanently mis-stamping them as freshly
+  // active. `now` remains the fallback only when the conversation has no messages whatsoever.
+  const times = allMessages.map((p) => p.created_at).filter(Boolean).sort();
   const firstAt = times[0] ?? now;
   const lastAt = times[times.length - 1] ?? now;
 
