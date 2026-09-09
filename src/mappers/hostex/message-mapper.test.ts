@@ -37,14 +37,60 @@ describe('hostex message mapper', () => {
     expect(thread.guest_name).toBe('Darleen');
     expect(thread.message_count).toBe(2); // only Text messages counted
     expect(thread.first_message_at).toBe('2026-06-30T10:00:00Z');
-    expect(thread.last_message_at).toBe('2026-06-30T11:00:00Z');
+    // #577: last_message_at reflects the conversation's real last activity across ALL
+    // message types (incl. the ReservationAlteration system card, m-3 at 12:00) — not just
+    // Text messages — so a thread with only system activity after the last chat message
+    // doesn't look stale/inactive.
+    expect(thread.last_message_at).toBe('2026-06-30T12:00:00Z');
 
-    // the ReservationAlteration system card (m-3) is filtered out
+    // the ReservationAlteration system card (m-3) is still filtered out of the persisted
+    // messages (only real chat text is stored as a Message row)
     expect(messages.map((m) => m.id)).toEqual(['hostex:m-1', 'hostex:m-2']);
     expect(messages[0].direction).toBe('inbound');
     expect(messages[0].thread_id).toBe('hostex:c-1');
     expect(messages[0].body).toBe('Hallo');
     expect(messages[0].source).toBe('hostex');
+  });
+
+  // #577 (Standup 09.09.2026): Live-Befund — GET /threads zeigte 14 Hostex-Threads mit
+  // lastMessageAt "jetzt", aber GET /threads/:id lieferte messages: []. Root cause: Hostex
+  // erzeugt für jede Reservierung/Anfrage eine Conversation, auch ohne echten Gast-Chat
+  // (nur System-Karten wie "Box"/"ReservationAlteration", z. B. Stornierungen) — die alte
+  // Fallback-Logik nahm dafür den SYNC-Zeitpunkt (`now`) statt der echten Aktivitätszeit,
+  // wodurch der Thread bei JEDEM Sync-Lauf erneut als "gerade eben aktiv" erschien und so
+  // in jedes `since=`-Zeitfenster rutschte (verifiziert live gegen die Hostex-API: mehrere
+  // Bootshaus/Schilderwerkstatt-Conversations aus dem Standup-Befund hatten tatsächlich
+  // keine Text-Nachricht, nur eine ältere Box-Karte — z. B. "The reservation has been
+  // cancelled" vom 2026-08-29).
+  it('#577: falls back to the last system-card timestamp, not sync time, when there are no Text messages', () => {
+    const detail: HostexConversationDetail = {
+      id: 'c-2', channel_type: 'airbnb', guest: { name: 'Tanith', email: '' },
+      messages: [
+        {
+          id: 'm-cancel', sender_role: 'guest', display_type: 'Box',
+          content: 'The reservation has been cancelled.', created_at: '2026-08-29T20:36:36Z',
+        },
+      ],
+    };
+    const { thread, messages } = mapHostexConversation(detail, 'listing-9', '2026-09-09T02:40:20.073Z');
+
+    expect(thread.message_count).toBe(0); // no real chat text
+    expect(thread.first_message_at).toBe('2026-08-29T20:36:36Z');
+    expect(thread.last_message_at).toBe('2026-08-29T20:36:36Z'); // NOT the sync time
+    expect(messages).toEqual([]);
+  });
+
+  it('#577: falls back to sync time only when the conversation has no messages at all', () => {
+    const detail: HostexConversationDetail = {
+      id: 'c-3', channel_type: 'airbnb', guest: { name: 'Julie Winkel', email: '' },
+      messages: [],
+    };
+    const { thread, messages } = mapHostexConversation(detail, 'listing-9', '2026-09-09T02:40:20.073Z');
+
+    expect(thread.message_count).toBe(0);
+    expect(thread.first_message_at).toBe('2026-09-09T02:40:20.073Z');
+    expect(thread.last_message_at).toBe('2026-09-09T02:40:20.073Z');
+    expect(messages).toEqual([]);
   });
 
   it('detailBelongsToProperty matches on numeric activities property id (incl. string/number)', () => {
