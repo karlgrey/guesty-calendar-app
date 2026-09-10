@@ -49,7 +49,17 @@ export function mapHostexConversation(
   listingId: string,
   now: string,
   reservationInfo: HostexReservationInfo | null = null,
-): { thread: NewMessageThread; messages: NewMessage[] } {
+  /**
+   * #577-Nachfix (10.09.2026): der Aufrufer übergibt hier `last_message_at` aus der
+   * Hostex LIST-Antwort (siehe HostexConversation.last_message_at) — der einzige Ort,
+   * an dem Hostex für Conversations OHNE jede Nachricht überhaupt einen Aktivitäts-
+   * Zeitstempel liefert. Per Live-Check gegen die echte API verifiziert: die DETAIL-
+   * Antwort trägt für solche Conversations kein last_message_at/updated_at/created_at,
+   * nur die LIST tut es (hostex:0-2660304253 „Julie Winkel“: DETAIL messages: [] und
+   * kein Zeitfeld, LIST last_message_at 2026-09-07T18:34:38+00:00).
+   */
+  conversationLastMessageAt: string | null = null,
+): { thread: NewMessageThread | null; messages: NewMessage[] } {
   const threadId = `hostex:${detail.id}`;
   // Only 'Text' messages are real guest/host conversation; 'Box' and
   // 'ReservationAlteration' are system cards (Task-1-Fixture bestätigt).
@@ -58,12 +68,20 @@ export function mapHostexConversation(
   const guestName = detail.guest?.name ?? null;
   // #577: thread-level first/last activity is derived from ALL messages (incl. system
   // cards like 'Box'/'ReservationAlteration'), not just Text ones — a conversation can have
-  // real activity (e.g. a cancellation) with no chat text at all. Using only Text posts made
-  // such threads fall back to `now` on every sync, permanently mis-stamping them as freshly
-  // active. `now` remains the fallback only when the conversation has no messages whatsoever.
+  // real activity (e.g. a cancellation) with no chat text at all.
   const times = allMessages.map((p) => p.created_at).filter(Boolean).sort();
-  const firstAt = times[0] ?? now;
-  const lastAt = times[times.length - 1] ?? now;
+  const firstAt = times[0] ?? conversationLastMessageAt;
+  const lastAt = times[times.length - 1] ?? conversationLastMessageAt;
+
+  // #577-Nachfix: weder eine Nachricht (auch keine System-Karte) noch ein brauchbarer
+  // Hostex-Aktivitäts-Zeitstempel aus der LIST-Antwort — diese Conversation trägt keine
+  // Information, es gibt nichts zu speichern. Kein Thread-Objekt (statt `now` zu erfinden
+  // oder first/last_message_at NULL zu setzen — die Spalten sind NOT NULL, siehe Migration
+  // 014, und ein Table-Rebuild dafür ist mit dem bestehenden Migrations-Runner bei aktiven
+  // Fremdschlüsseln nicht sicher machbar, Review-Befund 10.09.2026).
+  if (firstAt == null || lastAt == null) {
+    return { thread: null, messages: [] };
+  }
 
   const thread: NewMessageThread = {
     id: threadId,

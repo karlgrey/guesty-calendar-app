@@ -80,16 +80,44 @@ describe('hostex message mapper', () => {
     expect(messages).toEqual([]);
   });
 
-  it('#577: falls back to sync time only when the conversation has no messages at all', () => {
+  // #577-Nachfix (10.09.2026, Rest-Befund): 9 Bootshaus-/Schilderwerkstatt-Threads
+  // hatten trotz #577 weiterhin `now` als last_message_at, weil ihre Hostex-
+  // Conversation ÜBERHAUPT keine messages[] hat (nicht mal eine System-Karte) —
+  // Live-Beispiel hostex:0-2660304253 (Julie Winkel): DETAIL liefert `messages: []`
+  // und KEIN eigenes Zeitfeld, aber die LIST-Antwort führt dafür `last_message_at`
+  // (echte Hostex-Aktivität, z. B. Stornierung/Alteration) — dieser Wert kommt vom
+  // Aufrufer (sync-hostex-messages.ts) als `conversationLastMessageAt` herein.
+  it('#577-Nachfix: uses the LIST conversation last_message_at when there are no messages at all', () => {
     const detail: HostexConversationDetail = {
       id: 'c-3', channel_type: 'airbnb', guest: { name: 'Julie Winkel', email: '' },
       messages: [],
     };
+    const { thread, messages } = mapHostexConversation(
+      detail, 'listing-9', '2026-09-10T02:27:16Z', null, '2026-09-07T18:34:38+00:00',
+    );
+
+    expect(thread).not.toBeNull();
+    expect(thread?.message_count).toBe(0);
+    expect(thread?.first_message_at).toBe('2026-09-07T18:34:38+00:00');
+    expect(thread?.last_message_at).toBe('2026-09-07T18:34:38+00:00'); // NOT the sync time
+    expect(messages).toEqual([]);
+  });
+
+  // Liefert auch die LIST-Antwort kein last_message_at (Hostex-Feld fehlt/ist null) —
+  // die Conversation trägt dann keine Information (weder Nachricht noch Aktivitäts-
+  // Zeitstempel): kein Thread-Objekt statt `now` zu erfinden. first_message_at/
+  // last_message_at bleiben NOT NULL (Migration 014) — ein Table-Rebuild dafür ist mit
+  // dem bestehenden Migrations-Runner bei aktiven Fremdschlüsseln nicht sicher machbar
+  // (Review-Befund 10.09.2026: DROP TABLE würde die ON DELETE CASCADE-Trigger von
+  // messages/message_drafts feuern und in Produktion alle Nachrichten/Drafts löschen).
+  it('#577-Nachfix: liefert keinen Thread, wenn weder Nachrichten noch ein brauchbarer Hostex-Zeitstempel existieren', () => {
+    const detail: HostexConversationDetail = {
+      id: 'c-4', channel_type: 'airbnb', guest: { name: 'Ohne Aktivität', email: '' },
+      messages: [],
+    };
     const { thread, messages } = mapHostexConversation(detail, 'listing-9', '2026-09-09T02:40:20.073Z');
 
-    expect(thread.message_count).toBe(0);
-    expect(thread.first_message_at).toBe('2026-09-09T02:40:20.073Z');
-    expect(thread.last_message_at).toBe('2026-09-09T02:40:20.073Z');
+    expect(thread).toBeNull();
     expect(messages).toEqual([]);
   });
 

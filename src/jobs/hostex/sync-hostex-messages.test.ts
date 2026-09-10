@@ -228,6 +228,60 @@ describe('syncHostexMessagesForProperty', () => {
     expect(getThreadById('hostex:inq')?.listing_id).toBe('111'); // attributed to A only
   });
 
+  // #577-Nachfix (10.09.2026): Conversations OHNE jede Nachricht (nicht mal eine
+  // System-Karte) fielen weiterhin auf `now` zurück, weil die DETAIL-Antwort dafür
+  // gar kein Zeitfeld liefert — nur die LIST tut es (Live-Beispiel hostex:0-2660304253).
+  describe('#577-Nachfix: Conversations ohne jede Nachricht', () => {
+    it('nutzt das last_message_at der LIST-Antwort statt des Sync-Zeitpunkts', async () => {
+      const client: HostexMessageClient = {
+        async getConversations() {
+          return [{
+            id: 'c-empty', channel_type: 'airbnb', guest: { name: 'Julie Winkel', email: '' },
+            property_title: 'Bootshaus', last_message_at: '2026-09-07T18:34:38+00:00',
+          }];
+        },
+        async getConversationDetails() {
+          return {
+            id: 'c-empty', channel_type: 'airbnb', guest: { name: 'Julie Winkel', email: '' },
+            property_title: 'Bootshaus', messages: [],
+          };
+        },
+      };
+      const res = await syncHostexMessagesForProperty(property, client, '2026-09-10T02:27:16Z');
+      expect(res.success).toBe(true);
+      const thread = getThreadById('hostex:c-empty');
+      expect(thread?.first_message_at).toBe('2026-09-07T18:34:38+00:00');
+      expect(thread?.last_message_at).toBe('2026-09-07T18:34:38+00:00'); // NICHT der Sync-Zeitpunkt
+      expect(thread?.message_count).toBe(0);
+      expect(getMessagesByThread('hostex:c-empty')).toEqual([]);
+    });
+
+    // Weder Nachricht noch LIST-Zeitstempel: die Conversation trägt keine Information —
+    // kein Upsert (first/last_message_at sind NOT NULL, siehe Migration 014; ein
+    // Table-Rebuild dafür ist mit dem bestehenden Runner bei aktiven Fremdschlüsseln
+    // nicht sicher machbar, Review-Befund 10.09.2026).
+    it('überspringt den Upsert, wenn auch die LIST kein last_message_at liefert', async () => {
+      const client: HostexMessageClient = {
+        async getConversations() {
+          return [{
+            id: 'c-empty-2', channel_type: 'airbnb', guest: { name: 'Ohne Aktivität', email: '' },
+            property_title: 'Bootshaus',
+          }];
+        },
+        async getConversationDetails() {
+          return {
+            id: 'c-empty-2', channel_type: 'airbnb', guest: { name: 'Ohne Aktivität', email: '' },
+            property_title: 'Bootshaus', messages: [],
+          };
+        },
+      };
+      const res = await syncHostexMessagesForProperty(property, client, '2026-09-10T02:27:16Z');
+      expect(res.success).toBe(true);
+      expect(res.threads).toBe(0);
+      expect(getThreadById('hostex:c-empty-2')).toBeNull();
+    });
+  });
+
   // #441 Root-Cause-Fix: der Hostex-Mapper setzte reservation_status/reservation_id/inquiry_id
   // bisher hart auf null — für Hostex-Airbnb-Threads (Bootshaus, Alte Schilderwerkstatt) war der
   // Buchungsstatus damit nie bestimmbar, und der #440-Kanal-/Status-Block im Draft-Generator
