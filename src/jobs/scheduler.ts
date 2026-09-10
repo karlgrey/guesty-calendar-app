@@ -4,6 +4,8 @@
  * Manages scheduled execution of ETL jobs.
  */
 
+import { toZonedTime } from 'date-fns-tz';
+import { getHours } from 'date-fns';
 import { runETLJob } from './etl-job.js';
 import { sendWeeklySummaryEmailForProperty, shouldSendWeeklyEmailForProperty } from './weekly-email.js';
 import { sendBiReportEmail, shouldSendBiReport } from './bi-email.js';
@@ -11,9 +13,16 @@ import { syncAnalytics, shouldSyncAnalytics } from './sync-analytics.js';
 import { syncGoogleCalendarForProperty } from './sync-google-calendar.js';
 import { checkAirbnbMailStaleness } from './airbnb-mail/check-staleness.js';
 import { runDailyConsistencyJob } from './consistency-check.js';
+import { todayInTimezone } from './airbnb-mail/reconcile-ical.js';
+import { getSchedulerState, setSchedulerState } from '../repositories/scheduler-state-repository.js';
 import { config } from '../config/index.js';
 import { getAllProperties, getBiReportConfig, type PropertyConfig } from '../config/properties.js';
 import logger from '../utils/logger.js';
+
+// Persistente Tagesmarker (überleben einen Prozess-Neustart, anders als die
+// RAM-only `state`-Felder unten) — Muster + Begründung: migration 026 / #603.
+const CONSISTENCY_CHECK_STATE_KEY = 'dailyConsistencyCheckLastRunDay';
+const DAILY_FORCE_SYNC_STATE_KEY = 'dailyForceSyncLastRunDay';
 
 /**
  * Job scheduler state
@@ -44,6 +53,11 @@ interface SchedulerState {
   airbnbMailStalenessIntervalId: NodeJS.Timeout | null;
   consistencyCheckIntervalId: NodeJS.Timeout | null;
   lastConsistencyCheck: Date | null;
+  // Persistierter Tagesmarker (YYYY-MM-DD in config.propertyTimezone), aus der
+  // DB geladen — Grundlage für die "schon heute gelaufen?"-Prüfung (#603).
+  consistencyCheckLastRunDay: string | null;
+  // Dito für den täglichen Force-Sync (#603, gleiches RAM-Marker-Muster).
+  dailyForceSyncLastRunDay: string | null;
 }
 
 const state: SchedulerState = {
@@ -71,7 +85,21 @@ const state: SchedulerState = {
   airbnbMailStalenessIntervalId: null,
   consistencyCheckIntervalId: null,
   lastConsistencyCheck: null,
+  consistencyCheckLastRunDay: null,
+  dailyForceSyncLastRunDay: null,
 };
+
+/**
+ * Test seam: reset the in-memory scheduler markers to a fresh-process state
+ * (all persisted-day markers unloaded) — lets tests simulate a restart
+ * without the RAM state a previous test left behind.
+ */
+export function resetSchedulerStateForTests(): void {
+  state.lastConsistencyCheck = null;
+  state.consistencyCheckLastRunDay = null;
+  state.lastDailyForceSync = null;
+  state.dailyForceSyncLastRunDay = null;
+}
 
 /**
  * Execute ETL job with error handling and schedule next run with jitter
@@ -324,56 +352,78 @@ async function checkAndLogAirbnbMailStaleness() {
 }
 
 /**
- * Check if the daily calendar consistency check should run (at 6 AM, #484).
+ * Load the persisted "already ran today" marker for the daily consistency
+ * check from the DB. Call once at scheduler start (#603) — a RAM-only
+ * marker didn't survive a deploy restart mid-hour, causing a duplicate
+ * consistency alert mail on 2026-09-10 (06:23Z and 06:28Z).
  */
-function shouldRunDailyConsistencyCheck(): boolean {
-  const now = new Date();
-  if (now.getHours() !== 6) return false;
+export function loadConsistencyCheckState(): void {
+  state.consistencyCheckLastRunDay = getSchedulerState(CONSISTENCY_CHECK_STATE_KEY);
+}
 
-  const today = now.toDateString();
-  const lastRun = state.lastConsistencyCheck?.toDateString();
-  return lastRun !== today;
+/**
+ * Check if the daily calendar consistency check should run (at 06:00
+ * Europe/Berlin, #484; timezone + persistence fix #603 — the hour check
+ * used the server's local time (UTC in production, i.e. 08:00 Berlin) and
+ * the "already ran" marker only lived in RAM).
+ */
+export function shouldRunDailyConsistencyCheck(): boolean {
+  const propertyTime = toZonedTime(new Date(), config.propertyTimezone);
+  if (getHours(propertyTime) !== 6) return false;
+
+  const today = todayInTimezone(config.propertyTimezone);
+  return state.consistencyCheckLastRunDay !== today;
 }
 
 /**
  * Run the calendar consistency check + hold-sweep, with alert-mail-on-finding
  * (non-fatal — a failure here must never take down the scheduler, #484).
  */
-async function checkAndRunDailyConsistencyCheck() {
+export async function checkAndRunDailyConsistencyCheck() {
   try {
     if (!shouldRunDailyConsistencyCheck()) return;
 
     logger.info('🔍 Daily calendar consistency check triggered');
     await runDailyConsistencyJob();
+
+    const today = todayInTimezone(config.propertyTimezone);
     state.lastConsistencyCheck = new Date();
+    state.consistencyCheckLastRunDay = today;
+    setSchedulerState(CONSISTENCY_CHECK_STATE_KEY, today);
   } catch (error) {
     logger.error({ error }, '❌ Error in daily calendar consistency check');
   }
 }
 
 /**
- * Check if daily forced sync should run (at 2 AM)
+ * Load the persisted "already ran today" marker for the daily forced sync
+ * from the DB. Call once at scheduler start — same RAM-marker fix as the
+ * daily consistency check (#603).
  */
-function shouldRunDailyForceSync(): boolean {
-  const now = new Date();
-  const currentHour = now.getHours();
+export function loadDailyForceSyncState(): void {
+  state.dailyForceSyncLastRunDay = getSchedulerState(DAILY_FORCE_SYNC_STATE_KEY);
+}
 
-  // Run at 2 AM
-  if (currentHour !== 2) {
+/**
+ * Check if daily forced sync should run (at 02:00 Europe/Berlin; timezone +
+ * persistence fix #603, same bug class as the daily consistency check: the
+ * hour check used the server's local time and the "already ran" marker
+ * only lived in RAM).
+ */
+export function shouldRunDailyForceSync(): boolean {
+  const propertyTime = toZonedTime(new Date(), config.propertyTimezone);
+  if (getHours(propertyTime) !== 2) {
     return false;
   }
 
-  // Check if we already ran today
-  const today = now.toDateString();
-  const lastRun = state.lastDailyForceSync?.toDateString();
-
-  return lastRun !== today;
+  const today = todayInTimezone(config.propertyTimezone);
+  return state.dailyForceSyncLastRunDay !== today;
 }
 
 /**
  * Execute daily forced sync to ensure all data is up-to-date
  */
-async function checkAndRunDailyForceSync() {
+export async function checkAndRunDailyForceSync() {
   try {
     if (!shouldRunDailyForceSync()) {
       return;
@@ -384,6 +434,9 @@ async function checkAndRunDailyForceSync() {
     const result = await runETLJob(true); // force=true to bypass cache checks
 
     state.lastDailyForceSync = new Date();
+    const today = todayInTimezone(config.propertyTimezone);
+    state.dailyForceSyncLastRunDay = today;
+    setSchedulerState(DAILY_FORCE_SYNC_STATE_KEY, today);
 
     if (result.success) {
       logger.info(
@@ -524,8 +577,11 @@ export function startScheduler() {
   checkAndLogAirbnbMailStaleness();
   state.airbnbMailStalenessIntervalId = setInterval(checkAndLogAirbnbMailStaleness, 60 * 60 * 1000);
 
-  // Start daily forced sync checker (runs every hour, executes at 2 AM)
-  logger.info('🔄 Starting daily forced sync scheduler (runs at 2 AM)');
+  // Start daily forced sync checker (runs every hour, executes at 02:00 Europe/Berlin, #603)
+  logger.info('🔄 Starting daily forced sync scheduler (runs at 02:00 Europe/Berlin)');
+
+  // Load the persisted "already ran today" marker (survives restarts, #603)
+  loadDailyForceSyncState();
 
   // Check immediately on start
   checkAndRunDailyForceSync();
@@ -571,8 +627,11 @@ export function startScheduler() {
     state.googleCalendarIntervalId = setInterval(checkAndSyncGoogleCalendar, gcalInterval);
   }
 
-  // Start daily calendar consistency check scheduler (runs every hour, executes at 6 AM, #484)
-  logger.info('🔍 Starting daily calendar consistency check scheduler (runs at 6 AM)');
+  // Start daily calendar consistency check scheduler (runs every hour, executes at 06:00 Europe/Berlin, #484/#603)
+  logger.info('🔍 Starting daily calendar consistency check scheduler (runs at 06:00 Europe/Berlin)');
+
+  // Load the persisted "already ran today" marker (survives restarts, #603)
+  loadConsistencyCheckState();
 
   // Check immediately on start
   checkAndRunDailyConsistencyCheck();
