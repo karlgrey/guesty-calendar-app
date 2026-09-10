@@ -13,7 +13,7 @@ beforeEach(() => {
   db.exec(`
     CREATE TABLE message_threads (
       id TEXT PRIMARY KEY, listing_id TEXT NOT NULL, source TEXT NOT NULL, channel TEXT NOT NULL,
-      guest_name TEXT, guest_email TEXT, first_message_at TEXT NOT NULL, last_message_at TEXT NOT NULL,
+      guest_name TEXT, guest_email TEXT, first_message_at TEXT, last_message_at TEXT,
       message_count INTEGER NOT NULL DEFAULT 0, reservation_id TEXT, inquiry_id TEXT, reservation_status TEXT,
       conversion_category TEXT, classification_confidence REAL, classification_keywords TEXT,
       raw_meta TEXT, last_synced_at TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -226,6 +226,57 @@ describe('syncHostexMessagesForProperty', () => {
     await syncHostexMessagesForProperty(propB, countingClient, '2026-07-01T00:00:00Z', cache);
     expect(detailCalls).toBe(1); // fetched once despite being a candidate in both passes
     expect(getThreadById('hostex:inq')?.listing_id).toBe('111'); // attributed to A only
+  });
+
+  // #577-Nachfix (10.09.2026): Conversations OHNE jede Nachricht (nicht mal eine
+  // System-Karte) fielen weiterhin auf `now` zurück, weil die DETAIL-Antwort dafür
+  // gar kein Zeitfeld liefert — nur die LIST tut es (Live-Beispiel hostex:0-2660304253).
+  describe('#577-Nachfix: Conversations ohne jede Nachricht', () => {
+    it('nutzt das last_message_at der LIST-Antwort statt des Sync-Zeitpunkts', async () => {
+      const client: HostexMessageClient = {
+        async getConversations() {
+          return [{
+            id: 'c-empty', channel_type: 'airbnb', guest: { name: 'Julie Winkel', email: '' },
+            property_title: 'Bootshaus', last_message_at: '2026-09-07T18:34:38+00:00',
+          }];
+        },
+        async getConversationDetails() {
+          return {
+            id: 'c-empty', channel_type: 'airbnb', guest: { name: 'Julie Winkel', email: '' },
+            property_title: 'Bootshaus', messages: [],
+          };
+        },
+      };
+      const res = await syncHostexMessagesForProperty(property, client, '2026-09-10T02:27:16Z');
+      expect(res.success).toBe(true);
+      const thread = getThreadById('hostex:c-empty');
+      expect(thread?.first_message_at).toBe('2026-09-07T18:34:38+00:00');
+      expect(thread?.last_message_at).toBe('2026-09-07T18:34:38+00:00'); // NICHT der Sync-Zeitpunkt
+      expect(thread?.message_count).toBe(0);
+      expect(getMessagesByThread('hostex:c-empty')).toEqual([]);
+    });
+
+    it('setzt first/last_message_at auf NULL, wenn auch die LIST kein last_message_at liefert', async () => {
+      const client: HostexMessageClient = {
+        async getConversations() {
+          return [{
+            id: 'c-empty-2', channel_type: 'airbnb', guest: { name: 'Ohne Aktivität', email: '' },
+            property_title: 'Bootshaus',
+          }];
+        },
+        async getConversationDetails() {
+          return {
+            id: 'c-empty-2', channel_type: 'airbnb', guest: { name: 'Ohne Aktivität', email: '' },
+            property_title: 'Bootshaus', messages: [],
+          };
+        },
+      };
+      const res = await syncHostexMessagesForProperty(property, client, '2026-09-10T02:27:16Z');
+      expect(res.success).toBe(true);
+      const thread = getThreadById('hostex:c-empty-2');
+      expect(thread?.first_message_at).toBeNull();
+      expect(thread?.last_message_at).toBeNull();
+    });
   });
 
   // #441 Root-Cause-Fix: der Hostex-Mapper setzte reservation_status/reservation_id/inquiry_id

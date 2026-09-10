@@ -201,7 +201,9 @@ router.get('/:threadId', (req, res) => {
   // Guesty: Senden nur, wenn der Kanal der letzten Gastnachricht spiegelbar ist.
   const canSend = thread.source !== 'guesty' || resolveOutboundModuleType(msgs) !== null;
   // Das Modell hat für den aktuellen Stand entschieden: keine Antwort nötig → Button ausgrauen.
-  const aiSaysNoReply = !!thread.ai_no_reply_at
+  // #577-Nachfix: last_message_at kann bei Hostex-Conversations ohne jede Nachricht NULL
+  // sein — ohne Aktivität gibt es nichts, wofür "keine Antwort nötig" gelten könnte.
+  const aiSaysNoReply = !!thread.ai_no_reply_at && !!thread.last_message_at
     && parseUtc(thread.ai_no_reply_at) >= parseUtc(thread.last_message_at);
   const property = propertyForBadge(thread);
   const name = esc(thread.guest_name) || esc(thread.id);

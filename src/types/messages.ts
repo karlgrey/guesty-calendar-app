@@ -41,8 +41,12 @@ export interface MessageThread {
   channel: MessageChannel;
   guest_name: string | null;
   guest_email: string | null;
-  first_message_at: string;
-  last_message_at: string;
+  // #577-Nachfix: null bei Hostex-Conversations ohne jede Nachricht UND ohne
+  // brauchbaren Hostex-Aktivitäts-Zeitstempel (siehe message-mapper.ts) — nie
+  // mehr der Sync-Zeitpunkt als Rateersatz. Alle anderen Quellen liefern
+  // immer echte Zeitstempel.
+  first_message_at: string | null;
+  last_message_at: string | null;
   message_count: number;
   reservation_id: string | null;
   inquiry_id: string | null;

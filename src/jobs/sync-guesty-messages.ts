@@ -89,12 +89,15 @@ export const STAY_GRACE_DAYS = 14;
 
 export function shouldDeepFetchConversation(
   conv: any,
-  localThread: { last_message_at: string } | null,
+  // #577-Nachfix: MessageThread.last_message_at ist jetzt `string | null` (Hostex-Conversations
+  // ganz ohne Nachricht) — für Guesty ist das in der Praxis immer ein echter String, hier daher
+  // nur defensiv typisiert; null fällt einfach in den Grace-Period-Check darunter durch.
+  localThread: { last_message_at: string | null } | null,
   now: Date = new Date(),
 ): boolean {
   if (!localThread) return true;
   const activeCutoff = now.getTime() - INCREMENTAL_ACTIVE_WINDOW_DAYS * 24 * 3600 * 1000;
-  if (Date.parse(localThread.last_message_at) > activeCutoff) return true;
+  if (localThread.last_message_at && Date.parse(localThread.last_message_at) > activeCutoff) return true;
   const graceCutoff = now.getTime() - STAY_GRACE_DAYS * 24 * 3600 * 1000;
   for (const r of conv?.meta?.reservations ?? []) {
     const checkOut = r?.checkOut ? Date.parse(r.checkOut) : NaN;

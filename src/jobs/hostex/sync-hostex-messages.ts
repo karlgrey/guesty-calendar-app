@@ -124,7 +124,12 @@ export async function syncHostexMessagesForProperty(
           'Hostex: reservation-status lookup failed, falling back to null (conservative)',
         );
       }
-      const { thread, messages: msgs } = mapHostexConversation(detail, listingId, now, reservationInfo);
+      // #577-Nachfix: `conv` (LIST-Item) trägt last_message_at, das die DETAIL-Antwort für
+      // Conversations ohne jede Nachricht NICHT hat — einzige Quelle für einen echten
+      // Hostex-Aktivitäts-Zeitstempel in diesem Fall (siehe message-mapper.ts Doku).
+      const { thread, messages: msgs } = mapHostexConversation(
+        detail, listingId, now, reservationInfo, conv.last_message_at ?? null,
+      );
       upsertThread(thread);
       for (const m of msgs) {
         upsertMessage(m);

@@ -10,7 +10,7 @@ beforeEach(() => {
   db.exec(`
     CREATE TABLE message_threads (
       id TEXT PRIMARY KEY, listing_id TEXT NOT NULL, source TEXT NOT NULL, channel TEXT NOT NULL,
-      guest_name TEXT, guest_email TEXT, first_message_at TEXT NOT NULL, last_message_at TEXT NOT NULL,
+      guest_name TEXT, guest_email TEXT, first_message_at TEXT, last_message_at TEXT,
       message_count INTEGER NOT NULL DEFAULT 0, reservation_id TEXT, inquiry_id TEXT, reservation_status TEXT,
       conversion_category TEXT, classification_confidence REAL, classification_keywords TEXT,
       raw_meta TEXT, last_synced_at TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -38,6 +38,11 @@ beforeEach(() => {
   m.run('m3', 'guesty:b', 'outbound', datetime('-2 days'), 'host', 'Antwort', 'guesty');
   // Thread old: outside the default window
   m.run('m4', 'guesty:old', 'inbound', datetime('-30 days'), 'Old', 'Frage', 'guesty');
+  // #577-Nachfix: Hostex-Conversation ganz ohne Nachrichten und ohne brauchbaren
+  // Hostex-Zeitstempel — last_message_at bleibt NULL statt (früher) `now`.
+  db.prepare(`INSERT INTO message_threads
+    (id,listing_id,source,channel,guest_name,first_message_at,last_message_at,last_synced_at)
+    VALUES ('hostex:empty','L','hostex','airbnb','Ohne Aktivität',NULL,NULL,'now')`).run();
 });
 afterEach(() => { resetDatabase(); db.close(); });
 
@@ -78,5 +83,15 @@ describe('getThreadsUpdatedSince', () => {
     const b = rows.find((r) => r.id === 'guesty:b')!;
     expect(a.last_message_direction).toBe('inbound');
     expect(b.last_message_direction).toBe('outbound');
+  });
+
+  // #577-Nachfix (10.09.2026): Hostex-Threads ohne last_message_at (Conversation ganz
+  // ohne Nachrichten, siehe message-mapper.ts) dürfen NIE als "seit X aktiv" auftauchen —
+  // egal wie weit das Fenster gefasst ist. `datetime(NULL) >= datetime(?)` ist in SQLite
+  // NULL, also falsy — kein Zusatzcode nötig, dieser Test hält das Verhalten fest.
+  it('klammert Threads ohne last_message_at aus — auch bei einem sehr weiten Fenster', () => {
+    const since = datetime('-3650 days');
+    const rows = getThreadsUpdatedSince(since, 50);
+    expect(rows.find((r) => r.id === 'hostex:empty')).toBeUndefined();
   });
 });
