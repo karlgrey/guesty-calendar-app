@@ -56,11 +56,10 @@ export function mapHostexConversation(
    * Zeitstempel liefert. Per Live-Check gegen die echte API verifiziert: die DETAIL-
    * Antwort trägt für solche Conversations kein last_message_at/updated_at/created_at,
    * nur die LIST tut es (hostex:0-2660304253 „Julie Winkel“: DETAIL messages: [] und
-   * kein Zeitfeld, LIST last_message_at 2026-09-07T18:34:38+00:00). Fehlt auch das
-   * (null/undefined), bleibt first/last NULL statt erfunden — nie mehr `now`.
+   * kein Zeitfeld, LIST last_message_at 2026-09-07T18:34:38+00:00).
    */
   conversationLastMessageAt: string | null = null,
-): { thread: NewMessageThread; messages: NewMessage[] } {
+): { thread: NewMessageThread | null; messages: NewMessage[] } {
   const threadId = `hostex:${detail.id}`;
   // Only 'Text' messages are real guest/host conversation; 'Box' and
   // 'ReservationAlteration' are system cards (Task-1-Fixture bestätigt).
@@ -70,13 +69,19 @@ export function mapHostexConversation(
   // #577: thread-level first/last activity is derived from ALL messages (incl. system
   // cards like 'Box'/'ReservationAlteration'), not just Text ones — a conversation can have
   // real activity (e.g. a cancellation) with no chat text at all.
-  // #577-Nachfix: when there are NO messages whatsoever, fall back to the LIST's
-  // conversationLastMessageAt (real Hostex activity, see param doc above) — and only if
-  // even that is unknown, leave both timestamps NULL. Never `now`: that permanently
-  // mis-stamped these threads as freshly active on every nightly sync.
   const times = allMessages.map((p) => p.created_at).filter(Boolean).sort();
-  const firstAt = times[0] ?? conversationLastMessageAt ?? null;
-  const lastAt = times[times.length - 1] ?? conversationLastMessageAt ?? null;
+  const firstAt = times[0] ?? conversationLastMessageAt;
+  const lastAt = times[times.length - 1] ?? conversationLastMessageAt;
+
+  // #577-Nachfix: weder eine Nachricht (auch keine System-Karte) noch ein brauchbarer
+  // Hostex-Aktivitäts-Zeitstempel aus der LIST-Antwort — diese Conversation trägt keine
+  // Information, es gibt nichts zu speichern. Kein Thread-Objekt (statt `now` zu erfinden
+  // oder first/last_message_at NULL zu setzen — die Spalten sind NOT NULL, siehe Migration
+  // 014, und ein Table-Rebuild dafür ist mit dem bestehenden Migrations-Runner bei aktiven
+  // Fremdschlüsseln nicht sicher machbar, Review-Befund 10.09.2026).
+  if (firstAt == null || lastAt == null) {
+    return { thread: null, messages: [] };
+  }
 
   const thread: NewMessageThread = {
     id: threadId,

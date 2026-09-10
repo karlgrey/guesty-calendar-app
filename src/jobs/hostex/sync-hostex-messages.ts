@@ -130,6 +130,16 @@ export async function syncHostexMessagesForProperty(
       const { thread, messages: msgs } = mapHostexConversation(
         detail, listingId, now, reservationInfo, conv.last_message_at ?? null,
       );
+      // #577-Nachfix: weder eine Nachricht noch ein brauchbarer Hostex-Zeitstempel (siehe
+      // message-mapper.ts) — nichts zu speichern, kein Upsert. first_message_at/
+      // last_message_at bleiben NOT NULL (Migration 014), daher kein Platzhalter-Thread.
+      if (!thread) {
+        logger.debug(
+          { slug: property.slug, hostexConversationId: conv.id },
+          'Hostex: conversation ohne Nachrichten und ohne Aktivitäts-Zeitstempel — Upsert übersprungen',
+        );
+        continue;
+      }
       upsertThread(thread);
       for (const m of msgs) {
         upsertMessage(m);

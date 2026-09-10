@@ -13,7 +13,7 @@ beforeEach(() => {
   db.exec(`
     CREATE TABLE message_threads (
       id TEXT PRIMARY KEY, listing_id TEXT NOT NULL, source TEXT NOT NULL, channel TEXT NOT NULL,
-      guest_name TEXT, guest_email TEXT, first_message_at TEXT, last_message_at TEXT,
+      guest_name TEXT, guest_email TEXT, first_message_at TEXT NOT NULL, last_message_at TEXT NOT NULL,
       message_count INTEGER NOT NULL DEFAULT 0, reservation_id TEXT, inquiry_id TEXT, reservation_status TEXT,
       conversion_category TEXT, classification_confidence REAL, classification_keywords TEXT,
       raw_meta TEXT, last_synced_at TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -256,7 +256,11 @@ describe('syncHostexMessagesForProperty', () => {
       expect(getMessagesByThread('hostex:c-empty')).toEqual([]);
     });
 
-    it('setzt first/last_message_at auf NULL, wenn auch die LIST kein last_message_at liefert', async () => {
+    // Weder Nachricht noch LIST-Zeitstempel: die Conversation trägt keine Information —
+    // kein Upsert (first/last_message_at sind NOT NULL, siehe Migration 014; ein
+    // Table-Rebuild dafür ist mit dem bestehenden Runner bei aktiven Fremdschlüsseln
+    // nicht sicher machbar, Review-Befund 10.09.2026).
+    it('überspringt den Upsert, wenn auch die LIST kein last_message_at liefert', async () => {
       const client: HostexMessageClient = {
         async getConversations() {
           return [{
@@ -273,9 +277,8 @@ describe('syncHostexMessagesForProperty', () => {
       };
       const res = await syncHostexMessagesForProperty(property, client, '2026-09-10T02:27:16Z');
       expect(res.success).toBe(true);
-      const thread = getThreadById('hostex:c-empty-2');
-      expect(thread?.first_message_at).toBeNull();
-      expect(thread?.last_message_at).toBeNull();
+      expect(res.threads).toBe(0);
+      expect(getThreadById('hostex:c-empty-2')).toBeNull();
     });
   });
 

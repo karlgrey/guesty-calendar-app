@@ -96,26 +96,28 @@ describe('hostex message mapper', () => {
       detail, 'listing-9', '2026-09-10T02:27:16Z', null, '2026-09-07T18:34:38+00:00',
     );
 
-    expect(thread.message_count).toBe(0);
-    expect(thread.first_message_at).toBe('2026-09-07T18:34:38+00:00');
-    expect(thread.last_message_at).toBe('2026-09-07T18:34:38+00:00'); // NOT the sync time
+    expect(thread).not.toBeNull();
+    expect(thread?.message_count).toBe(0);
+    expect(thread?.first_message_at).toBe('2026-09-07T18:34:38+00:00');
+    expect(thread?.last_message_at).toBe('2026-09-07T18:34:38+00:00'); // NOT the sync time
     expect(messages).toEqual([]);
   });
 
-  // Liefert auch die LIST-Antwort kein last_message_at (Hostex-Feld fehlt/ist
-  // null) — erfinden wir nichts: first/last bleiben NULL statt `now`. Migration
-  // 026 macht die Spalten dafür nullable; GET /threads?since= klammert solche
-  // Threads aus (siehe agent-api.test.ts / message-repository.updated-since.test.ts).
-  it('#577-Nachfix: falls back to null (never now) when neither messages nor a usable Hostex timestamp exist', () => {
+  // Liefert auch die LIST-Antwort kein last_message_at (Hostex-Feld fehlt/ist null) —
+  // die Conversation trägt dann keine Information (weder Nachricht noch Aktivitäts-
+  // Zeitstempel): kein Thread-Objekt statt `now` zu erfinden. first_message_at/
+  // last_message_at bleiben NOT NULL (Migration 014) — ein Table-Rebuild dafür ist mit
+  // dem bestehenden Migrations-Runner bei aktiven Fremdschlüsseln nicht sicher machbar
+  // (Review-Befund 10.09.2026: DROP TABLE würde die ON DELETE CASCADE-Trigger von
+  // messages/message_drafts feuern und in Produktion alle Nachrichten/Drafts löschen).
+  it('#577-Nachfix: liefert keinen Thread, wenn weder Nachrichten noch ein brauchbarer Hostex-Zeitstempel existieren', () => {
     const detail: HostexConversationDetail = {
       id: 'c-4', channel_type: 'airbnb', guest: { name: 'Ohne Aktivität', email: '' },
       messages: [],
     };
     const { thread, messages } = mapHostexConversation(detail, 'listing-9', '2026-09-09T02:40:20.073Z');
 
-    expect(thread.message_count).toBe(0);
-    expect(thread.first_message_at).toBeNull();
-    expect(thread.last_message_at).toBeNull();
+    expect(thread).toBeNull();
     expect(messages).toEqual([]);
   });
 
