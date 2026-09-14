@@ -5,7 +5,9 @@
 import express from 'express';
 import session from 'express-session';
 import passport from 'passport';
-import { config } from './config/index.js';
+import path from 'node:path';
+import { config, getDatabasePath } from './config/index.js';
+import { SqliteSessionStore } from './services/session-store.js';
 import { configureAuth } from './config/auth.js';
 import { requestLogger } from './middleware/request-logger.js';
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js';
@@ -42,16 +44,23 @@ export function createApp() {
   app.use(express.urlencoded({ extended: true }));
   app.use(requestLogger);
 
+  // Persistenter Session-Store (SQLite, neben der Haupt-DB) — überlebt pm2-Restarts,
+  // anders als der Express-Default MemoryStore (siehe src/services/session-store.ts).
+  const sessionsDbPath = path.join(path.dirname(getDatabasePath()), 'sessions.db');
+  const sessionStore = new SqliteSessionStore({ dbPath: sessionsDbPath });
+
   // Session middleware (required for Passport)
   app.use(
     session({
+      store: sessionStore,
       secret: config.sessionSecret,
       resave: false,
       saveUninitialized: false,
+      rolling: true, // Ablauf verlängert sich bei jedem Request (Store implementiert touch())
       cookie: {
         secure: config.nodeEnv === 'production', // HTTPS only in production
         httpOnly: true,
-        maxAge: 24 * 60 * 60 * 1000, // 24 hours
+        maxAge: 30 * 24 * 60 * 60 * 1000, // 30 Tage
         sameSite: 'lax', // Required for OAuth redirects
       },
       proxy: true, // Trust proxy for secure cookies
