@@ -149,9 +149,15 @@ LOG_PRETTY=true
 # AI + Vault (Guest-Reply System)
 ANTHROPIC_API_KEY=sk-ant-...   # Required for AI draft generation and vault suggestions
 VAULT_PATH=/path/to/vault      # Absolute path to the knowledge vault repo; enables AI drafts and feedback loop
+
+# Agent-API (protects /api/agent/*, header X-Agent-Key)
+AGENT_API_KEY=                 # Single key (legacy), min. 32 chars
+AGENT_API_KEYS=                # Comma-separated additional keys (whitespace trimmed), union with AGENT_API_KEY
 ```
 
 `VAULT_PATH` and `ANTHROPIC_API_KEY` are optional — the guest-reply UI works without them, but AI draft generation and the vault feedback loop are disabled. Per-property vault notes are configured via the `vaultNote` field in `data/properties.json` (e.g. `"vaultNote": "Farmhouse.md"` maps to `Areas/Hosting/Properties/Farmhouse.md` in the vault).
+
+`AGENT_API_KEY` and `AGENT_API_KEYS` are optional and additive (union of both) — without any key configured, `/api/agent/*` responds `503`; a wrong `X-Agent-Key` header responds `401`. Use `AGENT_API_KEYS` to hand out a separate key per client (e.g. one for `labs`) without invalidating the existing one. Each key needs at least 32 characters; the comparison is timing-safe.
 
 ## API Endpoints
 

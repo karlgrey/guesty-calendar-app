@@ -118,6 +118,13 @@ export interface PropertyConfig {
   /** Kanonische öffentliche Website der Unterkunft, z.B. "https://farmhouse-prasser.de".
    *  Wird in der generierten Anfragemail als Absender-/Unterkunfts-Link verwendet. */
   website?: string;
+  /** Check-in-/Checkout-Zeiten für die Gäste-Kommunikation (Rechnungs-PDF), z.B. "08:00".
+   *  Bewusst getrennt von googleCalendar.checkInTime/checkOutTime — das sind Default-Zeiten
+   *  für Kalender-Block-Labels und ETL-Fallbacks anderer Provider und können vom hier
+   *  vereinbarten Gäste-Zeitfenster abweichen. Nur setzen, wenn die Zeit verifiziert ist;
+   *  ohne Wert fällt die Zeile im Dokument einfach weg. */
+  checkInTime?: string;
+  checkOutTime?: string;
   weeklyReport: WeeklyReportConfig;
   ga4?: GA4Config;
   googleCalendar?: GoogleCalendarConfig;
@@ -219,6 +226,8 @@ const propertyConfigSchema = z.object({
   bookingRecipientEmail: z.string().email(),
   bookingSenderName: z.string().min(1),
   website: z.string().url().optional(),
+  checkInTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
+  checkOutTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
   weeklyReport: weeklyReportConfigSchema,
   ga4: ga4ConfigSchema.optional().default({ enabled: false }),
   googleCalendar: googleCalendarConfigSchema.optional().default({ enabled: false }),

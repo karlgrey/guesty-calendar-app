@@ -10,6 +10,8 @@ import fs from 'fs';
 import path from 'path';
 import logger from '../utils/logger.js';
 import type { Document, DocumentType } from '../repositories/document-repository.js';
+import { getReservationById } from '../repositories/reservation-repository.js';
+import { getPropertyByGuestyId } from '../config/properties.js';
 
 // ============================================================================
 // TYPES
@@ -65,6 +67,10 @@ export interface DocumentTemplateData {
   source: string | undefined;
   isAirbnb: boolean;
 
+  // Check-in/-out (aus PropertyConfig.checkInTime/checkOutTime — nur gesetzt, wenn beide
+  // Werte in data/properties.json hinterlegt sind, sonst fehlt die Zeile im Dokument)
+  checkInOutText: string | undefined;
+
   // Logo
   logoBase64: string;
 }
@@ -118,6 +124,41 @@ function generateCustomerNumber(reservationId: string): string {
 }
 
 /**
+ * "08:00" -> "8", "08:30" -> "8:30" (keine führende Null, volle Stunde ohne Minuten)
+ */
+function formatHourGerman(time: string): string {
+  const [hour, minute] = time.split(':');
+  const hourNum = String(Number(hour));
+  return minute === '00' ? hourNum : `${hourNum}:${minute}`;
+}
+
+/**
+ * Baut den Check-in/-out-Satz fürs Dokument, z. B.
+ * "Check-in ab 8 Uhr, Checkout bis 12 Uhr." Nur wenn BEIDE Zeiten bekannt sind
+ * (sonst keine halbe/erfundene Aussage) — ansonsten undefined, Template lässt die Zeile weg.
+ */
+export function formatCheckInOutText(
+  checkInTime: string | undefined,
+  checkOutTime: string | undefined
+): string | undefined {
+  if (!checkInTime || !checkOutTime) return undefined;
+  return `Check-in ab ${formatHourGerman(checkInTime)} Uhr, Checkout bis ${formatHourGerman(checkOutTime)} Uhr.`;
+}
+
+/**
+ * Löst die Check-in/-out-Zeiten der Property zu einem Dokument auf — über den lokalen
+ * reservations-Datensatz (listing_id), da Document selbst keine Property-Referenz trägt.
+ * Fehlt die lokale Reservierung oder die Property-Konfiguration, gibt es undefined zurück
+ * (Template zeigt dann einfach keine Zeile — nichts erfinden).
+ */
+function resolveCheckInOutText(reservationId: string): string | undefined {
+  const reservation = getReservationById(reservationId);
+  if (!reservation) return undefined;
+  const property = getPropertyByGuestyId(reservation.listing_id);
+  return formatCheckInOutText(property?.checkInTime, property?.checkOutTime);
+}
+
+/**
  * Convert Document to template data
  */
 export function documentToTemplateData(doc: Document): DocumentTemplateData {
@@ -168,6 +209,8 @@ export function documentToTemplateData(doc: Document): DocumentTemplateData {
 
     source: doc.source,
     isAirbnb: doc.source?.toLowerCase().includes('airbnb') ?? false,
+
+    checkInOutText: resolveCheckInOutText(doc.reservationId),
 
     logoBase64: getLogoBase64(),
   };

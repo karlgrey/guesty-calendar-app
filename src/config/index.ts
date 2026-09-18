@@ -37,6 +37,20 @@ const configSchema = z.object({
   propertiesConfigPath: z.string().default('./data/properties.json'),
   vaultPath: z.string().optional(),
   agentApiKey: z.string().min(32, 'AGENT_API_KEY must be at least 32 characters').optional(),
+  // Zusätzliche Agent-Keys, kommagetrennt (Whitespace toleriert) — Vereinigungsmenge mit
+  // AGENT_API_KEY, z. B. für einen separaten Key pro Client (labs). Jeder Eintrag muss
+  // dieselbe Mindestlänge wie AGENT_API_KEY erfüllen.
+  agentApiKeys: z
+    .string()
+    .optional()
+    .transform((val) =>
+      val
+        ? val.split(',').map((key) => key.trim()).filter((key) => key.length > 0)
+        : []
+    )
+    .refine((keys) => keys.every((key) => key.length >= 32), {
+      message: 'Each entry in AGENT_API_KEYS must be at least 32 characters',
+    }),
 
   // Hostex API (optional — only required if hostex-provider properties exist)
   hostexAccessToken: z.string().optional(),
@@ -148,6 +162,7 @@ function parseConfig() {
     propertiesConfigPath: process.env.PROPERTIES_CONFIG_PATH,
     vaultPath: process.env.VAULT_PATH,
     agentApiKey: process.env.AGENT_API_KEY,
+    agentApiKeys: process.env.AGENT_API_KEYS,
     hostexAccessToken: process.env.HOSTEX_ACCESS_TOKEN,
     hostexApiUrl: process.env.HOSTEX_API_URL,
     airbnbMailHost: process.env.AIRBNB_MAIL_HOST,
@@ -192,7 +207,16 @@ function parseConfig() {
   };
 
   try {
-    return configSchema.parse(rawConfig);
+    const parsed = configSchema.parse(rawConfig);
+    // Vereinigungsmenge aus AGENT_API_KEY (Legacy-Einzelwert) + AGENT_API_KEYS (Liste),
+    // dedupliziert — das ist die einzige Quelle, die die Agent-Key-Middleware konsultiert.
+    const agentApiKeySet = Array.from(
+      new Set([
+        ...(parsed.agentApiKey ? [parsed.agentApiKey] : []),
+        ...parsed.agentApiKeys,
+      ])
+    );
+    return { ...parsed, agentApiKeySet };
   } catch (error) {
     if (error instanceof z.ZodError) {
       console.error('❌ Configuration validation failed:');
@@ -214,7 +238,7 @@ export const config = parseConfig();
 /**
  * Configuration type (inferred from schema)
  */
-export type Config = z.infer<typeof configSchema>;
+export type Config = z.infer<typeof configSchema> & { agentApiKeySet: string[] };
 
 /**
  * Check if running in development mode
