@@ -551,7 +551,7 @@ Optional:
 API-Key-geschützte Endpoints für den maschinellen Angebots-Workflow
 (Spec: `docs/superpowers/specs/2026-07-24-agent-reservierung-design.md`):
 
-- Auth: Header `X-Agent-Key` = `AGENT_API_KEY` aus `.env` (min. 32 Zeichen; fehlt er, antwortet die Route 503).
+- Auth: Header `X-Agent-Key` gegen die Vereinigungsmenge aus `AGENT_API_KEY` (Einzelwert, Legacy) und `AGENT_API_KEYS` (kommagetrennte Liste, Whitespace toleriert) aus `.env`, aufgelöst in `config.agentApiKeySet` — jeder Key min. 32 Zeichen, Vergleich zeitkonstant; kein Key konfiguriert → 503, falscher Key → 401 (#671).
 - `POST /api/agent/reservations` — Gast + Hold (`reserved`, `reservedUntil: -1`) + Angebots-PDF; Body siehe `src/services/reservation-service.ts` (`CreateOfferInput`).
 - `GET /api/agent/reservations/:id` · `GET …/:id/offer.pdf` (`?refresh=1` = frische Guesty-Daten, Nummer stabil) · `POST …/:id/confirm` · `POST …/:id/cancel` · `PUT /api/agent/guests/:guestId` (Kundenstamm-Nachpflege)
 - **Kundenstamm:** Gast beim Anlegen IMMER mit `address` (street/city/zipcode/country) + `phone` versorgen — die Anschrift fließt aus dem Guesty-Gastdatensatz ins Angebots-/Rechnungs-PDF (Regel Micha, 24.07.2026).

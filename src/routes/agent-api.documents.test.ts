@@ -6,7 +6,14 @@ import { setDatabase, resetDatabase } from '../db/index.js';
 
 vi.mock('../config/index.js', async (importOriginal) => {
   const mod: any = await importOriginal();
-  return { ...mod, config: { ...mod.config, agentApiKey: 'test-agent-key-0123456789abcdef0123456789' } };
+  return {
+    ...mod,
+    config: {
+      ...mod.config,
+      agentApiKey: 'test-agent-key-0123456789abcdef0123456789',
+      agentApiKeySet: ['test-agent-key-0123456789abcdef0123456789'],
+    },
+  };
 });
 // Diese Routen sind fuer /documents irrelevant, muessen aber gemockt werden,
 // damit der Router-Import (agent-api.ts importiert alles top-level) nicht auf

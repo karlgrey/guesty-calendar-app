@@ -4,7 +4,14 @@ import type { Server } from 'http';
 
 vi.mock('../config/index.js', async (importOriginal) => {
   const mod: any = await importOriginal();
-  return { ...mod, config: { ...mod.config, agentApiKey: 'test-agent-key-0123456789abcdef0123456789' } };
+  return {
+    ...mod,
+    config: {
+      ...mod.config,
+      agentApiKey: 'test-agent-key-0123456789abcdef0123456789',
+      agentApiKeySet: ['test-agent-key-0123456789abcdef0123456789'],
+    },
+  };
 });
 vi.mock('../services/reservation-service.js', () => ({
   createOfferReservation: vi.fn().mockResolvedValue({

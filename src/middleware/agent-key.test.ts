@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// config mocken, damit wir den Key pro Test steuern können
-vi.mock('../config/index.js', () => ({ config: { agentApiKey: undefined as string | undefined } }));
+// config mocken, damit wir die gültigen Keys pro Test steuern können
+vi.mock('../config/index.js', () => ({ config: { agentApiKeySet: [] as string[] } }));
 
 // logger mocken, sonst schlägt die Pino-Initialisierung fehl (config.logLevel ist im Mock undefined)
 vi.mock('../utils/logger.js', () => ({
@@ -19,9 +19,9 @@ function mockRes() {
 }
 
 describe('requireAgentKey', () => {
-  beforeEach(() => { (config as any).agentApiKey = undefined; });
+  beforeEach(() => { (config as any).agentApiKeySet = []; });
 
-  it('503 wenn kein Key konfiguriert', () => {
+  it('503 wenn keine Keys konfiguriert', () => {
     const res = mockRes(); const next = vi.fn();
     requireAgentKey({ header: () => undefined } as any, res, next);
     expect(res.statusCode).toBe(503);
@@ -29,24 +29,46 @@ describe('requireAgentKey', () => {
   });
 
   it('401 bei fehlendem Header', () => {
-    (config as any).agentApiKey = 'secret-key-123';
+    (config as any).agentApiKeySet = ['secret-key-123456789012345678901234'];
     const res = mockRes(); const next = vi.fn();
     requireAgentKey({ header: () => undefined } as any, res, next);
     expect(res.statusCode).toBe(401);
   });
 
   it('401 bei falschem Key', () => {
-    (config as any).agentApiKey = 'secret-key-123';
+    (config as any).agentApiKeySet = ['secret-key-123456789012345678901234'];
     const res = mockRes(); const next = vi.fn();
     requireAgentKey({ header: (n: string) => (n === 'X-Agent-Key' ? 'wrong' : undefined) } as any, res, next);
     expect(res.statusCode).toBe(401);
   });
 
-  it('next() bei korrektem Key', () => {
-    (config as any).agentApiKey = 'secret-key-123';
+  it('next() bei korrektem Key (Einzelkonfiguration)', () => {
+    (config as any).agentApiKeySet = ['secret-key-123456789012345678901234'];
     const res = mockRes(); const next = vi.fn();
-    requireAgentKey({ header: (n: string) => (n === 'X-Agent-Key' ? 'secret-key-123' : undefined) } as any, res, next);
+    requireAgentKey({ header: (n: string) => (n === 'X-Agent-Key' ? 'secret-key-123456789012345678901234' : undefined) } as any, res, next);
     expect(next).toHaveBeenCalledOnce();
     expect(res.statusCode).toBe(0);
+  });
+
+  it('next() bei korrektem Key aus einer Liste mehrerer Keys', () => {
+    (config as any).agentApiKeySet = [
+      'first-key-1234567890123456789012345',
+      'second-key-123456789012345678901234',
+      'third-key-1234567890123456789012345',
+    ];
+    const res = mockRes(); const next = vi.fn();
+    requireAgentKey({ header: (n: string) => (n === 'X-Agent-Key' ? 'second-key-123456789012345678901234' : undefined) } as any, res, next);
+    expect(next).toHaveBeenCalledOnce();
+    expect(res.statusCode).toBe(0);
+  });
+
+  it('401 bei falschem Key trotz konfigurierter Liste (Mischkonfiguration)', () => {
+    (config as any).agentApiKeySet = [
+      'first-key-1234567890123456789012345',
+      'second-key-123456789012345678901234',
+    ];
+    const res = mockRes(); const next = vi.fn();
+    requireAgentKey({ header: (n: string) => (n === 'X-Agent-Key' ? 'not-in-the-list-0000000000000000000' : undefined) } as any, res, next);
+    expect(res.statusCode).toBe(401);
   });
 });
