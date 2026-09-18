@@ -14,6 +14,8 @@
       "bookingRecipientEmail": "booking@farmhouse-prasser.de",
       "bookingSenderName": "Farmhouse Prasser",
       "website": "https://farmhouse-prasser.de",
+      "checkInTime": "08:00",
+      "checkOutTime": "12:00",
       "weeklyReport": {
         "enabled": true,
         "recipients": [
