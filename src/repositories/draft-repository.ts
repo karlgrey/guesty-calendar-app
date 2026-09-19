@@ -144,3 +144,13 @@ export function listAutoDecisions(limit: number): Array<MessageDraft & { guest_n
      WHERE d.auto_decision IS NOT NULL ORDER BY d.created_at DESC LIMIT ?`,
   ).all(limit) as Array<MessageDraft & { guest_name: string | null }>;
 }
+
+/** Zuletzt gesendeter Draft eines Threads — für das grüne Auto-Send-Badge, wenn es gerade keinen aktiven (pending) Draft gibt. */
+export function getLastSentDraftByThread(threadId: string): MessageDraft | null {
+  const db = getDatabase();
+  const row = db
+    .prepare(`SELECT * FROM message_drafts WHERE thread_id = ? AND status = 'sent'
+              ORDER BY sent_at DESC LIMIT 1`)
+    .get(threadId) as MessageDraft | undefined;
+  return row ?? null;
+}

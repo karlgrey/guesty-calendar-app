@@ -5,6 +5,7 @@ import { setDatabase, resetDatabase } from '../db/index.js';
 import {
   createDraft, setAutoDecision, markDraftSent, setSentBodyChanged, threadHasHumanIntervention,
   countAutoSentSince, getAwaitingDrafts, getAutoSendStats, listAutoDecisions, getDraftById,
+  getLastSentDraftByThread,
 } from './draft-repository.js';
 
 let db: Database.Database;
@@ -104,5 +105,23 @@ describe('countAutoSentSince / getAwaitingDrafts / stats', () => {
     const s = getAutoSendStats('2026-01-01T00:00:00.000Z');
     expect(s).toEqual({ autoSent: 0, waited: 1, shadowWouldAuto: 2, shadowUnchanged: 1, shadowChanged: 1, shadowDiscarded: 0 });
     expect(listAutoDecisions(10).length).toBe(3);
+  });
+});
+
+describe('getLastSentDraftByThread', () => {
+  it('liefert den zuletzt gesendeten Draft eines Threads (neuester sent_at zuerst)', () => {
+    createDraft({ id: 'g1', thread_id: 'hostex:t1', provider: 'hostex', body: 'älter', generated_by: 'llm' });
+    db.prepare(`UPDATE message_drafts SET status='sent', sent_by='auto', sent_at='2026-09-19 08:00:00' WHERE id='g1'`).run();
+    createDraft({ id: 'g2', thread_id: 'hostex:t1', provider: 'hostex', body: 'neuer', generated_by: 'llm' });
+    db.prepare(`UPDATE message_drafts SET status='sent', sent_by='micha', sent_at='2026-09-19 10:00:00' WHERE id='g2'`).run();
+    const d = getLastSentDraftByThread('hostex:t1');
+    expect(d?.id).toBe('g2');
+  });
+  it('null ohne gesendeten Draft', () => {
+    createDraft({ id: 'g3', thread_id: 'hostex:t1', provider: 'hostex', body: 'pending', generated_by: 'llm' });
+    expect(getLastSentDraftByThread('hostex:t1')).toBeNull();
+  });
+  it('null für unbekannten Thread', () => {
+    expect(getLastSentDraftByThread('hostex:unknown')).toBeNull();
   });
 });

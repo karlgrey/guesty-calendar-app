@@ -8,7 +8,9 @@ import {
 import {
   createDraft, getDraftById, getActiveDraftByThread, discardDraft,
   claimDraftForSending, updateDraftBody, setSentBodyChanged,
+  getAutoSendStats, countAutoSentSince, listAutoDecisions, getLastSentDraftByThread,
 } from '../repositories/draft-repository.js';
+import { getSchedulerState, setSchedulerState } from '../repositories/scheduler-state-repository.js';
 import { getPropertiesByProvider } from '../config/properties.js';
 import { getPropertyForThread, propertyForBadge } from '../utils/thread-property.js';
 import { loadVoice, loadPropertyFacts } from '../services/vault-knowledge.js';
@@ -25,6 +27,10 @@ import logger from '../utils/logger.js';
 import { renderAdminPage } from './admin-layout.js';
 import { createFeedback, createSuggestion, countPendingSuggestions } from '../repositories/feedback-repository.js';
 import { generateSuggestion } from '../services/suggestion-service.js';
+import { PAUSE_KEY } from '../services/auto-send/runner.js';
+import { startOfBerlinDayIso } from '../services/auto-send/berlin-day.js';
+import { config } from '../config/index.js';
+import type { MessageDraft } from '../types/messages.js';
 
 const router = express.Router();
 
@@ -56,6 +62,24 @@ function directionLabel(direction: string): string {
 function fmtTime(iso: string | null | undefined): string {
   const s = String(iso ?? '');
   return s.length >= 16 ? s.slice(11, 16) : s;
+}
+
+// Auto-Send-Gate-Ampel für Liste/Thread-Ansicht — rein (nur esc/fmtTime), keine
+// DB-Zugriffe, damit sie ohne Express-Server testbar ist (siehe messages.auto-send.test.ts).
+export function renderAutoBadge(draft: MessageDraft): string {
+  if (draft.status === 'sent' && draft.sent_by === 'auto') {
+    return `<span class="badge" style="background:var(--color-forest);color:#fff;border:none">🟢 automatisch gesendet ${esc(fmtTime(draft.sent_at))}</span>`;
+  }
+  if (draft.auto_decision === 'wait') {
+    return `<span class="badge" style="background:var(--color-amber);color:#fff;border:none">🟡 wartet auf dich: ${esc(draft.auto_reason)}</span>`;
+  }
+  if (draft.auto_decision === 'auto' && draft.auto_mode === 'shadow') {
+    return `<span class="badge">⚪ wäre automatisch gesendet worden</span>`;
+  }
+  if (draft.auto_decision === 'auto' && draft.auto_mode === 'live' && draft.status === 'pending') {
+    return `<span class="badge" style="background:var(--color-amber);color:#fff;border:none">🟡 Auto-Send steht aus</span>`;
+  }
+  return '';
 }
 
 // ISO/SQLite-Timestamp -> "YYYY-MM-DD" (Gruppierungsschlüssel je Kalendertag).
@@ -131,6 +155,7 @@ router.get('/', (req, res) => {
       const draftBadge = d
         ? `<span class="badge" style="background:var(--color-amber);color:#fff;border:none">${d.generated_by === 'llm' ? 'KI-Entwurf' : 'Entwurf'} bereit</span>`
         : '';
+      const autoBadge = d ? renderAutoBadge(d) : '';
       const property = propertyForBadge(t);
       const code = property?.shortCode ?? property?.slug;
       // Objekt-Kürzel farbig (uiColor der Property), Zeile selbst bleibt neutral.
@@ -139,7 +164,7 @@ router.get('/', (req, res) => {
         : '';
       return `<li><a href="/admin/messages/${encodeURIComponent(t.id)}">
         <span class="thread-name">${name}</span>
-        <span class="thread-meta">${draftBadge}${codeBadge}<span class="badge">${esc(t.channel)}</span><span>${esc(fmtDate(t.last_message_at))}</span></span>
+        <span class="thread-meta">${draftBadge}${autoBadge}${codeBadge}<span class="badge">${esc(t.channel)}</span><span>${esc(fmtDate(t.last_message_at))}</span></span>
       </a></li>`;
     })
     .join('');
@@ -183,6 +208,7 @@ router.get('/', (req, res) => {
         <form method="POST" action="/admin/messages/sync"><button type="submit" class="btn btn-primary">Jetzt syncen</button></form>
         <span class="sync-info">${lastSyncLabel}</span>
         <a href="/admin/suggestions" class="btn btn-ghost">Vault-Vorschläge${(() => { const n = countPendingSuggestions(); return n ? ` (${n})` : ''; })()}</a>
+        <a href="/admin/messages/auto-send" class="btn btn-ghost">Auto-Send</a>
       </div>
     </div>
     ${syncLog}
@@ -192,12 +218,56 @@ router.get('/', (req, res) => {
   res.type('html').send(renderAdminPage({ title: 'Nachrichten', body, active: 'messages' }));
 });
 
+// Auswertungsseite + Pausen-Schalter (Spec 7.1 + 9). Muss VOR '/:threadId'
+// registriert werden, sonst fängt die Thread-Route "auto-send" als threadId ab.
+router.get('/auto-send', (_req, res) => {
+  const since30 = new Date(Date.now() - 30 * 86400000).toISOString();
+  const s = getAutoSendStats(since30);
+  const n = (v: number | null) => v ?? 0;
+  const paused = getSchedulerState(PAUSE_KEY) === '1';
+  const rate = n(s.shadowUnchanged) + n(s.shadowChanged) > 0
+    ? Math.round(100 * n(s.shadowUnchanged) / (n(s.shadowUnchanged) + n(s.shadowChanged)))
+    : null;
+  const todayCount = countAutoSentSince(startOfBerlinDayIso());
+  const rows = listAutoDecisions(100).map((d) => `<tr>
+      <td>${esc(fmtDate(d.created_at))}</td><td><a href="/admin/messages/${encodeURIComponent(d.thread_id)}">${esc(d.guest_name) || esc(d.thread_id)}</a></td>
+      <td>${esc(d.auto_mode)}</td><td>${esc(d.auto_decision)}</td><td>${esc(d.auto_category ?? '')}</td><td>${esc(d.auto_reason)}</td>
+      <td>${d.status === 'sent' ? (d.sent_by === 'auto' ? 'auto' : d.sent_body_changed ? 'Micha, geändert' : 'Micha, unverändert') : esc(d.status)}</td></tr>`).join('');
+  const body = `<a class="back-link" href="/admin/messages">&larr; Nachrichten</a>
+    <h1>Auto-Send</h1>
+    <div class="section">
+      <form method="POST" action="/admin/messages/auto-send/pause"><input type="hidden" name="paused" value="${paused ? 0 : 1}">
+        <button type="submit" class="btn ${paused ? 'btn-primary' : 'btn-danger'}">${paused ? 'Auto-Send fortsetzen' : 'Auto-Send pausieren'}</button></form>
+      <p class="subtitle">Env-Modus: <strong>${esc(config.autoSendMode)}</strong> · heute automatisch gesendet: ${todayCount}/${config.autoSendDailyCap}${paused ? ' · <strong>PAUSIERT</strong>' : ''}</p>
+    </div>
+    <div class="section"><h3>Letzte 30 Tage</h3>
+      <p>Automatisch gesendet: <strong>${n(s.autoSent)}</strong> · warteten auf dich: <strong>${n(s.waited)}</strong></p>
+      <p>Schatten: <strong>${n(s.shadowWouldAuto)}</strong> wären automatisch rausgegangen — davon von dir unverändert gesendet: <strong>${n(s.shadowUnchanged)}</strong>, geändert: <strong>${n(s.shadowChanged)}</strong>, verworfen: <strong>${n(s.shadowDiscarded)}</strong>
+      ${rate !== null ? ` → <strong>${rate} % unverändert</strong> (Ziel ≥ 95 % bei ≥ 20 Fällen)` : ''}</p>
+    </div>
+    <div class="section" style="overflow-x:auto">
+      <style>.auto-send-table{width:100%;border-collapse:collapse;font-size:13px}
+        .auto-send-table th,.auto-send-table td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--color-stone);vertical-align:top}
+        .auto-send-table th{color:var(--color-warm-gray);font-weight:600;text-transform:uppercase;font-size:11px;letter-spacing:0.04em}</style>
+      <table class="auto-send-table"><thead><tr><th>Zeit</th><th>Gast</th><th>Modus</th><th>Entscheidung</th><th>Kategorie</th><th>Grund</th><th>Ausgang</th></tr></thead><tbody>${rows}</tbody></table>
+    </div>`;
+  res.type('html').send(renderAdminPage({ title: 'Auto-Send', body, active: 'messages' }));
+});
+
+router.post('/auto-send/pause', express.urlencoded({ extended: true }), (req, res) => {
+  setSchedulerState(PAUSE_KEY, req.body?.paused === '1' ? '1' : '0');
+  res.redirect('/admin/messages/auto-send');
+});
+
 // Thread-Detail + Draft-Formular
 router.get('/:threadId', (req, res) => {
   const thread = getThreadById(req.params.threadId);
   if (!thread) { res.status(404).send('Thread nicht gefunden'); return; }
   const msgs = getMessagesByThread(thread.id);
   const draft = getActiveDraftByThread(thread.id);
+  // Ohne aktiven Draft: den zuletzt gesendeten heranziehen, damit das grüne
+  // "automatisch gesendet"-Badge auch nach dem Versand sichtbar bleibt.
+  const lastSent = draft ? null : getLastSentDraftByThread(thread.id);
   // Guesty: Senden nur, wenn der Kanal der letzten Gastnachricht spiegelbar ist.
   const canSend = thread.source !== 'guesty' || resolveOutboundModuleType(msgs) !== null;
   // Das Modell hat für den aktuellen Stand entschieden: keine Antwort nötig → Button ausgrauen.
@@ -213,6 +283,19 @@ router.get('/:threadId', (req, res) => {
       </div>`,
     )
     .join('');
+
+  const autoPanel = draft?.auto_decision
+    ? `<div class="section" style="border-left:4px solid var(--color-amber)">
+         <strong>Auto-Send-Gate</strong> · Modus ${esc(draft.auto_mode)} · ${renderAutoBadge(draft)}
+         <p class="subtitle" style="margin:6px 0 0">Kategorie: ${esc(draft.auto_category ?? '–')} · Flags: ${esc((JSON.parse(draft.auto_flags ?? '[]') as string[]).join(', ') || 'keine')}<br>${esc(draft.auto_reason)}</p>
+         ${draft.auto_mode === 'shadow' ? '<p class="subtitle">Schattenphase — nichts wird ohne dich gesendet.</p>' : ''}
+       </div>`
+    : lastSent?.sent_by === 'auto'
+      ? `<div class="section" style="border-left:4px solid var(--color-forest)">
+           <strong>Auto-Send-Gate</strong> · ${renderAutoBadge(lastSent)}
+           <p class="subtitle" style="margin:6px 0 0">Grund: ${esc(lastSent.auto_reason)}</p>
+         </div>`
+      : '';
 
   const canSendHint = '<p class="subtitle">Kanal unklar — bitte direkt in der Guesty-Inbox antworten.</p>';
   const draftBlock = draft
@@ -295,6 +378,7 @@ router.get('/:threadId', (req, res) => {
     <h1>${name}</h1>
     <p class="subtitle"><span class="badge">${esc(thread.channel)}</span>${property ? ` · <strong>${esc(property.name)}</strong>` : ''} · Provider: ${esc(thread.source)}</p>
     <div class="section"><h3>Verlauf</h3>${history}</div>
+    ${autoPanel}
     <div class="section">${noDraftNotice}${genFailedNotice}${sendBlockedNotice}${draftExistsNotice}${sentNotice}${draftBlock}</div>`;
   res.type('html').send(renderAdminPage({ title: name, body, active: 'messages' }));
 });
