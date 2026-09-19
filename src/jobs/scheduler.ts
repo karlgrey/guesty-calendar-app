@@ -7,6 +7,7 @@
 import { toZonedTime } from 'date-fns-tz';
 import { getHours } from 'date-fns';
 import { runETLJob } from './etl-job.js';
+import { startMessageLoop, stopMessageLoop } from './message-loop.js';
 import { sendWeeklySummaryEmailForProperty, shouldSendWeeklyEmailForProperty } from './weekly-email.js';
 import { sendBiReportEmail, shouldSendBiReport } from './bi-email.js';
 import { syncAnalytics, shouldSyncAnalytics } from './sync-analytics.js';
@@ -512,6 +513,9 @@ export function startScheduler() {
   state.intervalId = setInterval(executeScheduledJob, intervalMs);
   state.running = true;
 
+  // Eigener Nachrichten-Takt (Spec 3.2, #Task 9) — unabhängig vom Stunden-ETL
+  startMessageLoop(config.messageLoopMinutes);
+
   // Calculate next run
   state.nextRun = new Date(Date.now() + intervalMs);
 
@@ -688,6 +692,8 @@ export function stopScheduler() {
     clearInterval(state.consistencyCheckIntervalId);
     state.consistencyCheckIntervalId = null;
   }
+
+  stopMessageLoop();
 
   state.running = false;
   state.nextRun = null;

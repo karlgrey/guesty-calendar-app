@@ -18,6 +18,7 @@ import { syncHostexMessagesForProperty } from './hostex/sync-hostex-messages.js'
 import { syncGuestyMessagesForProperty } from './sync-guesty-messages.js';
 import { generateDraftsForProperty } from './generate-drafts.js';
 import { generateReviewDraftsForProperty } from './generate-review-drafts.js';
+import { messageSyncLock } from './message-loop.js';
 import { getHostexClient } from '../services/hostex-client.js';
 import { syncVault } from '../services/vault-sync.js';
 import { syncAirbnbProperty } from './airbnb-mail/sync-properties.js';
@@ -145,16 +146,29 @@ async function runHostexETL(property: PropertyConfig, force: boolean): Promise<E
 
   // Step 3: message sync (conversations → message_threads + messages)
   if (propertyResult.success) {
-    try {
-      // force (täglicher 2-Uhr-Lauf) = deep: alle Details neu; sonst inkrementell.
-      await syncHostexMessagesForProperty(property, getHostexClient(), undefined, undefined, { deep: force });
-    } catch (error) {
-      logger.error({ error, propertySlug: property.slug }, 'Hostex: message sync error (non-fatal)');
-    }
-    try {
-      await generateDraftsForProperty(property);
-    } catch (error) {
-      logger.error({ error, propertySlug: property.slug }, 'Hostex: draft-gen error (non-fatal)');
+    // Nachrichten-Sync + Draft-Gen laufen jetzt primär im 5-Minuten-Loop (message-loop.ts);
+    // der Lock verhindert, dass ETL und Loop gleichzeitig dieselben Threads bearbeiten.
+    if (!messageSyncLock.tryAcquire('etl')) {
+      logger.info(
+        { slug: property.slug, holder: messageSyncLock.holder },
+        'ETL: Nachrichten-Schritt übersprungen (Lock)',
+      );
+    } else {
+      try {
+        try {
+          // force (täglicher 2-Uhr-Lauf) = deep: alle Details neu; sonst inkrementell.
+          await syncHostexMessagesForProperty(property, getHostexClient(), undefined, undefined, { deep: force });
+        } catch (error) {
+          logger.error({ error, propertySlug: property.slug }, 'Hostex: message sync error (non-fatal)');
+        }
+        try {
+          await generateDraftsForProperty(property);
+        } catch (error) {
+          logger.error({ error, propertySlug: property.slug }, 'Hostex: draft-gen error (non-fatal)');
+        }
+      } finally {
+        messageSyncLock.release();
+      }
     }
     try {
       await generateReviewDraftsForProperty(property);
@@ -249,16 +263,26 @@ export async function runETLJobForProperty(
     const inquiriesResult = await syncInquiries(guestyPropertyId!);
 
     // Step 4 (non-fatal): conversations → message_threads/messages + AI drafts.
-    // force (täglicher 2-Uhr-Lauf) = deep: alle Posts neu; sonst inkrementell.
-    try {
-      await syncGuestyMessagesForProperty(property, undefined, { deep: force });
-    } catch (error) {
-      logger.error({ error, propertySlug: slug }, 'Guesty: message sync error (non-fatal)');
-    }
-    try {
-      await generateDraftsForProperty(property);
-    } catch (error) {
-      logger.error({ error, propertySlug: slug }, 'Guesty: draft-gen error (non-fatal)');
+    // Nachrichten-Sync + Draft-Gen laufen jetzt primär im 5-Minuten-Loop (message-loop.ts);
+    // der Lock verhindert, dass ETL und Loop gleichzeitig dieselben Threads bearbeiten.
+    if (!messageSyncLock.tryAcquire('etl')) {
+      logger.info({ slug, holder: messageSyncLock.holder }, 'ETL: Nachrichten-Schritt übersprungen (Lock)');
+    } else {
+      try {
+        try {
+          // force (täglicher 2-Uhr-Lauf) = deep: alle Posts neu; sonst inkrementell.
+          await syncGuestyMessagesForProperty(property, undefined, { deep: force });
+        } catch (error) {
+          logger.error({ error, propertySlug: slug }, 'Guesty: message sync error (non-fatal)');
+        }
+        try {
+          await generateDraftsForProperty(property);
+        } catch (error) {
+          logger.error({ error, propertySlug: slug }, 'Guesty: draft-gen error (non-fatal)');
+        }
+      } finally {
+        messageSyncLock.release();
+      }
     }
     try {
       await generateReviewDraftsForProperty(property);

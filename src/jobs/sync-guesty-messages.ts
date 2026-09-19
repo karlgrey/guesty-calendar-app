@@ -59,7 +59,7 @@ export async function fetchAllConversations(): Promise<any[]> {
   while (true) {
     page++;
     const { conversations, nextCursor } = await guestyClient.listConversations({
-      limit: 50,
+      limit: 100,
       cursorAfter: cursor || undefined,
     });
     all.push(...conversations);
