@@ -144,6 +144,13 @@ const configSchema = z.object({
 
   // Anthropic API (optional — only required when running the LLM classify script)
   anthropicApiKey: z.string().optional(),
+
+  // Auto-Send-Gate (Spec 2026-09-19)
+  autoSendMode: z.enum(['off', 'shadow', 'live']).default('off'),
+  autoSendDailyCap: z.coerce.number().int().min(0).default(10),
+  messageLoopMinutes: z.coerce.number().int().min(1).default(5),
+  guestyWebhookSecret: z.string().optional(),
+  judgeModel: z.string().default('claude-opus-5'),
 });
 
 /**
@@ -204,6 +211,11 @@ function parseConfig() {
     ga4Enabled: process.env.GA4_ENABLED,
     ga4SyncHour: process.env.GA4_SYNC_HOUR,
     anthropicApiKey: process.env.ANTHROPIC_API_KEY,
+    autoSendMode: process.env.AUTO_SEND_MODE,
+    autoSendDailyCap: process.env.AUTO_SEND_DAILY_CAP,
+    messageLoopMinutes: process.env.MESSAGE_LOOP_MINUTES,
+    guestyWebhookSecret: process.env.GUESTY_WEBHOOK_SECRET,
+    judgeModel: process.env.JUDGE_MODEL,
   };
 
   try {
