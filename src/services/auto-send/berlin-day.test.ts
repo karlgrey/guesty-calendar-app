@@ -11,4 +11,10 @@ describe('startOfBerlinDayIso', () => {
   it('kurz vor Mitternacht UTC gehört schon zum nächsten Berliner Tag', () => {
     expect(startOfBerlinDayIso(new Date('2026-09-19T22:30:00.000Z'))).toBe('2026-09-19T22:00:00.000Z');
   });
+  it('Frühjahrs-Umstellung: Mitternacht galt noch mit altem Offset (+1h)', () => {
+    expect(startOfBerlinDayIso(new Date('2026-03-29T12:00:00.000Z'))).toBe('2026-03-28T23:00:00.000Z');
+  });
+  it('Herbst-Umstellung: Tag danach mit neuem Offset (+1h)', () => {
+    expect(startOfBerlinDayIso(new Date('2026-10-25T12:00:00.000Z'))).toBe('2026-10-24T22:00:00.000Z');
+  });
 });
