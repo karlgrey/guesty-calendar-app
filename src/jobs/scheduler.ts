@@ -513,7 +513,7 @@ export function startScheduler() {
   state.intervalId = setInterval(executeScheduledJob, intervalMs);
   state.running = true;
 
-  // Eigener Nachrichten-Takt (Spec 3.2, #Task 9) — unabhängig vom Stunden-ETL
+  // Eigener Nachrichten-Takt (Spec 3.2) — unabhängig vom Stunden-ETL
   startMessageLoop(config.messageLoopMinutes);
 
   // Calculate next run
