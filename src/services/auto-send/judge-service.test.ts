@@ -23,6 +23,18 @@ describe('judgeDraft', () => {
     const call = vi.fn().mockResolvedValue({ category: 'geld' });
     expect((await judgeDraft(input, { call, model: 'm' })).kind).toBe('failed');
   });
+  it('risk_flags fehlt → failed', async () => {
+    const call = vi.fn().mockResolvedValue({ category: 'geld', answerable_from_facts: true, confidence: 'hoch', reasoning: 'x' });
+    expect(await judgeDraft(input, { call, model: 'm' })).toEqual({ kind: 'failed', error: 'risk_flags fehlt' });
+  });
+  it('reasoning fehlt → failed', async () => {
+    const call = vi.fn().mockResolvedValue({ category: 'geld', answerable_from_facts: true, risk_flags: [], confidence: 'hoch' });
+    expect(await judgeDraft(input, { call, model: 'm' })).toEqual({ kind: 'failed', error: 'reasoning fehlt' });
+  });
+  it('leeres reasoning → failed', async () => {
+    const call = vi.fn().mockResolvedValue({ category: 'geld', answerable_from_facts: true, risk_flags: [], confidence: 'hoch', reasoning: '   ' });
+    expect(await judgeDraft(input, { call, model: 'm' })).toEqual({ kind: 'failed', error: 'reasoning fehlt' });
+  });
   it('Exception → failed mit Fehlertext', async () => {
     const call = vi.fn().mockRejectedValue(new Error('boom'));
     expect(await judgeDraft(input, { call, model: 'm' })).toEqual({ kind: 'failed', error: 'boom' });

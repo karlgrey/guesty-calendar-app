@@ -45,7 +45,10 @@ export async function judgeDraft(input: JudgeInput, deps: JudgeDeps = defaultDep
   if (!JUDGE_CATEGORIES.includes(category)) return { kind: 'failed', error: `Unbekannte Kategorie: ${String(o.category)}` };
   if (typeof o.answerable_from_facts !== 'boolean') return { kind: 'failed', error: 'answerable_from_facts fehlt' };
   if (!['hoch', 'mittel', 'niedrig'].includes(String(o.confidence))) return { kind: 'failed', error: 'confidence fehlt/ungültig' };
-  const riskFlags = (Array.isArray(o.risk_flags) ? o.risk_flags : []).filter((f): f is JudgeRiskFlag => JUDGE_RISK_FLAGS.includes(f as JudgeRiskFlag));
+  if (!Array.isArray(o.risk_flags)) return { kind: 'failed', error: 'risk_flags fehlt' };
+  const reasoning = typeof o.reasoning === 'string' ? o.reasoning.trim() : '';
+  if (!reasoning) return { kind: 'failed', error: 'reasoning fehlt' };
+  const riskFlags = o.risk_flags.filter((f): f is JudgeRiskFlag => JUDGE_RISK_FLAGS.includes(f as JudgeRiskFlag));
   return {
     kind: 'verdict',
     verdict: {
@@ -53,7 +56,7 @@ export async function judgeDraft(input: JudgeInput, deps: JudgeDeps = defaultDep
       answerableFromFacts: o.answerable_from_facts,
       riskFlags,
       confidence: o.confidence as 'hoch' | 'mittel' | 'niedrig',
-      reasoning: typeof o.reasoning === 'string' ? o.reasoning.trim() : '',
+      reasoning,
     },
   };
 }
