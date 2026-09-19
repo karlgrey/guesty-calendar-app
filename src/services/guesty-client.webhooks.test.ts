@@ -44,4 +44,22 @@ describe('GuestyClient webhook methods (fail-closed bei unbekanntem Shape)', () 
       await expect(client.getWebhookSecret()).rejects.toThrow(/Unerwartete Antwort von \/webhooks-v2\/secret/);
     });
   });
+
+  // Fix-Runde 2: Shape per Live-Aufruf verifiziert (Controller, 20.09.2026) —
+  // GET /communication/conversations/{id} liefert { data: <Konversation> }, identisch
+  // zum Listen-Shape. Trotzdem fail-closed statt eines unbrauchbaren Objekts.
+  describe('getConversation', () => {
+    it('res.data ist die Konversation (verifizierter Shape) → wird zurückgegeben', async () => {
+      const { client } = clientWithMockedRequest({ status: 200, data: { _id: 'c1', meta: {} } });
+      expect(await client.getConversation('c1')).toEqual({ _id: 'c1', meta: {} });
+    });
+    it('res.data.conversation (alternativer Shape) → das innere Objekt wird zurückgegeben', async () => {
+      const { client } = clientWithMockedRequest({ data: { conversation: { _id: 'c1' } } });
+      expect(await client.getConversation('c1')).toEqual({ _id: 'c1' });
+    });
+    it('res.data ohne _id → wirft statt eines unbrauchbaren Objekts', async () => {
+      const { client } = clientWithMockedRequest({ status: 200, data: {} });
+      await expect(client.getConversation('c1')).rejects.toThrow(/Unerwartete Antwort von \/communication\/conversations\/c1/);
+    });
+  });
 });

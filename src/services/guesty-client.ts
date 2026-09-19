@@ -769,10 +769,18 @@ export class GuestyClient {
 
   /**
    * Einzelne Konversation nachladen (Webhook-Payloads ohne Listing-Info, Spec 3.1).
+   * Shape per Live-Aufruf verifiziert (Controller, 20.09.2026): GET
+   * /communication/conversations/{id} liefert { status, data: { _id, meta: { reservations:
+   * [...], guest: {...} }, ... } } — data ist die Konversation, identisch zum Listen-Shape.
+   * Fail-closed (Fix-Runde 2) statt eines Objekts ohne _id weiterzureichen.
    */
   async getConversation(conversationId: string): Promise<any> {
     const res = await this.request<any>(`/communication/conversations/${conversationId}`);
-    return res?.data ?? res;
+    const c = res?.data?.conversation ?? res?.data ?? res;
+    if (!c || typeof c !== 'object' || typeof c._id !== 'string') {
+      throw new ExternalApiError(`Unerwartete Antwort von /communication/conversations/${conversationId}: ${JSON.stringify(res).slice(0, 500)}`, 502, 'Guesty', { res });
+    }
+    return c;
   }
 
   /**
