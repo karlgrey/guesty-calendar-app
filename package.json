@@ -15,7 +15,8 @@
     "db:reset": "tsx src/scripts/reset-db.ts",
     "lint": "eslint src",
     "test": "vitest",
-    "test:judge": "tsx src/scripts/test-judge-fixtures.ts"
+    "test:judge": "tsx src/scripts/test-judge-fixtures.ts",
+    "webhook:register": "tsx src/scripts/register-guesty-webhook.ts"
   },
   "keywords": [
     "guesty",

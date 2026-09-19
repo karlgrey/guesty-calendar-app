@@ -768,6 +768,29 @@ export class GuestyClient {
   }
 
   /**
+   * Einzelne Konversation nachladen (Webhook-Payloads ohne Listing-Info, Spec 3.1).
+   */
+  async getConversation(conversationId: string): Promise<any> {
+    const res = await this.request<any>(`/communication/conversations/${conversationId}`);
+    return res?.data ?? res;
+  }
+
+  /**
+   * Webhook-Verwaltung (Registrierungsskript, npm run webhook:register).
+   */
+  async listWebhooks(): Promise<any[]> {
+    const res = await this.request<any>('/webhooks');
+    return Array.isArray(res) ? res : res?.data ?? [];
+  }
+  async createWebhook(url: string, events: string[]): Promise<any> {
+    return this.request<any>('/webhooks', { method: 'POST', body: JSON.stringify({ url, events }) });
+  }
+  async getWebhookSecret(): Promise<string> {
+    const res = await this.request<any>('/webhooks-v2/secret');
+    return res?.secret ?? res?.data?.secret ?? JSON.stringify(res);
+  }
+
+  /**
    * Create a guest record (guests-crud).
    * Returns the new guest's ID.
    */
