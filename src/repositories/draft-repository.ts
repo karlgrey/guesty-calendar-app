@@ -1,6 +1,7 @@
 // src/repositories/draft-repository.ts
 import { getDatabase } from '../db/index.js';
 import type { MessageDraft, NewDraft } from '../types/messages.js';
+import type { AutoSendDecision, AutoSendMode } from '../services/auto-send/types.js';
 
 export function createDraft(d: NewDraft): void {
   const db = getDatabase();
@@ -38,13 +39,14 @@ export function claimDraftForSending(id: string): boolean {
   return result.changes === 1;
 }
 
-export function markDraftSent(id: string, externalMessageId: string | null): void {
+// Signatur erweitert: dritter Parameter (Default 'micha') — bestehende Aufrufer bleiben gültig.
+export function markDraftSent(id: string, externalMessageId: string | null, sentBy: 'micha' | 'auto' = 'micha'): void {
   const db = getDatabase();
   db.prepare(
     `UPDATE message_drafts
-     SET status = 'sent', external_message_id = ?, sent_at = datetime('now'), error = NULL
+     SET status = 'sent', external_message_id = ?, sent_at = datetime('now'), error = NULL, sent_by = ?
      WHERE id = ?`,
-  ).run(externalMessageId, id);
+  ).run(externalMessageId, sentBy, id);
 }
 
 export function markDraftError(id: string, error: string): void {
@@ -64,4 +66,81 @@ export function discardDraft(id: string): void {
 export function updateDraftBody(id: string, body: string): void {
   const db = getDatabase();
   db.prepare(`UPDATE message_drafts SET body = ? WHERE id = ?`).run(body, id);
+}
+
+// --- Auto-Send-Gate (Migration 027) ---
+
+export function setAutoDecision(id: string, d: AutoSendDecision, mode: AutoSendMode): void {
+  getDatabase().prepare(
+    `UPDATE message_drafts SET auto_decision = ?, auto_category = ?, auto_flags = ?, auto_reason = ?,
+       auto_mode = ?, auto_judged_at = datetime('now') WHERE id = ?`,
+  ).run(d.decision, d.category, JSON.stringify(d.flags), d.reason, mode, id);
+}
+
+export function setSentBodyChanged(id: string, changed: boolean): void {
+  getDatabase().prepare(`UPDATE message_drafts SET sent_body_changed = ? WHERE id = ?`).run(changed ? 1 : 0, id);
+}
+
+/** Micha hat in diesem Thread schon eingegriffen (Spec 5.3 Thread-Ausschlüsse). */
+export function threadHasHumanIntervention(threadId: string): boolean {
+  const row = getDatabase().prepare(
+    `SELECT (
+        EXISTS (SELECT 1 FROM message_drafts WHERE thread_id = @t AND status = 'discarded')
+     OR EXISTS (SELECT 1 FROM draft_feedback WHERE thread_id = @t)
+     OR EXISTS (SELECT 1 FROM message_threads WHERE id = @t AND manually_categorized = 1)
+    ) AS hit`,
+  ).get({ t: threadId }) as { hit: number };
+  return row.hit === 1;
+}
+
+export function countAutoSentSince(sinceIso: string): number {
+  const row = getDatabase().prepare(
+    `SELECT COUNT(*) AS n FROM message_drafts WHERE sent_by = 'auto' AND datetime(sent_at) >= datetime(?)`,
+  ).get(sinceIso) as { n: number };
+  return row.n;
+}
+
+export interface AwaitingDraftRow {
+  id: string; thread_id: string; provider: string; status: string; created_at: string;
+  reason: string; guest_name: string | null; listing_id: string; source: string;
+  last_guest_message: string | null;
+}
+
+/** Entwürfe, die auf Micha warten: Gate-Entscheidung 'wait' (noch pending) oder Send-Fehler. */
+export function getAwaitingDrafts(sinceIso: string, limit: number): AwaitingDraftRow[] {
+  return getDatabase().prepare(
+    `SELECT d.id, d.thread_id, d.provider, d.status, d.created_at,
+       CASE WHEN d.status = 'error' THEN 'Auto-Send fehlgeschlagen: ' || COALESCE(d.error, '?') ELSE COALESCE(d.auto_reason, '') END AS reason,
+       t.guest_name, t.listing_id, t.source,
+       (SELECT m.body FROM messages m WHERE m.thread_id = t.id AND m.direction = 'inbound'
+          ORDER BY m.sent_at DESC, m.created_at DESC LIMIT 1) AS last_guest_message
+     FROM message_drafts d JOIN message_threads t ON t.id = d.thread_id
+     WHERE datetime(d.created_at) > datetime(?)
+       AND ((d.auto_decision = 'wait' AND d.status = 'pending') OR d.status = 'error')
+     ORDER BY d.created_at ASC LIMIT ?`,
+  ).all(sinceIso, limit) as AwaitingDraftRow[];
+}
+
+export interface AutoSendStats {
+  autoSent: number; waited: number; shadowWouldAuto: number;
+  shadowUnchanged: number; shadowChanged: number; shadowDiscarded: number;
+}
+export function getAutoSendStats(sinceIso: string): AutoSendStats {
+  return getDatabase().prepare(
+    `SELECT
+       SUM(sent_by = 'auto') AS autoSent,
+       SUM(auto_decision = 'wait') AS waited,
+       SUM(auto_decision = 'auto' AND auto_mode = 'shadow') AS shadowWouldAuto,
+       SUM(auto_decision = 'auto' AND auto_mode = 'shadow' AND status = 'sent' AND sent_body_changed = 0) AS shadowUnchanged,
+       SUM(auto_decision = 'auto' AND auto_mode = 'shadow' AND status = 'sent' AND sent_body_changed = 1) AS shadowChanged,
+       SUM(auto_decision = 'auto' AND auto_mode = 'shadow' AND status = 'discarded') AS shadowDiscarded
+     FROM message_drafts WHERE datetime(created_at) >= datetime(?)`,
+  ).get(sinceIso) as AutoSendStats;
+}
+
+export function listAutoDecisions(limit: number): Array<MessageDraft & { guest_name: string | null }> {
+  return getDatabase().prepare(
+    `SELECT d.*, t.guest_name FROM message_drafts d JOIN message_threads t ON t.id = d.thread_id
+     WHERE d.auto_decision IS NOT NULL ORDER BY d.created_at DESC LIMIT ?`,
+  ).all(limit) as Array<MessageDraft & { guest_name: string | null }>;
 }

@@ -104,6 +104,15 @@ export interface MessageDraft {
   created_at: string;
   sent_at: string | null;
   model: string | null;
+  // Auto-Send-Gate (Migration 027)
+  auto_decision: 'auto' | 'wait' | null;
+  auto_category: string | null;
+  auto_flags: string | null;      // JSON-Array
+  auto_reason: string | null;
+  auto_mode: 'off' | 'shadow' | 'live' | null;
+  auto_judged_at: string | null;
+  sent_by: 'micha' | 'auto' | null;
+  sent_body_changed: number | null;
 }
 
 export type NewDraft = Pick<MessageDraft, 'id' | 'thread_id' | 'provider' | 'body' | 'generated_by'> & {
