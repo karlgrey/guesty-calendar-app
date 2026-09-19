@@ -45,7 +45,12 @@ export function realGateDeps(): GateDeps {
   };
 }
 
-/** Gastnachrichten seit der letzten Host-Antwort (chronologisch). */
+/**
+ * Gastnachrichten seit der letzten Host-Antwort (chronologisch).
+ * Vorbedingung: `messages` liegt chronologisch aufsteigend vor (wie von
+ * `getMessagesByThread` geliefert). `system`-Nachrichten werden ignoriert —
+ * sie zählen weder als Host-Antwort-Grenze noch als Gastnachricht.
+ */
 export function guestMessagesSinceLastHost(messages: Message[]): string[] {
   const out: string[] = [];
   for (const m of messages) {
@@ -58,20 +63,32 @@ export function guestMessagesSinceLastHost(messages: Message[]): string[] {
 export async function runAutoSendGate(input: GateInput, deps: GateDeps = realGateDeps()): Promise<{ decision: AutoSendDecision; mode: AutoSendMode; sent: boolean }> {
   const mode = resolveAutoSendMode(deps.envMode, input.property.autoSend);
   if (mode === 'off') {
-    const decision = decide({ mode, paused: false, judge: { kind: 'failed', error: 'off' }, mechanical: [], threadHasHumanIntervention: false, autoSentToday: 0, dailyCap: deps.dailyCap, canSend: true });
-    deps.persistDecision(input.draftId, decision, mode);
-    return { decision, mode, sent: false };
+    // Spec 4/6: off → nichts weiter, auto_decision bleibt NULL (Verhalten wie heute) —
+    // kein decide()-Aufruf, kein Persist, sonst landet jeder Entwurf eines off-Objekts
+    // als „wait" in getAwaitingDrafts und damit im WhatsApp-Push.
+    logger.debug({ draftId: input.draftId, threadId: input.thread.id }, 'auto-send: Modus off — keine Prüfung, kein Persist');
+    return { decision: { decision: 'wait', reason: 'Auto-Send aus (Modus off)', category: null, flags: [] }, mode, sent: false };
   }
-  const guestMessages = guestMessagesSinceLastHost(input.messages);
-  const judge = await deps.judge({ guestMessages, draft: input.body, voice: input.voice, facts: input.facts, bookingContext: input.bookingContext, guestName: input.thread.guest_name });
-  const mechanical = runMechanicalChecks(input.body, { knownDigitRuns: collectDigitRuns([...guestMessages, input.bookingContext ?? '']) });
-  const decision = decide({
-    mode, paused: deps.isPaused(), judge, mechanical,
-    threadHasHumanIntervention: deps.hasHumanIntervention(input.thread.id),
-    autoSentToday: deps.countAutoSentSince(startOfBerlinDayIso()),
-    dailyCap: deps.dailyCap,
-    canSend: deps.canSend(input.thread, input.messages),
-  });
+
+  let decision: AutoSendDecision;
+  try {
+    const guestMessages = guestMessagesSinceLastHost(input.messages);
+    const judge = await deps.judge({ guestMessages, draft: input.body, voice: input.voice, facts: input.facts, bookingContext: input.bookingContext, guestName: input.thread.guest_name });
+    const mechanical = runMechanicalChecks(input.body, { knownDigitRuns: collectDigitRuns([...guestMessages, input.bookingContext ?? '']) });
+    decision = decide({
+      mode, paused: deps.isPaused(), judge, mechanical,
+      threadHasHumanIntervention: deps.hasHumanIntervention(input.thread.id),
+      autoSentToday: deps.countAutoSentSince(startOfBerlinDayIso()),
+      dailyCap: deps.dailyCap,
+      canSend: deps.canSend(input.thread, input.messages),
+    });
+  } catch (err) {
+    // Spec 8: Prüfmodell/Deps fehlerhaft → wait statt Exception, sonst bleibt
+    // auto_decision NULL (kein Push, kein Ampel-Grund).
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.warn({ draftId: input.draftId, threadId: input.thread.id, err: msg }, 'auto-send: Prüfung fehlgeschlagen, werte als wait');
+    decision = { decision: 'wait', reason: `Prüfung technisch fehlgeschlagen: ${msg}`, category: null, flags: [] };
+  }
   deps.persistDecision(input.draftId, decision, mode);
   logger.info({ draftId: input.draftId, threadId: input.thread.id, mode, decision: decision.decision, reason: decision.reason, flags: decision.flags }, 'auto-send: Entscheidung');
 

@@ -37,12 +37,14 @@ describe('runAutoSendGate', () => {
     const d = deps({ envMode: 'shadow' });
     const r = await runAutoSendGate(input, d);
     expect(r.sent).toBe(false); expect(d.send).not.toHaveBeenCalled();
+    expect(d.claim).not.toHaveBeenCalled();
     expect(d.persistDecision).toHaveBeenCalledWith('d1', expect.objectContaining({ decision: 'auto' }), 'shadow');
   });
   it('Property-Modus off schlägt Env live', async () => {
     const d = deps();
     const r = await runAutoSendGate({ ...input, property: { slug: 'x', autoSend: 'off' } as PropertyConfig }, d);
     expect(r.mode).toBe('off'); expect(r.decision.decision).toBe('wait'); expect(d.judge).not.toHaveBeenCalled();
+    expect(d.persistDecision).not.toHaveBeenCalled();
   });
   it('live + wait → kein Send', async () => {
     const d = deps({ judge: vi.fn().mockResolvedValue({ kind: 'failed', error: 'x' }) });
@@ -71,5 +73,17 @@ describe('runAutoSendGate', () => {
     const d = deps();
     await runAutoSendGate({ ...input, body: 'Bis 2026!', bookingContext: 'Check-in 19.09.2026' }, d);
     expect((d.persistDecision as any).mock.calls[0][1].flags).toEqual([]);
+  });
+  it('werfende Dep (z. B. DB-Fehler) → wait statt Exception, kein Send', async () => {
+    const d = deps({ hasHumanIntervention: vi.fn(() => { throw new Error('db kaputt'); }) });
+    const r = await runAutoSendGate(input, d);
+    expect(r.sent).toBe(false);
+    expect(r.decision.decision).toBe('wait');
+    expect(d.persistDecision).toHaveBeenCalledWith(
+      'd1',
+      expect.objectContaining({ decision: 'wait', reason: expect.stringContaining('db kaputt') }),
+      'live',
+    );
+    expect(d.send).not.toHaveBeenCalled();
   });
 });
