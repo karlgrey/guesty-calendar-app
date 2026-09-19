@@ -20,6 +20,7 @@ describe('runMechanicalChecks', () => {
     expect(flags('Das kostet 120 €.')).toContain('money');
     expect(flags('Preis 120,00 pro Nacht')).toContain('money');
     expect(flags('Das sind 30 EUR extra')).toContain('money');
+    expect(flags('Zahl per EUR120 bitte')).toContain('money');
   });
   it('Telefonnummer → phone', () => {
     expect(flags('Ruf an: +49 160 1234567')).toContain('phone');
@@ -29,6 +30,11 @@ describe('runMechanicalChecks', () => {
     expect(flags('Der Tresor öffnet mit 12 34.')).toContain('code_words');
     expect(flags('Die PIN lautet 9.')).toContain('code_words');
     expect(flags('Der Schlüssel liegt im Tresor.')).not.toContain('code_words');
+  });
+  it('Code-Wort mit ausgeschriebenem Zahlwort im selben Satz → code_words', () => {
+    expect(flags('Der Code ist eins zwei drei vier.')).toContain('code_words');
+    expect(flags('Der Tresor steht neben der Tür.')).not.toContain('code_words');
+    expect(flags('The PIN is four two.')).toContain('code_words');
   });
   it('zu lang → length', () => expect(flags('a'.repeat(1201))).toContain('length'));
   it('liefert Fundstelle', () => {

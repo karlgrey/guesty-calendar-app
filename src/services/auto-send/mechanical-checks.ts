@@ -5,9 +5,10 @@ export const MAX_DRAFT_LENGTH = 1200;
 const DIGIT_RUN = /\d{4,}/g;
 const URL = /https?:\/\/\S+|\bwww\.\S+/i;
 const EMAIL = /[^\s@]+@[^\s@]+\.[^\s@]+/;
-const MONEY = /€|\bEUR\b|\bEuro\b|\d+,\d{2}\b/;
+const MONEY = /€|\bEUR\b|\bEUR\s*\d|\bEuro\b|\d+,\d{2}\b/;
 const PHONE = /\+\d[\d\s/-]{5,}|\b0\d{2,4}[\s/-]?\d{2,}[\s/-]?\d{2,}(?:[\s/-]?\d{2,})?/;
 const CODE_WORDS = /\b(Code|PIN|Tresor|Schlüsselbox|Schloss)\b/i;
+const NUMBER_WORDS = /\b(null|eins|zwei|drei|vier|fünf|sechs|sieben|acht|neun|zehn|elf|zwölf|zero|one|two|three|four|five|six|seven|eight|nine|ten)\b/i;
 
 export function collectDigitRuns(texts: string[]): string[] {
   const out = new Set<string>();
@@ -26,9 +27,12 @@ export function runMechanicalChecks(body: string, context: { knownDigitRuns: str
   const mail = text.match(EMAIL); if (mail) f.push({ flag: 'email', match: mail[0] });
   const money = text.match(MONEY); if (money) f.push({ flag: 'money', match: money[0] });
   const phone = text.match(PHONE); if (phone) f.push({ flag: 'phone', match: phone[0].trim() });
-  // Code-Wort + Ziffer im selben Satz
+  // Code-Wort + Ziffer oder ausgeschriebenes Zahlwort im selben Satz
   for (const sentence of text.split(/(?<=[.!?])\s+/)) {
-    if (CODE_WORDS.test(sentence) && /\d/.test(sentence)) { f.push({ flag: 'code_words', match: sentence.trim().slice(0, 80) }); break; }
+    if (CODE_WORDS.test(sentence) && (/\d/.test(sentence) || NUMBER_WORDS.test(sentence))) {
+      f.push({ flag: 'code_words', match: sentence.trim().slice(0, 80) });
+      break;
+    }
   }
   return f;
 }
