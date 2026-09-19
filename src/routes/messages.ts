@@ -2,20 +2,19 @@
 import express from 'express';
 import { randomUUID } from 'node:crypto';
 import {
-  getThreadsNeedingReply, getThreadById, getMessagesByThread, upsertMessage,
+  getThreadsNeedingReply, getThreadById, getMessagesByThread,
   getLastMessageSync, markThreadAiNoReply, markThreadDiscarded, getMessagesSince, type MessageFeedRow,
 } from '../repositories/message-repository.js';
-import type { MessageThread } from '../types/messages.js';
 import {
-  createDraft, getDraftById, getActiveDraftByThread, markDraftSent, markDraftError, discardDraft,
-  claimDraftForSending, updateDraftBody,
+  createDraft, getDraftById, getActiveDraftByThread, discardDraft,
+  claimDraftForSending, updateDraftBody, setSentBodyChanged,
 } from '../repositories/draft-repository.js';
 import { getPropertiesByProvider } from '../config/properties.js';
 import { getPropertyForThread, propertyForBadge } from '../utils/thread-property.js';
 import { loadVoice, loadPropertyFacts } from '../services/vault-knowledge.js';
 import { generateDraftForThread, DRAFT_MODEL } from '../services/draft-service.js';
 import { buildBookingContext } from '../services/booking-context.js';
-import { sendReply } from '../services/message-sender.js';
+import { sendClaimedDraft } from '../services/draft-send-service.js';
 import { resolveOutboundModuleType } from '../services/guesty-channel.js';
 import { getHostexClient, type HostexConversationDetail } from '../services/hostex-client.js';
 import { syncHostexMessagesForProperty } from '../jobs/hostex/sync-hostex-messages.js';
@@ -316,37 +315,6 @@ router.post('/:threadId/draft', express.urlencoded({ extended: true }), (req, re
   } catch (e) { next(e); }
 });
 
-// Gemeinsamer Send-Kern für Freigabe-Send (POST /drafts/:draftId/send) UND Direkt-Send
-// (POST /:threadId/reply, SmartTasks #409 Nachschärfung) — beide Pfade laufen über denselben
-// geclaimten Draft, damit Audit-Trail (message_drafts) und Fehlerpfad (markDraftError) identisch
-// bleiben. Erwartet, dass der Draft VORHER erfolgreich geclaimt wurde (status pending→sending).
-async function sendClaimedDraft(
-  draftId: string,
-  thread: MessageThread,
-  bodyToSend: string,
-): Promise<{ ok: true } | { ok: false; err: unknown }> {
-  try {
-    const { externalMessageId } = await sendReply(thread, bodyToSend);
-    markDraftSent(draftId, externalMessageId);
-    // Key the local outbound row on the returned external id so the next sync that ingests
-    // the same message as {source}:{realId} hits the same row (upsert = no-op) instead of
-    // creating a duplicate. Falls back to sent:{draftId} when no external id is returned.
-    // NOTE: this collapse assumes the send response's message id equals the id the
-    // conversation later reports; confirm on first live send (hostex AND guesty).
-    const outboundId = externalMessageId ? `${thread.source}:${externalMessageId}` : `sent:${draftId}`;
-    upsertMessage({
-      id: outboundId, thread_id: thread.id, direction: 'outbound',
-      sent_at: new Date().toISOString(), from_name: 'host', from_address: null, to_address: null,
-      subject: null, body: bodyToSend, body_html: null, source: thread.source,
-      raw_meta: JSON.stringify({ draftId, externalMessageId }),
-    });
-    return { ok: true };
-  } catch (sendErr) {
-    markDraftError(draftId, sendErr instanceof Error ? sendErr.message : String(sendErr));
-    return { ok: false, err: sendErr };
-  }
-}
-
 // Freigabe: senden
 router.post('/drafts/:draftId/send', express.urlencoded({ extended: true }), async (req, res, next) => {
   try {
@@ -368,7 +336,8 @@ router.post('/drafts/:draftId/send', express.urlencoded({ extended: true }), asy
     if (edited && edited !== draft.body) updateDraftBody(draft.id, edited);
     const bodyToSend = edited || draft.body;
 
-    const result = await sendClaimedDraft(draft.id, thread, bodyToSend);
+    setSentBodyChanged(draft.id, edited !== '' && edited !== draft.body);
+    const result = await sendClaimedDraft(draft.id, thread, bodyToSend, 'micha');
     if (result.ok) {
       res.redirect(`/admin/messages/${encodeURIComponent(thread.id)}`);
     } else {
@@ -413,7 +382,7 @@ router.post('/:threadId/reply', express.urlencoded({ extended: true }), async (r
       return;
     }
 
-    const result = await sendClaimedDraft(draftId, thread, body);
+    const result = await sendClaimedDraft(draftId, thread, body, 'micha');
     if (result.ok) {
       res.redirect(`/admin/messages/${encodeURIComponent(thread.id)}?sent=1`);
     } else {
