@@ -20,6 +20,7 @@ import { getHostexClient, type HostexConversationDetail } from '../services/host
 import { syncHostexMessagesForProperty } from '../jobs/hostex/sync-hostex-messages.js';
 import { syncGuestyMessagesForProperty, fetchAllConversations } from '../jobs/sync-guesty-messages.js';
 import { generateDraftsForProperty } from '../jobs/generate-drafts.js';
+import { acquireMessageSyncLock, messageSyncLock } from '../jobs/message-loop.js';
 import logger from '../utils/logger.js';
 import { renderAdminPage } from './admin-layout.js';
 import { createFeedback, createSuggestion, countPendingSuggestions } from '../repositories/feedback-repository.js';
@@ -467,6 +468,13 @@ async function runMessageSync(): Promise<void> {
   syncProgress.finishedAt = null;
   syncProgress.lines = [];
   const log = (line: string) => { syncProgress.lines.push(line); };
+  // Gemeinsamer Lock mit Loop/Webhook (Spec 3.1/3.2) — ein manueller Anstoß darf sich
+  // nicht mit einem laufenden Sync überschneiden.
+  if (!(await acquireMessageSyncLock('manual', 30_000))) {
+    log('Sync läuft bereits (Loop/ETL) — bitte gleich erneut');
+    syncProgress.finishedAt = new Date().toISOString();
+    return;
+  }
   const client = getHostexClient();
   // One shared detail cache across all property passes → each conversation detail
   // (esp. empty-title inquiries) is fetched at most once per run.
@@ -499,6 +507,7 @@ async function runMessageSync(): Promise<void> {
     log('Fertig.');
   } finally {
     syncProgress.finishedAt = new Date().toISOString();
+    messageSyncLock.release();
   }
 }
 

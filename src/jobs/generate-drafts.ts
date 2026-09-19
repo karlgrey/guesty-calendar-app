@@ -71,7 +71,10 @@ export async function generateDraftsForProperty(
     return { generated: 0, skipped: 0 };
   }
 
-  const threads = deps.getThreads(target.source, target.listingId, DRAFT_GEN_CAP, DRAFT_SINCE_MODIFIER);
+  // Bei onlyThreadIds (Webhook-Kette) darf ein frischer Thread nicht am 10er-Cap
+  // scheitern — höheres Limit, danach exakt auf die gewünschten Ids filtern.
+  const limit = opts.onlyThreadIds ? Math.max(DRAFT_GEN_CAP, 100) : DRAFT_GEN_CAP;
+  const threads = deps.getThreads(target.source, target.listingId, limit, DRAFT_SINCE_MODIFIER);
   const selected = opts.onlyThreadIds ? threads.filter((t) => opts.onlyThreadIds!.includes(t.id)) : threads;
   let generated = 0;
   let skipped = 0;

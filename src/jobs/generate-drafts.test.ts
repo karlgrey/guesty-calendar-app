@@ -143,6 +143,11 @@ describe('Auto-Send-Gate in der Kette', () => {
     expect(d.create).toHaveBeenCalledTimes(1);
     expect((d.create as any).mock.calls[0][0].thread_id).toBe('hostex:b');
   });
+  it('onlyThreadIds holt mit Limit 100 statt dem 10er-Cap (Webhook-Thread nicht abgeschnitten)', async () => {
+    const d = deps();
+    await generateDraftsForProperty(property, d, { onlyThreadIds: ['hostex:b'] });
+    expect(d.getThreads).toHaveBeenCalledWith('hostex', 'L1', 100, DRAFT_SINCE_MODIFIER);
+  });
 });
 
 describe('resolveDraftSource', () => {
