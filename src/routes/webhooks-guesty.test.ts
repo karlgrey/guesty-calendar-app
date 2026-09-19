@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import express from 'express';
 import { createHmac } from 'node:crypto';
 import { createGuestyWebhookRouter } from './webhooks-guesty.js';
+import logger from '../utils/logger.js';
 
 const secretRaw = Buffer.from('k'.repeat(24));
 const secret = `whsec_${secretRaw.toString('base64')}`;
@@ -30,6 +31,15 @@ describe('POST /api/webhooks/guesty', () => {
     expect(res.status).toBe(202);
     await new Promise((r) => setTimeout(r, 10));
     expect(handleInbound).toHaveBeenCalledWith(expect.objectContaining({ conversation: expect.objectContaining({ _id: 'c1' }) }));
+  });
+  it('loggt Annahme der Gastnachricht (Route liegt vor dem requestLogger, sonst keine Spur)', async () => {
+    const body = JSON.stringify(payload); const { app } = mkApp(secret);
+    const infoSpy = vi.spyOn(logger, 'info');
+    try {
+      await post(app, body, signed(body));
+      await new Promise((r) => setTimeout(r, 10));
+      expect(infoSpy).toHaveBeenCalledWith({ conversationId: 'c1' }, 'guesty-webhook: Gastnachricht angenommen');
+    } finally { infoSpy.mockRestore(); }
   });
   it('401 bei falscher Signatur', async () => {
     const body = JSON.stringify(payload); const { app, handleInbound } = mkApp(secret);

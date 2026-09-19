@@ -777,17 +777,25 @@ export class GuestyClient {
 
   /**
    * Webhook-Verwaltung (Registrierungsskript, npm run webhook:register).
+   * Fail-closed bei unbekanntem Response-Shape (Fix-Runde 1, Important #2): ein leeres
+   * Array würde das Skript eine doppelte Subscription anlegen lassen, ein erfundenes
+   * "Secret" (JSON.stringify(res)) würde jeden echten Webhook auf 401 laufen lassen —
+   * beides lieber laut scheitern als still falsch weitermachen.
    */
   async listWebhooks(): Promise<any[]> {
     const res = await this.request<any>('/webhooks');
-    return Array.isArray(res) ? res : res?.data ?? [];
+    if (Array.isArray(res)) return res;
+    if (Array.isArray(res?.data)) return res.data;
+    throw new ExternalApiError(`Unerwartete Antwort von /webhooks: ${JSON.stringify(res).slice(0, 500)}`, 502, 'Guesty', { res });
   }
   async createWebhook(url: string, events: string[]): Promise<any> {
     return this.request<any>('/webhooks', { method: 'POST', body: JSON.stringify({ url, events }) });
   }
   async getWebhookSecret(): Promise<string> {
     const res = await this.request<any>('/webhooks-v2/secret');
-    return res?.secret ?? res?.data?.secret ?? JSON.stringify(res);
+    const secret = res?.secret ?? res?.data?.secret;
+    if (typeof secret === 'string' && secret.length > 0) return secret;
+    throw new ExternalApiError(`Unerwartete Antwort von /webhooks-v2/secret: ${JSON.stringify(res).slice(0, 500)}`, 502, 'Guesty', { res });
   }
 
   /**

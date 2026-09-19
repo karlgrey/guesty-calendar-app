@@ -24,6 +24,9 @@ export function createGuestyWebhookRouter(deps: { secret?: string; handleInbound
     res.status(202).json({ ok: true });
     const isGuest = (payload.conversation?.conversationWith ?? 'Guest') === 'Guest' && payload.message?.type === 'fromGuest';
     if (!isGuest || !payload.conversation?._id) return;
+    // Route liegt vor dem requestLogger (express.raw statt express.json) — ohne eigenen
+    // Log-Eintrag hinterlässt eine angenommene Gastnachricht sonst keine Spur.
+    logger.info({ conversationId: payload.conversation._id }, 'guesty-webhook: Gastnachricht angenommen');
     setImmediate(() => {
       deps.handleInbound(payload).catch((err) => logger.error({ err: err instanceof Error ? err.message : String(err), conversationId: payload.conversation._id }, 'guesty-webhook: Verarbeitung fehlgeschlagen'));
     });
