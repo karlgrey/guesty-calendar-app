@@ -62,6 +62,14 @@ vi.mock('../repositories/message-repository.js', () => ({
     { id: 'm2', thread_id: 'hostex:a', direction: 'outbound', sent_at: '2026-08-05T10:00:00.000Z', from_name: 'host', body: 'Antwort', source: 'hostex' },
   ]),
 }));
+vi.mock('../repositories/draft-repository.js', () => ({
+  getAwaitingDrafts: vi.fn().mockReturnValue([{
+    id: 'd1', thread_id: 'hostex:a', provider: 'hostex', status: 'pending', created_at: '2026-09-19 12:00:00',
+    reason: 'Kategorie Sonderwunsch — nie automatisch', guest_name: 'Anna', listing_id: 'L1', source: 'hostex',
+    last_guest_message: 'Könnten wir schon um 11 Uhr rein? Wir sind früh da.\nDanke!',
+  }]),
+  getAutoSendStats: vi.fn().mockReturnValue({ autoSent: 2, waited: 3, shadowWouldAuto: 10, shadowUnchanged: 9, shadowChanged: 1, shadowDiscarded: 0 }),
+}));
 const runConsistencyCheckMock = vi.fn();
 const listOpenReservationsMock = vi.fn();
 vi.mock('../jobs/consistency-check.js', () => ({
@@ -191,6 +199,7 @@ describe('agent-api', () => {
       property: { slug: 'farmhouse', name: 'Farmhouse Prasser', code: 'FH' },
       guestName: 'Anna', needsReply: true,
       lastMessageAt: '2026-08-05T10:00:00.000Z', lastMessageDirection: 'inbound',
+      autoDecision: null,
     });
     expect(body.threads[1]).toMatchObject({
       threadId: 'guesty:b', needsReply: false, lastMessageDirection: 'outbound',
@@ -334,6 +343,39 @@ describe('agent-api', () => {
       expect(body.error).toMatch(/florenz/);
       expect(body.error).toMatch(/firenze-loft/);
       expect(listOpenReservationsMock.mock.calls.length).toBe(callsBefore);
+    });
+  });
+
+  describe('GET /drafts/awaiting', () => {
+    it('liefert wartende Entwürfe mit Auszug und Admin-URL', async () => {
+      const res = await fetch(`${base}/api/agent/drafts/awaiting?since=2026-09-19T00:00:00Z`, { headers: KEY });
+      expect(res.status).toBe(200);
+      const body = await res.json();
+      expect(body.drafts[0]).toMatchObject({ draftId: 'd1', threadId: 'hostex:a', guestName: 'Anna', reason: 'Kategorie Sonderwunsch — nie automatisch' });
+      expect(body.drafts[0].guestMessageExcerpt).toBe('Könnten wir schon um 11 Uhr rein? Wir sind früh da.');
+      expect(body.drafts[0].adminUrl).toMatch(/\/admin\/messages\/hostex%3Aa$/);
+      expect(body.drafts[0].createdAt).toBe('2026-09-19T12:00:00.000Z');
+    });
+
+    it('400 bei ungültigem since', async () => {
+      expect((await fetch(`${base}/api/agent/drafts/awaiting?since=gestern`, { headers: KEY })).status).toBe(400);
+    });
+
+    it('401 ohne Key', async () => {
+      const r = await fetch(`${base}/api/agent/drafts/awaiting`);
+      expect(r.status).toBe(401);
+    });
+  });
+
+  describe('GET /auto-send/stats', () => {
+    it('liefert Zähler + Quote', async () => {
+      const body = await (await fetch(`${base}/api/agent/auto-send/stats?days=1`, { headers: KEY })).json();
+      expect(body).toMatchObject({ autoSent: 2, waited: 3, shadowWouldAuto: 10, shadowUnchanged: 9, shadowChanged: 1, shadowDiscarded: 0, shadowUnchangedRate: 90 });
+    });
+
+    it('401 ohne Key', async () => {
+      const r = await fetch(`${base}/api/agent/auto-send/stats`);
+      expect(r.status).toBe(401);
     });
   });
 });
