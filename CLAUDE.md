@@ -378,17 +378,21 @@ Copy-Paste kann ein sicherer Entwurf automatisch rausgehen. Spec:
 `TheBrain2/docs/superpowers/specs/2026-09-19-auto-send-gate-design.md`.
 
 - **Kette** (`src/services/auto-send/runner.ts`, `runAutoSendGate`, läuft nach JEDEM
-  LLM-Entwurf in `generate-drafts.ts`): Schicht 1 mechanische Checks
-  (`mechanical-checks.ts` — Ziffernfolgen, Links, Mail, Geldbeträge inkl. `EUR120`,
-  Telefonnummern, Code-Wörter mit Ziffer, Zahlwörter eins…zwölf/one…ten, Länge, leer),
-  Schicht 2 Prüfmodell (`judge-service.ts`/`judge-prompt.ts`, `JUDGE_MODEL`, Kategorie +
-  Risk-Flags + Konfidenz), Schicht 3 reine Entscheidungsfunktion (`policy.ts`, `decide()`
-  — kein I/O). `off` prüft NICHT und persistiert NICHT (Entwürfe von Off-Objekten landen
-  sonst fälschlich im „wait"/Push); `shadow` prüft und protokolliert nur
-  (`message_drafts.auto_decision`); `live` sendet bei Entscheidung `auto` automatisch über
-  `sendClaimedDraft(..., 'auto')` (`src/services/draft-send-service.ts`, atomarer Claim
-  gegen Doppelversand). Schlägt die Prüfung technisch fehl (Prüfmodell/Deps), ist das
-  Ergebnis `wait` mit Grund „Prüfung technisch fehlgeschlagen: …" — nie eine Exception.
+  LLM-Entwurf in `generate-drafts.ts`): Schicht 1 Prüfmodell
+  (`judge-service.ts`/`judge-prompt.ts`, `JUDGE_MODEL`, Kategorie + Risk-Flags +
+  Konfidenz), Schicht 2 mechanische Checks (`mechanical-checks.ts` — Ziffernfolgen,
+  Links, Mail, Geldbeträge inkl. `EUR120`, Telefonnummern, Code-Wörter mit Ziffer,
+  Zahlwörter eins…zwölf/one…ten, Länge, leer), Schicht 3 reine Entscheidungsfunktion
+  (`policy.ts`, `decide()` — kein I/O). `off` prüft NICHT und persistiert NICHT
+  (Entwürfe von Off-Objekten landen sonst fälschlich im „wait"/Push); `shadow` prüft
+  und protokolliert nur (`message_drafts.auto_decision`); `live` sendet bei
+  Entscheidung `auto` automatisch über `sendClaimedDraft(..., 'auto')`
+  (`src/services/draft-send-service.ts`, atomarer Claim gegen Doppelversand). Schlägt
+  die Prüfung technisch fehl (Prüfmodell/Deps), ist das Ergebnis `wait` mit Grund
+  „Prüfung technisch fehlgeschlagen: …" — nie eine Exception. Unbekannte/ungültige
+  `risk_flags` im Prüfmodell-Output gelten seit Final-Review F4 als Prüffehler
+  (`wait`, „Unbekanntes Risk-Flag: …") statt stillschweigend verworfen zu werden — fail
+  closed statt fail open.
 - **Modus-Auflösung** (`mode.ts`, `resolveAutoSendMode`): restriktiverer Wert aus
   `AUTO_SEND_MODE` (Env, global) und `properties.json`-Feld `autoSend` (pro Objekt;
   `off < shadow < live`) — ein Objekt kann den globalen Modus nur verschärfen, nie lockern.
@@ -398,8 +402,18 @@ Copy-Paste kann ein sicherer Entwurf automatisch rausgehen. Spec:
   Entwürfe pro Kalendertag Europe/Berlin (`berlin-day.ts`, `countAutoSentSince`).
 - **Weitere Wait-Gründe:** Kategorie nicht in `AUTO_OK_CATEGORIES`, `playbook_fakt` ohne
   `answerableFromFacts`, jedes Risk-Flag, jeder mechanische Treffer, Konfidenz ≠ „hoch",
-  Micha hat im Thread schon selbst geantwortet (`threadHasHumanIntervention`), Kanal unklar
-  (`canSend`).
+  Micha hat im Thread schon eingegriffen (`threadHasHumanIntervention` — verworfener
+  Entwurf, Feedback-Zeile oder manuelle Kategorie im Thread), vorheriger Versand im
+  Thread fehlgeschlagen/hängt (`threadHasFailedSend` — Draft mit `status` `error` oder
+  `sending` im selben Thread, Final-Review F1: verhindert Doppelversand nach einem
+  fehlgeschlagenen Auto-Send), Kanal unklar (`canSend`).
+- **Sichtbarkeit hängender Auto-Sends:** `getAwaitingDrafts` (`draft-repository.ts`,
+  hinter `/api/agent/drafts/awaiting`) zeigt seit Final-Review F3 zusätzlich zu
+  `wait`/`error` auch Entwürfe, die seit über 10 Minuten auf `auto`/`pending` stehen
+  (Claim verloren, Prozess gestorben) oder seit über 10 Minuten auf `sending` (Crash
+  mitten im Versand) — Grund „Auto-Send hängt — bitte manuell prüfen". Schlägt der
+  Claim in `runner.ts` fehl, persistiert die Kette sofort eine `wait`-Entscheidung,
+  statt den Entwurf stillschweigend auf `auto` stehen zu lassen.
 - **Nachrichten-Loop** (`src/jobs/message-loop.ts`, `runMessageLoopOnce`, eigener Takt
   `MESSAGE_LOOP_MINUTES` (5) unabhängig vom Stunden-ETL): Sync beider Provider →
   Entwürfe → Gate. `messageSyncLock`/`acquireMessageSyncLock` verhindert überlappende Syncs

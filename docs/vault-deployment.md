@@ -80,6 +80,11 @@ Laptop side: pull the deploy repo, ingest bot commits into the master wiki, repu
 Migration 027, Spec `TheBrain2/docs/superpowers/specs/2026-09-19-auto-send-gate-design.md`.
 Details der Gate-Kette und Env-Variablen: App `CLAUDE.md`, Abschnitt „Auto-Send-Gate".
 
+Der `messageSyncLock` (verhindert überlappende Nachrichten-Syncs zwischen
+Nachrichten-Loop, ETL und manuellem „Jetzt syncen"-Button) ist ein reiner
+In-Memory-Mutex im Node-Prozess — er setzt einen einzelnen Node-Prozess voraus
+(kein pm2-Cluster-Modus für diese App).
+
 ```bash
 # 1. Neueste App holen, Migration ziehen
 cd /opt/guesty-calendar-app

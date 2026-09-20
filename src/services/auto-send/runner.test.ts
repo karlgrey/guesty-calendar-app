@@ -1,7 +1,33 @@
 import { describe, it, expect, vi } from 'vitest';
-import { runAutoSendGate, type GateDeps, type GateInput } from './runner.js';
+import { runAutoSendGate, realGateDeps, type GateDeps, type GateInput } from './runner.js';
 import type { MessageThread, Message } from '../../types/messages.js';
 import type { PropertyConfig } from '../../config/properties.js';
+
+// Final-Review F5 — Wiring-Tests für realGateDeps(): mocken NUR das, was realGateDeps
+// selbst zusammenschraubt (Config, scheduler_state, Kanalauflösung, Draft-Repo-Passthrough).
+// Beeinflusst die übrigen Tests in dieser Datei nicht — die injizieren ihre eigenen GateDeps
+// und rufen realGateDeps() nie auf (Default-Parameter wird nur ohne explizite deps ausgewertet).
+vi.mock('../../config/index.js', async (importOriginal) => {
+  const mod: any = await importOriginal();
+  return { ...mod, config: { ...mod.config, autoSendMode: 'shadow', autoSendDailyCap: 3 } };
+});
+
+const getSchedulerStateMock = vi.fn<(key: string) => string | null>(() => null);
+vi.mock('../../repositories/scheduler-state-repository.js', () => ({
+  getSchedulerState: (...args: [string]) => getSchedulerStateMock(...args),
+  setSchedulerState: vi.fn(),
+}));
+
+const resolveOutboundModuleTypeMock = vi.fn<(messages: Message[]) => string | null>(() => null);
+vi.mock('../guesty-channel.js', () => ({
+  resolveOutboundModuleType: (...args: [Message[]]) => resolveOutboundModuleTypeMock(...args),
+}));
+
+const countAutoSentSinceMock = vi.fn<(sinceIso: string) => number>(() => 0);
+vi.mock('../../repositories/draft-repository.js', async (importOriginal) => {
+  const mod: any = await importOriginal();
+  return { ...mod, countAutoSentSince: (...args: [string]) => countAutoSentSinceMock(...args) };
+});
 
 const thread = { id: 'hostex:t1', source: 'hostex', guest_name: 'Anna', channel: 'airbnb', reservation_status: 'confirmed' } as MessageThread;
 const msgs = [{ id: 'm1', direction: 'inbound', body: 'Können wir um 13 Uhr kommen?', sent_at: '2026-09-19T10:00:00Z' }] as Message[];
@@ -100,5 +126,40 @@ describe('runAutoSendGate', () => {
       'live',
     );
     expect(d.send).not.toHaveBeenCalled();
+  });
+});
+
+describe('realGateDeps (Final-Review F5 — Wiring-Tests)', () => {
+  it('envMode/dailyCap kommen aus config', () => {
+    const d = realGateDeps();
+    expect(d.envMode).toBe('shadow');
+    expect(d.dailyCap).toBe(3);
+  });
+  it('isPaused liest scheduler_state-Key auto_send_paused, true nur bei "1"', () => {
+    const d = realGateDeps();
+    getSchedulerStateMock.mockReturnValue(null);
+    expect(d.isPaused()).toBe(false);
+    getSchedulerStateMock.mockReturnValue('0');
+    expect(d.isPaused()).toBe(false);
+    getSchedulerStateMock.mockReturnValue('1');
+    expect(d.isPaused()).toBe(true);
+    expect(getSchedulerStateMock).toHaveBeenCalledWith('auto_send_paused');
+  });
+  it('countAutoSentSince wird durchgereicht', () => {
+    countAutoSentSinceMock.mockReturnValue(7);
+    const d = realGateDeps();
+    expect(d.countAutoSentSince('2026-09-19T00:00:00.000Z')).toBe(7);
+    expect(countAutoSentSinceMock).toHaveBeenCalledWith('2026-09-19T00:00:00.000Z');
+  });
+  it('canSend: hostex-Thread → true, ohne Kanalauflösung zu fragen', () => {
+    const d = realGateDeps();
+    const hostexThread = { source: 'hostex' } as MessageThread;
+    expect(d.canSend(hostexThread, [])).toBe(true);
+  });
+  it('canSend: guesty-Thread mit resolveOutboundModuleType=null → false', () => {
+    resolveOutboundModuleTypeMock.mockReturnValue(null);
+    const d = realGateDeps();
+    const guestyThread = { source: 'guesty' } as MessageThread;
+    expect(d.canSend(guestyThread, [])).toBe(false);
   });
 });

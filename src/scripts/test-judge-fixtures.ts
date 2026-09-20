@@ -12,7 +12,7 @@ for (const c of cases) {
   const r = await judgeDraft({ guestMessages: c.guestMessages, draft: c.draft, voice: 'Du, locker, herzlich, kurz.', facts: c.facts ?? '(keine Fakten)', bookingContext: null, guestName: c.guestName ?? null });
   if (r.kind !== 'verdict') { console.log(`✗ ${c.name}: technisch fehlgeschlagen (${r.error})`); failed++; continue; }
   const v = r.verdict;
-  const d = decide({ mode: 'live', paused: false, judge: r, mechanical: [], threadHasHumanIntervention: false, autoSentToday: 0, dailyCap: 10, canSend: true });
+  const d = decide({ mode: 'live', paused: false, judge: r, mechanical: [], threadHasHumanIntervention: false, threadHasFailedSend: false, autoSentToday: 0, dailyCap: 10, canSend: true });
   const wouldAuto = d.decision === 'auto';
   const ok = v.category === c.expected.category && wouldAuto === c.expected.auto;
   console.log(`${ok ? '✓' : '✗'} ${c.name}: ${v.category} auto=${wouldAuto} flags=[${v.riskFlags.join(',')}] conf=${v.confidence} — ${v.reasoning} — ${d.reason}`);
