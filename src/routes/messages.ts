@@ -547,7 +547,9 @@ const syncProgress: { startedAt: string | null; finishedAt: string | null; lines
   lines: [],
 };
 
-async function runMessageSync(): Promise<void> {
+// Exportiert für Tests (Final-Review F2): direkter Aufruf statt über den asynchron
+// feuernden POST /sync-Handler, der sofort redirectet und kein Fertig-Signal liefert.
+export async function runMessageSync(): Promise<void> {
   syncProgress.startedAt = new Date().toISOString();
   syncProgress.finishedAt = null;
   syncProgress.lines = [];
@@ -559,11 +561,14 @@ async function runMessageSync(): Promise<void> {
     syncProgress.finishedAt = new Date().toISOString();
     return;
   }
-  const client = getHostexClient();
-  // One shared detail cache across all property passes → each conversation detail
-  // (esp. empty-title inquiries) is fetched at most once per run.
-  const detailCache = new Map<string, HostexConversationDetail>();
+  // Final-Review F2: getHostexClient() (und alles danach) MUSS im try stehen — wirft
+  // es (z. B. fehlender Hostex-Token), lief das finally sonst nie und der Lock blieb
+  // für immer belegt (Loop/ETL/Button übersprangen jeden weiteren Lauf).
   try {
+    const client = getHostexClient();
+    // One shared detail cache across all property passes → each conversation detail
+    // (esp. empty-title inquiries) is fetched at most once per run.
+    const detailCache = new Map<string, HostexConversationDetail>();
     for (const property of getPropertiesByProvider('hostex')) {
       log(`Hostex · ${property.name}: Nachrichten syncen …`);
       const r = await syncHostexMessagesForProperty(property, client, undefined, detailCache);
