@@ -48,7 +48,16 @@ export async function judgeDraft(input: JudgeInput, deps: JudgeDeps = defaultDep
   if (!Array.isArray(o.risk_flags)) return { kind: 'failed', error: 'risk_flags fehlt' };
   const reasoning = typeof o.reasoning === 'string' ? o.reasoning.trim() : '';
   if (!reasoning) return { kind: 'failed', error: 'reasoning fehlt' };
-  const riskFlags = o.risk_flags.filter((f): f is JudgeRiskFlag => JUDGE_RISK_FLAGS.includes(f as JudgeRiskFlag));
+  // Final-Review F4: unbekannte/ungültige Flags NICHT stillschweigend verwerfen — ein
+  // Urteil, das nur unbekannte Flags trägt, sähe sonst nach dem Filtern risikofrei aus
+  // (leeres riskFlags[]), obwohl das Prüfmodell tatsächlich ein Risiko markiert hat.
+  // Fail closed statt fail open.
+  for (const f of o.risk_flags) {
+    if (typeof f !== 'string' || !JUDGE_RISK_FLAGS.includes(f as JudgeRiskFlag)) {
+      return { kind: 'failed', error: `Unbekanntes Risk-Flag: ${String(f)}` };
+    }
+  }
+  const riskFlags = o.risk_flags as JudgeRiskFlag[];
   return {
     kind: 'verdict',
     verdict: {

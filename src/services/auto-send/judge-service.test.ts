@@ -14,10 +14,20 @@ describe('judgeDraft', () => {
     const call = vi.fn().mockResolvedValue({ category: 'quatsch', answerable_from_facts: true, risk_flags: [], confidence: 'hoch', reasoning: 'x' });
     expect((await judgeDraft(input, { call, model: 'm' })).kind).toBe('failed');
   });
-  it('unbekanntes Flag wird verworfen, Rest bleibt', async () => {
+  it('unbekanntes Flag → failed statt stillschweigend verworfen (Final-Review F4: fail closed)', async () => {
     const call = vi.fn().mockResolvedValue({ category: 'geld', answerable_from_facts: false, risk_flags: ['promises_action', 'wat'], confidence: 'mittel', reasoning: 'x' });
     const r = await judgeDraft(input, { call, model: 'm' });
-    expect(r.kind === 'verdict' && r.verdict.riskFlags).toEqual(['promises_action']);
+    expect(r).toEqual({ kind: 'failed', error: 'Unbekanntes Risk-Flag: wat' });
+  });
+  it('gültige Flag-Liste bleibt unangetastet', async () => {
+    const call = vi.fn().mockResolvedValue({ category: 'geld', answerable_from_facts: false, risk_flags: ['promises_action', 'tone_off'], confidence: 'mittel', reasoning: 'x' });
+    const r = await judgeDraft(input, { call, model: 'm' });
+    expect(r.kind === 'verdict' && r.verdict.riskFlags).toEqual(['promises_action', 'tone_off']);
+  });
+  it('nicht-string-Element in risk_flags → failed', async () => {
+    const call = vi.fn().mockResolvedValue({ category: 'geld', answerable_from_facts: false, risk_flags: [123], confidence: 'mittel', reasoning: 'x' });
+    const r = await judgeDraft(input, { call, model: 'm' });
+    expect(r).toEqual({ kind: 'failed', error: 'Unbekanntes Risk-Flag: 123' });
   });
   it('fehlende Pflichtfelder → failed', async () => {
     const call = vi.fn().mockResolvedValue({ category: 'geld' });
