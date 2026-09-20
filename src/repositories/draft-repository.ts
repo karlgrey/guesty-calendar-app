@@ -121,20 +121,26 @@ export interface AwaitingDraftRow {
 
 /**
  * Entwürfe, die auf Micha warten: Gate-Entscheidung 'wait' (noch pending), Send-Fehler,
- * oder hängende Auto-Sends (Final-Review F3) — zwei Zustände, die sonst durchs Raster
- * fallen: (a) auto_decision='auto'/status='pending', aber nie gesendet (Claim verloren
- * / Prozess gestorben — blockiert neue Entwürfe im Thread und wird nie gepusht), und
- * (b) status='sending' nach einem Crash mitten im Versand. 10-Minuten-Schwelle, damit
- * ein Auto-Send, der gerade erst geurteilt/geclaimt wurde, nicht fälschlich als hängend
- * gilt.
+ * oder hängende Sends (Final-Review F3, re-review-korrigiert) — zwei Zustände, die sonst
+ * durchs Raster fallen: (a) auto_decision='auto'/auto_mode='live'/status='pending', aber
+ * nie gesendet (Claim verloren / Prozess gestorben — blockiert neue Entwürfe im Thread und
+ * wird nie gepusht), und (b) status='sending' nach einem Crash mitten im Versand (manuell
+ * oder auto — deshalb kein auto_mode-Filter hier). 10-Minuten-Schwelle, damit ein Auto-Send,
+ * der gerade erst geurteilt/geclaimt wurde, nicht fälschlich als hängend gilt.
+ *
+ * WICHTIG: der auto+pending-Fall gilt NUR für auto_mode='live' — im Schattenmodus ist
+ * auto_decision='auto'/status='pending' der Normalzustand (nichts wird automatisch
+ * gesendet, der Entwurf wartet bewusst auf Micha), Spec 4 verlangt „Push nur für
+ * wait-Entscheidungen, auch im Schattenmodus". Ohne diesen Filter würde jeder gute
+ * Schatten-Entwurf nach 10 Minuten fälschlich als „hängt" gepusht.
  */
 export function getAwaitingDrafts(sinceIso: string, limit: number): AwaitingDraftRow[] {
   return getDatabase().prepare(
     `SELECT d.id, d.thread_id, d.provider, d.status, d.created_at,
        CASE
          WHEN d.status = 'error' THEN 'Auto-Send fehlgeschlagen: ' || COALESCE(d.error, '?')
-         WHEN d.status = 'sending' THEN 'Auto-Send hängt — bitte manuell prüfen'
-         WHEN d.auto_decision = 'auto' AND d.status = 'pending' THEN 'Auto-Send hängt — bitte manuell prüfen'
+         WHEN d.status = 'sending' THEN 'Versand hängt — bitte manuell prüfen'
+         WHEN d.auto_decision = 'auto' AND d.auto_mode = 'live' AND d.status = 'pending' THEN 'Auto-Send hängt — bitte manuell prüfen'
          ELSE COALESCE(d.auto_reason, '')
        END AS reason,
        t.guest_name, t.listing_id, t.source,
@@ -145,7 +151,7 @@ export function getAwaitingDrafts(sinceIso: string, limit: number): AwaitingDraf
        AND (
          (d.auto_decision = 'wait' AND d.status = 'pending')
          OR d.status = 'error'
-         OR (d.auto_decision = 'auto' AND d.status = 'pending' AND datetime(d.auto_judged_at) < datetime('now', '-10 minutes'))
+         OR (d.auto_decision = 'auto' AND d.auto_mode = 'live' AND d.status = 'pending' AND datetime(d.auto_judged_at) < datetime('now', '-10 minutes'))
          OR (d.status = 'sending' AND datetime(d.created_at) < datetime('now', '-10 minutes'))
        )
      ORDER BY d.created_at ASC LIMIT ?`,

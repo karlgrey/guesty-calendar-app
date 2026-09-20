@@ -115,27 +115,33 @@ describe('countAutoSentSince / getAwaitingDrafts / stats', () => {
     expect(rows[0].last_guest_message).toContain('13 Uhr');
     expect(rows.find((r) => r.id === 'e1')!.reason).toContain('Auto-Send fehlgeschlagen');
   });
-  it('hängender Auto-Send (auto/pending, älter als 10 min) → enthalten mit Hänge-Grund (F3)', () => {
+  it('hängender Auto-Send (live, auto/pending, älter als 10 min) → enthalten mit Hänge-Grund (F3)', () => {
     createDraft({ id: 'stuck1', thread_id: 'hostex:t1', provider: 'hostex', body: 'x', generated_by: 'llm' });
-    db.prepare(`UPDATE message_drafts SET auto_decision='auto', status='pending', auto_judged_at=datetime('now','-15 minutes') WHERE id='stuck1'`).run();
+    db.prepare(`UPDATE message_drafts SET auto_decision='auto', auto_mode='live', status='pending', auto_judged_at=datetime('now','-15 minutes') WHERE id='stuck1'`).run();
     const rows = getAwaitingDrafts('2026-01-01T00:00:00.000Z', 10);
     const row = rows.find((r) => r.id === 'stuck1');
     expect(row).toBeDefined();
     expect(row!.reason).toBe('Auto-Send hängt — bitte manuell prüfen');
   });
-  it('frischer Auto-Send (auto/pending, gerade geurteilt) → NICHT enthalten (F3)', () => {
+  it('frischer Auto-Send (live, auto/pending, gerade geurteilt) → NICHT enthalten (F3)', () => {
     createDraft({ id: 'fresh1', thread_id: 'hostex:t1', provider: 'hostex', body: 'x', generated_by: 'llm' });
-    db.prepare(`UPDATE message_drafts SET auto_decision='auto', status='pending', auto_judged_at=datetime('now') WHERE id='fresh1'`).run();
+    db.prepare(`UPDATE message_drafts SET auto_decision='auto', auto_mode='live', status='pending', auto_judged_at=datetime('now') WHERE id='fresh1'`).run();
     const rows = getAwaitingDrafts('2026-01-01T00:00:00.000Z', 10);
     expect(rows.find((r) => r.id === 'fresh1')).toBeUndefined();
   });
-  it('hängender Versand (status=sending, älter als 10 min) → enthalten mit Hänge-Grund (F3)', () => {
+  it('Schatten-auto, 15 min alt, pending → NICHT enthalten (Re-Review: Spec 4 „Push nur für wait, auch im Schatten")', () => {
+    createDraft({ id: 'shadow1', thread_id: 'hostex:t1', provider: 'hostex', body: 'x', generated_by: 'llm' });
+    db.prepare(`UPDATE message_drafts SET auto_decision='auto', auto_mode='shadow', status='pending', auto_judged_at=datetime('now','-15 minutes') WHERE id='shadow1'`).run();
+    const rows = getAwaitingDrafts('2026-01-01T00:00:00.000Z', 10);
+    expect(rows.find((r) => r.id === 'shadow1')).toBeUndefined();
+  });
+  it('hängender Versand (status=sending, älter als 10 min) → enthalten mit neutralem Hänge-Grund (F3, Re-Review)', () => {
     createDraft({ id: 'sending1', thread_id: 'hostex:t1', provider: 'hostex', body: 'x', generated_by: 'llm' });
     db.prepare(`UPDATE message_drafts SET status='sending', created_at=datetime('now','-15 minutes') WHERE id='sending1'`).run();
     const rows = getAwaitingDrafts('2026-01-01T00:00:00.000Z', 10);
     const row = rows.find((r) => r.id === 'sending1');
     expect(row).toBeDefined();
-    expect(row!.reason).toBe('Auto-Send hängt — bitte manuell prüfen');
+    expect(row!.reason).toBe('Versand hängt — bitte manuell prüfen');
   });
   it('frischer Versand (status=sending, gerade erst geclaimt) → NICHT enthalten (F3)', () => {
     createDraft({ id: 'sending2', thread_id: 'hostex:t1', provider: 'hostex', body: 'x', generated_by: 'llm' });

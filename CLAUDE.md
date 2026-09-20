@@ -406,14 +406,23 @@ Copy-Paste kann ein sicherer Entwurf automatisch rausgehen. Spec:
   Entwurf, Feedback-Zeile oder manuelle Kategorie im Thread), vorheriger Versand im
   Thread fehlgeschlagen/hängt (`threadHasFailedSend` — Draft mit `status` `error` oder
   `sending` im selben Thread, Final-Review F1: verhindert Doppelversand nach einem
-  fehlgeschlagenen Auto-Send), Kanal unklar (`canSend`).
-- **Sichtbarkeit hängender Auto-Sends:** `getAwaitingDrafts` (`draft-repository.ts`,
-  hinter `/api/agent/drafts/awaiting`) zeigt seit Final-Review F3 zusätzlich zu
-  `wait`/`error` auch Entwürfe, die seit über 10 Minuten auf `auto`/`pending` stehen
-  (Claim verloren, Prozess gestorben) oder seit über 10 Minuten auf `sending` (Crash
-  mitten im Versand) — Grund „Auto-Send hängt — bitte manuell prüfen". Schlägt der
-  Claim in `runner.ts` fehl, persistiert die Kette sofort eine `wait`-Entscheidung,
-  statt den Entwurf stillschweigend auf `auto` stehen zu lassen.
+  fehlgeschlagenen Auto-Send). `threadHasFailedSend` schließt den Thread dabei für die
+  gesamte Lebensdauer dieses hängenden/fehlgeschlagenen Drafts vom Auto-Send aus, nicht
+  nur für den einen betroffenen Entwurf — erst wenn der Draft manuell aufgelöst wird
+  (gesendet/verworfen), greift die Regel wieder normal. Weiterer Wait-Grund: Kanal
+  unklar (`canSend`).
+- **Sichtbarkeit hängender Sends:** `getAwaitingDrafts` (`draft-repository.ts`, hinter
+  `/api/agent/drafts/awaiting`) zeigt seit Final-Review F3 zusätzlich zu `wait`/`error`
+  auch hängende Sends: Entwürfe, die seit über 10 Minuten auf `auto`/`pending` stehen
+  (Claim verloren, Prozess gestorben) — **nur im Live-Modus** (`auto_mode = 'live'`; im
+  Schattenmodus ist `auto`/`pending` der Normalzustand, Spec 4 verlangt „Push nur für
+  wait-Entscheidungen, auch im Schattenmodus" — Re-Review-Korrektur, sonst würde jeder
+  gute Schatten-Entwurf nach 10 Minuten fälschlich gepusht) — Grund „Auto-Send hängt —
+  bitte manuell prüfen"; sowie Entwürfe seit über 10 Minuten auf `sending` (Crash mitten
+  im Versand, gilt für manuelle UND Auto-Sends) — neutraler Grund „Versand hängt —
+  bitte manuell prüfen". Schlägt der Claim in `runner.ts` fehl, persistiert die Kette
+  sofort eine `wait`-Entscheidung, statt den Entwurf stillschweigend auf `auto` stehen
+  zu lassen.
 - **Nachrichten-Loop** (`src/jobs/message-loop.ts`, `runMessageLoopOnce`, eigener Takt
   `MESSAGE_LOOP_MINUTES` (5) unabhängig vom Stunden-ETL): Sync beider Provider →
   Entwürfe → Gate. `messageSyncLock`/`acquireMessageSyncLock` verhindert überlappende Syncs
