@@ -5,7 +5,7 @@ import { setDatabase, resetDatabase } from '../db/index.js';
 import {
   createDraft, setAutoDecision, markDraftSent, setSentBodyChanged, threadHasHumanIntervention,
   countAutoSentSince, getAwaitingDrafts, getAutoSendStats, listAutoDecisions, getDraftById,
-  getLastSentDraftByThread,
+  getLastSentDraftByThread, threadHasFailedSend,
 } from './draft-repository.js';
 
 let db: Database.Database;
@@ -69,6 +69,28 @@ describe('threadHasHumanIntervention', () => {
   it('true bei manueller Kategorie', () => {
     seedThread('hostex:t2', 'Ben', 1);
     expect(threadHasHumanIntervention('hostex:t2')).toBe(true);
+  });
+});
+
+describe('threadHasFailedSend', () => {
+  it('false ohne fehlgeschlagenen/hängenden Versand', () => {
+    expect(threadHasFailedSend('hostex:t1')).toBe(false);
+  });
+  it('true bei Draft mit status=error', () => {
+    createDraft({ id: 'fs1', thread_id: 'hostex:t1', provider: 'hostex', body: 'x', generated_by: 'llm' });
+    db.prepare(`UPDATE message_drafts SET status='error', error='Kanal' WHERE id='fs1'`).run();
+    expect(threadHasFailedSend('hostex:t1')).toBe(true);
+  });
+  it('true bei Draft mit status=sending (hängender Versand)', () => {
+    createDraft({ id: 'fs2', thread_id: 'hostex:t1', provider: 'hostex', body: 'x', generated_by: 'llm' });
+    db.prepare(`UPDATE message_drafts SET status='sending' WHERE id='fs2'`).run();
+    expect(threadHasFailedSend('hostex:t1')).toBe(true);
+  });
+  it('false wenn nur sent/pending im Thread stehen', () => {
+    createDraft({ id: 'fs3', thread_id: 'hostex:t1', provider: 'hostex', body: 'x', generated_by: 'llm' });
+    markDraftSent('fs3', null, 'micha');
+    createDraft({ id: 'fs4', thread_id: 'hostex:t1', provider: 'hostex', body: 'y', generated_by: 'llm' });
+    expect(threadHasFailedSend('hostex:t1')).toBe(false);
   });
 });
 

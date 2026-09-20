@@ -15,6 +15,7 @@ function deps(over: Partial<GateDeps> = {}): GateDeps {
     judge: vi.fn().mockResolvedValue(okVerdict),
     isPaused: vi.fn().mockReturnValue(false),
     hasHumanIntervention: vi.fn().mockReturnValue(false),
+    hasFailedSend: vi.fn().mockReturnValue(false),
     countAutoSentSince: vi.fn().mockReturnValue(0),
     canSend: vi.fn().mockReturnValue(true),
     persistDecision: vi.fn(),
@@ -50,6 +51,14 @@ describe('runAutoSendGate', () => {
     const d = deps({ judge: vi.fn().mockResolvedValue({ kind: 'failed', error: 'x' }) });
     const r = await runAutoSendGate(input, d);
     expect(r.decision.decision).toBe('wait'); expect(d.send).not.toHaveBeenCalled();
+  });
+  it('Thread mit fehlgeschlagenem/hängendem Versand → wait, kein Send (F1)', async () => {
+    const d = deps({ hasFailedSend: vi.fn().mockReturnValue(true) });
+    const r = await runAutoSendGate(input, d);
+    expect(r.decision.decision).toBe('wait');
+    expect(r.decision.reason).toMatch(/Vorheriger Versand.*fehlgeschlagen/);
+    expect(r.sent).toBe(false);
+    expect(d.send).not.toHaveBeenCalled();
   });
   it('Claim schlägt fehl → nicht gesendet', async () => {
     const d = deps({ claim: vi.fn().mockReturnValue(false) });

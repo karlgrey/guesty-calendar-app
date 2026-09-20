@@ -93,6 +93,19 @@ export function threadHasHumanIntervention(threadId: string): boolean {
   return row.hit === 1;
 }
 
+/**
+ * Vorheriger Versand in diesem Thread ist fehlgeschlagen oder hängt fest (Final-Review F1):
+ * ohne diesen Ausschluss erzeugt der nächste Loop-Lauf nach einem fehlgeschlagenen Auto-Send
+ * einen neuen Entwurf, der das Gate erneut passieren und erneut senden könnte (Doppelversand-
+ * Risiko, unbegrenzte Opus+Sende-Zyklen bei anhaltendem Fehler).
+ */
+export function threadHasFailedSend(threadId: string): boolean {
+  const row = getDatabase().prepare(
+    `SELECT EXISTS (SELECT 1 FROM message_drafts WHERE thread_id = ? AND status IN ('error', 'sending')) AS hit`,
+  ).get(threadId) as { hit: number };
+  return row.hit === 1;
+}
+
 export function countAutoSentSince(sinceIso: string): number {
   const row = getDatabase().prepare(
     `SELECT COUNT(*) AS n FROM message_drafts WHERE sent_by = 'auto' AND datetime(sent_at) >= datetime(?)`,

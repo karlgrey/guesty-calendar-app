@@ -4,7 +4,7 @@ import { AUTO_OK_CATEGORIES, type AutoSendDecision, type AutoSendMode, type Judg
 
 export interface PolicyInput {
   mode: AutoSendMode; paused: boolean; judge: JudgeResult; mechanical: MechanicalFinding[];
-  threadHasHumanIntervention: boolean; autoSentToday: number; dailyCap: number; canSend: boolean;
+  threadHasHumanIntervention: boolean; threadHasFailedSend: boolean; autoSentToday: number; dailyCap: number; canSend: boolean;
 }
 
 const CATEGORY_LABEL: Record<JudgeCategory, string> = {
@@ -37,6 +37,7 @@ export function decide(i: PolicyInput): AutoSendDecision {
   if (i.mechanical.length) { const m = i.mechanical[0]; return wait(`Mechanischer Check: ${MECH_LABEL[m.flag]} im Text (${m.match})`); }
   if (v.confidence !== 'hoch') return wait(`Sicherheit des Prüfmodells nur „${v.confidence}"`);
   if (i.threadHasHumanIntervention) return wait('Micha hat in diesem Thread schon eingegriffen');
+  if (i.threadHasFailedSend) return wait('Vorheriger Versand in diesem Thread ist fehlgeschlagen — bitte manuell prüfen');
   if (!i.canSend) return wait('Kanal unklar — kein Versand möglich');
   if (i.autoSentToday >= i.dailyCap) return wait(`Tageslimit erreicht (${i.autoSentToday}/${i.dailyCap})`);
   return { decision: 'auto', reason: `${CATEGORY_LABEL[v.category]}, keine Risiken, Sicherheit hoch`, category, flags };

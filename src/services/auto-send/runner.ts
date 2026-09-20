@@ -8,7 +8,7 @@ import { decide } from './policy.js';
 import { resolveAutoSendMode } from './mode.js';
 import { startOfBerlinDayIso } from './berlin-day.js';
 import type { AutoSendDecision, AutoSendMode, JudgeResult } from './types.js';
-import { setAutoDecision, threadHasHumanIntervention, countAutoSentSince, claimDraftForSending } from '../../repositories/draft-repository.js';
+import { setAutoDecision, threadHasHumanIntervention, threadHasFailedSend, countAutoSentSince, claimDraftForSending } from '../../repositories/draft-repository.js';
 import { getSchedulerState } from '../../repositories/scheduler-state-repository.js';
 import { resolveOutboundModuleType } from '../guesty-channel.js';
 import { sendClaimedDraft } from '../draft-send-service.js';
@@ -25,6 +25,7 @@ export interface GateDeps {
   judge: (i: JudgeInput) => Promise<JudgeResult>;
   isPaused: () => boolean;
   hasHumanIntervention: (threadId: string) => boolean;
+  hasFailedSend: (threadId: string) => boolean;
   countAutoSentSince: (sinceIso: string) => number;
   canSend: (thread: MessageThread, messages: Message[]) => boolean;
   persistDecision: (draftId: string, d: AutoSendDecision, mode: AutoSendMode) => void;
@@ -37,6 +38,7 @@ export function realGateDeps(): GateDeps {
     judge: (i) => judgeDraft(i),
     isPaused: () => getSchedulerState(PAUSE_KEY) === '1',
     hasHumanIntervention: threadHasHumanIntervention,
+    hasFailedSend: threadHasFailedSend,
     countAutoSentSince,
     canSend: (thread, messages) => thread.source !== 'guesty' || resolveOutboundModuleType(messages) !== null,
     persistDecision: setAutoDecision,
@@ -78,6 +80,7 @@ export async function runAutoSendGate(input: GateInput, deps: GateDeps = realGat
     decision = decide({
       mode, paused: deps.isPaused(), judge, mechanical,
       threadHasHumanIntervention: deps.hasHumanIntervention(input.thread.id),
+      threadHasFailedSend: deps.hasFailedSend(input.thread.id),
       autoSentToday: deps.countAutoSentSince(startOfBerlinDayIso()),
       dailyCap: deps.dailyCap,
       canSend: deps.canSend(input.thread, input.messages),
