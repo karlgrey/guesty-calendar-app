@@ -799,9 +799,14 @@ export class GuestyClient {
   async createWebhook(url: string, events: string[]): Promise<any> {
     return this.request<any>('/webhooks', { method: 'POST', body: JSON.stringify({ url, events }) });
   }
-  async getWebhookSecret(): Promise<string> {
-    const res = await this.request<any>('/webhooks-v2/secret');
-    const secret = res?.secret ?? res?.data?.secret;
+  /**
+   * Svix-Signing-Secret für einen Webhook-Endpunkt. Live verifiziert (20.09.2026):
+   * ohne `?url=<Endpoint-URL>` antwortet Guesty mit 400 „illegal url"; die Antwort
+   * ist `{ key: "whsec_…" }` (Feld `secret` als Fallback beibehalten).
+   */
+  async getWebhookSecret(endpointUrl: string): Promise<string> {
+    const res = await this.request<any>(`/webhooks-v2/secret?url=${encodeURIComponent(endpointUrl)}`);
+    const secret = res?.key ?? res?.data?.key ?? res?.secret ?? res?.data?.secret;
     if (typeof secret === 'string' && secret.length > 0) return secret;
     throw new ExternalApiError(`Unerwartete Antwort von /webhooks-v2/secret: ${JSON.stringify(res).slice(0, 500)}`, 502, 'Guesty', { res });
   }

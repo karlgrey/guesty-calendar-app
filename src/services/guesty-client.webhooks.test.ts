@@ -27,21 +27,26 @@ describe('GuestyClient webhook methods (fail-closed bei unbekanntem Shape)', () 
   });
 
   describe('getWebhookSecret', () => {
+    it('res.key (verifizierter Guesty-Shape) → wird zurückgegeben, url als Query-Parameter', async () => {
+      const { client, spy } = clientWithMockedRequest({ key: 'whsec_abc' });
+      expect(await client.getWebhookSecret('https://x.test/api/webhooks/guesty')).toBe('whsec_abc');
+      expect(spy).toHaveBeenCalledWith('/webhooks-v2/secret?url=https%3A%2F%2Fx.test%2Fapi%2Fwebhooks%2Fguesty');
+    });
     it('res.secret ist ein nicht-leerer String → wird zurückgegeben', async () => {
       const { client } = clientWithMockedRequest({ secret: 'whsec_abc' });
-      expect(await client.getWebhookSecret()).toBe('whsec_abc');
+      expect(await client.getWebhookSecret('https://x.test/api/webhooks/guesty')).toBe('whsec_abc');
     });
     it('res.data.secret ist ein nicht-leerer String → wird zurückgegeben', async () => {
       const { client } = clientWithMockedRequest({ data: { secret: 'whsec_abc' } });
-      expect(await client.getWebhookSecret()).toBe('whsec_abc');
+      expect(await client.getWebhookSecret('https://x.test/api/webhooks/guesty')).toBe('whsec_abc');
     });
     it('unbekannter Shape → wirft statt JSON.stringify(res) als Secret zu nehmen', async () => {
       const { client } = clientWithMockedRequest({ foo: 'bar' });
-      await expect(client.getWebhookSecret()).rejects.toThrow(/Unerwartete Antwort von \/webhooks-v2\/secret/);
+      await expect(client.getWebhookSecret('https://x.test/api/webhooks/guesty')).rejects.toThrow(/Unerwartete Antwort von \/webhooks-v2\/secret/);
     });
     it('leerer String-Secret gilt als unbekannter Shape', async () => {
       const { client } = clientWithMockedRequest({ secret: '' });
-      await expect(client.getWebhookSecret()).rejects.toThrow(/Unerwartete Antwort von \/webhooks-v2\/secret/);
+      await expect(client.getWebhookSecret('https://x.test/api/webhooks/guesty')).rejects.toThrow(/Unerwartete Antwort von \/webhooks-v2\/secret/);
     });
   });
 

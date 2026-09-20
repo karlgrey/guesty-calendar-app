@@ -17,6 +17,6 @@ if (hit) {
   const created = await guestyClient.createWebhook(url, [REQUIRED_EVENT]);
   console.log(`Angelegt: ${created?._id ?? JSON.stringify(created)}`);
 }
-console.log(`\nGUESTY_WEBHOOK_SECRET=${await guestyClient.getWebhookSecret()}`);
+console.log(`\nGUESTY_WEBHOOK_SECRET=${await guestyClient.getWebhookSecret(url)}`);
 console.log('→ in die Server-.env eintragen und pm2 restart.');
 process.exit(0);
