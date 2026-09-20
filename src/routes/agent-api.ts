@@ -102,9 +102,19 @@ router.post('/reservations/:id/cancel', async (req, res) => {
   } catch (err) { handleError(res, err); }
 });
 
-function propertySummary(property: PropertyConfig | undefined): { slug: string; name: string; code: string } | null {
+function propertySummary(
+  property: PropertyConfig | undefined,
+): { slug: string; name: string; code: string; shortCode: string | null } | null {
   if (!property) return null;
-  return { slug: property.slug, name: property.name, code: property.shortCode ?? property.slug };
+  // shortCode zusätzlich zu code (additiv, #Task-12-Fix-Runde-1): der
+  // labs-Watcher (Task 14) liest property.shortCode und fällt sonst auf den
+  // Slug zurück ("farmhouse" statt "FH" im Push) — code bleibt unverändert,
+  // damit bestehende /threads-Konsumenten stabil bleiben.
+  return {
+    slug: property.slug, name: property.name,
+    code: property.shortCode ?? property.slug,
+    shortCode: property.shortCode ?? null,
+  };
 }
 
 const DEFAULT_THREADS_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;

@@ -196,7 +196,7 @@ describe('agent-api', () => {
     expect(body.threads).toHaveLength(2);
     expect(body.threads[0]).toMatchObject({
       threadId: 'hostex:a', source: 'hostex',
-      property: { slug: 'farmhouse', name: 'Farmhouse Prasser', code: 'FH' },
+      property: { slug: 'farmhouse', name: 'Farmhouse Prasser', code: 'FH', shortCode: 'FH' },
       guestName: 'Anna', needsReply: true,
       lastMessageAt: '2026-08-05T10:00:00.000Z', lastMessageDirection: 'inbound',
       autoDecision: null,
@@ -352,6 +352,7 @@ describe('agent-api', () => {
       expect(res.status).toBe(200);
       const body = await res.json();
       expect(body.drafts[0]).toMatchObject({ draftId: 'd1', threadId: 'hostex:a', guestName: 'Anna', reason: 'Kategorie Sonderwunsch — nie automatisch' });
+      expect(body.drafts[0].property).toMatchObject({ shortCode: 'FH' });
       expect(body.drafts[0].guestMessageExcerpt).toBe('Könnten wir schon um 11 Uhr rein? Wir sind früh da.');
       expect(body.drafts[0].adminUrl).toMatch(/\/admin\/messages\/hostex%3Aa$/);
       expect(body.drafts[0].createdAt).toBe('2026-09-19T12:00:00.000Z');
