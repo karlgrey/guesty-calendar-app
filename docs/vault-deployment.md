@@ -74,3 +74,38 @@ Laptop side: pull the deploy repo, ingest bot commits into the master wiki, repu
   `git -C /opt/brainstem-gaeste revert <sha>`.
 - Full vault rollback: re-run `tools/publish.py` from the master wiki and force-push — the deploy
   repo is a generated artifact, the master is always the source of truth.
+
+## Auto-Send-Gate aktivieren
+
+Migration 027, Spec `TheBrain2/docs/superpowers/specs/2026-09-19-auto-send-gate-design.md`.
+Details der Gate-Kette und Env-Variablen: App `CLAUDE.md`, Abschnitt „Auto-Send-Gate".
+
+```bash
+# 1. Neueste App holen, Migration ziehen
+cd /opt/guesty-calendar-app
+git pull
+npm run db:migrate
+
+# 2. .env ergänzen — erst im vorsichtigen shadow-Modus starten (protokolliert nur,
+#    sendet noch nichts automatisch)
+grep -q '^AUTO_SEND_MODE=' .env || echo 'AUTO_SEND_MODE=shadow' >> .env
+# optional, Defaults reichen meist: AUTO_SEND_DAILY_CAP, MESSAGE_LOOP_MINUTES, JUDGE_MODEL
+
+# 3. App neu starten, damit der eigenständige Nachrichten-Loop mit dem neuen Modus läuft
+pm2 restart guesty-calendar
+
+# 4. Guesty-Webhook einmalig registrieren (reservation.messageReceived → Echtzeit-Trigger
+#    statt nur der nächste Loop-Tick)
+npm run webhook:register
+#    Ausgabe "GUESTY_WEBHOOK_SECRET=..." in die Server-.env eintragen, dann erneut:
+pm2 restart guesty-calendar
+
+# 5. Verify
+pm2 logs guesty-calendar --lines 120
+#   look for: "💬 Nachrichten-Loop gestartet"
+```
+
+Danach im Admin-UI auf `/admin/messages/auto-send` den aktuellen Modus, die letzten
+Entscheidungen und den Pausen-Schalter prüfen. Von `shadow` auf `live` erst wechseln,
+wenn die protokollierten Entscheidungen manuell gegengeprüft wurden (`AUTO_SEND_MODE=live`
+in `.env`, `pm2 restart`).
