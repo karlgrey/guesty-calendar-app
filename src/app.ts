@@ -26,6 +26,9 @@ import authRoutes from './routes/auth.js';
 import adminUsersRoutes from './routes/admin-users.js';
 import propertyRoutes from './routes/property-routes.js';
 import agentApiRoutes from './routes/agent-api.js';
+import { createGuestyWebhookRouter } from './routes/webhooks-guesty.js';
+import { handleGuestyInbound } from './jobs/handle-guesty-inbound.js';
+import logger from './utils/logger.js';
 
 /**
  * Create and configure Express application
@@ -38,6 +41,13 @@ export function createApp() {
 
   // Configure authentication
   configureAuth();
+
+  // Guesty-Webhook braucht den Rohkörper für die Svix-Signatur — vor express.json() mounten.
+  app.use('/api/webhooks/guesty', express.raw({ type: '*/*', limit: '1mb' }),
+    createGuestyWebhookRouter({ secret: config.guestyWebhookSecret, handleInbound: handleGuestyInbound }));
+  if (!config.guestyWebhookSecret) {
+    logger.warn('Guesty-Webhook inaktiv: GUESTY_WEBHOOK_SECRET fehlt — Poll bleibt das Netz');
+  }
 
   // Middleware
   app.use(express.json());

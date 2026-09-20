@@ -20,6 +20,14 @@ beforeEach(() => {
       from_name TEXT, from_address TEXT, to_address TEXT, subject TEXT, body TEXT NOT NULL, body_html TEXT,
       source TEXT NOT NULL, raw_meta TEXT, created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
+    CREATE TABLE message_drafts (
+      id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, provider TEXT NOT NULL, body TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending', generated_by TEXT NOT NULL DEFAULT 'manual',
+      send_attempts INTEGER NOT NULL DEFAULT 0, external_message_id TEXT, error TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')), sent_at TEXT,
+      auto_decision TEXT, auto_category TEXT, auto_flags TEXT, auto_reason TEXT,
+      auto_mode TEXT, auto_judged_at TEXT, sent_by TEXT, sent_body_changed INTEGER
+    );
   `);
   setDatabase(db);
   const t = db.prepare(`INSERT INTO message_threads
@@ -38,6 +46,9 @@ beforeEach(() => {
   m.run('m3', 'guesty:b', 'outbound', datetime('-2 days'), 'host', 'Antwort', 'guesty');
   // Thread old: outside the default window
   m.run('m4', 'guesty:old', 'inbound', datetime('-30 days'), 'Old', 'Frage', 'guesty');
+  // Thread a hat einen wartenden Draft (Auto-Send-Gate) — Thread b hat keinen.
+  db.prepare(`INSERT INTO message_drafts (id, thread_id, provider, body, status, auto_decision, created_at)
+    VALUES (?,?,?,?,?,?,?)`).run('d1', 'hostex:a', 'hostex', 'Entwurf', 'pending', 'wait', datetime('-1 day'));
 });
 afterEach(() => { resetDatabase(); db.close(); });
 
@@ -78,5 +89,14 @@ describe('getThreadsUpdatedSince', () => {
     const b = rows.find((r) => r.id === 'guesty:b')!;
     expect(a.last_message_direction).toBe('inbound');
     expect(b.last_message_direction).toBe('outbound');
+  });
+
+  it('surfaces auto_decision of the newest draft, null when there is none', () => {
+    const since = datetime('-7 days');
+    const rows = getThreadsUpdatedSince(since, 50);
+    const a = rows.find((r) => r.id === 'hostex:a')!;
+    const b = rows.find((r) => r.id === 'guesty:b')!;
+    expect(a.auto_decision).toBe('wait');
+    expect(b.auto_decision).toBeNull();
   });
 });

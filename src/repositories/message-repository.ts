@@ -190,6 +190,9 @@ export interface ThreadWithLastMessage extends MessageThread {
   // getThreadsNeedingReply/getThreadsNeedingDraft) — null if the thread has
   // no non-system messages yet.
   last_message_direction: MessageDirection | null;
+  // Auto-Send-Entscheidung des neuesten Drafts dieses Threads (Auto-Send-Gate) —
+  // null, wenn (noch) kein Draft existiert.
+  auto_decision: 'auto' | 'wait' | null;
 }
 
 /**
@@ -205,7 +208,9 @@ export function getThreadsUpdatedSince(sinceIso: string, limit: number): ThreadW
       `SELECT t.*,
          (SELECT m.direction FROM messages m
           WHERE m.thread_id = t.id AND m.direction != 'system'
-          ORDER BY m.sent_at DESC, m.created_at DESC LIMIT 1) AS last_message_direction
+          ORDER BY m.sent_at DESC, m.created_at DESC LIMIT 1) AS last_message_direction,
+         (SELECT d.auto_decision FROM message_drafts d WHERE d.thread_id = t.id
+          ORDER BY d.created_at DESC LIMIT 1) AS auto_decision
        FROM message_threads t
        WHERE datetime(t.last_message_at) >= datetime(?)
        ORDER BY t.last_message_at DESC

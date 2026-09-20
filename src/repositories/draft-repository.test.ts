@@ -16,7 +16,9 @@ beforeEach(() => {
     body TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'pending',
     generated_by TEXT NOT NULL DEFAULT 'manual', send_attempts INTEGER NOT NULL DEFAULT 0,
     external_message_id TEXT, error TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')), sent_at TEXT, model TEXT
+    created_at TEXT NOT NULL DEFAULT (datetime('now')), sent_at TEXT, model TEXT,
+    auto_decision TEXT, auto_category TEXT, auto_flags TEXT, auto_reason TEXT,
+    auto_mode TEXT, auto_judged_at TEXT, sent_by TEXT, sent_body_changed INTEGER
   );`);
   setDatabase(db);
 });

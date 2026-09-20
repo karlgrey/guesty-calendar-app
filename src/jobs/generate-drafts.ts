@@ -4,6 +4,7 @@ import { createDraft } from '../repositories/draft-repository.js';
 import { loadVoice, loadPropertyFacts } from '../services/vault-knowledge.js';
 import { generateDraftForThread, DRAFT_MODEL, type DraftResult } from '../services/draft-service.js';
 import { buildBookingContext } from '../services/booking-context.js';
+import { runAutoSendGate, type GateInput } from '../services/auto-send/runner.js';
 import type { MessageThread, Message, NewDraft } from '../types/messages.js';
 import type { PropertyConfig } from '../config/properties.js';
 import logger from '../utils/logger.js';
@@ -41,6 +42,7 @@ export interface DraftGenDeps {
   // #364: what the platform already knows about this thread's booking
   // (reservation/inquiry link) — see booking-context.ts.
   buildBookingContext: (thread: MessageThread) => string | null;
+  gate: (i: GateInput) => Promise<unknown>;
 }
 
 const realDeps: DraftGenDeps = {
@@ -52,11 +54,13 @@ const realDeps: DraftGenDeps = {
   create: createDraft,
   markNoReply: markThreadAiNoReply,
   buildBookingContext,
+  gate: (i) => runAutoSendGate(i),
 };
 
 export async function generateDraftsForProperty(
   property: PropertyConfig,
   deps: DraftGenDeps = realDeps,
+  opts: { onlyThreadIds?: string[] } = {},
 ): Promise<{ generated: number; skipped: number }> {
   const target = resolveDraftSource(property);
   if (!target || !property.vaultNote) return { generated: 0, skipped: 0 };
@@ -67,16 +71,27 @@ export async function generateDraftsForProperty(
     return { generated: 0, skipped: 0 };
   }
 
-  const threads = deps.getThreads(target.source, target.listingId, DRAFT_GEN_CAP, DRAFT_SINCE_MODIFIER);
+  // Bei onlyThreadIds (Webhook-Kette) darf ein frischer Thread nicht am 10er-Cap
+  // scheitern — höheres Limit, danach exakt auf die gewünschten Ids filtern.
+  const limit = opts.onlyThreadIds ? Math.max(DRAFT_GEN_CAP, 100) : DRAFT_GEN_CAP;
+  const threads = deps.getThreads(target.source, target.listingId, limit, DRAFT_SINCE_MODIFIER);
+  const selected = opts.onlyThreadIds ? threads.filter((t) => opts.onlyThreadIds!.includes(t.id)) : threads;
   let generated = 0;
   let skipped = 0;
-  for (const thread of threads) {
+  for (const thread of selected) {
     try {
       const bookingContext = deps.buildBookingContext(thread);
-      const result = await deps.generate({ thread, messages: deps.getMessages(thread.id), voice, facts, bookingContext });
+      const messages = deps.getMessages(thread.id);
+      const result = await deps.generate({ thread, messages, voice, facts, bookingContext });
       if (result.kind === 'text') {
-        deps.create({ id: randomUUID(), thread_id: thread.id, provider: target.source, body: result.body, generated_by: 'llm', model: DRAFT_MODEL });
+        const draftId = randomUUID();
+        deps.create({ id: draftId, thread_id: thread.id, provider: target.source, body: result.body, generated_by: 'llm', model: DRAFT_MODEL });
         generated++;
+        try {
+          await deps.gate({ draftId, body: result.body, thread, messages, voice, facts, bookingContext, property });
+        } catch (gateErr) {
+          logger.warn({ threadId: thread.id, err: gateErr instanceof Error ? gateErr.message : String(gateErr) }, 'auto-send: Gate fehlgeschlagen (Entwurf bleibt pending)');
+        }
       } else if (result.kind === 'no_reply') {
         // Bewusste Modell-Entscheidung "keine Antwort nötig" — merken, damit weder der
         // nächste Cron-Lauf noch die UI denselben Stand erneut ans Modell schicken.

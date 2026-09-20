@@ -371,6 +371,91 @@ Doku `read_only`) — bleibt beim Copy-Paste-Flow. Spec:
   (nur über den periodischen/täglichen ETL-Zyklus) — bewusste Abgrenzung, damit
   der Messaging-Sync-Button nicht überraschend auch Bewertungen anstößt.
 
+### Auto-Send-Gate (Migration 027, Spec 2026-09-19)
+
+Drittes Freigabe-Gate-System neben Guest-Reply und Gäste-Bewertungen oben — statt
+Copy-Paste kann ein sicherer Entwurf automatisch rausgehen. Spec:
+`TheBrain2/docs/superpowers/specs/2026-09-19-auto-send-gate-design.md`.
+
+- **Kette** (`src/services/auto-send/runner.ts`, `runAutoSendGate`, läuft nach JEDEM
+  LLM-Entwurf in `generate-drafts.ts`): Schicht 1 Prüfmodell
+  (`judge-service.ts`/`judge-prompt.ts`, `JUDGE_MODEL`, Kategorie + Risk-Flags +
+  Konfidenz), Schicht 2 mechanische Checks (`mechanical-checks.ts` — Ziffernfolgen,
+  Links, Mail, Geldbeträge inkl. `EUR120`, Telefonnummern, Code-Wörter mit Ziffer,
+  Zahlwörter eins…zwölf/one…ten, Länge, leer), Schicht 3 reine Entscheidungsfunktion
+  (`policy.ts`, `decide()` — kein I/O). `off` prüft NICHT und persistiert NICHT
+  (Entwürfe von Off-Objekten landen sonst fälschlich im „wait"/Push); `shadow` prüft
+  und protokolliert nur (`message_drafts.auto_decision`); `live` sendet bei
+  Entscheidung `auto` automatisch über `sendClaimedDraft(..., 'auto')`
+  (`src/services/draft-send-service.ts`, atomarer Claim gegen Doppelversand). Schlägt
+  die Prüfung technisch fehl (Prüfmodell/Deps), ist das Ergebnis `wait` mit Grund
+  „Prüfung technisch fehlgeschlagen: …" — nie eine Exception. Unbekannte/ungültige
+  `risk_flags` im Prüfmodell-Output gelten seit Final-Review F4 als Prüffehler
+  (`wait`, „Unbekanntes Risk-Flag: …") statt stillschweigend verworfen zu werden — fail
+  closed statt fail open.
+- **Modus-Auflösung** (`mode.ts`, `resolveAutoSendMode`): restriktiverer Wert aus
+  `AUTO_SEND_MODE` (Env, global) und `properties.json`-Feld `autoSend` (pro Objekt;
+  `off < shadow < live`) — ein Objekt kann den globalen Modus nur verschärfen, nie lockern.
+- **Pause & Tageslimit:** Schalter „Auto-Send" auf `/admin/messages/auto-send`
+  (`src/routes/messages.ts`) setzt `scheduler_state`-Key `auto_send_paused` — pausiert
+  entscheidet `policy.ts` immer `wait`. `AUTO_SEND_DAILY_CAP` zählt automatisch versendete
+  Entwürfe pro Kalendertag Europe/Berlin (`berlin-day.ts`, `countAutoSentSince`).
+- **Weitere Wait-Gründe:** Kategorie nicht in `AUTO_OK_CATEGORIES`, `playbook_fakt` ohne
+  `answerableFromFacts`, jedes Risk-Flag, jeder mechanische Treffer, Konfidenz ≠ „hoch",
+  Micha hat im Thread schon eingegriffen (`threadHasHumanIntervention` — verworfener
+  Entwurf, Feedback-Zeile oder manuelle Kategorie im Thread), vorheriger Versand im
+  Thread fehlgeschlagen/hängt (`threadHasFailedSend` — Draft mit `status` `error` oder
+  `sending` im selben Thread, Final-Review F1: verhindert Doppelversand nach einem
+  fehlgeschlagenen Auto-Send). `threadHasFailedSend` schließt den Thread dabei für die
+  gesamte Lebensdauer dieses hängenden/fehlgeschlagenen Drafts vom Auto-Send aus, nicht
+  nur für den einen betroffenen Entwurf — erst wenn der Draft manuell aufgelöst wird
+  (gesendet/verworfen), greift die Regel wieder normal. Weiterer Wait-Grund: Kanal
+  unklar (`canSend`).
+- **Sichtbarkeit hängender Sends:** `getAwaitingDrafts` (`draft-repository.ts`, hinter
+  `/api/agent/drafts/awaiting`) zeigt seit Final-Review F3 zusätzlich zu `wait`/`error`
+  auch hängende Sends: Entwürfe, die seit über 10 Minuten auf `auto`/`pending` stehen
+  (Claim verloren, Prozess gestorben) — **nur im Live-Modus** (`auto_mode = 'live'`; im
+  Schattenmodus ist `auto`/`pending` der Normalzustand, Spec 4 verlangt „Push nur für
+  wait-Entscheidungen, auch im Schattenmodus" — Re-Review-Korrektur, sonst würde jeder
+  gute Schatten-Entwurf nach 10 Minuten fälschlich gepusht) — Grund „Auto-Send hängt —
+  bitte manuell prüfen"; sowie Entwürfe seit über 10 Minuten auf `sending` (Crash mitten
+  im Versand, gilt für manuelle UND Auto-Sends) — neutraler Grund „Versand hängt —
+  bitte manuell prüfen". Schlägt der Claim in `runner.ts` fehl, persistiert die Kette
+  sofort eine `wait`-Entscheidung, statt den Entwurf stillschweigend auf `auto` stehen
+  zu lassen.
+- **Nachrichten-Loop** (`src/jobs/message-loop.ts`, `runMessageLoopOnce`, eigener Takt
+  `MESSAGE_LOOP_MINUTES` (5) unabhängig vom Stunden-ETL): Sync beider Provider →
+  Entwürfe → Gate. `messageSyncLock`/`acquireMessageSyncLock` verhindert überlappende Syncs
+  mit dem ETL (ETL wartet bis 60 s, manueller „Jetzt syncen"-Button und Webhook je 30 s).
+  Guesty-Conversation-Liste läuft mit `limit=100`. Start-Log: „💬 Nachrichten-Loop gestartet".
+- **Guesty-Webhook** (`POST /api/webhooks/guesty`, `src/routes/webhooks-guesty.ts` +
+  `src/services/guesty-webhook-signature.ts`): reagiert auf `reservation.messageReceived`
+  in Echtzeit statt auf den nächsten Loop-Tick. Svix-Signatur-Prüfung, deshalb VOR
+  `express.json()` mit `express.raw()` gemountet (`app.ts`) — sonst ist der Rohkörper für
+  die Signatur weg. Sofort `202`, Verarbeitung async (`src/jobs/handle-guesty-inbound.ts`
+  lädt die Konversation immer per `getConversation` frisch nach, Shape verifiziert
+  20.09.2026). Einmalig registrieren: `npm run webhook:register`
+  (`src/scripts/register-guesty-webhook.ts`, legt die Subscription an bzw. warnt wenn sie
+  ohne das nötige Event existiert) → gibt `GUESTY_WEBHOOK_SECRET` aus, in `.env` eintragen.
+- **Agent-API** (`src/routes/agent-api.ts`): `GET /api/agent/drafts/awaiting?since=&limit=`
+  (offene `wait`-Entwürfe fürs WhatsApp-Push/Briefing), `GET
+  /api/agent/auto-send/stats?days=` (Auto-Send-Auswertung); `/threads` liefert zusätzlich
+  `autoDecision` und `property.shortCode`.
+- **Testfixtures:** `npm run test:judge` (`src/scripts/test-judge-fixtures.ts`, Live-Lauf
+  gegen `JUDGE_MODEL`, 11 Fälle in `src/test-fixtures/judge/cases.json`) — **Pflicht vor
+  jeder Prompt-Änderung** an `judge-prompt.ts` (aktuell 11/11 grün).
+- **Env-Variablen:** `AUTO_SEND_MODE` (`off`|`shadow`|`live`, Default `off`),
+  `AUTO_SEND_DAILY_CAP` (Default 10), `MESSAGE_LOOP_MINUTES` (Default 5), `JUDGE_MODEL`
+  (Default `claude-opus-5`), `GUESTY_WEBHOOK_SECRET` (aus `npm run webhook:register`).
+- **Key Files:** `src/services/auto-send/{types,mode,berlin-day,mechanical-checks,
+  judge-prompt,judge-service,policy,runner}.ts`, `src/services/draft-send-service.ts`,
+  `src/services/guesty-webhook-signature.ts`, `src/routes/webhooks-guesty.ts`,
+  `src/jobs/{message-loop,handle-guesty-inbound}.ts`,
+  `src/scripts/{register-guesty-webhook,test-judge-fixtures}.ts`,
+  `src/test-fixtures/judge/cases.json`, Migration `027_add_auto_send.sql`.
+- **Server-Setup:** → siehe `docs/vault-deployment.md`, Abschnitt „Auto-Send-Gate
+  aktivieren".
+
 ### Airbnb-Mail Integration (Migration 013)
 
 Dritter Booking-Provider für Properties, die nur über Airbnb laufen. Daten kommen aus:
@@ -486,6 +571,17 @@ if (!propertyId) throw new NotFoundError('No property configured');
 - `src/repositories/reservation-repository.ts` - `getRecentCheckoutIdsNeedingReview()`
 - `src/repositories/message-repository.ts` - `getThreadsByReservationId()` (Guesty) + `getThreadsByListingAndGuestName()` (Hostex fallback)
 
+### Auto-Send-Gate Services (Migration 027)
+- `src/services/auto-send/{types,mode,berlin-day,mechanical-checks,judge-prompt,judge-service,policy,runner}.ts` - Gate-Kette (Spec 2026-09-19)
+- `src/services/draft-send-service.ts` - `sendClaimedDraft()`: atomarer Claim + Versand, auch für manuelles Senden
+- `src/services/guesty-webhook-signature.ts` - Svix-Signaturprüfung für den Guesty-Webhook
+- `src/routes/webhooks-guesty.ts` - `POST /api/webhooks/guesty`, vor `express.json()` gemountet
+- `src/jobs/message-loop.ts` - eigener `MESSAGE_LOOP_MINUTES`-Takt: Sync → Entwürfe → Gate
+- `src/jobs/handle-guesty-inbound.ts` - lädt die Konversation beim Webhook-Treffer frisch nach
+- `src/scripts/register-guesty-webhook.ts` - `npm run webhook:register`
+- `src/scripts/test-judge-fixtures.ts` - `npm run test:judge`, Live-Lauf gegen `JUDGE_MODEL`
+- `src/test-fixtures/judge/cases.json` - 11 Testfälle fürs Prüfmodell
+
 ### Frontend
 - `public/calendar.js` - Calendar with property context (`window.__PROPERTY_SLUG__`, `__PROPERTY_NAME__`, `__BOOKING_EMAIL__`)
 - `public/calendar.css` - Mobile-first responsive design
@@ -531,6 +627,11 @@ Optional:
 - `HOSTEX_ACCESS_TOKEN` - Hostex API token (required for Hostex properties)
 - `DRAFT_GEN_CAP` - Max AI drafts per property per ETL run (default: 10)
 - `DRAFT_MAX_AGE_HOURS` - Only draft threads with guest activity newer than this (default: 72 hours)
+- `AUTO_SEND_MODE` - `off`|`shadow`|`live`, Auto-Send-Gate (default: `off`), see Auto-Send-Gate section
+- `AUTO_SEND_DAILY_CAP` - Max automatisch versendete Entwürfe pro Kalendertag Europe/Berlin (default: 10)
+- `MESSAGE_LOOP_MINUTES` - Takt des eigenständigen Nachrichten-Loops (default: 5)
+- `JUDGE_MODEL` - Modell für die Auto-Send-Prüfung (default: `claude-opus-5`)
+- `GUESTY_WEBHOOK_SECRET` - Svix-Secret des Guesty-Webhooks, aus `npm run webhook:register`
 
 ## Guesty API Quirks
 

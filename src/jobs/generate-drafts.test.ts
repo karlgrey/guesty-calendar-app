@@ -24,6 +24,7 @@ function deps(over: Partial<DraftGenDeps> = {}): DraftGenDeps {
     create: vi.fn(),
     markNoReply: vi.fn(),
     buildBookingContext: vi.fn().mockReturnValue(null),
+    gate: vi.fn().mockResolvedValue({}),
     ...over,
   };
 }
@@ -119,6 +120,33 @@ describe('generateDraftsForProperty', () => {
     expect(buildBookingContext).toHaveBeenCalledWith(threadB);
     expect(generate).toHaveBeenCalledWith(expect.objectContaining({ thread: threadA, bookingContext: 'CTX-A' }));
     expect(generate).toHaveBeenCalledWith(expect.objectContaining({ thread: threadB, bookingContext: null }));
+  });
+});
+
+describe('Auto-Send-Gate in der Kette', () => {
+  it('ruft das Gate nach jedem erzeugten Entwurf mit Draft-Id und Kontext', async () => {
+    const d = deps({ getThreads: vi.fn().mockReturnValue([mkThread('hostex:a')]) });
+    await generateDraftsForProperty(property, d);
+    expect(d.gate).toHaveBeenCalledTimes(1);
+    const arg = (d.gate as any).mock.calls[0][0];
+    expect(arg).toMatchObject({ body: 'REPLY', voice: 'VOICE', facts: 'FACTS', property });
+    expect(arg.draftId).toBe((d.create as any).mock.calls[0][0].id);
+  });
+  it('Gate-Fehler bricht die Kette nicht ab', async () => {
+    const d = deps({ gate: vi.fn().mockRejectedValue(new Error('gate down')) });
+    const res = await generateDraftsForProperty(property, d);
+    expect(res.generated).toBe(2);
+  });
+  it('onlyThreadIds filtert', async () => {
+    const d = deps();
+    await generateDraftsForProperty(property, d, { onlyThreadIds: ['hostex:b'] });
+    expect(d.create).toHaveBeenCalledTimes(1);
+    expect((d.create as any).mock.calls[0][0].thread_id).toBe('hostex:b');
+  });
+  it('onlyThreadIds holt mit Limit 100 statt dem 10er-Cap (Webhook-Thread nicht abgeschnitten)', async () => {
+    const d = deps();
+    await generateDraftsForProperty(property, d, { onlyThreadIds: ['hostex:b'] });
+    expect(d.getThreads).toHaveBeenCalledWith('hostex', 'L1', 100, DRAFT_SINCE_MODIFIER);
   });
 });
 

@@ -13,12 +13,14 @@ import {
 import { createOrGetDocument, refreshDocument } from '../services/document-service.js';
 import { guestyClient } from '../services/guesty-client.js';
 import { getThreadsUpdatedSince, getThreadById, getMessagesByThread } from '../repositories/message-repository.js';
+import { getAwaitingDrafts, getAutoSendStats } from '../repositories/draft-repository.js';
 import { propertyForBadge } from '../utils/thread-property.js';
 import { runConsistencyCheck, listOpenReservations } from '../jobs/consistency-check.js';
 import { getPropertyBySlug, getPropertySlugs, getListingId } from '../config/properties.js';
 import type { PropertyConfig } from '../config/properties.js';
 import { listDocumentsForAgent } from '../repositories/document-repository.js';
 import { AppError, NotFoundError, ValidationError } from '../utils/errors.js';
+import { config } from '../config/index.js';
 import logger from '../utils/logger.js';
 
 const router = express.Router();
@@ -100,9 +102,19 @@ router.post('/reservations/:id/cancel', async (req, res) => {
   } catch (err) { handleError(res, err); }
 });
 
-function propertySummary(property: PropertyConfig | undefined): { slug: string; name: string; code: string } | null {
+function propertySummary(
+  property: PropertyConfig | undefined,
+): { slug: string; name: string; code: string; shortCode: string | null } | null {
   if (!property) return null;
-  return { slug: property.slug, name: property.name, code: property.shortCode ?? property.slug };
+  // shortCode zusätzlich zu code (additiv, #Task-12-Fix-Runde-1): der
+  // labs-Watcher (Task 14) liest property.shortCode und fällt sonst auf den
+  // Slug zurück ("farmhouse" statt "FH" im Push) — code bleibt unverändert,
+  // damit bestehende /threads-Konsumenten stabil bleiben.
+  return {
+    slug: property.slug, name: property.name,
+    code: property.shortCode ?? property.slug,
+    shortCode: property.shortCode ?? null,
+  };
 }
 
 const DEFAULT_THREADS_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
@@ -133,6 +145,7 @@ router.get('/threads', (req, res) => {
         needsReply: t.last_message_direction === 'inbound',
         lastMessageAt: t.last_message_at,
         lastMessageDirection: t.last_message_direction,
+        autoDecision: t.auto_decision ?? null,
       })),
     });
   } catch (err) { handleError(res, err); }
@@ -274,6 +287,66 @@ router.get('/documents', (req, res) => {
         source: d.source ?? null,
         createdAt: d.createdAt,
       })),
+    });
+  } catch (err) { handleError(res, err); }
+});
+
+// Erste Zeile der Gästenachricht (bis zum ersten Zeilenumbruch), Leerraum
+// vereinheitlicht, max. 160 Zeichen — für den Push-Text (adminUrl-Vorschau,
+// labs-Watcher). Bewusst keine Satz-Erkennung: eine Frage mit "?" mitten in
+// der ersten Zeile soll nicht vorzeitig abgeschnitten werden.
+export function guestExcerpt(text: string | null): string {
+  const firstLine = (text ?? '').split(/\r?\n/)[0]?.replace(/\s+/g, ' ').trim() ?? '';
+  return firstLine.length > 160 ? `${firstLine.slice(0, 157)}…` : firstLine;
+}
+
+// SQLite speichert Timestamps als "YYYY-MM-DD HH:MM:SS" (UTC, ohne Zone) —
+// der labs-Watcher vergleicht Strings lexikographisch, deshalb hier immer
+// auf ISO-UTC normalisieren.
+const sqliteToIso = (s: string) => new Date(s.includes('T') ? s : `${s.replace(' ', 'T')}Z`).toISOString();
+
+// Wartende Entwürfe (Auto-Send-Gate: 'wait'-Entscheidung oder Send-Fehler) —
+// für den labs-Watcher/Push an Micha. Siehe Abschnitt 7.2 im Design-Doc.
+router.get('/drafts/awaiting', (req, res) => {
+  try {
+    let sinceIso = new Date(Date.now() - DEFAULT_THREADS_WINDOW_MS).toISOString();
+    if (typeof req.query.since === 'string' && req.query.since) {
+      const parsed = new Date(req.query.since);
+      if (Number.isNaN(parsed.getTime())) throw new ValidationError('since muss ein gültiger ISO-Zeitstempel sein');
+      sinceIso = parsed.toISOString();
+    }
+    const limitRaw = typeof req.query.limit === 'string' ? Number(req.query.limit) : NaN;
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.floor(limitRaw) : 50;
+    const rows = getAwaitingDrafts(sinceIso, limit);
+    res.json({
+      drafts: rows.map((r) => ({
+        draftId: r.id, threadId: r.thread_id,
+        property: propertySummary(propertyForBadge({ source: r.source, listing_id: r.listing_id })),
+        guestName: r.guest_name, guestMessageExcerpt: guestExcerpt(r.last_guest_message),
+        reason: r.reason, createdAt: sqliteToIso(r.created_at),
+        adminUrl: `${config.baseUrl.replace(/\/$/, '')}/admin/messages/${encodeURIComponent(r.thread_id)}`,
+      })),
+    });
+  } catch (err) { handleError(res, err); }
+});
+
+// Auto-Send-Statistik (Kennzahlen fürs Standup/Review) — Shadow-Mode-Quote
+// zeigt, wie oft der Bot-Entwurf im Shadow-Betrieb unverändert versendet wurde.
+router.get('/auto-send/stats', (req, res) => {
+  try {
+    const daysRaw = typeof req.query.days === 'string' ? Number(req.query.days) : 1;
+    const days = Number.isFinite(daysRaw) && daysRaw > 0 ? daysRaw : 1;
+    const s = getAutoSendStats(new Date(Date.now() - days * 86400000).toISOString());
+    const n = (v: number | null) => v ?? 0;
+    const denom = n(s.shadowUnchanged) + n(s.shadowChanged);
+    res.json({
+      autoSent: n(s.autoSent),
+      waited: n(s.waited),
+      shadowWouldAuto: n(s.shadowWouldAuto),
+      shadowUnchanged: n(s.shadowUnchanged),
+      shadowChanged: n(s.shadowChanged),
+      shadowDiscarded: n(s.shadowDiscarded),
+      shadowUnchangedRate: denom ? Math.round((100 * n(s.shadowUnchanged)) / denom) : null,
     });
   } catch (err) { handleError(res, err); }
 });

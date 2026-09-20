@@ -111,6 +111,8 @@ export interface PropertyConfig {
   shortCode?: string; // Kurzkürzel für kompakte UI-Badges, z.B. "FH", "U19", "AS", "BH"
   uiColor?: string; // sehr helle Hintergrund-Tönung für Listenzeilen, z.B. "#FBF3E4"
   vaultNote?: string; // Dateiname der Objekt-Notiz im Vault (Areas/Hosting/Properties/<vaultNote>)
+  /** Auto-Send-Modus dieses Objekts; effektiv gilt der restriktivere Wert gegenüber AUTO_SEND_MODE */
+  autoSend?: 'off' | 'shadow' | 'live';
   timezone: string;
   currency: string;
   bookingRecipientEmail: string;
@@ -221,6 +223,7 @@ const propertyConfigSchema = z.object({
   shortCode: z.string().min(1).max(5).optional(),
   uiColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   vaultNote: z.string().optional(),
+  autoSend: z.enum(['off', 'shadow', 'live']).optional(),
   timezone: z.string().default('Europe/Berlin'),
   currency: z.string().length(3).toUpperCase().default('EUR'),
   bookingRecipientEmail: z.string().email(),

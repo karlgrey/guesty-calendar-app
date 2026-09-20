@@ -768,6 +768,45 @@ export class GuestyClient {
   }
 
   /**
+   * Einzelne Konversation nachladen (Webhook-Payloads ohne Listing-Info, Spec 3.1).
+   * Shape per Live-Aufruf verifiziert (Controller, 20.09.2026): GET
+   * /communication/conversations/{id} liefert { status, data: { _id, meta: { reservations:
+   * [...], guest: {...} }, ... } } — data ist die Konversation, identisch zum Listen-Shape.
+   * Fail-closed (Fix-Runde 2) statt eines Objekts ohne _id weiterzureichen.
+   */
+  async getConversation(conversationId: string): Promise<any> {
+    const res = await this.request<any>(`/communication/conversations/${conversationId}`);
+    const c = res?.data?.conversation ?? res?.data ?? res;
+    if (!c || typeof c !== 'object' || typeof c._id !== 'string') {
+      throw new ExternalApiError(`Unerwartete Antwort von /communication/conversations/${conversationId}: ${JSON.stringify(res).slice(0, 500)}`, 502, 'Guesty', { res });
+    }
+    return c;
+  }
+
+  /**
+   * Webhook-Verwaltung (Registrierungsskript, npm run webhook:register).
+   * Fail-closed bei unbekanntem Response-Shape (Fix-Runde 1, Important #2): ein leeres
+   * Array würde das Skript eine doppelte Subscription anlegen lassen, ein erfundenes
+   * "Secret" (JSON.stringify(res)) würde jeden echten Webhook auf 401 laufen lassen —
+   * beides lieber laut scheitern als still falsch weitermachen.
+   */
+  async listWebhooks(): Promise<any[]> {
+    const res = await this.request<any>('/webhooks');
+    if (Array.isArray(res)) return res;
+    if (Array.isArray(res?.data)) return res.data;
+    throw new ExternalApiError(`Unerwartete Antwort von /webhooks: ${JSON.stringify(res).slice(0, 500)}`, 502, 'Guesty', { res });
+  }
+  async createWebhook(url: string, events: string[]): Promise<any> {
+    return this.request<any>('/webhooks', { method: 'POST', body: JSON.stringify({ url, events }) });
+  }
+  async getWebhookSecret(): Promise<string> {
+    const res = await this.request<any>('/webhooks-v2/secret');
+    const secret = res?.secret ?? res?.data?.secret;
+    if (typeof secret === 'string' && secret.length > 0) return secret;
+    throw new ExternalApiError(`Unerwartete Antwort von /webhooks-v2/secret: ${JSON.stringify(res).slice(0, 500)}`, 502, 'Guesty', { res });
+  }
+
+  /**
    * Create a guest record (guests-crud).
    * Returns the new guest's ID.
    */
