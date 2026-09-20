@@ -119,17 +119,35 @@ export interface AwaitingDraftRow {
   last_guest_message: string | null;
 }
 
-/** Entwürfe, die auf Micha warten: Gate-Entscheidung 'wait' (noch pending) oder Send-Fehler. */
+/**
+ * Entwürfe, die auf Micha warten: Gate-Entscheidung 'wait' (noch pending), Send-Fehler,
+ * oder hängende Auto-Sends (Final-Review F3) — zwei Zustände, die sonst durchs Raster
+ * fallen: (a) auto_decision='auto'/status='pending', aber nie gesendet (Claim verloren
+ * / Prozess gestorben — blockiert neue Entwürfe im Thread und wird nie gepusht), und
+ * (b) status='sending' nach einem Crash mitten im Versand. 10-Minuten-Schwelle, damit
+ * ein Auto-Send, der gerade erst geurteilt/geclaimt wurde, nicht fälschlich als hängend
+ * gilt.
+ */
 export function getAwaitingDrafts(sinceIso: string, limit: number): AwaitingDraftRow[] {
   return getDatabase().prepare(
     `SELECT d.id, d.thread_id, d.provider, d.status, d.created_at,
-       CASE WHEN d.status = 'error' THEN 'Auto-Send fehlgeschlagen: ' || COALESCE(d.error, '?') ELSE COALESCE(d.auto_reason, '') END AS reason,
+       CASE
+         WHEN d.status = 'error' THEN 'Auto-Send fehlgeschlagen: ' || COALESCE(d.error, '?')
+         WHEN d.status = 'sending' THEN 'Auto-Send hängt — bitte manuell prüfen'
+         WHEN d.auto_decision = 'auto' AND d.status = 'pending' THEN 'Auto-Send hängt — bitte manuell prüfen'
+         ELSE COALESCE(d.auto_reason, '')
+       END AS reason,
        t.guest_name, t.listing_id, t.source,
        (SELECT m.body FROM messages m WHERE m.thread_id = t.id AND m.direction = 'inbound'
           ORDER BY m.sent_at DESC, m.created_at DESC LIMIT 1) AS last_guest_message
      FROM message_drafts d JOIN message_threads t ON t.id = d.thread_id
      WHERE datetime(d.created_at) > datetime(?)
-       AND ((d.auto_decision = 'wait' AND d.status = 'pending') OR d.status = 'error')
+       AND (
+         (d.auto_decision = 'wait' AND d.status = 'pending')
+         OR d.status = 'error'
+         OR (d.auto_decision = 'auto' AND d.status = 'pending' AND datetime(d.auto_judged_at) < datetime('now', '-10 minutes'))
+         OR (d.status = 'sending' AND datetime(d.created_at) < datetime('now', '-10 minutes'))
+       )
      ORDER BY d.created_at ASC LIMIT ?`,
   ).all(sinceIso, limit) as AwaitingDraftRow[];
 }

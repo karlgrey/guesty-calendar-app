@@ -96,7 +96,16 @@ export async function runAutoSendGate(input: GateInput, deps: GateDeps = realGat
   logger.info({ draftId: input.draftId, threadId: input.thread.id, mode, decision: decision.decision, reason: decision.reason, flags: decision.flags }, 'auto-send: Entscheidung');
 
   if (mode !== 'live' || decision.decision !== 'auto') return { decision, mode, sent: false };
-  if (!deps.claim(input.draftId)) { logger.warn({ draftId: input.draftId }, 'auto-send: Claim fehlgeschlagen'); return { decision, mode, sent: false }; }
+  if (!deps.claim(input.draftId)) {
+    // Final-Review F3: Claim verloren (z. B. Prozess-Crash zwischen zwei Läufen) darf den
+    // Entwurf nicht stillschweigend auf auto_decision='auto' stehen lassen — sonst blockiert
+    // er neue Entwürfe im Thread (pending-Invariante) und taucht nirgends im Push/UI auf.
+    // Sofort als wait nachpersistieren, damit /drafts/awaiting ihn zeigt.
+    logger.warn({ draftId: input.draftId }, 'auto-send: Claim fehlgeschlagen');
+    decision = { decision: 'wait', reason: 'Entwurf konnte nicht für den Versand reserviert werden', category: decision.category, flags: decision.flags };
+    deps.persistDecision(input.draftId, decision, mode);
+    return { decision, mode, sent: false };
+  }
   const result = await deps.send(input.draftId, input.thread, input.body, 'auto');
   if (!result.ok) logger.error({ draftId: input.draftId, err: result.err instanceof Error ? result.err.message : String(result.err) }, 'auto-send: Versand fehlgeschlagen');
   return { decision, mode, sent: result.ok };

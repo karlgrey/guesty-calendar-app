@@ -60,9 +60,15 @@ describe('runAutoSendGate', () => {
     expect(r.sent).toBe(false);
     expect(d.send).not.toHaveBeenCalled();
   });
-  it('Claim schlägt fehl → nicht gesendet', async () => {
+  it('Claim schlägt fehl → nicht gesendet, wait-Entscheidung nachträglich persistiert (F3)', async () => {
     const d = deps({ claim: vi.fn().mockReturnValue(false) });
-    expect((await runAutoSendGate(input, d)).sent).toBe(false);
+    const r = await runAutoSendGate(input, d);
+    expect(r.sent).toBe(false);
+    expect(d.persistDecision).toHaveBeenCalledTimes(2);
+    expect(d.persistDecision).toHaveBeenNthCalledWith(1, 'd1', expect.objectContaining({ decision: 'auto' }), 'live');
+    expect(d.persistDecision).toHaveBeenNthCalledWith(2, 'd1', expect.objectContaining({
+      decision: 'wait', reason: 'Entwurf konnte nicht für den Versand reserviert werden',
+    }), 'live');
   });
   it('Send-Fehler → sent=false (Draft steht auf error, Push folgt über awaiting)', async () => {
     const d = deps({ send: vi.fn().mockResolvedValue({ ok: false, err: new Error('down') }) });
