@@ -28,13 +28,13 @@
     }
   },
   {
-    "name": "Linda dankt auf Englisch, Entwurf antwortet auf Deutsch (real, anonymisiert, #686 language_mismatch-Positivfall)",
+    "name": "Nora dankt auf Englisch, Entwurf antwortet auf Deutsch (real, anonymisiert, #686 language_mismatch-Positivfall)",
     "guestMessages": [
       "Thank you so much ☺️"
     ],
-    "draft": "Hey Linda,\n\ndas tut mir sehr leid zu hoeren - ich wuensche deiner Familie gute Besserung und alles Gute in dieser Zeit.\n\nWir sind gerne wieder fuer dich da, wenn die Lage es zulaesst.\n\nLiebe Gruesse, Micha",
+    "draft": "Hey Nora,\n\ndas tut mir sehr leid zu hoeren - ich wuensche deiner Familie gute Besserung und alles Gute in dieser Zeit.\n\nWir sind gerne wieder fuer dich da, wenn die Lage es zulaesst.\n\nLiebe Gruesse, Micha",
     "facts": "Reservierung storniert; Gast hatte vorab einen familiaeren Notfall als Grund genannt.",
-    "guestName": "Linda",
+    "guestName": "Nora",
     "guestLanguage": "en",
     "expected": {
       "category": "dank_smalltalk",
@@ -125,7 +125,7 @@
     "guestMessages": [
       "Alles klar, 21 Uhr passt super. Wie komme ich denn an den Schluesseltresor?"
     ],
-    "draft": "Hey Oskar, alles klar, 21 Uhr passt super, dann checkst du einfach ein, sobald du da bist. Den Zugang zum Tresor findest du im Airbnb-Check-in-Guide.\n\nGute Fahrt und bis gleich!",
+    "draft": "Hey Oskar, alles klar, 21 Uhr passt super, dann checkst du einfach ein, sobald du da bist. Den Zugang zum Tresor findest du im Check-in-Guide zu deiner Buchung.\n\nGute Fahrt und bis gleich!",
     "facts": "Self-Check-in per Schluesseltresor; Zugang steht im Airbnb-Check-in-Guide. Codes NIE in Nachrichten nennen.",
     "guestName": "Oskar",
     "expected": {
@@ -138,7 +138,7 @@
     "guestMessages": [
       "Wo genau finden wir die Zugangscodes fuers Haus?"
     ],
-    "draft": "Hey Rita, klar, kein Problem! Die Zugangscodes findet ihr im Check-in-Guide hier bei Airbnb - der wird euch kurz vor der Anreise freigeschaltet bzw. ist ueber euer Buchungsdetails-Menue aufrufbar (meist unter „Check-in-Anleitung“ oder „Haus-Handbuch“). Falls du ihn kurz vorher immer noch nicht findest, meld dich einfach nochmal, dann helfen wir gemeinsam weiter.",
+    "draft": "Hey Rita, klar, kein Problem! Die Zugangscodes findet ihr im Check-in-Guide zu eurer Buchung - der wird euch kurz vor der Anreise freigeschaltet bzw. ist ueber euer Buchungsdetails-Menue aufrufbar (meist unter „Check-in-Anleitung“ oder „Haus-Handbuch“). Falls du ihn kurz vorher immer noch nicht findest, meld dich einfach nochmal, dann helfen wir gemeinsam weiter.",
     "facts": "Self-Check-in; Zugangscodes werden Gaesten kurz vor Anreise automatisch im Airbnb-Check-in-Guide freigeschaltet, erreichbar ueber das Buchungsdetails-Menue bei Airbnb (dort als „Check-in-Anleitung“ bzw. „Haus-Handbuch“ bezeichnet). Codes NIE in Nachrichten nennen.",
     "guestName": "Rita",
     "expected": {
