@@ -545,13 +545,18 @@ Copy-Paste kann ein sicherer Entwurf automatisch rausgehen. Spec:
     findet den jüngsten Guesty-System-Post „New guest inquiry" bzw. „New guest reservation
     request <Code>" im GESAMTEN Thread-Verlauf und erzwingt die Kategorie `buchungsanfrage` —
     UNABHÄNGIG vom Judge (der sie zusätzlich aus dem Gasttext erkennen darf/soll) — solange die
-    verknüpfte Reservierung/Inquiry NICHT bestätigt ist (`thread.reservation_status`,
-    deckungsgleich mit `ACTIVE_RESERVATION_STATUSES` aus `reservation-repository.ts`). Ist die
-    Reservierung/Inquiry bestätigt, liefert die Funktion `null` — normale Bewertung. `request_kind`
-    (`inquiry`|`request_to_book`) + `platform_deadline_at` (Zeitpunkt des System-Posts + 24h,
-    Airbnb erwartet bei BEIDEN Post-Arten eine Antwort binnen 24h, bleibt über Folgenachrichten
-    hinweg stabil — kein Neustart der Frist) werden am Draft persistiert (Migration 030),
-    unabhängig vom Gate-Ergebnis.
+    verknüpfte Reservierung/Inquiry NICHT final entschieden ist (`thread.reservation_status`
+    ∉ `OPEN_BOOKING_REQUEST_CLOSED_STATUSES` — eigene Konstante in `booking-request.ts`, NICHT
+    `ACTIVE_RESERVATION_STATUSES` aus `reservation-repository.ts`: die hat eine andere Bedeutung,
+    „belegt den Kalender", und enthält `reserved` — Review-Korrektur 21.09.2026: `reserved` ist
+    in Guesty der Status einer noch OFFENEN Request-to-Book, nicht „bestätigt", verifiziert am
+    Fall Anika, `inquiries.status` blieb `reserved` bis zu Michas Annahme). Offen = Status ∈
+    `{inquiry, reserved}` oder `null`/unbekannt (konservativ); final entschieden = `{confirmed,
+    canceled, cancelled, declined, expired, closed, checked_in, checked_out}` → Funktion liefert
+    `null`, normale Bewertung. `request_kind` (`inquiry`|`request_to_book`) +
+    `platform_deadline_at` (Zeitpunkt des System-Posts + 24h, Airbnb erwartet bei BEIDEN
+    Post-Arten eine Antwort binnen 24h, bleibt über Folgenachrichten hinweg stabil — kein
+    Neustart der Frist) werden am Draft persistiert (Migration 030), unabhängig vom Gate-Ergebnis.
   - **Kategorie-Vorrang bei Folgenachrichten (#702, 21.09.2026, Fall Anika Farmhouse):**
     ursprünglich (#697) griff die mechanische Erkennung NUR, wenn der System-Post direkt NACH
     der letzten Gastnachricht lag — eine spätere Antwort des Gastes auf unsere Rückfrage (z. B.
