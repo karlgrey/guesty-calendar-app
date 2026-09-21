@@ -14,10 +14,27 @@ export const messageSyncLock = {
     this.holder = owner;
     return true;
   },
-  release(): void {
+  // #686 Nachzieh-Liste: nur der aktuelle Halter darf freigeben — ohne Owner-Prüfung konnte ein
+  // verspätetes finally (z. B. eines längst verworfenen Vorgangs) den Lock eines ANDEREN, in der
+  // Zwischenzeit gestarteten Owners kappen und so zwei Läufe gleichzeitig auf dieselben Threads
+  // loslassen. Fremder Owner → No-op + Warnung, Lock bleibt bestehen.
+  release(owner: string): void {
+    if (this.holder !== owner) {
+      logger.warn(
+        { owner, holder: this.holder },
+        'message-loop: release() von falschem Owner ignoriert — Lock bleibt bestehen',
+      );
+      return;
+    }
     this.holder = null;
   },
 };
+
+// Nur für Tests: erzwingt einen leeren Lock unabhängig vom aktuellen Owner (Test-Isolation
+// zwischen Fällen, die den Lock mit unterschiedlichen Ownern belegen).
+export function resetMessageSyncLockForTests(): void {
+  messageSyncLock.holder = null;
+}
 
 /**
  * Wie tryAcquire, aber wartet bis zu maxWaitMs (in stepMs-Schritten) auf einen freien Lock,
@@ -99,7 +116,7 @@ export async function runMessageLoopOnce(
       }
     }
   } finally {
-    messageSyncLock.release();
+    messageSyncLock.release('message-loop');
   }
   logger.info({ properties: count, durationMs: Date.now() - start }, 'message-loop: Lauf beendet');
   return { skipped: false, properties: count };

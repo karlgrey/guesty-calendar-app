@@ -12,6 +12,7 @@ import {
   messageSyncLock,
   runMessageLoopOnce,
   acquireMessageSyncLock,
+  resetMessageSyncLockForTests,
   type MessageLoopDeps,
 } from './message-loop.js';
 import type { PropertyConfig } from '../config/properties.js';
@@ -32,7 +33,7 @@ function deps(over: Partial<MessageLoopDeps> = {}): MessageLoopDeps {
     ...over,
   };
 }
-beforeEach(() => messageSyncLock.release());
+beforeEach(() => resetMessageSyncLockForTests());
 
 describe('runMessageLoopOnce', () => {
   it('synct Hostex- und Guesty-Objekte, Guesty-Liste nur einmal, dann Entwürfe', async () => {
@@ -78,9 +79,34 @@ describe('runMessageLoopOnce', () => {
   });
 });
 
+// #686 Nachzieh-Liste: release() nahm bisher jeden Aufrufer bedingungslos ab — ein Owner konnte
+// so den Lock eines ANDEREN Owners freigeben (z. B. wenn ein bereits abgelaufener/verworfener
+// Vorgang doch noch sein finally durchläuft, nachdem längst ein neuer Owner den Lock hält).
+// release(owner) gibt nur noch frei, wenn owner tatsächlich der aktuelle Halter ist.
+describe('messageSyncLock.release(owner) — Owner-Prüfung (#686)', () => {
+  beforeEach(() => resetMessageSyncLockForTests());
+
+  it('korrekter Owner gibt frei', () => {
+    messageSyncLock.tryAcquire('etl');
+    messageSyncLock.release('etl');
+    expect(messageSyncLock.holder).toBeNull();
+  });
+
+  it('fremder Owner gibt NICHT frei — Lock bleibt beim echten Halter', () => {
+    messageSyncLock.tryAcquire('etl');
+    messageSyncLock.release('message-loop');
+    expect(messageSyncLock.holder).toBe('etl');
+  });
+
+  it('Release auf freiem Lock ist ein No-op', () => {
+    messageSyncLock.release('etl');
+    expect(messageSyncLock.holder).toBeNull();
+  });
+});
+
 describe('acquireMessageSyncLock', () => {
   beforeEach(() => {
-    messageSyncLock.release();
+    resetMessageSyncLockForTests();
     vi.useFakeTimers();
   });
   afterEach(() => {
@@ -94,7 +120,7 @@ describe('acquireMessageSyncLock', () => {
 
   it('lock belegt, wird nach 7s frei: true nach Warten', async () => {
     messageSyncLock.tryAcquire('message-loop');
-    setTimeout(() => messageSyncLock.release(), 7000);
+    setTimeout(() => messageSyncLock.release('message-loop'), 7000);
     const resultPromise = acquireMessageSyncLock('etl', 60_000, 5000);
     await vi.advanceTimersByTimeAsync(15_000);
     await expect(resultPromise).resolves.toBe(true);

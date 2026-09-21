@@ -170,7 +170,7 @@ async function runHostexETL(property: PropertyConfig, force: boolean): Promise<E
           logger.error({ error, propertySlug: property.slug }, 'Hostex: draft-gen error (non-fatal)');
         }
       } finally {
-        messageSyncLock.release();
+        messageSyncLock.release('etl');
       }
     }
     try {
@@ -290,7 +290,7 @@ export async function runETLJobForProperty(
           logger.error({ error, propertySlug: slug }, 'Guesty: draft-gen error (non-fatal)');
         }
       } finally {
-        messageSyncLock.release();
+        messageSyncLock.release('etl');
       }
     }
     try {
