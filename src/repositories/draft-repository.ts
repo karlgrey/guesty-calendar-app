@@ -187,6 +187,14 @@ export interface AwaitingDraftRow {
  * wenn die Entscheidung 'auto' ist — egal ob live bereits gesendet oder im Schatten nur
  * protokolliert: Micha muss die Airbnb-Entscheidung (Annehmen/Ablehnen) so oder so treffen,
  * unabhängig davon, ob die (reine Rückfrage-)Antwort automatisch rausging.
+ *
+ * #686 Nachzieh-Liste: `since`-Vergleich ist `>=` (inklusiv, vereinheitlicht mit
+ * countAutoSentSince) statt vormals `>` — created_at kommt aus `datetime('now')` und hat daher
+ * nur Sekundenauflösung. Ein Cursor-Aufrufer, der `since` exakt auf den created_at-Wert des
+ * zuletzt gesehenen Drafts setzt (übliches Poll-Muster), hätte mit `>` jeden WEITEREN Draft
+ * derselben Sekunde für immer verloren (kein späterer Poll liefert ihn nach). Mit `>=` taucht
+ * höchstens der Cursor-Draft selbst nochmal auf — das ist harmlos, WENN der Aufrufer per
+ * `draftId` (im Response enthalten) dedupliziert; ein für immer verlorener Draft ist es nicht.
  */
 export function getAwaitingDrafts(sinceIso: string, limit: number): AwaitingDraftRow[] {
   return getDatabase().prepare(
@@ -206,7 +214,7 @@ export function getAwaitingDrafts(sinceIso: string, limit: number): AwaitingDraf
        (SELECT m.body FROM messages m WHERE m.thread_id = t.id AND m.direction = 'inbound'
           ORDER BY m.sent_at DESC, m.created_at DESC LIMIT 1) AS last_guest_message
      FROM message_drafts d JOIN message_threads t ON t.id = d.thread_id
-     WHERE datetime(d.created_at) > datetime(?)
+     WHERE datetime(d.created_at) >= datetime(?)
        AND (
          (d.auto_decision = 'wait' AND d.status = 'pending')
          OR d.status = 'error'

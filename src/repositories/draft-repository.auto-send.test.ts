@@ -164,6 +164,42 @@ describe('countAutoSentSince / getAwaitingDrafts / stats', () => {
     expect(s).toEqual({ autoSent: 0, waited: 1, shadowWouldAuto: 2, shadowUnchanged: 1, shadowChanged: 1, shadowDiscarded: 0 });
     expect(listAutoDecisions(10).length).toBe(3);
   });
+
+  // #686 Nachzieh-Liste (Ergänzung Re-Review, Kommentar 2147): getAwaitingDrafts verglich mit
+  // `>` (exklusiv), countAutoSentSince mit `>=` (inklusiv) — uneinheitlich. created_at hat nur
+  // Sekundenauflösung (`datetime('now')`), zwei Drafts in derselben Sekunde bekommen denselben
+  // Wert. Setzt der Aufrufer `since` exakt auf den created_at-Wert des zuletzt gesehenen Drafts
+  // (übliches Cursor-Muster), verschluckte die exklusive `>`-Prüfung jeden WEITEREN Draft
+  // derselben Sekunde für immer (stiller Datenverlust — der Draft taucht nie wieder auf). Mit
+  // `>=` (jetzt vereinheitlicht mit countAutoSentSince) taucht der Cursor-Draft selbst zwar
+  // nochmal auf, aber die draftId im Response erlaubt dem Aufrufer verlustfreies Dedup — ein
+  // erneut gelieferter, bereits bekannter Draft ist harmlos, ein für immer verlorener nicht.
+  it('since exakt auf created_at eines Drafts gesetzt (Sekundenauflösung-Randfall) → Draft ist weiterhin enthalten (>=), nicht verloren', () => {
+    createDraft({ id: 'cursor1', thread_id: 'hostex:t1', provider: 'hostex', body: 'x', generated_by: 'llm' });
+    setAutoDecision('cursor1', { decision: 'wait', reason: 'Grund', category: 'geld', flags: [] }, 'live');
+    const stored = getDraftById('cursor1')!;
+    // since = exakt der created_at-Wert des Drafts (z. B. weil der vorherige Poll genau auf
+    // diese Sekunde als Cursor gesetzt hat — der Normalfall bei Sekundenauflösung).
+    const sinceIso = new Date(`${stored.created_at.replace(' ', 'T')}Z`).toISOString();
+    const rows = getAwaitingDrafts(sinceIso, 10);
+    expect(rows.map((r) => r.id)).toContain('cursor1');
+  });
+
+  // #686 Nachzieh-Liste (Ergänzung Re-Review): der Reason-Text "Auto-Send hängt" war ursprünglich
+  // auch für hängende MANUELLE Sends gesetzt — irreführend, weil kein Auto-Send beteiligt war.
+  // Die Fix-Welle für F3 hat das bereits auf einen neutralen Text (unabhängig von auto_mode)
+  // umgestellt; dieser Test sichert das für einen Draft ab, der NIE durchs Gate lief
+  // (auto_decision/auto_mode beide NULL, wie bei einem rein manuellen Entwurf) — genau der Fall,
+  // den die alte Bedingung (`auto_decision='auto'`) nicht erfasst hätte.
+  it('hängender MANUELLER Versand (status=sending, kein auto_decision/auto_mode gesetzt) → neutraler Grund, nicht "Auto-Send hängt"', () => {
+    createDraft({ id: 'manualsend1', thread_id: 'hostex:t1', provider: 'hostex', body: 'x', generated_by: 'llm' });
+    db.prepare(`UPDATE message_drafts SET status='sending', created_at=datetime('now','-15 minutes') WHERE id='manualsend1'`).run();
+    const rows = getAwaitingDrafts('2026-01-01T00:00:00.000Z', 10);
+    const row = rows.find((r) => r.id === 'manualsend1');
+    expect(row).toBeDefined();
+    expect(row!.reason).toBe('Versand hängt — bitte manuell prüfen');
+    expect(row!.reason).not.toContain('Auto-Send');
+  });
 });
 
 describe('getLastSentDraftByThread', () => {
