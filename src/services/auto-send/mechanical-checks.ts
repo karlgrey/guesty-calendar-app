@@ -12,7 +12,9 @@ const CODE_WORDS = /\b(Code|PIN|Tresor|Schlüsselbox|Schloss)\b/i;
 const NUMBER_WORDS = /\b(null|eins|zwei|drei|vier|fünf|sechs|sieben|acht|neun|zehn|elf|zwölf|zero|one|two|three|four|five|six|seven|eight|nine|ten)\b/i;
 // #697: Bestätigungs-/Zusagewörter — nur relevant im Buchungsanfrage-Kontext (eine Rückfrage
 // darf niemals wie eine Bestätigung/Zusage klingen, DE+EN, Spec-Änderung Micha 21.09.2026).
-const CONFIRMATION_WORDS = /\b(bestätigt|bestätige|bestätigung|angenommen|confirm(ed)?|accepted)\b/i;
+// Bewusst NUR Verben/Partizipien: das Substantiv „Bestätigung“ ist Pflichtinhalt der Rückfrage
+// („die endgültige Bestätigung läuft über Airbnb“) und darf nicht stoppen (Review Hauptsession 21.09.).
+const CONFIRMATION_WORDS = /\b(bestätigt|bestätige|bestätigen|angenommen|confirm(ed)?|accepted)\b/i;
 const NOTHING_IN_THE_WAY = /steht[^.!?]{0,60}nichts im weg/i;
 
 export function collectDigitRuns(texts: string[]): string[] {
