@@ -14,7 +14,7 @@ import { getSchedulerState } from '../../repositories/scheduler-state-repository
 import { resolveOutboundModuleType } from '../guesty-channel.js';
 import { sendClaimedDraft } from '../draft-send-service.js';
 import { resolvePromiseTask, type PromiseTaskInput, type PromiseTaskResult } from '../promise-task-service.js';
-import { detectBookingRequestContext } from '../booking-request.js';
+import { findOpenBookingRequest } from '../booking-request.js';
 import { resolveBookingRequestTask, type BookingRequestTaskInput, type BookingRequestTaskResult } from '../booking-request-task-service.js';
 import { resolveBookingPeriod } from '../booking-context.js';
 import logger from '../../utils/logger.js';
@@ -36,7 +36,10 @@ export interface GateDeps {
   envMode: AutoSendMode; dailyCap: number;
   judge: (i: JudgeInput) => Promise<JudgeResult>;
   isPaused: () => boolean;
-  hasHumanIntervention: (threadId: string) => boolean;
+  // #702 Punkt 1: der Ausschluss gilt nur noch für die AKTUELLE Nachrichtenrunde — der Runner
+  // übergibt dazu sent_at der letzten Gastnachricht (null ohne Gastnachricht), siehe
+  // lastInboundMessageSentAt() unten und draft-repository.ts threadHasHumanIntervention.
+  hasHumanIntervention: (threadId: string, lastGuestMessageSentAt: string | null) => boolean;
   hasFailedSend: (threadId: string) => boolean;
   countAutoSentSince: (sinceIso: string) => number;
   canSend: (thread: MessageThread, messages: Message[]) => boolean;
@@ -103,6 +106,23 @@ export function lastInboundMessageId(messages: Message[]): string | null {
   return id;
 }
 
+/**
+ * sent_at der letzten Gastnachricht (#702 Punkt 1, Thread-Ausschluss-Rundenscoping) —
+ * dieselbe Reset-auf-outbound-Logik wie lastInboundMessageId, liefert aber den Zeitpunkt statt
+ * der Id. Grenze für threadHasHumanIntervention: ein Eingriff (verworfener Draft/Feedback) zählt
+ * nur, wenn er zu einem Draft der AKTUELLEN Runde gehört (Draft created_at nach diesem
+ * Zeitpunkt). null ohne Gastnachricht — draft-repository.ts behandelt das konservativ wie
+ * bisher (dauerhafte Sperre), da sich dann keine Runde bestimmen lässt.
+ */
+export function lastInboundMessageSentAt(messages: Message[]): string | null {
+  let sentAt: string | null = null;
+  for (const m of messages) {
+    if (m.direction === 'outbound') sentAt = null;
+    else if (m.direction === 'inbound') sentAt = m.sent_at;
+  }
+  return sentAt;
+}
+
 export async function runAutoSendGate(input: GateInput, deps: GateDeps = realGateDeps()): Promise<{ decision: AutoSendDecision; mode: AutoSendMode; sent: boolean }> {
   const mode = resolveAutoSendMode(deps.envMode, input.property.autoSend);
   if (mode === 'off') {
@@ -116,10 +136,16 @@ export async function runAutoSendGate(input: GateInput, deps: GateDeps = realGat
   let decision: AutoSendDecision;
   try {
     const guestMessages = guestMessagesSinceLastHost(input.messages);
-    // #697: mechanische Buchungsanfrage-Erkennung (Guesty-System-Post NACH der letzten
-    // Gastnachricht) — pure, unabhängig vom Judge-Modell. Läuft VOR dem Judge-Aufruf, damit
-    // Task-Anlage + Fristpersistenz unten unabhängig vom Judge-Ausgang passieren können.
-    const bookingRequest = detectBookingRequestContext(input.messages);
+    // #697/#702: mechanische Buchungsanfrage-Erkennung — pure, unabhängig vom Judge-Modell.
+    // Läuft VOR dem Judge-Aufruf, damit Task-Anlage + Fristpersistenz unten unabhängig vom
+    // Judge-Ausgang passieren können. Seit #702 durchsucht findOpenBookingRequest den GANZEN
+    // Thread (nicht nur den System-Post direkt nach der letzten Gastnachricht) und ist deshalb
+    // auch für Folgenachrichten einer noch offenen Anfrage aktiv (Fall Anika: ihre Antwort auf
+    // unsere Rückfrage, mehrere Nachrichten nach dem ursprünglichen System-Post) — solange die
+    // verknüpfte Reservierung/Inquiry nicht bestätigt ist (thread.reservation_status). Die
+    // Task-Anlage unten bleibt idempotent über dieselbe systemMessageId (Migration 029/030):
+    // bei einer Folgenachricht wird der bestehende Task wiedergefunden, nicht dupliziert.
+    const bookingRequest = findOpenBookingRequest(input.messages, input.thread.reservation_status);
 
     const judge = await deps.judge({
       guestMessages, draft: input.body, voice: input.voice, facts: input.facts,
@@ -144,7 +170,9 @@ export async function runAutoSendGate(input: GateInput, deps: GateDeps = realGat
     });
     const baseInput: Omit<PolicyInput, 'promiseTask' | 'bookingTask'> = {
       mode, paused: deps.isPaused(), judge: effectiveJudge, mechanical,
-      threadHasHumanIntervention: deps.hasHumanIntervention(input.thread.id),
+      // #702 Punkt 1: nur ein Eingriff der AKTUELLEN Runde zählt — Grenze ist sent_at der
+      // letzten Gastnachricht.
+      threadHasHumanIntervention: deps.hasHumanIntervention(input.thread.id, lastInboundMessageSentAt(input.messages)),
       threadHasFailedSend: deps.hasFailedSend(input.thread.id),
       autoSentToday: deps.countAutoSentSince(startOfBerlinDayIso()),
       dailyCap: deps.dailyCap,

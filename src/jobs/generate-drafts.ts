@@ -4,7 +4,7 @@ import { createDraft, updateDraftBody } from '../repositories/draft-repository.j
 import { loadVoice, loadPropertyFacts } from '../services/vault-knowledge.js';
 import { generateDraftForThread, DRAFT_MODEL, type DraftResult } from '../services/draft-service.js';
 import { buildBookingContext } from '../services/booking-context.js';
-import { detectBookingRequestContext } from '../services/booking-request.js';
+import { findOpenBookingRequest } from '../services/booking-request.js';
 import { runAutoSendGate, type GateInput } from '../services/auto-send/runner.js';
 import type { AutoSendDecision, AutoSendMode } from '../services/auto-send/types.js';
 import { detectLanguage, type SupportedLanguage } from '../utils/language-detect.js';
@@ -124,11 +124,16 @@ export async function generateDraftsForProperty(
       // Entwurfs-Prompt UND (weiter unten) in den Judge-Kontext, statt einer Prosa-Regel, die
       // von den (meist deutschen) Voice-Beispielen überstimmt werden kann.
       const guestLanguage = detectLanguage(lastInboundBody(messages));
-      // #697: mechanische Buchungsanfrage-Erkennung läuft VOR dem Entwurf, damit der richtige
-      // Prompt gewählt wird (Spec: "Erkennung im Draft-Pfad läuft VOR dem Entwurf"). Der Gate-
-      // Lauf unten erkennt dieselbe Buchungsanfrage unabhängig noch einmal aus `messages` (pure,
-      // kein zusätzliches I/O) — keine Notwendigkeit, das Ergebnis hier durchzureichen.
-      const isBookingRequest = detectBookingRequestContext(messages) !== null;
+      // #697/#702: Buchungsanfrage-Erkennung läuft VOR dem Entwurf, damit der richtige Prompt
+      // gewählt wird (Spec: "Erkennung im Draft-Pfad läuft VOR dem Entwurf"). Seit #702 auch für
+      // Folgenachrichten einer noch offenen Anfrage aktiv (findOpenBookingRequest durchsucht den
+      // ganzen Thread, nicht nur den System-Post direkt nach der letzten Gastnachricht) — sonst
+      // bekäme eine Folgenachricht wie Anikas Antwort auf unsere Rückfrage NICHT den
+      // "nur Rückfrage, keine Zusage"-Prompt-Block (Fall Anika #702: genau das führte dazu, dass
+      // der Entwurf eine Bestätigung formulierte). Der Gate-Lauf unten erkennt dieselbe
+      // Buchungsanfrage unabhängig noch einmal aus `messages` (pure, kein zusätzliches I/O) —
+      // keine Notwendigkeit, das Ergebnis hier durchzureichen.
+      const isBookingRequest = findOpenBookingRequest(messages, thread.reservation_status) !== null;
       const result = await deps.generate({ thread, messages, voice, facts, bookingContext, guestLanguage, isBookingRequest });
       if (result.kind === 'text') {
         const draftId = randomUUID();

@@ -28,6 +28,7 @@ beforeEach(() => {
   db.exec(mig('027_add_auto_send.sql'));
   db.exec(mig('029_add_smarttasks_task.sql'));
   db.exec(mig('030_add_booking_request.sql'));
+  db.exec(mig('031_add_judge_reasoning_and_release.sql'));
   setDatabase(db);
   seedThread('guesty:t1');
 });

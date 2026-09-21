@@ -70,11 +70,15 @@ export function updateDraftBody(id: string, body: string): void {
 
 // --- Auto-Send-Gate (Migration 027) ---
 
+// #702 Punkt 4: auto_judge_reasoning trägt das reasoning-Feld des Prüfmodells (decide() reicht
+// es aus dem Judge-Urteil durch, siehe policy.ts) — auto_reason bleibt der Policy-Text.
+// d.judgeReasoning ist optional, ?? null deckt ältere/handgebaute AutoSendDecision-Objekte ohne
+// dieses Feld ab (z. B. bestehende Testfixtures).
 export function setAutoDecision(id: string, d: AutoSendDecision, mode: AutoSendMode): void {
   getDatabase().prepare(
     `UPDATE message_drafts SET auto_decision = ?, auto_category = ?, auto_flags = ?, auto_reason = ?,
-       auto_mode = ?, auto_judged_at = datetime('now') WHERE id = ?`,
-  ).run(d.decision, d.category, JSON.stringify(d.flags), d.reason, mode, id);
+       auto_mode = ?, auto_judge_reasoning = ?, auto_judged_at = datetime('now') WHERE id = ?`,
+  ).run(d.decision, d.category, JSON.stringify(d.flags), d.reason, mode, d.judgeReasoning ?? null, id);
 }
 
 export function setSentBodyChanged(id: string, changed: boolean): void {
@@ -124,15 +128,39 @@ export function setBookingRequestContext(
   ).run(requestKind, platformDeadlineAt, draftId);
 }
 
-/** Micha hat in diesem Thread schon eingegriffen (Spec 5.3 Thread-Ausschlüsse). */
-export function threadHasHumanIntervention(threadId: string): boolean {
+/**
+ * Micha hat in diesem Thread schon eingegriffen (Spec 5.3 Thread-Ausschlüsse) — #702 Punkt 1:
+ * der Ausschluss gilt nur noch für die AKTUELLE Nachrichtenrunde, nicht mehr dauerhaft. Ein
+ * verworfener Draft oder eine Feedback-Zeile zählt nur, wenn der betroffene Draft NACH
+ * `lastGuestMessageSentAt` angelegt wurde (also zur aktuellen letzten Gastnachricht gehört) —
+ * ältere Eingriffe (z. B. ein Verwerfen vor der letzten, längst bestätigten Buchung) blockieren
+ * künftige, unabhängige Nachrichten (Fall Anika: eine simple WLAN-Frage nach der Buchung) nicht
+ * mehr. draft_feedback bleibt dabei als Wissens-Signal für den Vault erhalten (Feedback-Formular
+ * unverändert), verliert aber ebenfalls seine Dauer-Sperre — Feedback ohne draft_id (Formular
+ * ohne aktiven Entwurf) gehört zu keiner Runde und blockiert seitdem gar nicht mehr.
+ * `lastGuestMessageSentAt` = null (keine Gastnachricht bestimmbar) verhält sich konservativ wie
+ * vor #702 (dauerhafte Sperre), da sich dann keine Runde abgrenzen lässt.
+ * manually_categorized bleibt bewusst eine DAUERHAFTE Sperre: es ist keinem Draft/keiner Runde
+ * zugeordnet (Konversation-weite Klassifikation, z. B. SPAM/PARTY über /admin/threads), also
+ * gibt es keinen Rundenbezug, an dem man sie befristen könnte.
+ */
+export function threadHasHumanIntervention(threadId: string, lastGuestMessageSentAt: string | null): boolean {
   const row = getDatabase().prepare(
     `SELECT (
-        EXISTS (SELECT 1 FROM message_drafts WHERE thread_id = @t AND status = 'discarded')
-     OR EXISTS (SELECT 1 FROM draft_feedback WHERE thread_id = @t)
+        EXISTS (
+          SELECT 1 FROM message_drafts
+          WHERE thread_id = @t AND status = 'discarded'
+            AND (@since IS NULL OR datetime(created_at) > datetime(@since))
+        )
+     OR EXISTS (
+          SELECT 1 FROM draft_feedback f
+          JOIN message_drafts d ON d.id = f.draft_id
+          WHERE f.thread_id = @t
+            AND (@since IS NULL OR datetime(d.created_at) > datetime(@since))
+        )
      OR EXISTS (SELECT 1 FROM message_threads WHERE id = @t AND manually_categorized = 1)
     ) AS hit`,
-  ).get({ t: threadId }) as { hit: number };
+  ).get({ t: threadId, since: lastGuestMessageSentAt }) as { hit: number };
   return row.hit === 1;
 }
 
@@ -141,12 +169,32 @@ export function threadHasHumanIntervention(threadId: string): boolean {
  * ohne diesen Ausschluss erzeugt der nächste Loop-Lauf nach einem fehlgeschlagenen Auto-Send
  * einen neuen Entwurf, der das Gate erneut passieren und erneut senden könnte (Doppelversand-
  * Risiko, unbegrenzte Opus+Sende-Zyklen bei anhaltendem Fehler).
+ *
+ * #702 Punkt 2: anders als threadHasHumanIntervention bleibt dieser Ausschluss bewusst
+ * DAUERHAFT (ein technisches Problem beim Versand entwertet sich nicht von selbst über neue
+ * Nachrichtenrunden) — Micha gibt den Thread stattdessen explizit über den Admin-UI-Button
+ * „Auto-Send für diesen Thread wieder erlauben" frei (releaseAutoSendForThread unten). Danach
+ * zählen nur noch Drafts, die NACH der Freigabe angelegt wurden (created_at >
+ * auto_send_released_at) — ein neuer Fehlschlag NACH der Freigabe sperrt den Thread erneut.
  */
 export function threadHasFailedSend(threadId: string): boolean {
   const row = getDatabase().prepare(
-    `SELECT EXISTS (SELECT 1 FROM message_drafts WHERE thread_id = ? AND status IN ('error', 'sending')) AS hit`,
+    `SELECT EXISTS (
+       SELECT 1 FROM message_drafts d JOIN message_threads t ON t.id = d.thread_id
+       WHERE d.thread_id = ? AND d.status IN ('error', 'sending')
+         AND (t.auto_send_released_at IS NULL OR datetime(d.created_at) > datetime(t.auto_send_released_at))
+     ) AS hit`,
   ).get(threadId) as { hit: number };
   return row.hit === 1;
+}
+
+/**
+ * #702 Punkt 2: Micha gibt einen wegen fehlgeschlagenem/hängendem Versand gesperrten Thread
+ * manuell frei (POST /admin/messages/:threadId/release-auto-send) — threadHasFailedSend zählt
+ * danach nur noch NEUE Fehlschläge.
+ */
+export function releaseAutoSendForThread(threadId: string): void {
+  getDatabase().prepare(`UPDATE message_threads SET auto_send_released_at = datetime('now') WHERE id = ?`).run(threadId);
 }
 
 export function countAutoSentSince(sinceIso: string): number {
@@ -166,6 +214,9 @@ export interface AwaitingDraftRow {
   auto_category: string | null;
   auto_decision: 'auto' | 'wait' | null;
   auto_mode: 'off' | 'shadow' | 'live' | null;
+  // #702 Punkt 4: reasoning-Feld des Prüfmodells (siehe setAutoDecision) — zusätzlich zum
+  // Policy-Text `reason` oben.
+  auto_judge_reasoning: string | null;
 }
 
 /**
@@ -192,6 +243,7 @@ export function getAwaitingDrafts(sinceIso: string, limit: number): AwaitingDraf
   return getDatabase().prepare(
     `SELECT d.id, d.thread_id, d.provider, d.status, d.created_at, d.smarttasks_task_id,
        d.request_kind, d.platform_deadline_at, d.auto_category, d.auto_decision, d.auto_mode,
+       d.auto_judge_reasoning,
        CASE
          WHEN d.status = 'error' THEN 'Auto-Send fehlgeschlagen: ' || COALESCE(d.error, '?')
          WHEN d.status = 'sending' THEN 'Versand hängt — bitte manuell prüfen'

@@ -272,6 +272,8 @@ erweitert auf Guesty-Properties (Farmhouse, U19) — Spec:
 - `POST /drafts/:draftId/discard` — verwirft Entwurf
 - `POST /:threadId/regenerate` — verwirft aktuellen Draft, generiert frischen KI-Entwurf
 - `POST /:threadId/feedback` — speichert Feedback, löst bei `ton`/`fakt` KI-Vault-Vorschlag aus
+- `POST /:threadId/release-auto-send` — gibt einen wegen fehlgeschlagenem/hängendem Versand
+  gesperrten Thread wieder für Auto-Send frei (#702 Punkt 2, siehe Auto-Send-Gate unten)
 
 **Schnitt 3 — Feedback-Loop** (`src/services/suggestion-service.ts`, `src/services/vault-writer.ts`, `src/routes/suggestions.ts`):
 - Feedback (Kategorie: `ton`/`fakt`/`einmalig` + Freitext) landet in `draft_feedback`
@@ -403,14 +405,33 @@ Copy-Paste kann ein sicherer Entwurf automatisch rausgehen. Spec:
 - **Weitere Wait-Gründe:** Kategorie nicht in `AUTO_OK_CATEGORIES`, `playbook_fakt` ohne
   `answerableFromFacts`, jedes Risk-Flag, jeder mechanische Treffer, Konfidenz ≠ „hoch",
   Micha hat im Thread schon eingegriffen (`threadHasHumanIntervention` — verworfener
-  Entwurf, Feedback-Zeile oder manuelle Kategorie im Thread), vorheriger Versand im
-  Thread fehlgeschlagen/hängt (`threadHasFailedSend` — Draft mit `status` `error` oder
-  `sending` im selben Thread, Final-Review F1: verhindert Doppelversand nach einem
-  fehlgeschlagenen Auto-Send). `threadHasFailedSend` schließt den Thread dabei für die
-  gesamte Lebensdauer dieses hängenden/fehlgeschlagenen Drafts vom Auto-Send aus, nicht
-  nur für den einen betroffenen Entwurf — erst wenn der Draft manuell aufgelöst wird
-  (gesendet/verworfen), greift die Regel wieder normal. Weiterer Wait-Grund: Kanal
-  unklar (`canSend`).
+  Entwurf oder Feedback-Zeile ZU EINEM DRAFT DER AKTUELLEN RUNDE, oder manuelle Kategorie
+  im Thread), vorheriger Versand im Thread fehlgeschlagen/hängt (`threadHasFailedSend` —
+  Draft mit `status` `error` oder `sending` im selben Thread seit der letzten Freigabe,
+  Final-Review F1: verhindert Doppelversand nach einem fehlgeschlagenen Auto-Send).
+  Weiterer Wait-Grund: Kanal unklar (`canSend`).
+  - **Thread-Ausschluss nur je Nachrichtenrunde (#702, 21.09.2026, Fall Anika Farmhouse):**
+    `threadHasHumanIntervention(threadId, lastGuestMessageSentAt)` (`draft-repository.ts`)
+    zählt einen verworfenen Draft oder eine Feedback-Zeile nur noch, wenn der betroffene
+    Draft NACH `sent_at` der aktuellen letzten Gastnachricht angelegt wurde (Draft
+    `created_at > lastGuestMessageSentAt`, per `lastInboundMessageSentAt()` in `runner.ts`
+    ermittelt) — ältere Eingriffe (z. B. ein verworfener Entwurf VOR einer inzwischen
+    bestätigten Buchung) blockieren spätere, unabhängige Nachrichten (Fall Anika: eine
+    simple WLAN-Frage nach der Buchung) nicht mehr dauerhaft. `draft_feedback` OHNE
+    `draft_id` (Feedback-Formular ohne aktiven Entwurf) hat seitdem gar keinen
+    Rundenbezug mehr und blockiert nicht. `manually_categorized` (Konversation-weite
+    Klassifikation, keinem Draft zugeordnet) bleibt bewusst eine DAUERHAFTE Sperre —
+    kein Rundenbezug möglich. `lastGuestMessageSentAt = null` verhält sich konservativ
+    wie vor #702 (dauerhafte Sperre).
+  - **Auto-Send-Freigabe je Thread (#702 Punkt 2):** `threadHasFailedSend` bleibt bewusst
+    eine DAUERHAFTE Sperre (ein technisches Problem entwertet sich nicht über neue
+    Nachrichtenrunden) — Micha gibt den Thread stattdessen explizit über den Admin-UI-
+    Button „Auto-Send für diesen Thread wieder erlauben" frei
+    (`POST /admin/messages/:threadId/release-auto-send`, `releaseAutoSendForThread()`
+    setzt `message_threads.auto_send_released_at`, Migration 031). Danach zählen nur noch
+    Drafts, die NACH der Freigabe angelegt wurden — ein neuer Fehlschlag NACH der
+    Freigabe sperrt den Thread erneut. Der Button erscheint auf der Thread-Detailseite,
+    solange `threadHasFailedSend` true liefert.
 - **Sichtbarkeit hängender Sends:** `getAwaitingDrafts` (`draft-repository.ts`, hinter
   `/api/agent/drafts/awaiting`) zeigt seit Final-Review F3 zusätzlich zu `wait`/`error`
   auch hängende Sends: Entwürfe, die seit über 10 Minuten auf `auto`/`pending` stehen
@@ -442,8 +463,8 @@ Copy-Paste kann ein sicherer Entwurf automatisch rausgehen. Spec:
   /api/agent/auto-send/stats?days=` (Auto-Send-Auswertung); `/threads` liefert zusätzlich
   `autoDecision` und `property.shortCode`.
 - **Testfixtures:** `npm run test:judge` (`src/scripts/test-judge-fixtures.ts`, Live-Lauf
-  gegen `JUDGE_MODEL`, 13 Fälle in `src/test-fixtures/judge/cases.json`) — **Pflicht vor
-  jeder Prompt-Änderung** an `judge-prompt.ts` (aktuell 13/13 grün).
+  gegen `JUDGE_MODEL`, 16 Fälle in `src/test-fixtures/judge/cases.json`) — **Pflicht vor
+  jeder Prompt-Änderung** an `judge-prompt.ts` (aktuell 16/16 grün).
 - **Sprach-Pin (#695, 21.09.2026):** `src/utils/language-detect.ts` erkennt die Sprache der
   letzten Gastnachricht deterministisch (Stopwort-Heuristik DE/EN/IT/ES/FR, Fallback Deutsch;
   franc/tinyld scheiterten an Kurztexten wie „Danke, alles super!"). Die Sprache geht als harte
@@ -519,14 +540,35 @@ Copy-Paste kann ein sicherer Entwurf automatisch rausgehen. Spec:
   SmartTasks-Task muss erfolgreich angelegt sein — erst dann kann die REINE RÜCKFRAGE
   automatisch raus (Grundsatz Micha: die Airbnb-Entscheidung Annehmen/Ablehnen bleibt IMMER
   bei ihm, unabhängig vom Auto-Send der Rückfrage).
-  - **Mechanische Erkennung** (`src/services/booking-request.ts`,
-    `detectBookingRequestContext`): findet den Guesty-System-Post „New guest inquiry" bzw.
-    „New guest reservation request <Code>" NACH der letzten Gastnachricht (Guesty hängt den
-    Post zeitlich danach an) und erzwingt die Kategorie `buchungsanfrage` — UNABHÄNGIG vom
-    Judge (der sie zusätzlich aus dem Gasttext erkennen darf/soll). `request_kind`
-    (`inquiry`|`request_to_book`) + `platform_deadline_at` (System-Post-Zeitpunkt + 24h, Airbnb
-    erwartet bei BEIDEN Post-Arten eine Antwort binnen 24h) werden am Draft persistiert
-    (Migration 030), unabhängig vom Gate-Ergebnis.
+  - **Mechanische Erkennung** (`src/services/booking-request.ts`, `findOpenBookingRequest`
+    — seit #702 der EINZIGE Erkennungsweg, ersetzt das frühere `detectBookingRequestContext`):
+    findet den jüngsten Guesty-System-Post „New guest inquiry" bzw. „New guest reservation
+    request <Code>" im GESAMTEN Thread-Verlauf und erzwingt die Kategorie `buchungsanfrage` —
+    UNABHÄNGIG vom Judge (der sie zusätzlich aus dem Gasttext erkennen darf/soll) — solange die
+    verknüpfte Reservierung/Inquiry NICHT bestätigt ist (`thread.reservation_status`,
+    deckungsgleich mit `ACTIVE_RESERVATION_STATUSES` aus `reservation-repository.ts`). Ist die
+    Reservierung/Inquiry bestätigt, liefert die Funktion `null` — normale Bewertung. `request_kind`
+    (`inquiry`|`request_to_book`) + `platform_deadline_at` (Zeitpunkt des System-Posts + 24h,
+    Airbnb erwartet bei BEIDEN Post-Arten eine Antwort binnen 24h, bleibt über Folgenachrichten
+    hinweg stabil — kein Neustart der Frist) werden am Draft persistiert (Migration 030),
+    unabhängig vom Gate-Ergebnis.
+  - **Kategorie-Vorrang bei Folgenachrichten (#702, 21.09.2026, Fall Anika Farmhouse):**
+    ursprünglich (#697) griff die mechanische Erkennung NUR, wenn der System-Post direkt NACH
+    der letzten Gastnachricht lag — eine spätere Antwort des Gastes auf unsere Rückfrage (z. B.
+    Anlass-Details zu einer Feier) landete dadurch ohne eigenen System-Post fälschlich in der
+    Kategorie `sonderwunsch` statt `buchungsanfrage` (Judge setzte `invents_fact`/
+    `promises_action`/`tone_off`, weil der Entwurf die Buchung bestätigte). `findOpenBookingRequest`
+    durchsucht deshalb den GANZEN Thread, nicht nur den unmittelbaren Kontext der aktuellen
+    Nachricht — Vorrang vor `sonderwunsch` gilt jetzt für JEDE Gastnachricht, solange die Anfrage
+    offen ist. Die Task-Anlage bleibt dabei idempotent über dieselbe `systemMessageId`
+    (Migration 029/030): eine Folgenachricht findet den bestehenden Task wieder statt einen
+    zweiten anzulegen, die Frist bleibt unverändert. `judge-prompt.ts` grenzt `sonderwunsch`
+    seitdem explizit auf BEREITS BESTÄTIGTE Buchungen ein (Feiern/Events zu einer noch offenen
+    Anfrage sind `buchungsanfrage`) — reine Prompt-Klarstellung, der mechanische Override greift
+    ohnehin unabhängig vom Judge-Ergebnis. Derselbe `findOpenBookingRequest`-Aufruf entscheidet
+    seit #702 auch, ob `draft-service.ts` den Buchungsanfrage-Prompt-Block bekommt
+    (`generate-drafts.ts`, `/admin/messages/:threadId/regenerate`) — sonst hätte die
+    Folgenachricht weiterhin den normalen Antwort-Prompt (ohne „keine Zusage"-Regel) bekommen.
   - **Entwurfs-Prompt** (`draft-service.ts`, `buildBookingRequestBlock`, aktiv wenn
     `isBookingRequest`, erkannt VOR dem Entwurf in `generate-drafts.ts`): Dank, gezielte
     Rückfragen (Anlass, Personenzahl inkl. Tagesgäste, Ablauf), Limit/ausgeschlossene
@@ -561,11 +603,28 @@ Copy-Paste kann ein sicherer Entwurf automatisch rausgehen. Spec:
     dieses Endpunkts. Admin-UI-Badge (`renderAutoBadge`/`taskSuffix`) hängt die Frist
     (`formatBerlinDeadline`) zusätzlich zur Task-Nummer an.
   - **Testfixtures:** „Anika — Request-to-Book Event 15 P., saubere Rückfrage (#697)"
-    (erwartet `category: buchungsanfrage`, `auto: true`) und „Anika — Entwurf verrät interne
-    Bestätigungsbedingung (#697)" (`auto: false`, Judge setzt `internal_rule_leak`) in
-    `cases.json` — anonymisierter Fall Anika Farmhouse (Request-to-Book, 15 Personen „für ein
-    Event"). `test-judge-fixtures.ts` prüft „würde auto" über `wouldAutoWithBookingTask`
-    (Sentinel, kein echter SmartTasks-Aufruf), analog zu `wouldAutoWithPromiseTask` (#696).
+    (erwartet `category: buchungsanfrage`, `auto: true`), „Anika — Entwurf verrät interne
+    Bestätigungsbedingung (#697)" (`auto: false`, Judge setzt `internal_rule_leak`) und
+    „Anika — Folgenachricht mit Feier-Details zu offener Anfrage, nicht sonderwunsch (#702)"
+    (`category: buchungsanfrage`, `auto: false`) in `cases.json` — anonymisierter Fall Anika
+    Farmhouse (Request-to-Book, 15 Personen „für ein Event", inkl. ihrer Folgenachricht mit
+    Anlass-Details). `test-judge-fixtures.ts` prüft „würde auto" über `wouldAutoWithBookingTask`
+    (Sentinel, kein echter SmartTasks-Aufruf), analog zu `wouldAutoWithPromiseTask` (#696). Die
+    Rundenscoping- und Kategorie-Vorrang-Logik selbst (Repository-SQL, `findOpenBookingRequest`,
+    Gate-Verdrahtung) hat eigene deterministische Unit-Tests ohne Live-Judge-Aufruf —
+    `draft-repository.auto-send.test.ts` (`threadHasHumanIntervention`/`threadHasFailedSend`/
+    `releaseAutoSendForThread`), `booking-request.test.ts` (`findOpenBookingRequest`) und die
+    drei End-to-End-Fixtures in `runner.roundscope.test.ts` (echte Repository-Funktionen gegen
+    In-Memory-SQLite, Judge gemockt).
+- **Judge-Begründung persistiert (#702 Punkt 4, 21.09.2026):** das `reasoning`-Feld des
+  `judge_draft`-Tools (types.ts `JudgeVerdict.reasoning`) wurde bisher nur geloggt — eine
+  Einordnung wie im Fall Anika (Folgenachricht landete in `sonderwunsch`) ließ sich im
+  Nachhinein nicht erklären. `decide()` (`policy.ts`) reicht `judgeReasoning` jetzt auf jedem
+  Rückgabepfad durch (Wrapper um die bestehende Gate-Logik, `AutoSendDecision.judgeReasoning`,
+  optionales Feld), `setAutoDecision` persistiert es in `message_drafts.auto_judge_reasoning`
+  (Migration 031) — `auto_reason` bleibt daneben der Policy-Text. Ausgabe: `GET
+  /api/agent/drafts/awaiting` (`judgeReasoning`) und Admin-UI-Thread-Ansicht (kursive Zeile
+  „Prüfmodell: …" unter der Ampel, `src/routes/messages.ts`).
 - **Env-Variablen:** `AUTO_SEND_MODE` (`off`|`shadow`|`live`, Default `off`),
   `AUTO_SEND_DAILY_CAP` (Default 10), `MESSAGE_LOOP_MINUTES` (Default 5), `JUDGE_MODEL`
   (Default `claude-opus-5`), `GUESTY_WEBHOOK_SECRET` (aus `npm run webhook:register`),
@@ -574,11 +633,13 @@ Copy-Paste kann ein sicherer Entwurf automatisch rausgehen. Spec:
   judge-prompt,judge-service,policy,runner}.ts`, `src/services/draft-send-service.ts`,
   `src/services/guesty-webhook-signature.ts`, `src/routes/webhooks-guesty.ts`,
   `src/services/{smarttasks-client,promise-task-service}.ts`,
-  `src/services/{booking-request,booking-request-task-service}.ts` (#697),
-  `src/jobs/{message-loop,handle-guesty-inbound}.ts`,
+  `src/services/{booking-request,booking-request-task-service}.ts` (#697/#702,
+  `findOpenBookingRequest` seit #702), `src/jobs/{message-loop,handle-guesty-inbound}.ts`,
   `src/scripts/{register-guesty-webhook,test-judge-fixtures}.ts`,
-  `src/test-fixtures/judge/cases.json`, Migrationen `027_add_auto_send.sql`,
-  `029_add_smarttasks_task.sql`, `030_add_booking_request.sql`.
+  `src/test-fixtures/judge/cases.json`, `src/services/auto-send/runner.roundscope.test.ts`
+  (#702 End-to-End-Fixtures), Migrationen `027_add_auto_send.sql`,
+  `029_add_smarttasks_task.sql`, `030_add_booking_request.sql`,
+  `031_add_judge_reasoning_and_release.sql`.
 - **Server-Setup:** → siehe `docs/vault-deployment.md`, Abschnitt „Auto-Send-Gate
   aktivieren".
 

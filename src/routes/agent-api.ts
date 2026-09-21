@@ -337,6 +337,8 @@ router.get('/drafts/awaiting', (req, res) => {
         category: r.auto_category ?? null,
         autoDecision: r.auto_decision ?? null,
         autoMode: r.auto_mode ?? null,
+        // #702 Punkt 4: reasoning-Feld des Prüfmodells, zusätzlich zum Policy-Text in `reason`.
+        judgeReasoning: r.auto_judge_reasoning ?? null,
       })),
     });
   } catch (err) { handleError(res, err); }

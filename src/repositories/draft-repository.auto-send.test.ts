@@ -5,7 +5,7 @@ import { setDatabase, resetDatabase } from '../db/index.js';
 import {
   createDraft, setAutoDecision, markDraftSent, setSentBodyChanged, threadHasHumanIntervention,
   countAutoSentSince, getAwaitingDrafts, getAutoSendStats, listAutoDecisions, getDraftById,
-  getLastSentDraftByThread, threadHasFailedSend,
+  getLastSentDraftByThread, threadHasFailedSend, releaseAutoSendForThread,
 } from './draft-repository.js';
 
 let db: Database.Database;
@@ -28,6 +28,7 @@ beforeEach(() => {
   db.exec(mig('027_add_auto_send.sql'));
   db.exec(mig('029_add_smarttasks_task.sql'));
   db.exec(mig('030_add_booking_request.sql'));
+  db.exec(mig('031_add_judge_reasoning_and_release.sql'));
   setDatabase(db);
   seedThread('hostex:t1');
 });
@@ -45,6 +46,17 @@ describe('setAutoDecision / markDraftSent', () => {
     expect(d.auto_judged_at).toBeTruthy();
     expect(d.sent_by).toBe('auto');
   });
+  // #702 Punkt 4
+  it('persistiert judgeReasoning in auto_judge_reasoning', () => {
+    createDraft({ id: 'd1b', thread_id: 'hostex:t1', provider: 'hostex', body: 'Hallo', generated_by: 'llm' });
+    setAutoDecision('d1b', { decision: 'auto', reason: 'ok', category: 'dank_smalltalk', flags: [], judgeReasoning: 'Reiner Dank, keine Sachaussage.' }, 'live');
+    expect(getDraftById('d1b')!.auto_judge_reasoning).toBe('Reiner Dank, keine Sachaussage.');
+  });
+  it('judgeReasoning fehlt (ältere/handgebaute AutoSendDecision) → NULL, kein Fehler', () => {
+    createDraft({ id: 'd1c', thread_id: 'hostex:t1', provider: 'hostex', body: 'Hallo', generated_by: 'llm' });
+    setAutoDecision('d1c', { decision: 'wait', reason: 'x', category: null, flags: [] }, 'live');
+    expect(getDraftById('d1c')!.auto_judge_reasoning).toBeNull();
+  });
   it('markDraftSent ohne sentBy → micha', () => {
     createDraft({ id: 'd2', thread_id: 'hostex:t1', provider: 'hostex', body: 'x', generated_by: 'llm' });
     markDraftSent('d2', null);
@@ -55,22 +67,48 @@ describe('setAutoDecision / markDraftSent', () => {
   });
 });
 
+// #702 Punkt 1: der Ausschluss gilt nur noch für die AKTUELLE Runde (Draft created_at NACH
+// sent_at der letzten Gastnachricht) — mit Ausnahme von manually_categorized (keinem Draft
+// zugeordnet, bleibt dauerhaft).
 describe('threadHasHumanIntervention', () => {
+  const since = '2026-09-19T10:00:00Z'; // sent_at der von seedThread() erzeugten Gastnachricht
+
   it('false ohne Verwerfen/Feedback/manuelle Kategorie', () => {
-    expect(threadHasHumanIntervention('hostex:t1')).toBe(false);
+    expect(threadHasHumanIntervention('hostex:t1', since)).toBe(false);
   });
-  it('true bei verworfenem Draft', () => {
+  it('true bei verworfenem Draft der aktuellen Runde (created_at nach since)', () => {
     createDraft({ id: 'd3', thread_id: 'hostex:t1', provider: 'hostex', body: 'x', generated_by: 'llm' });
     db.prepare(`UPDATE message_drafts SET status='discarded' WHERE id='d3'`).run();
-    expect(threadHasHumanIntervention('hostex:t1')).toBe(true);
+    expect(threadHasHumanIntervention('hostex:t1', since)).toBe(true);
   });
-  it('true bei Feedback-Zeile', () => {
-    db.prepare(`INSERT INTO draft_feedback (id, thread_id, category, note) VALUES ('f1','hostex:t1','fakt','x')`).run();
-    expect(threadHasHumanIntervention('hostex:t1')).toBe(true);
+  it('false bei verworfenem Draft VOR der aktuellen Gastnachricht (ältere Runde zählt nicht mehr)', () => {
+    createDraft({ id: 'd3b', thread_id: 'hostex:t1', provider: 'hostex', body: 'x', generated_by: 'llm' });
+    db.prepare(`UPDATE message_drafts SET status='discarded', created_at='2026-09-18 09:00:00' WHERE id='d3b'`).run();
+    expect(threadHasHumanIntervention('hostex:t1', since)).toBe(false);
   });
-  it('true bei manueller Kategorie', () => {
+  it('true bei Feedback-Zeile MIT draft_id der aktuellen Runde', () => {
+    createDraft({ id: 'd4', thread_id: 'hostex:t1', provider: 'hostex', body: 'x', generated_by: 'llm' });
+    db.prepare(`INSERT INTO draft_feedback (id, thread_id, draft_id, category, note) VALUES ('f1','hostex:t1','d4','fakt','x')`).run();
+    expect(threadHasHumanIntervention('hostex:t1', since)).toBe(true);
+  });
+  it('false bei Feedback OHNE draft_id (kein Rundenbezug — bleibt Wissens-Signal für den Vault, keine Sperre mehr)', () => {
+    db.prepare(`INSERT INTO draft_feedback (id, thread_id, category, note) VALUES ('f2','hostex:t1','fakt','x')`).run();
+    expect(threadHasHumanIntervention('hostex:t1', since)).toBe(false);
+  });
+  it('false bei Feedback zu einem Draft einer älteren Runde', () => {
+    createDraft({ id: 'd5', thread_id: 'hostex:t1', provider: 'hostex', body: 'x', generated_by: 'llm' });
+    db.prepare(`UPDATE message_drafts SET created_at='2026-09-18 09:00:00' WHERE id='d5'`).run();
+    db.prepare(`INSERT INTO draft_feedback (id, thread_id, draft_id, category, note) VALUES ('f3','hostex:t1','d5','fakt','x')`).run();
+    expect(threadHasHumanIntervention('hostex:t1', since)).toBe(false);
+  });
+  it('true bei manueller Kategorie — bleibt dauerhaft, unabhängig von since (kein Rundenbezug)', () => {
     seedThread('hostex:t2', 'Ben', 1);
-    expect(threadHasHumanIntervention('hostex:t2')).toBe(true);
+    expect(threadHasHumanIntervention('hostex:t2', '2099-01-01T00:00:00Z')).toBe(true);
+  });
+  it('lastGuestMessageSentAt = null → konservativ wie vor #702 (jeder verworfene Draft blockiert, egal wie alt)', () => {
+    createDraft({ id: 'd6', thread_id: 'hostex:t1', provider: 'hostex', body: 'x', generated_by: 'llm' });
+    db.prepare(`UPDATE message_drafts SET status='discarded', created_at='2020-01-01 00:00:00' WHERE id='d6'`).run();
+    expect(threadHasHumanIntervention('hostex:t1', null)).toBe(true);
   });
 });
 
@@ -92,6 +130,27 @@ describe('threadHasFailedSend', () => {
     createDraft({ id: 'fs3', thread_id: 'hostex:t1', provider: 'hostex', body: 'x', generated_by: 'llm' });
     markDraftSent('fs3', null, 'micha');
     createDraft({ id: 'fs4', thread_id: 'hostex:t1', provider: 'hostex', body: 'y', generated_by: 'llm' });
+    expect(threadHasFailedSend('hostex:t1')).toBe(false);
+  });
+  // #702 Punkt 2
+  it('releaseAutoSendForThread hebt eine BESTEHENDE Sperre auf', () => {
+    createDraft({ id: 'fs5', thread_id: 'hostex:t1', provider: 'hostex', body: 'x', generated_by: 'llm' });
+    db.prepare(`UPDATE message_drafts SET status='error', error='Kanal' WHERE id='fs5'`).run();
+    expect(threadHasFailedSend('hostex:t1')).toBe(true);
+    releaseAutoSendForThread('hostex:t1');
+    expect(threadHasFailedSend('hostex:t1')).toBe(false);
+  });
+  it('ein NEUER Fehlschlag NACH der Freigabe sperrt den Thread erneut', () => {
+    createDraft({ id: 'fs6', thread_id: 'hostex:t1', provider: 'hostex', body: 'x', generated_by: 'llm' });
+    db.prepare(`UPDATE message_drafts SET status='error', error='Kanal', created_at='2026-09-19 08:00:00' WHERE id='fs6'`).run();
+    db.prepare(`UPDATE message_threads SET auto_send_released_at='2026-09-19 09:00:00' WHERE id='hostex:t1'`).run();
+    expect(threadHasFailedSend('hostex:t1')).toBe(false);
+    createDraft({ id: 'fs7', thread_id: 'hostex:t1', provider: 'hostex', body: 'y', generated_by: 'llm' });
+    db.prepare(`UPDATE message_drafts SET status='error', error='Kanal', created_at='2026-09-19 10:00:00' WHERE id='fs7'`).run();
+    expect(threadHasFailedSend('hostex:t1')).toBe(true);
+  });
+  it('releaseAutoSendForThread ohne bestehende Sperre ist ein No-op (kein Fehler)', () => {
+    expect(() => releaseAutoSendForThread('hostex:t1')).not.toThrow();
     expect(threadHasFailedSend('hostex:t1')).toBe(false);
   });
 });

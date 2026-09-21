@@ -226,7 +226,11 @@ describe('runAutoSendGate: Buchungsanfrage (#697, Fall Anika)', () => {
     { id: 'm1', direction: 'inbound', body: 'Ich würde gern für ein Event buchen.', sent_at: '2026-09-21T20:34:58.000Z' },
     { id: 'm2', direction: 'system', body: 'New guest reservation request HMYYFAMPH8', sent_at: '2026-09-21T20:35:04.000Z' },
   ] as Message[];
-  const bookingInput: GateInput = { ...input, body: 'Danke! Magst du uns sagen, um welchen Anlass es geht?', messages: bookingMessages };
+  // #702: findOpenBookingRequest gated auf reservation_status — die Basis-Fixture `thread` oben
+  // ist 'confirmed' (für andere Tests irrelevant), eine echte offene Buchungsanfrage ist es
+  // aber nicht.
+  const bookingThread = { ...thread, reservation_status: null } as MessageThread;
+  const bookingInput: GateInput = { ...input, thread: bookingThread, body: 'Danke! Magst du uns sagen, um welchen Anlass es geht?', messages: bookingMessages };
 
   it('System-Post erkannt + alles grün → Task angelegt, Frist persistiert, decision auto mit Task+Frist', async () => {
     const resolveBookingRequestTaskMock = vi.fn().mockResolvedValue({ created: true, taskNumber: 701, reused: false });
