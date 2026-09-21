@@ -13,12 +13,12 @@ vi.mock('../services/hostex-client.js', () => ({
   getHostexClient: () => { throw new Error('HOSTEX_API_TOKEN fehlt'); },
 }));
 
-import { messageSyncLock } from '../jobs/message-loop.js';
+import { messageSyncLock, resetMessageSyncLockForTests } from '../jobs/message-loop.js';
 import { runMessageSync } from './messages.js';
 
 describe('runMessageSync — Lock-Freigabe bei Fehler vor dem try (F2)', () => {
   beforeEach(() => {
-    messageSyncLock.release();
+    resetMessageSyncLockForTests();
   });
 
   it('gibt den Lock frei, wenn getHostexClient() wirft', async () => {

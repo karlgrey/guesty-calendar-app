@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { vi } from 'vitest';
 import { handleGuestyInbound, type InboundDeps } from './handle-guesty-inbound.js';
-import { messageSyncLock } from './message-loop.js';
+import { messageSyncLock, resetMessageSyncLockForTests } from './message-loop.js';
 import type { PropertyConfig } from '../config/properties.js';
 
 const props = [{ slug: 'farmhouse', provider: 'guesty', guestyPropertyId: 'G1' }, { slug: 'u19', provider: 'guesty', guestyPropertyId: 'G2' }] as PropertyConfig[];
@@ -11,7 +11,7 @@ function deps(over: Partial<InboundDeps> = {}): InboundDeps {
 }
 
 describe('handleGuestyInbound', () => {
-  beforeEach(() => messageSyncLock.release());
+  beforeEach(() => resetMessageSyncLockForTests());
 
   // Fix-Runde 1 (Important #1): das Payload wird NIE direkt persistiert (Spec 3.1) — die
   // Konversation kommt immer per getConversation, selbst wenn das Payload schon Listing-Info

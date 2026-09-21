@@ -212,4 +212,34 @@ describe('shouldRunDailyForceSync (Zeitzone Europe/Berlin, #603)', () => {
 
     vi.useRealTimers();
   });
+
+  // #686 Nachzieh-Liste: der Nachrichtenschritt innerhalb runETLJob kann am 60s-Lock-Timeout
+  // hängen und die ETL für diese Property dadurch mit success:false abschließen (non-fatal,
+  // etl-job.ts wirft dabei nicht) — der Marker MUSS trotzdem gesetzt werden, sonst würde der
+  // 2-Uhr-Deep-Sync bei jedem Lauf um 02:xx erneut (und erneut, und erneut …) versucht, statt
+  // nur einmal pro Tag als "gelaufen" zu gelten.
+  it('setzt den Marker auch, wenn runETLJob mit success:false zurückkommt (Nachrichtenschritt am Lock-Timeout gescheitert)', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-11T00:30:00.000Z')); // 02:30 Berlin
+
+    resetSchedulerStateForTests();
+    loadDailyForceSyncState();
+    runETLJobMock.mockResolvedValue({
+      success: false,
+      listing: { success: true },
+      availability: { success: true },
+      duration: 1,
+    });
+
+    expect(shouldRunDailyForceSync()).toBe(true);
+    await checkAndRunDailyForceSync();
+
+    expect(runETLJobMock).toHaveBeenCalledWith(true);
+    expect(setSchedulerStateMock).toHaveBeenCalledWith('dailyForceSyncLastRunDay', '2026-09-11');
+    // Marker gilt sofort auch im RAM-State — ein zweiter Check-Tick in derselben Stunde löst
+    // keinen zweiten Lauf mehr aus.
+    expect(shouldRunDailyForceSync()).toBe(false);
+
+    vi.useRealTimers();
+  });
 });

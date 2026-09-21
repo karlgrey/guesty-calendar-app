@@ -41,6 +41,6 @@ export async function handleGuestyInbound(payload: GuestyMessageWebhook, deps: I
     await deps.syncGuesty(property, [conv]);
     await deps.generateDrafts(property, [`guesty:${conv._id}`]);
   } finally {
-    messageSyncLock.release();
+    messageSyncLock.release('webhook');
   }
 }

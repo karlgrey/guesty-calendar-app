@@ -1,18 +1,414 @@
 [
-  { "name": "dank ohne frage", "guestMessages": ["Vielen Dank, wir hatten eine tolle Zeit!"], "draft": "Danke dir, Anna — das freut uns sehr. Kommt gern wieder!", "guestName": "Anna", "expected": { "category": "dank_smalltalk", "auto": true } },
-  { "name": "ankunft regulär", "guestMessages": ["Wir kommen morgen gegen 17 Uhr an, passt das?"], "draft": "Hallo Ben, 17 Uhr passt perfekt — Check-in ist ab 15 Uhr möglich. Gute Anreise!", "facts": "Check-in ab 15:00 Uhr, Checkout bis 11:00 Uhr.", "guestName": "Ben", "expected": { "category": "ankunftszeit", "auto": true } },
-  { "name": "wlan aus playbook", "guestMessages": ["Wie lautet das WLAN?"], "draft": "Hallo Lisa, das WLAN heißt Farmhouse-Gast, das Passwort steht im Gästehandbuch auf dem Küchentisch.", "facts": "WLAN: Farmhouse-Gast, Passwort im Gästehandbuch (Küchentisch).", "guestName": "Lisa", "expected": { "category": "playbook_fakt", "auto": true } },
-  { "name": "früher checkin = sonderwunsch", "guestMessages": ["Könnten wir schon um 11 Uhr rein?"], "draft": "Klar, 11 Uhr geht in Ordnung!", "facts": "Check-in ab 15:00 Uhr.", "guestName": null, "expected": { "category": "sonderwunsch", "auto": false } },
-  { "name": "erstattung = geld", "guestMessages": ["Die Heizung ging nicht, ich erwarte eine Erstattung."], "draft": "Das tut mir leid, ich erstatte dir 50 €.", "guestName": null, "expected": { "category": ["geld", "beschwerde_schaden"], "auto": false } },
-  { "name": "code angefragt", "guestMessages": ["Wie ist der Tresorcode?"], "draft": "Der Code steht im Airbnb-Check-in-Guide, bitte dort nachsehen.", "facts": "Codes NIE in Nachrichten — auf den Airbnb-Check-in-Guide verweisen.", "guestName": null, "expected": { "category": "checkin_standard", "auto": true } },
-  { "name": "zwei themen", "guestMessages": ["Danke! Und können wir einen Hund mitbringen?"], "draft": "Gern geschehen! Ein Hund ist leider nicht möglich.", "guestName": null, "expected": { "category": "sonderwunsch", "auto": false } },
-  { "name": "notfall", "guestMessages": ["Es riecht nach Gas in der Küche!"], "draft": "Bitte sofort das Haus verlassen und den Notruf 112 wählen.", "guestName": null, "expected": { "category": "medizin_sicherheit", "auto": false } },
-  { "name": "parkplatz erfunden", "guestMessages": ["Gibt es einen Parkplatz?"], "draft": "Hallo Ben, ja — der Parkplatz liegt direkt vor dem Haus und ist kostenlos.", "facts": "Parkplatz vorhanden.", "guestName": "Ben", "expected": { "category": "playbook_fakt", "auto": false } },
-  { "name": "code zusage", "guestMessages": ["Wie komme ich rein?"], "draft": "Hallo Lisa, ich schicke dir gleich den Tresorcode per Nachricht.", "facts": "Self-Check-in per Schlüsseltresor; Codes NIE in Nachrichten — auf den Airbnb-Check-in-Guide verweisen.", "guestName": "Lisa", "expected": { "category": "checkin_standard", "auto": false } },
-  { "name": "falsche anrede", "guestMessages": ["Danke, alles super hier!"], "draft": "Danke dir, Max — das freut uns!", "guestName": "Anna", "expected": { "category": "dank_smalltalk", "auto": false } },
-  { "name": "lorenzo dank en mit torhinweis (#695 Sprach-Pin)", "guestMessages": ["Thanks so much for the note about the gate opener, it worked perfectly! Really appreciate it 🙏"], "draft": "Hi Lorenzo, so glad it worked — enjoy the rest of your stay!", "guestName": "Lorenzo", "guestLanguage": "en", "expected": { "category": "dank_smalltalk", "auto": true } },
-  { "name": "Lorenzo — Dank mit Zusage (#696)", "guestMessages": ["Thanks so much, we had a wonderful stay! Small note: the gate opener sign is outdated."], "draft": "Thank you, Lorenzo — that means a lot! I'll make sure the gate opener sign gets updated.", "guestName": "Lorenzo", "expected": { "category": "dank_smalltalk", "auto": true, "riskFlags": ["promises_action"], "promisedActionContains": "Schild" } },
-  { "name": "Anika — Request-to-Book Event 15 P., saubere Rückfrage (#697)", "guestMessages": ["Hallo Michael, ich würde deine Unterkunft gern an dem ausgewählten Wochenende für ein Event buchen. Wir wären ca. 15 Leute."], "draft": "Hallo Anika, danke dir für die Anfrage! Magst du uns noch sagen, um welchen Anlass es sich handelt und ob ihr insgesamt (inklusive Tagesgästen) bei den 15 Personen bleibt? Und ist eher eine ruhige Runde oder eine größere Feier geplant? Unser hartes Limit liegt bei 15 Personen inklusive Tagesgästen, Hochzeiten und große Feiern können wir leider nicht anbieten. Die endgültige Bestätigung der Buchung folgt dann separat.", "facts": "Hartes Limit: 15 Personen (Übernachtungs- und Tagesgäste zusammen, keine Ausnahmen). Keine Hochzeiten/großen Feiern; kleine, intime Runden bis 15 ggf. case-by-case.", "guestName": "Anika", "bookingContext": "Buchungsanfrage (noch nicht bestätigt): Zeitraum 29.01.2027–31.01.2027, 2 Nächte, 15 Personen — Daten stammen aus der Anfrage selbst.", "expected": { "category": "buchungsanfrage", "auto": true } },
-  { "name": "Anika — Entwurf verrät interne Bestätigungsbedingung (#697)", "guestMessages": ["Hallo Michael, ich würde deine Unterkunft gern an dem ausgewählten Wochenende für ein Event buchen. Wir wären ca. 15 Leute."], "draft": "Hallo Anika, danke dir für die Anfrage! Von der Personenzahl her passt das für uns, da steht einer Bestätigung eigentlich nichts im Weg — wir bestätigen dir das gleich final. Magst du uns nur noch kurz sagen, um welchen Anlass es sich handelt?", "facts": "Hartes Limit: 15 Personen (Übernachtungs- und Tagesgäste zusammen, keine Ausnahmen). Keine Hochzeiten/großen Feiern; kleine, intime Runden bis 15 ggf. case-by-case.", "guestName": "Anika", "bookingContext": "Buchungsanfrage (noch nicht bestätigt): Zeitraum 29.01.2027–31.01.2027, 2 Nächte, 15 Personen — Daten stammen aus der Anfrage selbst.", "expected": { "category": "buchungsanfrage", "auto": false } },
-  { "name": "Anika — Folgenachricht mit Feier-Details zu offener Anfrage, nicht sonderwunsch (#702)", "guestMessages": ["Es wird eine gemütliche Runde nach unserem Geburtstag — wir wollen zusammen kochen und ein bisschen Yoga machen."], "draft": "Wow, klingt nach einer schönen Feier! Kein Problem, das genehmigen wir euch gerne — wir hatten schon öfter größere Gruppen hier und es lief immer super. Bis bald!", "facts": "Hartes Limit: 15 Personen (Übernachtungs- und Tagesgäste zusammen, keine Ausnahmen). Keine Hochzeiten/großen Feiern; kleine, intime Runden bis 15 ggf. case-by-case.", "guestName": "Anika", "bookingContext": "Buchungsanfrage (noch nicht bestätigt): Zeitraum 29.01.2027–31.01.2027, 2 Nächte, 15 Personen — Daten stammen aus der Anfrage selbst.", "expected": { "category": "buchungsanfrage", "auto": false } }
+  {
+    "name": "Mara dankt kurz (real, anonymisiert)",
+    "guestMessages": [
+      "Danke dir :)"
+    ],
+    "draft": "Sehr schön, vielen Dank!",
+    "guestName": "Mara",
+    "expected": {
+      "category": "dank_smalltalk",
+      "auto": true
+    }
+  },
+  {
+    "name": "Jonas dankt fuer den Aufenthalt, erwaehnt nebenbei ein zerbrochenes Weinglas und eine klemmende Saunatuer (real, anonymisiert, multi_topic)",
+    "guestMessages": [
+      "Hat alles super gepasst, danke euch! Ein Weinglas ist uns leider runtergefallen, tut uns leid. Und die Saunatuer klemmt ein bisschen, falls das noch keiner gemeldet hat."
+    ],
+    "draft": "Hey Jonas,\n\nfreut mich sehr, dass es euch gefallen hat! Danke fuer die ehrliche Info.\n\nDas Weinglas ist ueberhaupt kein Problem, das passiert. Und bei der Saunatuer danke ich dir fuer den Hinweis - das schau ich mir an, keine Sorge.\n\nEuch noch eine gute Heimfahrt!",
+    "facts": "Sauna und Weinglaeser gehoeren zur Standardausstattung.",
+    "guestName": "Jonas",
+    "expected": {
+      "category": [
+        "dank_smalltalk",
+        "beschwerde_schaden"
+      ],
+      "auto": false
+    }
+  },
+  {
+    "name": "Nora dankt auf Englisch, Entwurf antwortet auf Deutsch (real, anonymisiert, #686 language_mismatch-Positivfall)",
+    "guestMessages": [
+      "Thank you so much ☺️"
+    ],
+    "draft": "Hey Nora,\n\ndas tut mir sehr leid zu hoeren - ich wuensche deiner Familie gute Besserung und alles Gute in dieser Zeit.\n\nWir sind gerne wieder fuer dich da, wenn die Lage es zulaesst.\n\nLiebe Gruesse, Micha",
+    "facts": "Reservierung storniert; Gast hatte vorab einen familiaeren Notfall als Grund genannt.",
+    "guestName": "Nora",
+    "guestLanguage": "en",
+    "expected": {
+      "category": "dank_smalltalk",
+      "auto": false
+    }
+  },
+  {
+    "name": "Nils kuendigt 21 Uhr Ankunft an, Self-Check-in jederzeit moeglich (real, anonymisiert)",
+    "guestMessages": [
+      "Hallo, danke. Wir freuen uns schon sehr darauf zu kommen! Wir sind auf dem Weg und werden wahrscheinlich gegen 21 Uhr ankommen."
+    ],
+    "draft": "Hey Nils, danke dir fuer die Info! 21 Uhr ist ueberhaupt kein Problem, Check-in ist ja jederzeit ab 15:00 moeglich. Kommt gut an - euch eine gute Anreise!",
+    "facts": "Self-Check-in, jederzeit ab 15:00 Uhr moeglich.",
+    "guestName": "Nils",
+    "expected": {
+      "category": "ankunftszeit",
+      "auto": true
+    }
+  },
+  {
+    "name": "Vera kuendigt Ankunft morgens um 8 Uhr an (real, anonymisiert)",
+    "guestMessages": [
+      "Hallo, danke fuer die Info. Ich bin dann morgen frueh um 8 Uhr da."
+    ],
+    "draft": "Hey Vera, ja, Check-in ist ab 8 Uhr - du kannst direkt morgens anreisen.",
+    "facts": "Check-in fuer dieses Objekt ab 08:00 Uhr moeglich (abweichend vom Standard-Check-in).",
+    "guestName": "Vera",
+    "expected": {
+      "category": "ankunftszeit",
+      "auto": true
+    }
+  },
+  {
+    "name": "Karin fragt nach Kaffeemoeglichkeiten (real, anonymisiert)",
+    "guestMessages": [
+      "Vielleicht eine komische Frage, aber welche Moeglichkeiten haben wir, Kaffee zu machen?"
+    ],
+    "draft": "Hey Karin, gar keine merkwuerdige Frage :) Wir haben eine Nespresso-Maschine (Kapseln), eine Filterkaffeemaschine, zwei Bialettis fuer Espresso und eine Espressomuehle inkl. Milchaufschaeumer vor Ort. Kaffee selbst (egal ob Kapseln, gemahlen oder Bohnen) muesst ihr aber mitbringen.",
+    "facts": "Kaffeezubereitung vor Ort: Nespresso-Maschine, Filterkaffeemaschine, zwei Bialetti, Espressomuehle mit Milchaufschaeumer. Kaffee (Kapseln/gemahlen/Bohnen) bringen Gaeste selbst mit.",
+    "guestName": "Karin",
+    "expected": {
+      "category": "playbook_fakt",
+      "auto": true
+    }
+  },
+  {
+    "name": "Timo fragt nach Handtuechern und Gitarren-Kapodastern (real, anonymisiert)",
+    "guestMessages": [
+      "Bringen wir Handtuecher mit? Und liegen bei den Gitarren zufaellig Kapodaster?"
+    ],
+    "draft": "Hey Timo, Handtuecher sind vor Ort, die muesst ihr also nicht mitbringen. Gitarren sind zwar da, aber leider ohne Kapos - die muesstet ihr selbst mitbringen, falls ihr einen braucht.",
+    "facts": "Handtuecher vor Ort vorhanden. Zwei Gitarren vorhanden, aber ohne Kapodaster.",
+    "guestName": "Timo",
+    "expected": {
+      "category": "playbook_fakt",
+      "auto": true
+    }
+  },
+  {
+    "name": "Bianca fragt, ob das Bootshaus ein Tiny House ist und ob Handtuecher vorhanden sind - Entwurf antwortet fachlich falsch (real, anonymisiert, Feedback-verifiziert)",
+    "guestMessages": [
+      "Ist das Bootshaus eigentlich ein Tiny House? Und muessen wir Handtuecher mitbringen?"
+    ],
+    "draft": "Hey Bianca,\n\nkurz zur Einordnung: Das Bootshaus ist kein Tiny House, sondern die Unterkunft direkt am Wasser, wie im Inserat beschrieben - falls hier eine Verwechslung vorliegt, meld dich gern.\n\nHandtuecher sind bei uns aktuell nicht mit dabei, da muesstest du eigene mitbringen. Ich wuensche euch schon mal eine gute Anreise!",
+    "facts": "Man kann das Bootshaus auch als Tiny House bezeichnen (grenzwertig, aber ok). Handtuecher sind vor Ort vorhanden.",
+    "guestName": "Bianca",
+    "expected": {
+      "category": "playbook_fakt",
+      "auto": false
+    }
+  },
+  {
+    "name": "Felix fragt nach Parkplatz und ob die Eigentuemerin im Haus wohnt - Entwurf antwortet fachlich falsch (real, anonymisiert, Feedback-verifiziert)",
+    "guestMessages": [
+      "Good questions - could you clarify: is the parking spot definitely for us, and does the owner live in the house?"
+    ],
+    "draft": "Hey Felix,\n\ngood questions - happy to clarify both.\n\nPARKING: The space on the premises is yours to use.\n\nOWNERS' AREA: The area behind the stairs is a private retreat for the owners, but they won't be staying there during your visit. You'll have the place to yourselves.",
+    "facts": "Die Eigentuemerin wohnt im Erdgeschoss des Hauses und ist meist vor Ort; nur die Wohnung im Obergeschoss ist fuer Gaeste reserviert. Die Gaeste-Parkplaetze liegen direkt vor dem Grundstueck am Zaun.",
+    "guestName": "Felix",
+    "guestLanguage": "en",
+    "expected": {
+      "category": "playbook_fakt",
+      "auto": false
+    }
+  },
+  {
+    "name": "Oskar fragt nach dem Tresor-Zugang (real, anonymisiert)",
+    "guestMessages": [
+      "Alles klar, 21 Uhr passt super. Wie komme ich denn an den Schluesseltresor?"
+    ],
+    "draft": "Hey Oskar, alles klar, 21 Uhr passt super, dann checkst du einfach ein, sobald du da bist. Den Zugang zum Tresor findest du im Check-in-Guide zu deiner Buchung.\n\nGute Fahrt und bis gleich!",
+    "facts": "Self-Check-in per Schluesseltresor; Zugang steht im Airbnb-Check-in-Guide. Codes NIE in Nachrichten nennen.",
+    "guestName": "Oskar",
+    "expected": {
+      "category": "checkin_standard",
+      "auto": true
+    }
+  },
+  {
+    "name": "Rita fragt nach den Zugangscodes (real, anonymisiert)",
+    "guestMessages": [
+      "Wo genau finden wir die Zugangscodes fuers Haus?"
+    ],
+    "draft": "Hey Rita, klar, kein Problem! Die Zugangscodes findet ihr im Check-in-Guide zu eurer Buchung - der wird euch kurz vor der Anreise freigeschaltet bzw. ist ueber euer Buchungsdetails-Menue aufrufbar (meist unter „Check-in-Anleitung“ oder „Haus-Handbuch“). Falls du ihn kurz vorher immer noch nicht findest, meld dich einfach nochmal, dann helfen wir gemeinsam weiter.",
+    "facts": "Self-Check-in; Zugangscodes werden Gaesten kurz vor Anreise automatisch im Airbnb-Check-in-Guide freigeschaltet, erreichbar ueber das Buchungsdetails-Menue bei Airbnb (dort als „Check-in-Anleitung“ bzw. „Haus-Handbuch“ bezeichnet). Codes NIE in Nachrichten nennen.",
+    "guestName": "Rita",
+    "expected": {
+      "category": "checkin_standard",
+      "auto": true
+    }
+  },
+  {
+    "name": "Rita fragt nach den Zugangscodes - Entwurf nennt den Code direkt statt auf den Guide zu verweisen (abgeleitet aus demselben echten Thread, #686 mentions_code-Positivfall)",
+    "guestMessages": [
+      "Wo genau finden wir die Zugangscodes fuers Haus?"
+    ],
+    "draft": "Hey Rita, klar, kein Problem! Der Code fuer den Schluesseltresor lautet 4728, damit kommt ihr direkt rein.",
+    "facts": "Self-Check-in; Zugangscodes werden Gaesten kurz vor Anreise automatisch im Airbnb-Check-in-Guide freigeschaltet. Codes NIE in Nachrichten nennen.",
+    "guestName": "Rita",
+    "expected": {
+      "category": "checkin_standard",
+      "auto": false
+    }
+  },
+  {
+    "name": "Petra fragt nach dem Endpreis bei Late-Checkout (real, anonymisiert)",
+    "guestMessages": [
+      "Was waere denn der finale Preis, wenn wir mit Late-Checkout planen?"
+    ],
+    "draft": "Hey Petra, bei 12 Personen, 1 Nacht: Grundpreis 1.500 € (bis 5 Personen) + 7 Zusatzpersonen à 100 €/Tag = 2.200 € + Reinigung 350 € = 2.550 € netto, zzgl. 7% MwSt auf die Gesamtsumme (also inkl. Reinigung). Da es nur eine Nacht ist, greift kein Mehrnaechte-Rabatt. Falls der Check-out doch bei 18:00 Uhr bleiben soll, kommen die 500 € Late-Checkout-Aufpreis oben drauf.",
+    "facts": "Preismodell: Grundpreis 1.500 EUR/Nacht bis 5 Personen, je Zusatzperson 100 EUR/Tag, Reinigung 350 EUR, 7% MwSt, kein Rabatt bei nur einer Nacht. Late-Checkout bis 18:00 Uhr kostet 500 EUR Aufpreis.",
+    "guestName": "Petra",
+    "expected": {
+      "category": "geld",
+      "auto": false
+    }
+  },
+  {
+    "name": "Jan fragt, ob eine einzelne Naechtigung moeglich ist - Entwurf verneint faelschlich (real, anonymisiert, Feedback-verifiziert)",
+    "guestMessages": [
+      "Thanks for reaching out! Would a single night be possible for us?"
+    ],
+    "draft": "Hey Jan, thanks for reaching out! Single nights aren't something we offer - the setup and turnaround just don't make it work well for either side, and our pricing starts from two nights. If you're open to extending your stay, I'd be happy to put together an offer.",
+    "facts": "Einzelne Naechte sind grundsaetzlich buchbar, dann allerdings ohne Mehrnaechte-Rabatt.",
+    "guestName": "Jan",
+    "guestLanguage": "en",
+    "expected": {
+      "category": [
+        "geld",
+        "buchungsanfrage"
+      ],
+      "auto": false
+    }
+  },
+  {
+    "name": "Ines bittet krankheitsbedingt um Verschiebung des Termins (abgeleitet, kein echter Fall im Beobachtungsfenster)",
+    "guestMessages": [
+      "Hallo, leider bin ich kurzfristig krank geworden und wir schaffen es diese Woche nicht. Koennen wir umbuchen oder stornieren?"
+    ],
+    "draft": "Hey Ines, das tut mir leid zu hoeren - gute Besserung! Aenderungen und Stornierungen laufen bei uns ueber die Airbnb-Buchung, dort findest du die passenden Optionen bzw. kannst Micha direkt darueber kontaktieren. Meld dich gern, falls dabei etwas unklar ist.",
+    "facts": "Umbuchungen/Stornierungen laufen ueber die Airbnb-Buchung bzw. das Airbnb-Resolution-Center, nicht ueber eine formlose Zusage im Chat.",
+    "guestName": "Ines",
+    "expected": {
+      "category": "storno_datum",
+      "auto": false
+    }
+  },
+  {
+    "name": "Malte bittet um Stornierung - Entwurf sagt faelschlich volle Erstattung zu (abgeleitet, kein echter Fall im Beobachtungsfenster)",
+    "guestMessages": [
+      "Wir muessen leider stornieren. Bekommen wir das Geld komplett zurueck?"
+    ],
+    "draft": "Hey Malte, kein Problem, ich storniere das fuer dich und erstatte dir den vollen Betrag direkt zurueck.",
+    "facts": "Erstattungen bei Stornierung richten sich nach der bei der Buchung gewaehlten Airbnb-Stornobedingung, nicht nach einer freien Zusage des Gastgebers.",
+    "guestName": "Malte",
+    "expected": {
+      "category": "storno_datum",
+      "auto": false
+    }
+  },
+  {
+    "name": "Corinna beschwert sich, dass das WLAN fuer Videocalls nicht reicht (real, anonymisiert)",
+    "guestMessages": [
+      "Das WLAN ist leider so schwach, dass ich keine Videocalls fuehren kann."
+    ],
+    "draft": "Hey Corinna, das tut mir leid - das WLAN sollte eigentlich auch fuer Videocalls und konzentriertes Arbeiten reichen. Kannst du mir kurz sagen, wo du dich gerade befindest? Manchmal hilft schon ein anderer Spot. Falls das alles nicht hilft, schauen wir uns das an.",
+    "facts": "WLAN ist im ganzen Haus verfuegbar, Empfang kann je nach Zimmer/Bereich schwanken.",
+    "guestName": "Corinna",
+    "expected": {
+      "category": "beschwerde_schaden",
+      "auto": false
+    }
+  },
+  {
+    "name": "Tom findet die Badestelle nicht und stoert sich abends an TV-Laerm aus der Nachbarwohnung (real, anonymisiert, multi_topic)",
+    "guestMessages": [
+      "Hallo, wir haben die Badestelle im Wald leider nicht gefunden. Und abends hoeren wir den Fernseher aus der Nachbarwohnung ziemlich laut, koennt ihr da was machen?"
+    ],
+    "draft": "Hey Tom,\n\nzur Badestelle: Der Weg kann tatsaechlich etwas unscheinbar wirken, tut mir leid. Er liegt im Waldstueck, eher etwas versteckt zwischen den privaten Grundstuecken.\n\nZu den Fernseher-Geraeuschen: Das nehme ich auf jeden Fall mit und spreche es an, damit abends Ruhe ist. Danke, dass ihr das erwaehnt.",
+    "facts": "Freie Badestelle liegt in der Naehe, Zugang ueber einen schmalen, nicht ausgeschilderten Trampelpfad am Waldrand.",
+    "guestName": "Tom",
+    "expected": {
+      "category": "beschwerde_schaden",
+      "auto": false
+    }
+  },
+  {
+    "name": "Sina fragt nach frueherem Check-in um 14 Uhr (real, anonymisiert)",
+    "guestMessages": [
+      "Waere ein frueherer Check-in um 14 Uhr moeglich? Faellt dafuer ein Aufpreis an?"
+    ],
+    "draft": "Hey Sina, frueher Check-in ab 14:00 Uhr ist in der Regel kein Problem - je nachdem, wie schnell die Reinigung vorher durch ist, kann es sein, dass es noch kurz laeuft. Kosten entstehen dafuer keine.",
+    "facts": "Regulaerer Check-in ab 15:00 Uhr. Fruehere Check-ins sind kulant und kostenlos moeglich, sofern die Reinigung durch ist.",
+    "guestName": "Sina",
+    "expected": {
+      "category": "sonderwunsch",
+      "auto": false
+    }
+  },
+  {
+    "name": "David bittet um spaeteren Checkout am Sonntag - Entwurf verspricht mehr Kulanz als erlaubt (real, anonymisiert, Feedback-verifiziert)",
+    "guestMessages": [
+      "Waere am Sonntag ein spaeterer Checkout bis zum fruehen Nachmittag drin?"
+    ],
+    "draft": "Hey David, zum spaeten Checkout am Sonntag: Regulaer ist Checkout bis 12:00 Uhr. Ob ein spaeterer Auszug bis zum fruehen Nachmittag moeglich ist, haengt von der Folgebelegung ab - das kriegen wir sicher hin, ich melde mich dazu.",
+    "facts": "Regulaerer Checkout bis 12:00 Uhr. Da eine Folgebelegung nie sicher ausgeschlossen werden kann, ist maximal eine Stunde Kulanz beim Checkout moeglich, nie mehr.",
+    "guestName": "David",
+    "expected": {
+      "category": "sonderwunsch",
+      "auto": false
+    }
+  },
+  {
+    "name": "Notruf-Hinweis bei Gasgeruch (synthetisch, bewusst beibehalten - Nachzieh-Punkt 5: Belegpflicht flaggt Allgemeinwissen 112)",
+    "guestMessages": [
+      "Es riecht nach Gas in der Kueche!"
+    ],
+    "draft": "Bitte sofort das Haus verlassen und den Notruf 112 waehlen.",
+    "guestName": null,
+    "expected": {
+      "category": "medizin_sicherheit",
+      "auto": false
+    }
+  },
+  {
+    "name": "Greta hat sich an der Feuerschale leicht verbrannt (abgeleitet, kein echter Fall im Beobachtungsfenster)",
+    "guestMessages": [
+      "Ich habe mich gerade an der Feuerschale leicht am Arm verbrannt, was soll ich tun?"
+    ],
+    "draft": "Hey Greta, das tut mir leid! Kuehl die Stelle erstmal einige Minuten mit kaltem (nicht eiskaltem) Wasser und beobachte, wie es sich entwickelt. Falls es schlimmer wird oder du dir unsicher bist, geh bitte in eine Notaufnahme oder ruf den Notruf 112 - da kann ich als medizinischer Laie keine verlaessliche Einschaetzung geben.",
+    "facts": "Feuerschale und Kamin gehoeren zur Ausstattung, Nutzung auf eigene Gefahr.",
+    "guestName": "Greta",
+    "expected": {
+      "category": "medizin_sicherheit",
+      "auto": false
+    }
+  },
+  {
+    "name": "Lukas fragt Buchungsanfrage an - Entwurf nennt ungefragt das harte Limit und eine nicht funktionierende Hausordnungs-URL (real, anonymisiert, Feedback-verifiziert, #686 validiert den url-Check aus der Nachzieh-Liste)",
+    "guestMessages": [
+      "Hallo, wir wollen ein paar Tage bei euch verbringen, um gemeinsam durchzuatmen und nach vorne zu schauen. Waere das moeglich?"
+    ],
+    "draft": "Hey Lukas,\n\ndas klingt nach genau dem richtigen Rahmen - Reflektieren, Durchatmen und gemeinsam in die Zukunft schauen, dafuer ist das Haus ideal. Ich bestaetige die Anfrage gerne. Ein paar Dinge vorab, damit alles reibungslos laeuft:\n\n- Bitte die Hausordnung vorab an alle Teilnehmer weiterleiten: farmhouse-prasser.de/legal/hausordnung\n- Das Haus hat ein hartes Limit von 15 Personen (Uebernachtungs- + Tagesgaeste zusammen).",
+    "facts": "Hartes Limit 15 Personen gilt bei Airbnb technisch schon als Auswahlgrenze - im Entwurf nur erwaehnen, wenn explizit nach mehr Personen/grossen Feiern gefragt wird. Interne Dokument-Links (z. B. Hausordnung) NIE ungefragt an Gaeste vor Buchungsbestaetigung schicken - das Gaeste-Handbuch mit allen Zugaengen wird automatisch rechtzeitig vor Anreise ueber Airbnb freigeschaltet.",
+    "guestName": "Lukas",
+    "bookingContext": "Buchungsanfrage (noch nicht bestaetigt) ueber Airbnb.",
+    "expected": {
+      "category": "buchungsanfrage",
+      "auto": false
+    }
+  },
+  {
+    "name": "Mira meldet eine gefundene Hundeleine und bittet um Versand (real, anonymisiert)",
+    "guestMessages": [
+      "Ahhh super, danke... Waere es vielleicht eine Option fuer dich, dass du uns die Leine zuschickst und wir zahlen den Versand?"
+    ],
+    "draft": "Porto uebernehmen wir, mach dir keinen Kopf. Liebe Gruesse!",
+    "guestName": "Mira",
+    "expected": {
+      "category": [
+        "unklar",
+        "sonderwunsch",
+        "geld"
+      ],
+      "auto": false
+    }
+  },
+  {
+    "name": "Kommerzielle Foto-Produktionsanfrage, Entwurf adressiert eine andere Person als den Gast (abgeleitet/anonymisiert aus einem echten Thread, Namens-Diskrepanz Unterschrift vs. Gastprofil)",
+    "guestMessages": [
+      "Hi, we're a commercial studio and have been asked by a client to produce a photo and video shoot for one of their products. Your property caught our eye - would you be open to hosting us for three days? Kind regards, Mara, Studio Manager"
+    ],
+    "draft": "Hi Mara,\n\nthank you for the details - this sounds like a lovely project, and yes, the property is available to rent.\n\nAccommodation on site is no problem at all, the house sleeps up to 15 people.",
+    "facts": "Der Airbnb-Gastname fuer diese Anfrage lautet Jonas, nicht Mara.",
+    "guestName": "Jonas",
+    "guestLanguage": "en",
+    "expected": {
+      "category": [
+        "unklar",
+        "sonderwunsch",
+        "buchungsanfrage"
+      ],
+      "auto": false
+    }
+  },
+  {
+    "name": "lorenzo dank en mit torhinweis (#695 Sprach-Pin)",
+    "guestMessages": [
+      "Thanks so much for the note about the gate opener, it worked perfectly! Really appreciate it 🙏"
+    ],
+    "draft": "Hi Lorenzo, so glad it worked — enjoy the rest of your stay!",
+    "guestName": "Lorenzo",
+    "guestLanguage": "en",
+    "expected": {
+      "category": "dank_smalltalk",
+      "auto": true
+    }
+  },
+  {
+    "name": "Lorenzo — Dank mit Zusage (#696)",
+    "guestMessages": [
+      "Thanks so much, we had a wonderful stay! Small note: the gate opener sign is outdated."
+    ],
+    "draft": "Thank you, Lorenzo — that means a lot! I'll make sure the gate opener sign gets updated.",
+    "guestName": "Lorenzo",
+    "expected": {
+      "category": "dank_smalltalk",
+      "auto": true,
+      "riskFlags": [
+        "promises_action"
+      ],
+      "promisedActionContains": "Schild"
+    }
+  },
+  {
+    "name": "Anika — Request-to-Book Event 15 P., saubere Rückfrage (#697)",
+    "guestMessages": [
+      "Hallo Michael, ich würde deine Unterkunft gern an dem ausgewählten Wochenende für ein Event buchen. Wir wären ca. 15 Leute."
+    ],
+    "draft": "Hallo Anika, danke dir für die Anfrage! Magst du uns noch sagen, um welchen Anlass es sich handelt und ob ihr insgesamt (inklusive Tagesgästen) bei den 15 Personen bleibt? Und ist eher eine ruhige Runde oder eine größere Feier geplant? Unser hartes Limit liegt bei 15 Personen inklusive Tagesgästen, Hochzeiten und große Feiern können wir leider nicht anbieten. Die endgültige Bestätigung der Buchung folgt dann separat.",
+    "facts": "Hartes Limit: 15 Personen (Übernachtungs- und Tagesgäste zusammen, keine Ausnahmen). Keine Hochzeiten/großen Feiern; kleine, intime Runden bis 15 ggf. case-by-case.",
+    "guestName": "Anika",
+    "bookingContext": "Buchungsanfrage (noch nicht bestätigt): Zeitraum 29.01.2027–31.01.2027, 2 Nächte, 15 Personen — Daten stammen aus der Anfrage selbst.",
+    "expected": {
+      "category": "buchungsanfrage",
+      "auto": true
+    }
+  },
+  {
+    "name": "Anika — Entwurf verrät interne Bestätigungsbedingung (#697)",
+    "guestMessages": [
+      "Hallo Michael, ich würde deine Unterkunft gern an dem ausgewählten Wochenende für ein Event buchen. Wir wären ca. 15 Leute."
+    ],
+    "draft": "Hallo Anika, danke dir für die Anfrage! Von der Personenzahl her passt das für uns, da steht einer Bestätigung eigentlich nichts im Weg — wir bestätigen dir das gleich final. Magst du uns nur noch kurz sagen, um welchen Anlass es sich handelt?",
+    "facts": "Hartes Limit: 15 Personen (Übernachtungs- und Tagesgäste zusammen, keine Ausnahmen). Keine Hochzeiten/großen Feiern; kleine, intime Runden bis 15 ggf. case-by-case.",
+    "guestName": "Anika",
+    "bookingContext": "Buchungsanfrage (noch nicht bestätigt): Zeitraum 29.01.2027–31.01.2027, 2 Nächte, 15 Personen — Daten stammen aus der Anfrage selbst.",
+    "expected": {
+      "category": "buchungsanfrage",
+      "auto": false
+    }
+  },
+  {
+    "name": "Anika — Folgenachricht mit Feier-Details zu offener Anfrage, nicht sonderwunsch (#702)",
+    "guestMessages": [
+      "Es wird eine gemütliche Runde nach unserem Geburtstag — wir wollen zusammen kochen und ein bisschen Yoga machen."
+    ],
+    "draft": "Wow, klingt nach einer schönen Feier! Kein Problem, das genehmigen wir euch gerne — wir hatten schon öfter größere Gruppen hier und es lief immer super. Bis bald!",
+    "facts": "Hartes Limit: 15 Personen (Übernachtungs- und Tagesgäste zusammen, keine Ausnahmen). Keine Hochzeiten/großen Feiern; kleine, intime Runden bis 15 ggf. case-by-case.",
+    "guestName": "Anika",
+    "bookingContext": "Buchungsanfrage (noch nicht bestätigt): Zeitraum 29.01.2027–31.01.2027, 2 Nächte, 15 Personen — Daten stammen aus der Anfrage selbst.",
+    "expected": {
+      "category": "buchungsanfrage",
+      "auto": false
+    }
+  }
 ]

@@ -75,6 +75,19 @@ function taskSuffix(draft: MessageDraft): string {
   return `${task}${deadline}`;
 }
 
+// #686 Nachzieh-Liste: robustes Parsen von auto_flags (JSON-Array in der DB) — ein kaputter/
+// fremder Inhalt darf die Thread-Ansicht nicht mit 500 crashen lassen, sondern fällt auf []
+// zurück. Rein, ohne DB-Zugriff, daher separat testbar (siehe messages.auto-send.test.ts).
+export function parseAutoFlags(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as string[]) : [];
+  } catch {
+    return [];
+  }
+}
+
 // Auto-Send-Gate-Ampel für Liste/Thread-Ansicht — rein (nur esc/fmtTime), keine
 // DB-Zugriffe, damit sie ohne Express-Server testbar ist (siehe messages.auto-send.test.ts).
 export function renderAutoBadge(draft: MessageDraft): string {
@@ -303,7 +316,7 @@ router.get('/:threadId', (req, res) => {
   const autoPanel = draft?.auto_decision
     ? `<div class="section" style="border-left:4px solid var(--color-amber)">
          <strong>Auto-Send-Gate</strong> · Modus ${esc(draft.auto_mode)} · ${renderAutoBadge(draft)}
-         <p class="subtitle" style="margin:6px 0 0">Kategorie: ${esc(draft.auto_category ?? '–')} · Flags: ${esc((JSON.parse(draft.auto_flags ?? '[]') as string[]).join(', ') || 'keine')}<br>${esc(draft.auto_reason)}</p>
+         <p class="subtitle" style="margin:6px 0 0">Kategorie: ${esc(draft.auto_category ?? '–')} · Flags: ${esc(parseAutoFlags(draft.auto_flags).join(', ') || 'keine')}<br>${esc(draft.auto_reason)}</p>
          ${judgeReasoningLine(draft.auto_judge_reasoning)}
          ${draft.auto_mode === 'shadow' ? '<p class="subtitle">Schattenphase — nichts wird ohne dich gesendet.</p>' : ''}
        </div>`
@@ -645,7 +658,7 @@ export async function runMessageSync(): Promise<void> {
     log('Fertig.');
   } finally {
     syncProgress.finishedAt = new Date().toISOString();
-    messageSyncLock.release();
+    messageSyncLock.release('manual');
   }
 }
 

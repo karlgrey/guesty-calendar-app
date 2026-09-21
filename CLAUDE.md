@@ -382,9 +382,16 @@ Copy-Paste kann ein sicherer Entwurf automatisch rausgehen. Spec:
 - **Kette** (`src/services/auto-send/runner.ts`, `runAutoSendGate`, läuft nach JEDEM
   LLM-Entwurf in `generate-drafts.ts`): Schicht 1 Prüfmodell
   (`judge-service.ts`/`judge-prompt.ts`, `JUDGE_MODEL`, Kategorie + Risk-Flags +
-  Konfidenz), Schicht 2 mechanische Checks (`mechanical-checks.ts` — Ziffernfolgen,
-  Links, Mail, Geldbeträge inkl. `EUR120`, Telefonnummern, Code-Wörter mit Ziffer,
-  Zahlwörter eins…zwölf/one…ten, Länge, leer), Schicht 3 reine Entscheidungsfunktion
+  Konfidenz), Schicht 2 mechanische Checks (`mechanical-checks.ts` — Ziffernfolgen ab 4
+  Stellen, mit Kontext-Ausnahme für bekannte Ziffernfolgen aus dem Thread (`knownDigitRuns`,
+  z. B. Jahr/Datum); Links (`https://…`/`www.…` UND seit #686 schemelose Domains mit Pfad wie
+  `farmhouse-prasser.de/x` — der Pfad-Slash grenzt gegen normale Sätze mit Punkt ab, „z.B.“/
+  „bzw.“/Dezimalzahlen lösen nicht aus); Mail; Geldbeträge inkl. `EUR120`; Telefonnummern;
+  Code-Wörter (Code/PIN/Tresor/Schlüsselbox/Schloss) NUR in Kombination mit einer Ziffer ODER
+  einem ausgeschriebenen Zahlwort eins…zwölf/one…ten (inkl. null/zero) im selben Satz — ein
+  Zahlwort allein löst NICHTS aus; `language_mismatch` (#695, Entwurfssprache ≠ erkannte
+  Gastsprache); `confirmation_words` (#697, nur im Buchungsanfrage-Kontext, DE/EN
+  Bestätigungs-/Zusagewörter); Länge; leer), Schicht 3 reine Entscheidungsfunktion
   (`policy.ts`, `decide()` — kein I/O). `off` prüft NICHT und persistiert NICHT
   (Entwürfe von Off-Objekten landen sonst fälschlich im „wait"/Push); `shadow` prüft
   und protokolliert nur (`message_drafts.auto_decision`); `live` sendet bei
@@ -401,7 +408,10 @@ Copy-Paste kann ein sicherer Entwurf automatisch rausgehen. Spec:
 - **Pause & Tageslimit:** Schalter „Auto-Send" auf `/admin/messages/auto-send`
   (`src/routes/messages.ts`) setzt `scheduler_state`-Key `auto_send_paused` — pausiert
   entscheidet `policy.ts` immer `wait`. `AUTO_SEND_DAILY_CAP` zählt automatisch versendete
-  Entwürfe pro Kalendertag Europe/Berlin (`berlin-day.ts`, `countAutoSentSince`).
+  Entwürfe pro Kalendertag Europe/Berlin (`berlin-day.ts`, `countAutoSentSince`). Dieselbe
+  Auswertungsseite (`/admin/messages/auto-send`) zeigt in ihrer Tabelle über
+  `listAutoDecisions()` (`draft-repository.ts`) JEDEN Entwurf mit gesetztem `auto_decision`
+  (also `auto` UND `wait`, nicht nur die wartenden) — Kategorie, Grund und Ausgang je Zeile.
 - **Weitere Wait-Gründe:** Kategorie nicht in `AUTO_OK_CATEGORIES`, `playbook_fakt` ohne
   `answerableFromFacts`, jedes Risk-Flag, jeder mechanische Treffer, Konfidenz ≠ „hoch",
   Micha hat im Thread schon eingegriffen (`threadHasHumanIntervention` — verworfener

@@ -4,7 +4,10 @@ import { detectLanguage, type SupportedLanguage } from '../../utils/language-det
 
 export const MAX_DRAFT_LENGTH = 1200;
 const DIGIT_RUN = /\d{4,}/g;
-const URL = /https?:\/\/\S+|\bwww\.\S+/i;
+// #686 Nachzieh-Liste: auch schemelose Domains mit Pfad (z. B. „farmhouse-prasser.de/x“) fangen —
+// der Pfad-Slash ist die Abgrenzung gegen normale Sätze mit Punkt (Abkürzungen „z.B.“/„bzw.“,
+// Dezimalzahlen „12.50“/„1.200“), die nie von einem „/“ gefolgt werden.
+const URL = /https?:\/\/\S+|\bwww\.\S+|\b(?:[a-z0-9-]+\.)+[a-z]{2,}\/\S+/i;
 const EMAIL = /[^\s@]+@[^\s@]+\.[^\s@]+/;
 const MONEY = /€|\bEUR\b|\bEUR\s*\d|\bEuro\b|\d+,\d{2}\b/;
 const PHONE = /\+\d[\d\s/-]{5,}|\b0\d{2,4}[\s/-]?\d{2,}[\s/-]?\d{2,}(?:[\s/-]?\d{2,})?/;

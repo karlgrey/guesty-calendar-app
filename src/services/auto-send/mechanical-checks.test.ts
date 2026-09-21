@@ -15,6 +15,16 @@ describe('runMechanicalChecks', () => {
     expect(flags('Siehe https://farmhouse-prasser.de')).toContain('url');
     expect(flags('Siehe www.beispiel.de')).toContain('url');
   });
+  it('schemelose Domain mit Pfad → url (#686 Nachzieh-Liste)', () => {
+    expect(flags('Alles Weitere auf farmhouse-prasser.de/x')).toContain('url');
+    expect(flags('Details unter beispiel.com/booking/123')).toContain('url');
+  });
+  it('normale Sätze mit Punkt lösen KEIN url-Flag aus', () => {
+    expect(flags('Der Check-in ist z.B. ab 15 Uhr möglich.')).not.toContain('url');
+    expect(flags('Das Haus ist ruhig gelegen, bzw. direkt am Wald.')).not.toContain('url');
+    expect(flags('Die Fläche beträgt 12.50 Quadratmeter.')).not.toContain('url');
+    expect(flags('Wir hatten letztes Jahr 1.200 Gäste.')).not.toContain('url');
+  });
   it('E-Mail → email', () => expect(flags('Schreib an mic@beispiel.de')).toContain('email'));
   it('Geldbetrag → money', () => {
     expect(flags('Das kostet 120 €.')).toContain('money');
