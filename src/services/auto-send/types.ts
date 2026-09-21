@@ -65,7 +65,12 @@ export interface MechanicalFinding { flag: MechanicalFlag; match: string }
 
 export interface AutoSendDecision {
   decision: 'auto' | 'wait';
-  reason: string;               // deutscher Satz für die Ampel
+  reason: string;               // deutscher Satz für die Ampel (Policy-Text, decide())
   category: JudgeCategory | null;
   flags: string[];              // Modell-Flags + mechanische Flags, z. B. 'mech:url'
+  // #702 Punkt 4: reasoning-Feld des Prüfmodells (JudgeVerdict.reasoning), von decide()
+  // durchgereicht — null bei technisch fehlgeschlagenem Judge. Optional, damit bestehende
+  // handgebaute AutoSendDecision-Literale (Tests, runner.ts-Fehlerpfade) ohne dieses Feld
+  // weiterlaufen.
+  judgeReasoning?: string | null;
 }

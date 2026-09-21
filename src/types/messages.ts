@@ -57,6 +57,11 @@ export interface MessageThread {
   linked_thread_id: string | null;         // cross-link to another thread (e.g. Gmail ↔ Meetreet)
   ai_no_reply_at: string | null;            // LLM decided "no reply needed" at this time (valid while newer than last_message_at)
   discarded_at: string | null;              // human discarded the draft at this time (valid while newer than last_message_at) — #497
+  // #702 Punkt 2: Micha gibt einen wegen fehlgeschlagenem/hängendem Versand gesperrten Thread
+  // manuell frei (Admin-UI-Button) — threadHasFailedSend zählt danach nur noch Drafts, die NACH
+  // diesem Zeitpunkt angelegt wurden (draft-repository.ts). Optional (nicht Teil der bestehenden
+  // MessageThread-Testfixtures), Migration 031, DB liefert NULL wenn nie gesetzt.
+  auto_send_released_at?: string | null;
   last_synced_at: string;
   created_at?: string;
 }
@@ -122,6 +127,11 @@ export interface MessageDraft {
   // Buchungsanfrage (Migration 030, #697)
   request_kind: 'inquiry' | 'request_to_book' | null;
   platform_deadline_at: string | null; // ISO-8601 UTC
+  // #702 Punkt 4: das reasoning-Feld des judge_draft-Tools (types.ts JudgeVerdict.reasoning),
+  // persistiert statt nur geloggt — auto_reason bleibt der Policy-Text. Optional (ein einziges
+  // bestehendes Test-Fixture baut ein volles MessageDraft-Literal, siehe
+  // messages.auto-send.test.ts), Migration 031.
+  auto_judge_reasoning?: string | null;
 }
 
 export type NewDraft = Pick<MessageDraft, 'id' | 'thread_id' | 'provider' | 'body' | 'generated_by'> & {

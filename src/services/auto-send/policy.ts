@@ -49,7 +49,17 @@ function isPromiseOnlyRisk(v: { riskFlags: JudgeRiskFlag[]; promisedAction: stri
   return v.riskFlags.length === 1 && v.riskFlags[0] === 'promises_action' && !!v.promisedAction;
 }
 
+/**
+ * #702 Punkt 4: öffentliche decide() reicht zusätzlich das reasoning-Feld des Prüfmodells durch
+ * (JudgeVerdict.reasoning) — auf JEDEM Rückgabepfad von decideByGates() unten, ohne dessen
+ * Gate-Logik anzufassen (ein Wrapper statt jeden einzelnen wait()/return-Punkt zu ändern).
+ */
 export function decide(i: PolicyInput): AutoSendDecision {
+  const judgeReasoning = i.judge.kind === 'verdict' ? i.judge.verdict.reasoning : null;
+  return { ...decideByGates(i), judgeReasoning };
+}
+
+function decideByGates(i: PolicyInput): AutoSendDecision {
   const verdict = i.judge.kind === 'verdict' ? i.judge.verdict : null;
   const flags = [...(verdict?.riskFlags ?? []), ...i.mechanical.map((m) => `mech:${m.flag}`)];
   const category = verdict?.category ?? null;

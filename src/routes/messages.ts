@@ -9,6 +9,7 @@ import {
   createDraft, getDraftById, getActiveDraftByThread, discardDraft,
   claimDraftForSending, updateDraftBody, setSentBodyChanged,
   getAutoSendStats, countAutoSentSince, listAutoDecisions, getLastSentDraftByThread,
+  threadHasFailedSend, releaseAutoSendForThread,
 } from '../repositories/draft-repository.js';
 import { getSchedulerState, setSchedulerState } from '../repositories/scheduler-state-repository.js';
 import { getPropertiesByProvider } from '../config/properties.js';
@@ -16,7 +17,7 @@ import { getPropertyForThread, propertyForBadge } from '../utils/thread-property
 import { loadVoice, loadPropertyFacts } from '../services/vault-knowledge.js';
 import { generateDraftForThread, DRAFT_MODEL } from '../services/draft-service.js';
 import { buildBookingContext } from '../services/booking-context.js';
-import { detectBookingRequestContext } from '../services/booking-request.js';
+import { findOpenBookingRequest } from '../services/booking-request.js';
 import { sendClaimedDraft } from '../services/draft-send-service.js';
 import { resolveOutboundModuleType } from '../services/guesty-channel.js';
 import { getHostexClient, type HostexConversationDetail } from '../services/hostex-client.js';
@@ -294,18 +295,37 @@ router.get('/:threadId', (req, res) => {
     )
     .join('');
 
+  // #702 Punkt 4: reasoning-Feld des Prüfmodells zusätzlich zum Policy-Text (auto_reason),
+  // "unter der Ampel" — eigene, kursive Zeile, damit sich beide Texte nicht vermischen.
+  const judgeReasoningLine = (r: string | null | undefined) =>
+    r ? `<p class="subtitle" style="margin:4px 0 0;font-style:italic">Prüfmodell: ${esc(r)}</p>` : '';
+
   const autoPanel = draft?.auto_decision
     ? `<div class="section" style="border-left:4px solid var(--color-amber)">
          <strong>Auto-Send-Gate</strong> · Modus ${esc(draft.auto_mode)} · ${renderAutoBadge(draft)}
          <p class="subtitle" style="margin:6px 0 0">Kategorie: ${esc(draft.auto_category ?? '–')} · Flags: ${esc((JSON.parse(draft.auto_flags ?? '[]') as string[]).join(', ') || 'keine')}<br>${esc(draft.auto_reason)}</p>
+         ${judgeReasoningLine(draft.auto_judge_reasoning)}
          ${draft.auto_mode === 'shadow' ? '<p class="subtitle">Schattenphase — nichts wird ohne dich gesendet.</p>' : ''}
        </div>`
     : lastSent?.sent_by === 'auto'
       ? `<div class="section" style="border-left:4px solid var(--color-forest)">
            <strong>Auto-Send-Gate</strong> · ${renderAutoBadge(lastSent)}
            <p class="subtitle" style="margin:6px 0 0">Grund: ${esc(lastSent.auto_reason)}</p>
+           ${judgeReasoningLine(lastSent.auto_judge_reasoning)}
          </div>`
       : '';
+
+  // #702 Punkt 2: fehlgeschlagener/hängender Versand sperrt den Thread dauerhaft vom
+  // Auto-Send (threadHasFailedSend, draft-repository.ts) — Freigabe nur über diesen Button.
+  const autoSendBlockedPanel = threadHasFailedSend(thread.id)
+    ? `<div class="section" style="border-left:4px solid var(--color-danger,#b3261e)">
+         <strong>Auto-Send gesperrt</strong>
+         <p class="subtitle" style="margin:6px 0 0">Ein vorheriger Versand in diesem Thread ist fehlgeschlagen oder hängt — Auto-Send bleibt gesperrt, bis du ihn wieder freigibst.</p>
+         <form method="POST" action="/admin/messages/${encodeURIComponent(thread.id)}/release-auto-send" style="margin-top:8px">
+           <button type="submit" class="btn btn-ghost">Auto-Send für diesen Thread wieder erlauben</button>
+         </form>
+       </div>`
+    : '';
 
   const canSendHint = '<p class="subtitle">Kanal unklar — bitte direkt in der Guesty-Inbox antworten.</p>';
   const draftBlock = draft
@@ -389,6 +409,7 @@ router.get('/:threadId', (req, res) => {
     <p class="subtitle"><span class="badge">${esc(thread.channel)}</span>${property ? ` · <strong>${esc(property.name)}</strong>` : ''} · Provider: ${esc(thread.source)}</p>
     <div class="section"><h3>Verlauf</h3>${history}</div>
     ${autoPanel}
+    ${autoSendBlockedPanel}
     <div class="section">${noDraftNotice}${genFailedNotice}${sendBlockedNotice}${draftExistsNotice}${sentNotice}${draftBlock}</div>`;
   res.type('html').send(renderAdminPage({ title: name, body, active: 'messages' }));
 });
@@ -486,6 +507,16 @@ router.post('/:threadId/reply', express.urlencoded({ extended: true }), async (r
   } catch (e) { next(e); }
 });
 
+// #702 Punkt 2: Auto-Send-Freigabe nach fehlgeschlagenem/hängendem Versand — threadHasFailedSend
+// sperrt sonst dauerhaft. Nur der Freigabe-Zeitstempel wird gesetzt (releaseAutoSendForThread);
+// ein NEUER Fehlschlag NACH der Freigabe sperrt den Thread erneut.
+router.post('/:threadId/release-auto-send', (req, res) => {
+  const thread = getThreadById(req.params.threadId);
+  if (!thread) { res.status(404).send('Thread nicht gefunden'); return; }
+  releaseAutoSendForThread(thread.id);
+  res.redirect(`/admin/messages/${encodeURIComponent(thread.id)}`);
+});
+
 // Verwerfen — heißt verwerfen (SmartTasks #497): der Thread bleibt draftlos.
 // Ohne den markThreadDiscarded-Marker würde der nächste Cron-/Sync-Lauf
 // (generateDraftsForProperty -> getThreadsNeedingDraft) den Thread sofort
@@ -523,11 +554,13 @@ router.post('/:threadId/regenerate', async (req, res, next) => {
     const result = await generateDraftForThread({
       thread, messages, voice, facts,
       bookingContext: buildBookingContext(thread),
-      // #697: manuelles Neu-Generieren bekommt denselben Buchungsanfrage-Prompt wie der
+      // #697/#702: manuelles Neu-Generieren bekommt denselben Buchungsanfrage-Prompt wie der
       // automatische Pfad — sonst würde ein manueller Regenerate für eine Buchungsanfrage
-      // fälschlich den normalen Antwort-Prompt bekommen. Task-Anlage/Frist laufen hier NICHT
-      // (kein Gate-Aufruf auf diesem Pfad, wie bisher — Micha prüft den Entwurf ohnehin von Hand).
-      isBookingRequest: detectBookingRequestContext(messages) !== null,
+      // fälschlich den normalen Antwort-Prompt bekommen; seit #702 auch für Folgenachrichten
+      // einer noch offenen Anfrage (findOpenBookingRequest, siehe generate-drafts.ts). Task-
+      // Anlage/Frist laufen hier NICHT (kein Gate-Aufruf auf diesem Pfad, wie bisher — Micha
+      // prüft den Entwurf ohnehin von Hand).
+      isBookingRequest: findOpenBookingRequest(messages, thread.reservation_status) !== null,
     });
     let redirectSuffix = '';
     if (result.kind === 'text') {
