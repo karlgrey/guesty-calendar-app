@@ -113,6 +113,9 @@ export interface PropertyConfig {
   vaultNote?: string; // Dateiname der Objekt-Notiz im Vault (Areas/Hosting/Properties/<vaultNote>)
   /** Auto-Send-Modus dieses Objekts; effektiv gilt der restriktivere Wert gegenüber AUTO_SEND_MODE */
   autoSend?: 'off' | 'shadow' | 'live';
+  /** SmartTasks-Projekt-Id des Betriebs-Projekts dieses Objekts (#696, Zusagen-Task bei
+   *  promises_action). Ohne Wert wird kein Zusagen-Task angelegt (siehe promise-task-service.ts). */
+  smartTasksProjectId?: number;
   timezone: string;
   currency: string;
   bookingRecipientEmail: string;
@@ -227,6 +230,7 @@ const propertyConfigSchema = z.object({
   uiColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   vaultNote: z.string().optional(),
   autoSend: z.enum(['off', 'shadow', 'live']).optional(),
+  smartTasksProjectId: z.number().int().positive().optional(),
   timezone: z.string().default('Europe/Berlin'),
   currency: z.string().length(3).toUpperCase().default('EUR'),
   bookingRecipientEmail: z.string().email(),

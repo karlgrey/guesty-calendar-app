@@ -19,3 +19,20 @@ export function startOfBerlinDayIso(now: Date = new Date()): string {
   const candidate = dayStartWallAsUtc - berlinOffsetMs(now);
   return new Date(dayStartWallAsUtc - berlinOffsetMs(new Date(candidate))).toISOString();
 }
+
+/**
+ * Nächster Werktag (Mo–Fr) nach dem Berliner Kalendertag von `now`, als "YYYY-MM-DD"
+ * (Format des SmartTasks-`dueDate`-Felds) — für die Zusagen-Task-Anlage (#696, Regel
+ * Micha: Fälligkeiten nie auf Samstag/Sonntag). Zählt IMMER ab morgen (ein Task, der
+ * gerade eben angelegt wurde, ist frühestens am nächsten Tag fällig), überspringt dann
+ * Wochenend-Tage. Rechnet rein auf Kalendertagen (UTC-Datumsarithmetik auf dem in Berlin
+ * abgelesenen Datum) — Uhrzeit/DST spielen für ein reines Datum keine Rolle.
+ */
+export function nextBerlinBusinessDay(now: Date = new Date()): string {
+  const p = Object.fromEntries(berlinDateFmt.formatToParts(now).map((x) => [x.type, x.value]));
+  let d = new Date(Date.UTC(+p.year, +p.month - 1, +p.day));
+  do {
+    d = new Date(d.getTime() + 24 * 60 * 60 * 1000);
+  } while (d.getUTCDay() === 0 || d.getUTCDay() === 6);
+  return d.toISOString().slice(0, 10);
+}

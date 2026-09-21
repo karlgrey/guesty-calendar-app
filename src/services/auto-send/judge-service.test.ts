@@ -7,7 +7,7 @@ describe('judgeDraft', () => {
   it('parst ein gültiges Urteil', async () => {
     const call = vi.fn().mockResolvedValue({ category: 'ankunftszeit', answerable_from_facts: true, risk_flags: [], confidence: 'hoch', reasoning: 'Standardfrage.' });
     const r = await judgeDraft(input, { call, model: 'm' });
-    expect(r).toEqual({ kind: 'verdict', verdict: { category: 'ankunftszeit', answerableFromFacts: true, riskFlags: [], confidence: 'hoch', reasoning: 'Standardfrage.' } });
+    expect(r).toEqual({ kind: 'verdict', verdict: { category: 'ankunftszeit', answerableFromFacts: true, riskFlags: [], confidence: 'hoch', reasoning: 'Standardfrage.', promisedAction: null } });
     expect(call.mock.calls[0][0].model).toBe('m');
   });
   it('unbekannte Kategorie → failed', async () => {
@@ -66,5 +66,42 @@ describe('judgeDraft', () => {
   it('ohne guestLanguage bleibt die User-Message unverändert (Rückwärtskompatibilität)', () => {
     const m = buildJudgeUserMessage(input);
     expect(m).not.toContain('ANTWORTSPRACHE');
+  });
+
+  // #696: promised_action — nur relevant, wenn das Modell es liefert.
+  it('promises_action + promised_action → promisedAction im Urteil', async () => {
+    const call = vi.fn().mockResolvedValue({
+      category: 'dank_smalltalk', answerable_from_facts: true, risk_flags: ['promises_action'],
+      confidence: 'hoch', reasoning: 'Dank mit Zusage.', promised_action: 'Micha kümmert sich, dass die Toröffner-Notiz korrigiert wird.',
+    });
+    const r = await judgeDraft(input, { call, model: 'm' });
+    expect(r.kind === 'verdict' && r.verdict.promisedAction).toBe('Micha kümmert sich, dass die Toröffner-Notiz korrigiert wird.');
+  });
+  it('promises_action ohne promised_action-Text → promisedAction bleibt null, kein failed', async () => {
+    const call = vi.fn().mockResolvedValue({
+      category: 'dank_smalltalk', answerable_from_facts: true, risk_flags: ['promises_action'],
+      confidence: 'hoch', reasoning: 'Dank mit Zusage.',
+    });
+    const r = await judgeDraft(input, { call, model: 'm' });
+    expect(r.kind).toBe('verdict');
+    expect(r.kind === 'verdict' && r.verdict.promisedAction).toBeNull();
+  });
+  it('leerer promised_action-String → null statt leerem String', async () => {
+    const call = vi.fn().mockResolvedValue({
+      category: 'dank_smalltalk', answerable_from_facts: true, risk_flags: ['promises_action'],
+      confidence: 'hoch', reasoning: 'x', promised_action: '   ',
+    });
+    const r = await judgeDraft(input, { call, model: 'm' });
+    expect(r.kind === 'verdict' && r.verdict.promisedAction).toBeNull();
+  });
+  it('ohne promises_action-Flag wird promised_action ignoriert (bleibt null)', async () => {
+    const call = vi.fn().mockResolvedValue({
+      category: 'ankunftszeit', answerable_from_facts: true, risk_flags: [],
+      confidence: 'hoch', reasoning: 'x', promised_action: 'Sollte nicht vorkommen',
+    });
+    const r = await judgeDraft(input, { call, model: 'm' });
+    // Bewusst nicht gefiltert (das Modell könnte es trotzdem liefern) — wird von policy.ts
+    // ignoriert, da dort riskFlags auf genau ['promises_action'] geprüft wird.
+    expect(r.kind === 'verdict' && r.verdict.promisedAction).toBe('Sollte nicht vorkommen');
   });
 });

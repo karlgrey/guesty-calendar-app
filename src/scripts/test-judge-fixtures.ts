@@ -3,7 +3,7 @@
 // Aufruf: npm run test:judge — Pflicht vor jeder Änderung an judge-prompt.ts.
 import { readFileSync } from 'node:fs';
 import { judgeDraft } from '../services/auto-send/judge-service.js';
-import { decide } from '../services/auto-send/policy.js';
+import { decide, wouldAutoWithPromiseTask } from '../services/auto-send/policy.js';
 import type { SupportedLanguage } from '../utils/language-detect.js';
 
 // #695: dieses Skript testet NUR die Judge-Schicht (Live-Aufruf gegen das Prüfmodell) — es
@@ -14,7 +14,12 @@ import type { SupportedLanguage } from '../utils/language-detect.js';
 // durchgereicht wird, ohne dass ein sprachlich passender Entwurf fälschlich als riskant gilt.
 interface Case {
   name: string; guestMessages: string[]; draft: string; facts?: string; guestName?: string | null;
-  guestLanguage?: SupportedLanguage; expected: { category: string; auto: boolean };
+  guestLanguage?: SupportedLanguage;
+  expected: {
+    category: string; auto: boolean;
+    // #696: optional — nur für Fälle mit Zusage gesetzt (Fixture "Lorenzo").
+    riskFlags?: string[]; promisedActionContains?: string;
+  };
 }
 const cases = JSON.parse(readFileSync(new URL('../test-fixtures/judge/cases.json', import.meta.url), 'utf8')) as Case[];
 let failed = 0;
@@ -26,10 +31,20 @@ for (const c of cases) {
   });
   if (r.kind !== 'verdict') { console.log(`✗ ${c.name}: technisch fehlgeschlagen (${r.error})`); failed++; continue; }
   const v = r.verdict;
-  const d = decide({ mode: 'live', paused: false, judge: r, mechanical: [], threadHasHumanIntervention: false, threadHasFailedSend: false, autoSentToday: 0, dailyCap: 10, canSend: true });
-  const wouldAuto = d.decision === 'auto';
-  const ok = v.category === c.expected.category && wouldAuto === c.expected.auto;
-  console.log(`${ok ? '✓' : '✗'} ${c.name}: ${v.category} auto=${wouldAuto} flags=[${v.riskFlags.join(',')}] conf=${v.confidence} — ${v.reasoning} — ${d.reason}`);
+  const baseInput = { mode: 'live' as const, paused: false, judge: r, mechanical: [], threadHasHumanIntervention: false, threadHasFailedSend: false, autoSentToday: 0, dailyCap: 10, canSend: true };
+  const d = decide({ ...baseInput, promiseTask: null });
+  // #696: ein Zusagen-Fall (promises_action allein) geht bei decide() nur "auto", wenn ein
+  // Task bereits angelegt wurde — den simuliert hier niemand, deshalb zusätzlich über
+  // wouldAutoWithPromiseTask prüfen, ob er es WÜRDE (kein SmartTasks-Aufruf nötig).
+  const wouldAuto = d.decision === 'auto' || wouldAutoWithPromiseTask(baseInput);
+  let ok = v.category === c.expected.category && wouldAuto === c.expected.auto;
+  if (c.expected.riskFlags) {
+    ok = ok && JSON.stringify([...v.riskFlags].sort()) === JSON.stringify([...c.expected.riskFlags].sort());
+  }
+  if (c.expected.promisedActionContains) {
+    ok = ok && !!v.promisedAction && v.promisedAction.toLowerCase().includes(c.expected.promisedActionContains.toLowerCase());
+  }
+  console.log(`${ok ? '✓' : '✗'} ${c.name}: ${v.category} auto=${wouldAuto} flags=[${v.riskFlags.join(',')}] promisedAction=${v.promisedAction ?? '–'} conf=${v.confidence} — ${v.reasoning} — ${d.reason}`);
   if (!ok) failed++;
 }
 console.log(`\n${cases.length - failed}/${cases.length} Fälle wie erwartet`);

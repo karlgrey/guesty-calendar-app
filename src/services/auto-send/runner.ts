@@ -4,7 +4,7 @@ import type { Message, MessageThread } from '../../types/messages.js';
 import type { PropertyConfig } from '../../config/properties.js';
 import { judgeDraft, type JudgeInput } from './judge-service.js';
 import { runMechanicalChecks, collectDigitRuns } from './mechanical-checks.js';
-import { decide } from './policy.js';
+import { decide, wouldAutoWithPromiseTask, type PolicyInput } from './policy.js';
 import { resolveAutoSendMode } from './mode.js';
 import { startOfBerlinDayIso } from './berlin-day.js';
 import type { AutoSendDecision, AutoSendMode, JudgeResult } from './types.js';
@@ -13,6 +13,7 @@ import { setAutoDecision, threadHasHumanIntervention, threadHasFailedSend, count
 import { getSchedulerState } from '../../repositories/scheduler-state-repository.js';
 import { resolveOutboundModuleType } from '../guesty-channel.js';
 import { sendClaimedDraft } from '../draft-send-service.js';
+import { resolvePromiseTask, type PromiseTaskInput, type PromiseTaskResult } from '../promise-task-service.js';
 import logger from '../../utils/logger.js';
 
 export const PAUSE_KEY = 'auto_send_paused';
@@ -39,6 +40,9 @@ export interface GateDeps {
   persistDecision: (draftId: string, d: AutoSendDecision, mode: AutoSendMode) => void;
   claim: (draftId: string) => boolean;
   send: (draftId: string, thread: MessageThread, body: string, sentBy: 'auto') => Promise<{ ok: true } | { ok: false; err: unknown }>;
+  // #696: Zusagen-Task — nur aufgerufen, wenn der Entwurf sonst automatisch ginge
+  // (wouldAutoWithPromiseTask), siehe unten.
+  resolvePromiseTask: (i: PromiseTaskInput) => Promise<PromiseTaskResult>;
 }
 export function realGateDeps(): GateDeps {
   return {
@@ -52,6 +56,7 @@ export function realGateDeps(): GateDeps {
     persistDecision: setAutoDecision,
     claim: claimDraftForSending,
     send: (id, thread, body, sentBy) => sendClaimedDraft(id, thread, body, sentBy),
+    resolvePromiseTask: (i) => resolvePromiseTask(i),
   };
 }
 
@@ -68,6 +73,21 @@ export function guestMessagesSinceLastHost(messages: Message[]): string[] {
     else if (m.direction === 'inbound') out.push(m.body);
   }
   return out;
+}
+
+/**
+ * Id der letzten Gastnachricht seit der letzten Host-Antwort (#696, Idempotenz-Schlüssel
+ * für die Zusagen-Task-Anlage — siehe draft-repository.ts findExistingSmartTasksTaskId).
+ * Dieselbe Reset-auf-outbound-Logik wie guestMessagesSinceLastHost, liefert aber die Id
+ * der zuletzt gesehenen Gastnachricht statt aller Texte. null ohne Gastnachricht.
+ */
+export function lastInboundMessageId(messages: Message[]): string | null {
+  let id: string | null = null;
+  for (const m of messages) {
+    if (m.direction === 'outbound') id = null;
+    else if (m.direction === 'inbound') id = m.id;
+  }
+  return id;
 }
 
 export async function runAutoSendGate(input: GateInput, deps: GateDeps = realGateDeps()): Promise<{ decision: AutoSendDecision; mode: AutoSendMode; sent: boolean }> {
@@ -92,14 +112,29 @@ export async function runAutoSendGate(input: GateInput, deps: GateDeps = realGat
       knownDigitRuns: collectDigitRuns([...guestMessages, input.bookingContext ?? '']),
       guestLanguage: input.guestLanguage,
     });
-    decision = decide({
+    const baseInput: Omit<PolicyInput, 'promiseTask'> = {
       mode, paused: deps.isPaused(), judge, mechanical,
       threadHasHumanIntervention: deps.hasHumanIntervention(input.thread.id),
       threadHasFailedSend: deps.hasFailedSend(input.thread.id),
       autoSentToday: deps.countAutoSentSince(startOfBerlinDayIso()),
       dailyCap: deps.dailyCap,
       canSend: deps.canSend(input.thread, input.messages),
-    });
+    };
+    // #696: Zusagen-Task — die (async) SmartTasks-Anlage lohnt sich nur, wenn der Entwurf
+    // SONST automatisch ginge (alle anderen Gates schon grün). wouldAutoWithPromiseTask ist
+    // pure (kein I/O) und prüft genau das vorab, bevor überhaupt ein API-Aufruf passiert.
+    let promiseTask: PolicyInput['promiseTask'] = null;
+    if (judge.kind === 'verdict' && judge.verdict.promisedAction && wouldAutoWithPromiseTask(baseInput)) {
+      const guestMessageId = lastInboundMessageId(input.messages);
+      const lastGuestMessage = guestMessages[guestMessages.length - 1] ?? '';
+      const result = await deps.resolvePromiseTask({
+        draftId: input.draftId, threadId: input.thread.id, guestMessageId,
+        guestName: input.thread.guest_name, guestMessage: lastGuestMessage, draftBody: input.body,
+        promisedAction: judge.verdict.promisedAction, property: input.property, mode,
+      });
+      promiseTask = { created: result.created, taskNumber: result.taskNumber };
+    }
+    decision = decide({ ...baseInput, promiseTask });
   } catch (err) {
     // Spec 8: Prüfmodell/Deps fehlerhaft → wait statt Exception, sonst bleibt
     // auto_decision NULL (kein Push, kein Ampel-Grund).

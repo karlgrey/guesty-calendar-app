@@ -442,8 +442,8 @@ Copy-Paste kann ein sicherer Entwurf automatisch rausgehen. Spec:
   /api/agent/auto-send/stats?days=` (Auto-Send-Auswertung); `/threads` liefert zusätzlich
   `autoDecision` und `property.shortCode`.
 - **Testfixtures:** `npm run test:judge` (`src/scripts/test-judge-fixtures.ts`, Live-Lauf
-  gegen `JUDGE_MODEL`, 11 Fälle in `src/test-fixtures/judge/cases.json`) — **Pflicht vor
-  jeder Prompt-Änderung** an `judge-prompt.ts` (aktuell 11/11 grün).
+  gegen `JUDGE_MODEL`, 13 Fälle in `src/test-fixtures/judge/cases.json`) — **Pflicht vor
+  jeder Prompt-Änderung** an `judge-prompt.ts` (aktuell 13/13 grün).
 - **Sprach-Pin (#695, 21.09.2026):** `src/utils/language-detect.ts` erkennt die Sprache der
   letzten Gastnachricht deterministisch (Stopwort-Heuristik DE/EN/IT/ES/FR, Fallback Deutsch;
   franc/tinyld scheiterten an Kurztexten wie „Danke, alles super!"). Die Sprache geht als harte
@@ -456,15 +456,73 @@ Copy-Paste kann ein sicherer Entwurf automatisch rausgehen. Spec:
   persistierte `auto_reason` trägt dann den Präfix „Neuversuch: “ (nur die letzte Entscheidung
   steht in der DB, beide im Log). `no_reply`/`failed` beim Neuversuch → erste wait-Entscheidung
   bleibt. Fixture „lorenzo dank en" in `cases.json` (Feld `guestLanguage`).
+- **Zusagen-Task (#696, 21.09.2026, Fall Lorenzo U19):** eine Zusage im Entwurf
+  (Judge-Risk-Flag `promises_action`) ist allein kein Wait-Grund mehr, WENN sie
+  nachgehalten wird — der Judge liefert bei `promises_action` zusätzlich `promised_action`
+  (ein Satz, was zugesagt wird; `judge-prompt.ts`/`judge-service.ts`). `policy.ts`
+  (`isPromiseOnlyRisk`, `wouldAutoWithPromiseTask` — beide pure, kein I/O) lässt den
+  Entwurf nur dann automatisch gehen, wenn riskFlags GENAU `['promises_action']` ist
+  (jedes weitere Flag bleibt wie bisher `wait`), `promised_action` gesetzt ist und alle
+  übrigen Gates (Kategorie, Mechanik, Konfidenz „hoch", Thread-Zustand, Tageslimit)
+  bereits grün wären — erst dann versucht `runner.ts` die (async) Task-Anlage über
+  `promise-task-service.ts` (`resolvePromiseTask`) und ruft `decide()` mit dem Ergebnis
+  ein zweites Mal auf. Schlägt die Anlage fehl (SmartTasks-API nicht erreichbar/Timeout),
+  bleibt es bei `wait`, Grund „Task konnte nicht angelegt werden" — der Versand wird nie
+  blockiert, nur nicht beschleunigt. Auch im Schattenmodus wird der Task angelegt (sonst
+  lässt sich die Mechanik nicht bewerten); `auto_reason` markiert das dann zusätzlich
+  („Zusage → Task #NNN (Schattenmodus)"). Die confidence=hoch-Regel im Judge-Prompt hat
+  dafür eine explizite Ausnahme für die Zusage selbst (sie braucht keinen Beleg im
+  Objektwissen — sie wird ja separat nachgehalten), sonst hätte `promises_action` in der
+  Praxis fast nie `confidence: hoch` erreicht.
+  - **SmartTasks-Client** (`src/services/smarttasks-client.ts`): kleiner HTTP-Client
+    (Muster `guesty-client.ts`/`hostex-client.ts`), `POST /tasks` mit Bearer-Key aus
+    `SMARTTASKS_API_KEY`, 10 s Timeout, kein Retry (ein Fehlversuch ist okay, siehe oben).
+    **Kernschutz:** der Key ist ein separater Key „guesty-app" am bestehenden User
+    „Claude" — er darf laut SmartTasks-Auslegung nur Tasks anlegen/kommentieren, keine
+    Wiki-/Vault-Rechte, und ist unabhängig vom Standup-Session-Key widerrufbar.
+    **Anlage** (auf labs, `/opt/smarttasks`): `npx tsx scripts/create-api-key.ts Claude
+    guesty-app` (Name „Claude" ist Pflicht — sonst wird ein neuer User statt eines
+    zusätzlichen Keys angelegt); Ausgabe direkt in `/opt/guesty-calendar-app/.env` als
+    `SMARTTASKS_API_KEY=…` eintragen, nirgends sonst notieren. **Widerruf:** `npx tsx
+    scripts/revoke-api-key.ts <id>` (Id aus Tabelle `api_keys`).
+  - **Task-Inhalt** (`promise-task-service.ts`): Titel `Zusage an Gast <Vorname>
+    (<Objekt-Code>): <promised_action>`; Beschreibung mit Thread-Link (`adminUrl`), Zitat
+    der Gastnachricht, Zitat des Entwurfs, Datum. Projekt = Betriebs-Projekt des Objekts
+    aus `properties.json`-Feld `smartTasksProjectId` (FH → 5, U19 → 36, AS/BH → 7 —
+    verifiziert gegen `/api/projects`); Assignee Micha (`MICHA_SMARTTASKS_USER_ID = 1`);
+    Status „To Do"; Due = nächster Werktag Berlin-Zeit, nie Sa/So
+    (`berlin-day.ts`, `nextBerlinBusinessDay`).
+  - **Idempotenz** (Spec Punkt 6 — Neuversuch nach Sprach-Pin, #695, erzeugt keinen
+    zweiten Task): Migration 029 fügt `message_drafts.smarttasks_task_id` +
+    `smarttasks_task_guest_message_id` (Id der zuletzt beantworteten Gastnachricht) hinzu.
+    `resolvePromiseTask` prüft zuerst `findExistingSmartTasksTaskId(threadId,
+    guestMessageId)` — existiert im selben Thread bereits ein Task für GENAU diese
+    Gastnachricht (über alle Draft-Status hinweg, auch discarded/error), wird dessen
+    Id auf den aktuellen Draft gespiegelt statt neu angelegt. Das greift generisch für
+    JEDEN Fall, in dem ein neuer Draft-Datensatz für dieselbe letzte Gastnachricht
+    entsteht (der Sprach-Pin-Neuversuch überschreibt zwar denselben Datensatz, aber auch
+    ein künftiger Pfad mit neuem Draft wäre abgedeckt) — bewusst über Thread+Gastnachricht
+    statt Draft-Id verankert, weil Draft-Ids sich ändern können, die beantwortete
+    Gastnachricht aber nicht.
+  - **Sichtbarkeit:** Task-Nummer im Admin-UI (`renderAutoBadge`, Thread-Detail-Badges)
+    und in `GET /api/agent/drafts/awaiting` (`smartTasksTaskId`) — dort nur relevant für
+    hängende/fehlgeschlagene Sends, deren Zusage bereits getrackt wurde (Auto-Entscheidungen
+    selbst tauchen in `/drafts/awaiting` nicht auf, das ist reine Wait/Error-Liste).
+  - **Testfixture:** „Lorenzo — Dank mit Zusage (#696)" in `cases.json` (englischer Dank +
+    Zusage, `expected.riskFlags`/`promisedActionContains`) — zu unterscheiden von der
+    #695-Fixture „lorenzo dank en" (reiner Sprach-Pin-Test, keine Zusage).
 - **Env-Variablen:** `AUTO_SEND_MODE` (`off`|`shadow`|`live`, Default `off`),
   `AUTO_SEND_DAILY_CAP` (Default 10), `MESSAGE_LOOP_MINUTES` (Default 5), `JUDGE_MODEL`
-  (Default `claude-opus-5`), `GUESTY_WEBHOOK_SECRET` (aus `npm run webhook:register`).
+  (Default `claude-opus-5`), `GUESTY_WEBHOOK_SECRET` (aus `npm run webhook:register`),
+  `SMARTTASKS_API_KEY`/`SMARTTASKS_API_URL` (#696, siehe „SmartTasks-Client" oben).
 - **Key Files:** `src/services/auto-send/{types,mode,berlin-day,mechanical-checks,
   judge-prompt,judge-service,policy,runner}.ts`, `src/services/draft-send-service.ts`,
   `src/services/guesty-webhook-signature.ts`, `src/routes/webhooks-guesty.ts`,
+  `src/services/{smarttasks-client,promise-task-service}.ts`,
   `src/jobs/{message-loop,handle-guesty-inbound}.ts`,
   `src/scripts/{register-guesty-webhook,test-judge-fixtures}.ts`,
-  `src/test-fixtures/judge/cases.json`, Migration `027_add_auto_send.sql`.
+  `src/test-fixtures/judge/cases.json`, Migrationen `027_add_auto_send.sql`,
+  `029_add_smarttasks_task.sql`.
 - **Server-Setup:** → siehe `docs/vault-deployment.md`, Abschnitt „Auto-Send-Gate
   aktivieren".
 

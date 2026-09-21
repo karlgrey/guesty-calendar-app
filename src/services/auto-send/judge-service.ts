@@ -71,6 +71,12 @@ export async function judgeDraft(input: JudgeInput, deps: JudgeDeps = defaultDep
     }
   }
   const riskFlags = o.risk_flags as JudgeRiskFlag[];
+  // #696: promised_action ist nur relevant, wenn promises_action gesetzt ist — bei fehlendem/
+  // leerem Text bleibt es null (fail-safe: die Zusagen-Fastlane in policy.ts greift dann
+  // einfach nicht, der Entwurf fällt auf den normalen Risk-Flag-Wartepfad zurück, statt das
+  // ganze Urteil als 'failed' zu verwerfen — anders als bei unbekannten Flags oben ist hier
+  // kein Integritätsproblem, nur eine fehlende Zusatzinfo).
+  const promisedAction = typeof o.promised_action === 'string' && o.promised_action.trim() ? o.promised_action.trim() : null;
   return {
     kind: 'verdict',
     verdict: {
@@ -79,6 +85,7 @@ export async function judgeDraft(input: JudgeInput, deps: JudgeDeps = defaultDep
       riskFlags,
       confidence: o.confidence as 'hoch' | 'mittel' | 'niedrig',
       reasoning,
+      promisedAction,
     },
   };
 }

@@ -151,6 +151,12 @@ const configSchema = z.object({
   messageLoopMinutes: z.coerce.number().int().min(1).default(5),
   guestyWebhookSecret: z.string().optional(),
   judgeModel: z.string().default('claude-opus-5'),
+
+  // SmartTasks-Client (#696): eigener API-Key "guesty-app", nur Task-Anlage/-Kommentare,
+  // keine Wiki-/Vault-Rechte (Kernschutz). Ausfall der API darf den Versand nie blockieren —
+  // siehe promise-task-service.ts.
+  smartTasksApiKey: z.string().optional(),
+  smartTasksApiUrl: z.string().url().default('https://tasks.remoterepublic.com/api'),
 });
 
 /**
@@ -216,6 +222,8 @@ function parseConfig() {
     messageLoopMinutes: process.env.MESSAGE_LOOP_MINUTES,
     guestyWebhookSecret: process.env.GUESTY_WEBHOOK_SECRET,
     judgeModel: process.env.JUDGE_MODEL,
+    smartTasksApiKey: process.env.SMARTTASKS_API_KEY,
+    smartTasksApiUrl: process.env.SMARTTASKS_API_URL,
   };
 
   try {

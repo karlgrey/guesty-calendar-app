@@ -1,9 +1,9 @@
 // src/services/auto-send/policy.test.ts
 import { describe, it, expect } from 'vitest';
-import { decide, type PolicyInput } from './policy.js';
+import { decide, wouldAutoWithPromiseTask, type PolicyInput } from './policy.js';
 import type { JudgeResult } from './types.js';
 
-const okJudge: JudgeResult = { kind: 'verdict', verdict: { category: 'ankunftszeit', answerableFromFacts: true, riskFlags: [], confidence: 'hoch', reasoning: 'r' } };
+const okJudge: JudgeResult = { kind: 'verdict', verdict: { category: 'ankunftszeit', answerableFromFacts: true, riskFlags: [], confidence: 'hoch', reasoning: 'r', promisedAction: null } };
 const base: PolicyInput = { mode: 'live', paused: false, judge: okJudge, mechanical: [], threadHasHumanIntervention: false, threadHasFailedSend: false, autoSentToday: 0, dailyCap: 10, canSend: true };
 const withVerdict = (over: Partial<(typeof okJudge)['verdict']>): JudgeResult =>
   ({ kind: 'verdict', verdict: { ...okJudge.verdict, ...over } });
@@ -45,5 +45,76 @@ describe('decide', () => {
   it('Prüfergebnis-Flags landen auch bei wait durch anderen Grund in flags', () => {
     const d = decide({ ...base, judge: withVerdict({ riskFlags: ['tone_off'] }), mechanical: [{ flag: 'email', match: 'a@b.de' }] });
     expect(d.flags).toEqual(['tone_off', 'mech:email']);
+  });
+});
+
+// #696: Zusagen-Fastlane — promises_action allein blockiert nicht mehr, sondern hängt
+// von der (extern erledigten) Task-Anlage ab.
+describe('decide: Zusagen-Fastlane (promises_action)', () => {
+  const promiseVerdict = withVerdict({ riskFlags: ['promises_action'], promisedAction: 'Micha kümmert sich, dass die Notiz korrigiert wird.' });
+
+  it('promises_action allein + Task angelegt → auto, Reason nennt Task-Nummer', () => {
+    const d = decide({ ...base, judge: promiseVerdict, promiseTask: { created: true, taskNumber: 742 } });
+    expect(d.decision).toBe('auto');
+    expect(d.reason).toBe('Zusage → Task #742');
+    expect(d.flags).toContain('promises_action');
+  });
+  it('promises_action allein + Task-Anlage fehlgeschlagen → wait mit fester Fehlermeldung', () => {
+    const d = decide({ ...base, judge: promiseVerdict, promiseTask: { created: false, taskNumber: null } });
+    expect(d).toMatchObject({ decision: 'wait', reason: 'Task konnte nicht angelegt werden' });
+  });
+  it('promises_action allein, promiseTask noch nicht aufgelöst (undefined/null) → wait wie fehlgeschlagen', () => {
+    expect(decide({ ...base, judge: promiseVerdict }).reason).toBe('Task konnte nicht angelegt werden');
+    expect(decide({ ...base, judge: promiseVerdict, promiseTask: null }).reason).toBe('Task konnte nicht angelegt werden');
+  });
+  it('Schattenmodus: Reason markiert Schatten zusätzlich zur Task-Nummer', () => {
+    const d = decide({ ...base, mode: 'shadow', judge: promiseVerdict, promiseTask: { created: true, taskNumber: 5 } });
+    expect(d.decision).toBe('auto');
+    expect(d.reason).toBe('Zusage → Task #5 (Schattenmodus)');
+  });
+  it('promises_action + weiteres Risiko-Flag → normaler Wait-Pfad, keine Fastlane', () => {
+    const d = decide({
+      ...base,
+      judge: withVerdict({ riskFlags: ['promises_action', 'tone_off'], promisedAction: 'x' }),
+      promiseTask: { created: true, taskNumber: 1 },
+    });
+    expect(d.decision).toBe('wait');
+    expect(d.reason).toMatch(/Handlung/);
+  });
+  it('promises_action ohne promisedAction-Text (Judge lieferte keinen Satz) → normaler Wait-Pfad', () => {
+    const d = decide({ ...base, judge: withVerdict({ riskFlags: ['promises_action'], promisedAction: null }) });
+    expect(d.decision).toBe('wait');
+    expect(d.reason).toMatch(/Handlung/);
+  });
+  it('promises_action in geld-Kategorie bleibt wait (Kategorie-Sperre greift vor der Fastlane), kein Task-Versuch nötig', () => {
+    const d = decide({ ...base, judge: withVerdict({ category: 'geld', riskFlags: ['promises_action'], promisedAction: 'x' }) });
+    expect(d.decision).toBe('wait');
+    expect(d.reason).toBe('Kategorie Geld — nie automatisch');
+  });
+  it('promises_action + playbook_fakt ohne Faktenbeleg bleibt wait (vor der Fastlane geprüft)', () => {
+    const d = decide({ ...base, judge: withVerdict({ category: 'playbook_fakt', answerableFromFacts: false, riskFlags: ['promises_action'], promisedAction: 'x' }) });
+    expect(d.reason).toMatch(/nicht eindeutig aus dem Playbook/);
+  });
+  it('promises_action + Tageslimit erreicht → wait, Fastlane greift nicht (kein Task-Versuch nötig)', () => {
+    const d = decide({ ...base, judge: promiseVerdict, autoSentToday: 10 });
+    expect(d.reason).toBe('Tageslimit erreicht (10/10)');
+  });
+
+  describe('wouldAutoWithPromiseTask (Vorab-Prüfung für den Runner, kein I/O)', () => {
+    it('true, wenn alle anderen Gates passen und nur die Zusage fehlt', () => {
+      expect(wouldAutoWithPromiseTask({ ...base, judge: promiseVerdict })).toBe(true);
+    });
+    it('false ohne promises_action', () => {
+      expect(wouldAutoWithPromiseTask(base)).toBe(false);
+    });
+    it('false, wenn ein anderes Gate ohnehin blockiert (z. B. Mensch hat eingegriffen)', () => {
+      expect(wouldAutoWithPromiseTask({ ...base, judge: promiseVerdict, threadHasHumanIntervention: true })).toBe(false);
+    });
+    it('false, wenn Kategorie gesperrt ist', () => {
+      expect(wouldAutoWithPromiseTask({ ...base, judge: withVerdict({ category: 'geld', riskFlags: ['promises_action'], promisedAction: 'x' }) })).toBe(false);
+    });
+    it('false, wenn zusätzliches Risiko-Flag vorliegt', () => {
+      expect(wouldAutoWithPromiseTask({ ...base, judge: withVerdict({ riskFlags: ['promises_action', 'tone_off'], promisedAction: 'x' }) })).toBe(false);
+    });
   });
 });

@@ -15,6 +15,11 @@ export const JUDGE_DRAFT_TOOL: ClaudeToolDefinition = {
       risk_flags: { type: 'array', items: { type: 'string', enum: JUDGE_RISK_FLAGS }, description: 'Alle zutreffenden Risiken; leer, wenn keines.' },
       confidence: { type: 'string', enum: ['hoch', 'mittel', 'niedrig'], description: 'Wie sicher bist du, dass der Entwurf fehlerfrei und angemessen ist?' },
       reasoning: { type: 'string', description: 'Ein bis zwei deutsche Sätze für den Menschen, der die Ampel liest.' },
+      promised_action: {
+        type: 'string',
+        description: 'NUR ausfüllen, wenn risk_flags "promises_action" enthält: ein Satz, was dem Gast zugesagt wird ' +
+          '(z. B. "Micha kümmert sich darum, dass die Toröffner-Notiz korrigiert wird"). Sonst weglassen.',
+      },
     },
     required: ['category', 'answerable_from_facts', 'risk_flags', 'confidence', 'reasoning'],
   },
@@ -44,6 +49,8 @@ export function buildJudgeSystemPrompt(voice: string, facts: string, bookingCont
     '  Zeit, Eigenschaft), die nicht belegt ist, IST invents_fact. Die Anrede mit dem unter „Gast:" genannten',
     '  Vornamen ist kein invents_fact. Ein abweichender Name in der Anrede ist contradicts_facts.',
     '- promises_action: Entwurf sagt eine Handlung zu (jemand kommt vorbei, wird organisiert, wird erstattet …).',
+    '  Fülle in diesem Fall zusätzlich promised_action mit einem Satz, was konkret zugesagt wird — die Zusage wird',
+    '  dann als Aufgabe nachgehalten, ist also (allein) KEIN Grund, den Entwurf zurückzuhalten.',
     '- mentions_code: Entwurf nennt oder umschreibt Zugangscodes, Tresor-/Schloss-Kombinationen.',
     '- contradicts_facts: Entwurf widerspricht OBJEKTWISSEN oder BUCHUNGSKONTEXT.',
     '- tone_off: Ton weicht DEUTLICH von der VOICE ab — z. B. durchgehend förmliches "Sie" statt geforderter',
@@ -53,7 +60,9 @@ export function buildJudgeSystemPrompt(voice: string, facts: string, bookingCont
     '- language_mismatch: Antwortsprache ≠ Sprache der letzten Gastnachricht.',
     '- multi_topic: Gast fragt mehrere Dinge, davon mindestens eines NICHT in dank_smalltalk/ankunftszeit/playbook_fakt/checkin_standard.',
     '',
-    'confidence=hoch NUR, wenn: Kategorie eindeutig, keine Flags, und jeder Sachaussage im Entwurf eine Zeile im OBJEKTWISSEN/BUCHUNGSKONTEXT entspricht.',
+    'confidence=hoch NUR, wenn: Kategorie eindeutig, keine Flags AUSSER ggf. promises_action, und jede Sachaussage im Entwurf ' +
+      '(außer der Zusage selbst) einer Zeile im OBJEKTWISSEN/BUCHUNGSKONTEXT entspricht. Eine Handlungszusage (promises_action) ' +
+      'braucht dafür KEINEN Beleg im Objektwissen — sie wird separat als Aufgabe nachgehalten, senkt confidence also nicht.',
     '--- VOICE ---', voice, '--- ENDE VOICE ---',
     '--- OBJEKTWISSEN ---', facts, '--- ENDE OBJEKTWISSEN ---',
   ];

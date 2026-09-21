@@ -26,6 +26,7 @@ beforeEach(() => {
   db.exec(mig('020_add_feedback_and_suggestions.sql'));
   db.exec(mig('025_add_thread_discarded_at.sql'));
   db.exec(mig('027_add_auto_send.sql'));
+  db.exec(mig('029_add_smarttasks_task.sql'));
   setDatabase(db);
   seedThread('hostex:t1');
 });
