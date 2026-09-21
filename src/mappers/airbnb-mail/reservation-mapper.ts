@@ -12,9 +12,18 @@
 import { fingerprintGuest } from '../../utils/guest-fingerprint.js';
 import { computeEffectivePayout } from '../../utils/airbnb-payout.js';
 import logger from '../../utils/logger.js';
-import type { ParsedAirbnbMail } from '../../types/airbnb-mail.js';
+import { AIRBNB_MAIL_PLACEHOLDER_DATE, type ParsedAirbnbMail } from '../../types/airbnb-mail.js';
 import type { Reservation } from '../../types/models.js';
 import type { PropertyStaticConfig } from '../../config/properties.js';
+
+/**
+ * Bereits bekannte Daten einer Reservierung/Inquiry, für den Fall dass eine
+ * Storno-Mail selbst keine Daten trägt (#660).
+ */
+export interface ExistingInquiryDates {
+  check_in: string;
+  check_out: string;
+}
 
 export interface MappedAirbnbInquiry {
   inquiry_id: string;
@@ -57,12 +66,28 @@ export function mapAirbnbReservation(
   parsed: ParsedAirbnbMail,
   airbnbListingId: string,
   defaultTimes: { checkIn: string; checkOut: string },
-  payoutRates?: Pick<PropertyStaticConfig, 'coHostShareRate' | 'incomeTaxRate'>
+  payoutRates?: Pick<PropertyStaticConfig, 'coHostShareRate' | 'incomeTaxRate'>,
+  existingInquiry?: ExistingInquiryDates | null
 ): MappedAirbnbResult {
   const now = new Date().toISOString();
   const inquiryStatus = STATUS_MAP_INQUIRY[parsed.type];
   const reservationStatus = ACTIVE_TYPES.has(parsed.type) ? 'confirmed' : null;
   const fp = fingerprintSafe(parsed.guestName);
+
+  // #660: Storno-Mails sind absichtlich lax geparst (siehe parseCancellation)
+  // und liefern bei fehlenden Datumsangaben den Platzhalter
+  // AIRBNB_MAIL_PLACEHOLDER_DATE. Den dürfen wir NIE über echte, bereits
+  // bekannte Daten schreiben — sonst verliert das inquiries-Upsert die
+  // check_in/check_out, die getCancelledReservationIds() für die
+  // Google-Calendar-Bereinigung braucht (Fall Mjalli Florenz, 15.09.2026).
+  const inquiryCheckIn =
+    parsed.checkIn === AIRBNB_MAIL_PLACEHOLDER_DATE && existingInquiry?.check_in
+      ? existingInquiry.check_in
+      : parsed.checkIn;
+  const inquiryCheckOut =
+    parsed.checkOut === AIRBNB_MAIL_PLACEHOLDER_DATE && existingInquiry?.check_out
+      ? existingInquiry.check_out
+      : parsed.checkOut;
 
   const checkInIso = `${parsed.checkIn}T${defaultTimes.checkIn}:00.000Z`;
   const checkOutIso = `${parsed.checkOut}T${defaultTimes.checkOut}:00.000Z`;
@@ -75,8 +100,8 @@ export function mapAirbnbReservation(
     inquiry_id: parsed.reservationCode,
     listing_id: airbnbListingId,
     status: inquiryStatus,
-    check_in: parsed.checkIn,
-    check_out: parsed.checkOut,
+    check_in: inquiryCheckIn,
+    check_out: inquiryCheckOut,
     guest_name: parsed.guestName,
     guests_count: parsed.numberOfGuests ?? null,
     source: 'airbnb',

@@ -174,6 +174,71 @@ function confirmedMail(uid: number, code: string, name: string, day: string, mon
   };
 }
 
+function cancellationMail(uid: number, code: string, includeDates: boolean) {
+  const dateLines = includeDates
+    ? '\nCheck-in: 4. Oktober 2026\nCheck-out: 11. Oktober 2026'
+    : '';
+  return {
+    uid,
+    messageId: `cancel-${uid}@airbnb.com`,
+    subject: `Reservierung storniert: ${code}`,
+    fromAddress: 'automated@airbnb.com',
+    receivedAt: '2026-09-15T10:00:00.000Z',
+    htmlBody: '',
+    textBody: `Diese Reservierung wurde storniert.\nReservierungscode: ${code}${dateLines}`,
+  };
+}
+
+// #660: Fall Mjalli Florenz (15.09.2026) — die Buchung wurde am 14.09. mit
+// echten Daten (04.–11.10.) bestätigt, dann am 15.09. per dateloser
+// Storno-Mail storniert. Der Bug: das inquiries-Upsert überschrieb check_in/
+// check_out mit dem Platzhalter 1970-01-01, wodurch getCancelledReservationIds()
+// (Fenster heute±N Tage) die Stornierung nie mehr fand und das Google-Event
+// für immer stehen blieb.
+describe('syncAirbnbMail — Storno ohne Datumsangaben überschreibt keine echten Daten (#660)', () => {
+  it('behält check_in/check_out der ursprünglichen Buchung, wenn die Storno-Mail keine Daten trägt', async () => {
+    fetchNewMailsMock.mockResolvedValue([confirmedMail(30, 'HMBZN9WBY9', 'Yasmeen Mjalli', '4', 'Oktober')]);
+    let result = await syncAirbnbMail(property);
+    expect(result.confirmedCount).toBe(1);
+
+    const confirmedRow = db
+      .prepare(`SELECT check_in, check_out FROM inquiries WHERE inquiry_id = 'HMBZN9WBY9'`)
+      .get() as { check_in: string; check_out: string };
+    expect(confirmedRow.check_in).toBe('2026-10-04');
+
+    getLastUidMock.mockReturnValue(30);
+    fetchNewMailsMock.mockResolvedValue([cancellationMail(31, 'HMBZN9WBY9', false)]);
+    result = await syncAirbnbMail(property);
+    expect(result.parsedOk).toBeGreaterThanOrEqual(1);
+
+    const cancelledRow = db
+      .prepare(`SELECT status, check_in, check_out FROM inquiries WHERE inquiry_id = 'HMBZN9WBY9'`)
+      .get() as { status: string; check_in: string; check_out: string };
+    expect(cancelledRow.status).toBe('canceled');
+    expect(cancelledRow.check_in).toBe(confirmedRow.check_in);
+    expect(cancelledRow.check_out).toBe(confirmedRow.check_out);
+
+    // reservations-Zeile ist weg (bestehendes Verhalten) — die
+    // Kalender-Löschung hängt an inquiries.check_in, nicht an reservations.
+    const reservationRow = db
+      .prepare(`SELECT * FROM reservations WHERE reservation_id = 'HMBZN9WBY9'`)
+      .get();
+    expect(reservationRow).toBeUndefined();
+  });
+
+  it('übernimmt die Daten der Storno-Mail, wenn sie welche trägt (auch ohne vorherige Buchungs-Mail)', async () => {
+    fetchNewMailsMock.mockResolvedValue([cancellationMail(40, 'HMWITHDATES', true)]);
+    const result = await syncAirbnbMail(property);
+    expect(result.parsedOk).toBeGreaterThanOrEqual(1);
+
+    const row = db
+      .prepare(`SELECT check_in, check_out FROM inquiries WHERE inquiry_id = 'HMWITHDATES'`)
+      .get() as { check_in: string; check_out: string };
+    expect(row.check_in).toBe('2026-10-04');
+    expect(row.check_out).toBe('2026-10-11');
+  });
+});
+
 describe('syncAirbnbMail — per-mail resilience', () => {
   it('one mail failing to archive does not block earlier/later mails in the batch, and UID still advances', async () => {
     const mails = [
