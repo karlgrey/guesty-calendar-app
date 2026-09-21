@@ -107,6 +107,23 @@ export function findExistingSmartTasksTaskId(threadId: string, guestMessageId: s
   return row?.id ?? null;
 }
 
+// --- Buchungsanfrage (Migration 030, #697) ---
+
+/**
+ * Persistiert die mechanisch erkannte Airbnb-Buchungsanfrage (request_kind +
+ * platform_deadline_at, siehe booking-request.ts) am Draft — unabhängig vom Gate-Ergebnis
+ * (Micha braucht die Frist auch, wenn die Rückfrage auf 'wait' steht).
+ */
+export function setBookingRequestContext(
+  draftId: string,
+  requestKind: 'inquiry' | 'request_to_book',
+  platformDeadlineAt: string,
+): void {
+  getDatabase().prepare(
+    `UPDATE message_drafts SET request_kind = ?, platform_deadline_at = ? WHERE id = ?`,
+  ).run(requestKind, platformDeadlineAt, draftId);
+}
+
 /** Micha hat in diesem Thread schon eingegriffen (Spec 5.3 Thread-Ausschlüsse). */
 export function threadHasHumanIntervention(threadId: string): boolean {
   const row = getDatabase().prepare(
@@ -143,6 +160,12 @@ export interface AwaitingDraftRow {
   id: string; thread_id: string; provider: string; status: string; created_at: string;
   reason: string; guest_name: string | null; listing_id: string; source: string;
   last_guest_message: string | null; smarttasks_task_id: number | null;
+  // Buchungsanfrage (#697)
+  request_kind: 'inquiry' | 'request_to_book' | null;
+  platform_deadline_at: string | null;
+  auto_category: string | null;
+  auto_decision: 'auto' | 'wait' | null;
+  auto_mode: 'off' | 'shadow' | 'live' | null;
 }
 
 /**
@@ -159,14 +182,24 @@ export interface AwaitingDraftRow {
  * gesendet, der Entwurf wartet bewusst auf Micha), Spec 4 verlangt „Push nur für
  * wait-Entscheidungen, auch im Schattenmodus". Ohne diesen Filter würde jeder gute
  * Schatten-Entwurf nach 10 Minuten fälschlich als „hängt" gepusht.
+ *
+ * #697: Buchungsanfrage-Entwürfe (auto_category='buchungsanfrage') erscheinen ZUSÄTZLICH IMMER,
+ * wenn die Entscheidung 'auto' ist — egal ob live bereits gesendet oder im Schatten nur
+ * protokolliert: Micha muss die Airbnb-Entscheidung (Annehmen/Ablehnen) so oder so treffen,
+ * unabhängig davon, ob die (reine Rückfrage-)Antwort automatisch rausging.
  */
 export function getAwaitingDrafts(sinceIso: string, limit: number): AwaitingDraftRow[] {
   return getDatabase().prepare(
     `SELECT d.id, d.thread_id, d.provider, d.status, d.created_at, d.smarttasks_task_id,
+       d.request_kind, d.platform_deadline_at, d.auto_category, d.auto_decision, d.auto_mode,
        CASE
          WHEN d.status = 'error' THEN 'Auto-Send fehlgeschlagen: ' || COALESCE(d.error, '?')
          WHEN d.status = 'sending' THEN 'Versand hängt — bitte manuell prüfen'
          WHEN d.auto_decision = 'auto' AND d.auto_mode = 'live' AND d.status = 'pending' THEN 'Auto-Send hängt — bitte manuell prüfen'
+         WHEN d.auto_category = 'buchungsanfrage' AND d.auto_decision = 'auto' AND d.status = 'sent'
+           THEN 'Rückfrage automatisch gesendet — Entscheidung in Airbnb nach Gast-Antwort'
+         WHEN d.auto_category = 'buchungsanfrage' AND d.auto_decision = 'auto' AND d.auto_mode = 'shadow'
+           THEN 'Rückfrage wäre automatisch gesendet worden (Schatten) — Entscheidung in Airbnb nach Gast-Antwort'
          ELSE COALESCE(d.auto_reason, '')
        END AS reason,
        t.guest_name, t.listing_id, t.source,
@@ -179,6 +212,7 @@ export function getAwaitingDrafts(sinceIso: string, limit: number): AwaitingDraf
          OR d.status = 'error'
          OR (d.auto_decision = 'auto' AND d.auto_mode = 'live' AND d.status = 'pending' AND datetime(d.auto_judged_at) < datetime('now', '-10 minutes'))
          OR (d.status = 'sending' AND datetime(d.created_at) < datetime('now', '-10 minutes'))
+         OR (d.auto_category = 'buchungsanfrage' AND d.auto_decision = 'auto')
        )
      ORDER BY d.created_at ASC LIMIT ?`,
   ).all(sinceIso, limit) as AwaitingDraftRow[];

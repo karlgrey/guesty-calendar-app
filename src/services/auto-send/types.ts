@@ -8,22 +8,33 @@ export const AUTO_SEND_MODES: AutoSendMode[] = ['off', 'shadow', 'live'];
 
 export type JudgeCategory =
   | 'dank_smalltalk' | 'ankunftszeit' | 'playbook_fakt' | 'checkin_standard'
-  | 'geld' | 'storno_datum' | 'beschwerde_schaden' | 'sonderwunsch' | 'medizin_sicherheit' | 'unklar';
+  | 'geld' | 'storno_datum' | 'beschwerde_schaden' | 'sonderwunsch' | 'medizin_sicherheit'
+  // #697: Airbnb-Buchungsanfrage (Inquiry/Request-to-Book) — NIE in AUTO_OK_CATEGORIES (die
+  // Annahme/Ablehnung entscheidet Micha immer selbst in Airbnb); eigener Policy-Zweig in
+  // policy.ts erlaubt unter engen Bedingungen dennoch das automatische Versenden der
+  // (reinen Rückfrage-)Antwort, siehe dort.
+  | 'buchungsanfrage' | 'unklar';
 export const JUDGE_CATEGORIES: JudgeCategory[] = [
   'dank_smalltalk', 'ankunftszeit', 'playbook_fakt', 'checkin_standard',
-  'geld', 'storno_datum', 'beschwerde_schaden', 'sonderwunsch', 'medizin_sicherheit', 'unklar',
+  'geld', 'storno_datum', 'beschwerde_schaden', 'sonderwunsch', 'medizin_sicherheit',
+  'buchungsanfrage', 'unklar',
 ];
-/** Nur diese Kategorien dürfen automatisch raus (Spec 5.3). */
+/** Nur diese Kategorien dürfen automatisch raus (Spec 5.3). 'buchungsanfrage' ist bewusst NICHT
+ *  dabei — sie hat einen eigenen, engeren Policy-Zweig in decide() (#697). */
 export const AUTO_OK_CATEGORIES: ReadonlySet<JudgeCategory> = new Set([
   'dank_smalltalk', 'ankunftszeit', 'playbook_fakt', 'checkin_standard',
 ]);
 
 export type JudgeRiskFlag =
   | 'invents_fact' | 'promises_action' | 'mentions_code' | 'contradicts_facts'
-  | 'tone_off' | 'language_mismatch' | 'multi_topic';
+  | 'tone_off' | 'language_mismatch' | 'multi_topic'
+  // #697: Entwurf gibt eine interne Prüfbedingung (z. B. "passt Zweck und Personenzahl", "steht
+  // einer Bestätigung nichts im Weg") wörtlich/sinngemäß an den Gast weiter, statt sie nur als
+  // Frage zu formulieren — gilt für ALLE Kategorien, nicht nur buchungsanfrage.
+  | 'internal_rule_leak';
 export const JUDGE_RISK_FLAGS: JudgeRiskFlag[] = [
   'invents_fact', 'promises_action', 'mentions_code', 'contradicts_facts',
-  'tone_off', 'language_mismatch', 'multi_topic',
+  'tone_off', 'language_mismatch', 'multi_topic', 'internal_rule_leak',
 ];
 export type JudgeConfidence = 'hoch' | 'mittel' | 'niedrig';
 
@@ -46,7 +57,10 @@ export type JudgeResult =
 // unabhängig vom Prüfmodell (Spec 2).
 export type MechanicalFlag =
   | 'digits' | 'url' | 'email' | 'money' | 'phone' | 'code_words' | 'length' | 'empty'
-  | 'language_mismatch';
+  | 'language_mismatch'
+  // #697: Bestätigungs-/Zusagewort im Entwurf einer Buchungsanfrage (nur relevant, wenn der
+  // mechanische Check im Buchungsanfrage-Kontext läuft, siehe mechanical-checks.ts).
+  | 'confirmation_words';
 export interface MechanicalFinding { flag: MechanicalFlag; match: string }
 
 export interface AutoSendDecision {

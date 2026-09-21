@@ -10,6 +10,12 @@ const MONEY = /€|\bEUR\b|\bEUR\s*\d|\bEuro\b|\d+,\d{2}\b/;
 const PHONE = /\+\d[\d\s/-]{5,}|\b0\d{2,4}[\s/-]?\d{2,}[\s/-]?\d{2,}(?:[\s/-]?\d{2,})?/;
 const CODE_WORDS = /\b(Code|PIN|Tresor|Schlüsselbox|Schloss)\b/i;
 const NUMBER_WORDS = /\b(null|eins|zwei|drei|vier|fünf|sechs|sieben|acht|neun|zehn|elf|zwölf|zero|one|two|three|four|five|six|seven|eight|nine|ten)\b/i;
+// #697: Bestätigungs-/Zusagewörter — nur relevant im Buchungsanfrage-Kontext (eine Rückfrage
+// darf niemals wie eine Bestätigung/Zusage klingen, DE+EN, Spec-Änderung Micha 21.09.2026).
+// Bewusst NUR Verben/Partizipien: das Substantiv „Bestätigung“ ist Pflichtinhalt der Rückfrage
+// („die endgültige Bestätigung läuft über Airbnb“) und darf nicht stoppen (Review Hauptsession 21.09.).
+const CONFIRMATION_WORDS = /\b(bestätigt|bestätige|bestätigen|angenommen|confirm(ed)?|accepted)\b/i;
+const NOTHING_IN_THE_WAY = /steht[^.!?]{0,60}nichts im weg/i;
 
 export function collectDigitRuns(texts: string[]): string[] {
   const out = new Set<string>();
@@ -21,7 +27,9 @@ export function runMechanicalChecks(
   body: string,
   // #695: guestLanguage optional (Rückwärtskompatibilität bestehender Aufrufer/Tests) — ohne
   // sie läuft der Sprach-Check nicht (Verhalten unverändert).
-  context: { knownDigitRuns: string[]; guestLanguage?: SupportedLanguage },
+  // #697: isBookingRequest optional — nur bei Buchungsanfragen läuft der zusätzliche
+  // Bestätigungswort-Check (eine Rückfrage darf nie wie eine Zusage klingen).
+  context: { knownDigitRuns: string[]; guestLanguage?: SupportedLanguage; isBookingRequest?: boolean },
 ): MechanicalFinding[] {
   const f: MechanicalFinding[] = [];
   const text = body ?? '';
@@ -45,6 +53,10 @@ export function runMechanicalChecks(
       f.push({ flag: 'code_words', match: sentence.trim().slice(0, 80) });
       break;
     }
+  }
+  if (context.isBookingRequest) {
+    const match = text.match(CONFIRMATION_WORDS) ?? text.match(NOTHING_IN_THE_WAY);
+    if (match) f.push({ flag: 'confirmation_words', match: match[0] });
   }
   return f;
 }

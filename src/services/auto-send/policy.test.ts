@@ -1,6 +1,6 @@
 // src/services/auto-send/policy.test.ts
 import { describe, it, expect } from 'vitest';
-import { decide, wouldAutoWithPromiseTask, type PolicyInput } from './policy.js';
+import { decide, wouldAutoWithPromiseTask, wouldAutoWithBookingTask, type PolicyInput } from './policy.js';
 import type { JudgeResult } from './types.js';
 
 const okJudge: JudgeResult = { kind: 'verdict', verdict: { category: 'ankunftszeit', answerableFromFacts: true, riskFlags: [], confidence: 'hoch', reasoning: 'r', promisedAction: null } };
@@ -115,6 +115,77 @@ describe('decide: Zusagen-Fastlane (promises_action)', () => {
     });
     it('false, wenn zusätzliches Risiko-Flag vorliegt', () => {
       expect(wouldAutoWithPromiseTask({ ...base, judge: withVerdict({ riskFlags: ['promises_action', 'tone_off'], promisedAction: 'x' }) })).toBe(false);
+    });
+  });
+});
+
+// #697: eigener, engerer Policy-Zweig für Buchungsanfragen — NIE Teil von AUTO_OK_CATEGORIES,
+// promises_action ist hier ein harter Stopp (keine #696-Fastlane), Task wird IMMER verlangt.
+describe('decide: Buchungsanfrage-Zweig (#697)', () => {
+  const bookingVerdict = withVerdict({ category: 'buchungsanfrage', riskFlags: [] });
+
+  it('alles grün + Task angelegt → auto, Reason nennt Task-Nummer + Frist', () => {
+    const d = decide({ ...base, judge: bookingVerdict, bookingTask: { created: true, taskNumber: 701, deadlineLabel: 'Di 22:35' } });
+    expect(d.decision).toBe('auto');
+    expect(d.category).toBe('buchungsanfrage');
+    expect(d.reason).toBe('Buchungsanfrage: Rückfrage automatisch, Airbnb-Entscheidung bei Micha → Task #701, Frist Di 22:35');
+  });
+  it('ohne deadlineLabel: Reason ohne Frist-Anhang', () => {
+    const d = decide({ ...base, judge: bookingVerdict, bookingTask: { created: true, taskNumber: 701, deadlineLabel: null } });
+    expect(d.reason).toBe('Buchungsanfrage: Rückfrage automatisch, Airbnb-Entscheidung bei Micha → Task #701');
+  });
+  it('Task-Anlage fehlgeschlagen → wait mit fester Fehlermeldung', () => {
+    const d = decide({ ...base, judge: bookingVerdict, bookingTask: { created: false, taskNumber: null, deadlineLabel: null } });
+    expect(d).toMatchObject({ decision: 'wait', reason: 'Task konnte nicht angelegt werden' });
+  });
+  it('bookingTask noch nicht aufgelöst (undefined/null) → wait wie fehlgeschlagen', () => {
+    expect(decide({ ...base, judge: bookingVerdict }).reason).toBe('Task konnte nicht angelegt werden');
+    expect(decide({ ...base, judge: bookingVerdict, bookingTask: null }).reason).toBe('Task konnte nicht angelegt werden');
+  });
+  it('promises_action → harter Stopp, KEINE Fastlane (anders als #696)', () => {
+    const d = decide({
+      ...base,
+      judge: withVerdict({ category: 'buchungsanfrage', riskFlags: ['promises_action'], promisedAction: 'x' }),
+      bookingTask: { created: true, taskNumber: 1, deadlineLabel: null },
+    });
+    expect(d.decision).toBe('wait');
+    expect(d.reason).toMatch(/Handlung/);
+  });
+  it('internal_rule_leak (interne Bedingung an Gast weitergegeben) → wait', () => {
+    const d = decide({ ...base, judge: withVerdict({ category: 'buchungsanfrage', riskFlags: ['internal_rule_leak'] }) });
+    expect(d.decision).toBe('wait');
+    expect(d.reason).toMatch(/interne Prüfbedingung/);
+  });
+  it('mechanischer Treffer (Bestätigungswort) → wait', () => {
+    const d = decide({ ...base, judge: bookingVerdict, mechanical: [{ flag: 'confirmation_words', match: 'bestätigt' }] });
+    expect(d.reason).toBe('Mechanischer Check: Bestätigungswort in einer Buchungsanfrage-Rückfrage im Text (bestätigt)');
+  });
+  it('confidence nicht hoch → wait, kein Task-Versuch nötig', () => {
+    expect(decide({ ...base, judge: withVerdict({ category: 'buchungsanfrage', confidence: 'mittel' }) }).reason).toMatch(/Sicherheit/);
+  });
+  it('Micha hat eingegriffen → wait', () => {
+    expect(decide({ ...base, judge: bookingVerdict, threadHasHumanIntervention: true }).reason).toMatch(/schon eingegriffen/);
+  });
+  it('Tageslimit erreicht → wait', () => {
+    expect(decide({ ...base, judge: bookingVerdict, autoSentToday: 10 }).reason).toBe('Tageslimit erreicht (10/10)');
+  });
+  it('shadow verhält sich wie live (Entscheidung, nicht Versand)', () => {
+    const d = decide({ ...base, mode: 'shadow', judge: bookingVerdict, bookingTask: { created: true, taskNumber: 9, deadlineLabel: null } });
+    expect(d.decision).toBe('auto');
+  });
+
+  describe('wouldAutoWithBookingTask (Vorab-Prüfung, kein I/O)', () => {
+    it('true, wenn alle anderen Gates passen und nur der Task fehlt', () => {
+      expect(wouldAutoWithBookingTask({ ...base, judge: bookingVerdict })).toBe(true);
+    });
+    it('false ohne Kategorie buchungsanfrage', () => {
+      expect(wouldAutoWithBookingTask(base)).toBe(false);
+    });
+    it('false bei Risiko-Flag', () => {
+      expect(wouldAutoWithBookingTask({ ...base, judge: withVerdict({ category: 'buchungsanfrage', riskFlags: ['promises_action'], promisedAction: 'x' }) })).toBe(false);
+    });
+    it('false, wenn ein anderes Gate blockiert (Mensch hat eingegriffen)', () => {
+      expect(wouldAutoWithBookingTask({ ...base, judge: bookingVerdict, threadHasHumanIntervention: true })).toBe(false);
     });
   });
 });

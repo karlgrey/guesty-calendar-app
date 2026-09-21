@@ -4,6 +4,7 @@ import { createDraft, updateDraftBody } from '../repositories/draft-repository.j
 import { loadVoice, loadPropertyFacts } from '../services/vault-knowledge.js';
 import { generateDraftForThread, DRAFT_MODEL, type DraftResult } from '../services/draft-service.js';
 import { buildBookingContext } from '../services/booking-context.js';
+import { detectBookingRequestContext } from '../services/booking-request.js';
 import { runAutoSendGate, type GateInput } from '../services/auto-send/runner.js';
 import type { AutoSendDecision, AutoSendMode } from '../services/auto-send/types.js';
 import { detectLanguage, type SupportedLanguage } from '../utils/language-detect.js';
@@ -67,6 +68,8 @@ export interface DraftGenDeps {
     // #695: Sprach-Pin — Fakt statt Prosa-Regel im Prompt (Spec Punkt 1) + Flag für den
     // Neuversuch-Prompt-Zusatz (Spec Punkt 3).
     guestLanguage?: SupportedLanguage; languageRetry?: boolean;
+    // #697: mechanisch erkannte Buchungsanfrage — wählt den Buchungsanfrage-Prompt-Block.
+    isBookingRequest?: boolean;
   }) => Promise<DraftResult>;
   create: (d: NewDraft) => void;
   markNoReply: (threadId: string) => void;
@@ -121,7 +124,12 @@ export async function generateDraftsForProperty(
       // Entwurfs-Prompt UND (weiter unten) in den Judge-Kontext, statt einer Prosa-Regel, die
       // von den (meist deutschen) Voice-Beispielen überstimmt werden kann.
       const guestLanguage = detectLanguage(lastInboundBody(messages));
-      const result = await deps.generate({ thread, messages, voice, facts, bookingContext, guestLanguage });
+      // #697: mechanische Buchungsanfrage-Erkennung läuft VOR dem Entwurf, damit der richtige
+      // Prompt gewählt wird (Spec: "Erkennung im Draft-Pfad läuft VOR dem Entwurf"). Der Gate-
+      // Lauf unten erkennt dieselbe Buchungsanfrage unabhängig noch einmal aus `messages` (pure,
+      // kein zusätzliches I/O) — keine Notwendigkeit, das Ergebnis hier durchzureichen.
+      const isBookingRequest = detectBookingRequestContext(messages) !== null;
+      const result = await deps.generate({ thread, messages, voice, facts, bookingContext, guestLanguage, isBookingRequest });
       if (result.kind === 'text') {
         const draftId = randomUUID();
         deps.create({ id: draftId, thread_id: thread.id, provider: target.source, body: result.body, generated_by: 'llm', model: DRAFT_MODEL });
@@ -131,7 +139,7 @@ export async function generateDraftsForProperty(
           if (isLanguageMismatchWait(gateResult)) {
             // #695 Spec Punkt 3: genau EIN automatischer Neuversuch mit expliziter Korrektur-
             // Anweisung — derselbe Draft-Datensatz wird überschrieben, nicht neu angelegt.
-            const retryResult = await deps.generate({ thread, messages, voice, facts, bookingContext, guestLanguage, languageRetry: true });
+            const retryResult = await deps.generate({ thread, messages, voice, facts, bookingContext, guestLanguage, languageRetry: true, isBookingRequest });
             if (retryResult.kind === 'text') {
               deps.updateDraftBody(draftId, retryResult.body);
               try {

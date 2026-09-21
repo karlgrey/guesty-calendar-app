@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Database from 'better-sqlite3';
 import { setDatabase, resetDatabase } from '../db/index.js';
-import { buildBookingContext } from './booking-context.js';
+import { buildBookingContext, resolveBookingPeriod } from './booking-context.js';
 import type { MessageThread } from '../types/messages.js';
 
 let db: Database.Database;
@@ -159,4 +159,34 @@ describe('buildBookingContext', () => {
     expect(ctx).toContain('10 Personen');
   });
 
+});
+
+// #697: strukturiertes Zeitraum/Personen-Paar für den Buchungsanfrage-Task-Titel.
+describe('resolveBookingPeriod', () => {
+  it('Reservierung: periodLabel + guestsCount aus check_in_localized/check_out_localized', () => {
+    db.prepare(`
+      INSERT INTO reservations
+        (reservation_id, listing_id, check_in, check_out, check_in_localized, check_out_localized, nights_count, status, guests_count, confirmation_code)
+      VALUES (?,?,?,?,?,?,?,?,?,?)
+    `).run('HMANIKA001', 'L1', '2027-01-29T15:00:00.000Z', '2027-01-31T12:00:00.000Z', '2027-01-29', '2027-01-31', 2, 'reserved', 15, 'HMANIKA001');
+    const r = resolveBookingPeriod(thread({ reservation_id: 'HMANIKA001' }));
+    expect(r).toEqual({ periodLabel: '29.01.2027–31.01.2027', guestsCount: 15 });
+  });
+
+  it('Inquiry: periodLabel + guestsCount aus check_in/check_out', () => {
+    db.prepare(`
+      INSERT INTO inquiries (inquiry_id, status, check_in, check_out, guest_name, guests_count)
+      VALUES (?,?,?,?,?,?)
+    `).run('INQ-ANIKA', 'inquiry', '2027-01-29', '2027-01-31', 'Anika', 15);
+    const r = resolveBookingPeriod(thread({ inquiry_id: 'INQ-ANIKA' }));
+    expect(r).toEqual({ periodLabel: '29.01.2027–31.01.2027', guestsCount: 15 });
+  });
+
+  it('ohne Verlinkung → beide Felder null', () => {
+    expect(resolveBookingPeriod(thread())).toEqual({ periodLabel: null, guestsCount: null });
+  });
+
+  it('verlinkte Reservierung/Inquiry ohne passende Zeile → beide Felder null', () => {
+    expect(resolveBookingPeriod(thread({ reservation_id: 'gone' }))).toEqual({ periodLabel: null, guestsCount: null });
+  });
 });

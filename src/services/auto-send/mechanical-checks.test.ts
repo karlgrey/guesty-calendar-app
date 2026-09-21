@@ -67,3 +67,30 @@ describe('runMechanicalChecks — language_mismatch', () => {
     expect(flags('Hallo Lorenzo, vielen Dank für deine Nachricht!')).toEqual([]);
   });
 });
+
+// #697: Bestätigungswort-Check — nur relevant im Buchungsanfrage-Kontext (eine Rückfrage darf
+// nie wie eine Zusage/Bestätigung klingen).
+describe('runMechanicalChecks — confirmation_words (#697, nur Buchungsanfrage-Kontext)', () => {
+  const flagsFor = (body: string) => runMechanicalChecks(body, { knownDigitRuns: [], isBookingRequest: true }).map((f) => f.flag);
+
+  it('"bestätigt" → confirmation_words', () => expect(flagsFor('Das ist bestätigt, freuen uns auf euch!')).toContain('confirmation_words'));
+  it('"steht ... nichts im Weg" → confirmation_words', () => {
+    expect(flagsFor('Von uns aus steht einer Bestätigung nichts im Weg.')).toContain('confirmation_words');
+  });
+  it('englisch "confirmed"/"accepted" → confirmation_words', () => {
+    expect(flagsFor('Your request has been confirmed.')).toContain('confirmation_words');
+    expect(flagsFor('Your request has been accepted.')).toContain('confirmation_words');
+  });
+  it('Substantiv „Bestätigung über Airbnb“ (Pflichthinweis) → keine Flags', () => {
+    expect(flagsFor('Die endgültige Bestätigung der Buchung läuft über Airbnb.')).toEqual([]);
+  });
+  it('Verb „wir bestätigen dir das gleich“ → confirmation_words', () => {
+    expect(flagsFor('Wir bestätigen dir das gleich final.')).toContain('confirmation_words');
+  });
+  it('reine Rückfrage ohne Bestätigungswort → keine Flags', () => {
+    expect(flagsFor('Danke für die Anfrage! Magst du uns noch sagen, um welchen Anlass es geht und wie viele Personen inkl. Tagesgästen ihr seid?')).toEqual([]);
+  });
+  it('ohne isBookingRequest läuft der Check nicht (Rückwärtskompatibilität)', () => {
+    expect(flags('Das ist bestätigt, freuen uns auf euch!')).not.toContain('confirmation_words');
+  });
+});

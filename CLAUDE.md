@@ -505,12 +505,67 @@ Copy-Paste kann ein sicherer Entwurf automatisch rausgehen. Spec:
     statt Draft-Id verankert, weil Draft-Ids sich ändern können, die beantwortete
     Gastnachricht aber nicht.
   - **Sichtbarkeit:** Task-Nummer im Admin-UI (`renderAutoBadge`, Thread-Detail-Badges)
-    und in `GET /api/agent/drafts/awaiting` (`smartTasksTaskId`) — dort nur relevant für
-    hängende/fehlgeschlagene Sends, deren Zusage bereits getrackt wurde (Auto-Entscheidungen
-    selbst tauchen in `/drafts/awaiting` nicht auf, das ist reine Wait/Error-Liste).
+    und in `GET /api/agent/drafts/awaiting` (`smartTasksTaskId`) — bei Zusagen nur relevant
+    für hängende/fehlgeschlagene Sends, deren Zusage bereits getrackt wurde (normale
+    Auto-Entscheidungen tauchen in `/drafts/awaiting` sonst nicht auf); Buchungsanfragen
+    (#697 unten) sind davon eine bewusste Ausnahme.
   - **Testfixture:** „Lorenzo — Dank mit Zusage (#696)" in `cases.json` (englischer Dank +
     Zusage, `expected.riskFlags`/`promisedActionContains`) — zu unterscheiden von der
     #695-Fixture „lorenzo dank en" (reiner Sprach-Pin-Test, keine Zusage).
+- **Buchungsanfragen (#697, 21.09.2026, Fall Anika Farmhouse):** eigene Judge-Kategorie
+  `buchungsanfrage` (Inquiry/Request-to-Book, Verfügbarkeits-/Gruppen-/Event-Anfrage) — NIE
+  Teil von `AUTO_OK_CATEGORIES`, eigener, engerer Policy-Zweig in `policy.ts`: `promises_action`
+  ist hier ein HARTER Stopp (keine #696-Fastlane), jedes Risk-Flag blockiert, UND ein
+  SmartTasks-Task muss erfolgreich angelegt sein — erst dann kann die REINE RÜCKFRAGE
+  automatisch raus (Grundsatz Micha: die Airbnb-Entscheidung Annehmen/Ablehnen bleibt IMMER
+  bei ihm, unabhängig vom Auto-Send der Rückfrage).
+  - **Mechanische Erkennung** (`src/services/booking-request.ts`,
+    `detectBookingRequestContext`): findet den Guesty-System-Post „New guest inquiry" bzw.
+    „New guest reservation request <Code>" NACH der letzten Gastnachricht (Guesty hängt den
+    Post zeitlich danach an) und erzwingt die Kategorie `buchungsanfrage` — UNABHÄNGIG vom
+    Judge (der sie zusätzlich aus dem Gasttext erkennen darf/soll). `request_kind`
+    (`inquiry`|`request_to_book`) + `platform_deadline_at` (System-Post-Zeitpunkt + 24h, Airbnb
+    erwartet bei BEIDEN Post-Arten eine Antwort binnen 24h) werden am Draft persistiert
+    (Migration 030), unabhängig vom Gate-Ergebnis.
+  - **Entwurfs-Prompt** (`draft-service.ts`, `buildBookingRequestBlock`, aktiv wenn
+    `isBookingRequest`, erkannt VOR dem Entwurf in `generate-drafts.ts`): Dank, gezielte
+    Rückfragen (Anlass, Personenzahl inkl. Tagesgäste, Ablauf), Limit/ausgeschlossene
+    Event-Arten aus dem OBJEKTWISSEN als Fakt nennen — kein Angebot, kein Preis, kein Hold,
+    keine Zusage, Hinweis auf Bestätigung über Airbnb. Neue, für ALLE Kategorien geltende
+    Prompt-Regel (Entwurf UND Judge): interne Prüfbedingungen („passt Zweck und Personenzahl",
+    „steht einer Bestätigung nichts im Weg") dürfen NIE als Aussage an den Gast gehen, nur als
+    Frage — Judge-Risk-Flag `internal_rule_leak` fängt Verstöße ab. Mechanischer
+    Zusatz-Check `confirmation_words` (nur im Buchungsanfrage-Kontext, DE+EN Bestätigungswörter)
+    als zweite Verteidigungslinie.
+  - **Task-Anlage** (`src/services/booking-request-task-service.ts`,
+    `resolveBookingRequestTask`, `runner.ts`): läuft IMMER, sobald ein System-Post erkannt
+    wurde — anders als die Zusagen-Task (#696), NICHT nur wenn der Entwurf sonst automatisch
+    ginge, weil Micha den Task auch bei `wait` braucht. Titel „Airbnb-Anfrage <Vorname>:
+    <Objekt-Code> <Zeitraum>, <Personen> P." (Zeitraum/Personen aus
+    `booking-context.ts` `resolveBookingPeriod`, sonst weggelassen), Projekt =
+    `smartTasksAirbnbProjectId` (properties.json, neues Feld neben dem allgemeinen
+    `smartTasksProjectId`: FH → 37, U19 → 36, BH → 34, AS → 35), Due = realer Kalendertag der
+    Frist in Berlin — bewusst OHNE Werktags-Verschiebung (Ausnahme von der sonstigen
+    Due-Date-Regel, im Task-Text kenntlich gemacht), da die Airbnb-Frist auch am Wochenende
+    gilt. Idempotent über dieselben Spalten wie der Zusagen-Task (`smarttasks_task_id`/
+    `smarttasks_task_guest_message_id`, Migration 029) — hier trägt die Spalte die Id des
+    System-Posts statt einer Gastnachricht.
+  - **Sichtbarkeit:** `GET /api/agent/drafts/awaiting` zeigt Buchungsanfrage-Drafts mit
+    `auto_decision='auto'` IMMER zusätzlich an (live gesendet ODER Schatten) — eigener
+    `reason`-Text „Rückfrage automatisch gesendet — Entscheidung in Airbnb nach
+    Gast-Antwort" bzw. im Schatten „… wäre automatisch gesendet worden (Schatten) — …", plus
+    Felder `platformDeadlineAt`, `requestKind`, `category`, `autoDecision`, `autoMode`
+    (`getAwaitingDrafts` in `draft-repository.ts`). Grund: anders als bei normalen
+    Auto-Entscheidungen braucht Micha hier auch nach einem erfolgreichen Auto-Send noch die
+    Airbnb-Entscheidung — das ist der bewusste Unterschied zur sonstigen „nur Wait/Error"-Regel
+    dieses Endpunkts. Admin-UI-Badge (`renderAutoBadge`/`taskSuffix`) hängt die Frist
+    (`formatBerlinDeadline`) zusätzlich zur Task-Nummer an.
+  - **Testfixtures:** „Anika — Request-to-Book Event 15 P., saubere Rückfrage (#697)"
+    (erwartet `category: buchungsanfrage`, `auto: true`) und „Anika — Entwurf verrät interne
+    Bestätigungsbedingung (#697)" (`auto: false`, Judge setzt `internal_rule_leak`) in
+    `cases.json` — anonymisierter Fall Anika Farmhouse (Request-to-Book, 15 Personen „für ein
+    Event"). `test-judge-fixtures.ts` prüft „würde auto" über `wouldAutoWithBookingTask`
+    (Sentinel, kein echter SmartTasks-Aufruf), analog zu `wouldAutoWithPromiseTask` (#696).
 - **Env-Variablen:** `AUTO_SEND_MODE` (`off`|`shadow`|`live`, Default `off`),
   `AUTO_SEND_DAILY_CAP` (Default 10), `MESSAGE_LOOP_MINUTES` (Default 5), `JUDGE_MODEL`
   (Default `claude-opus-5`), `GUESTY_WEBHOOK_SECRET` (aus `npm run webhook:register`),
@@ -519,10 +574,11 @@ Copy-Paste kann ein sicherer Entwurf automatisch rausgehen. Spec:
   judge-prompt,judge-service,policy,runner}.ts`, `src/services/draft-send-service.ts`,
   `src/services/guesty-webhook-signature.ts`, `src/routes/webhooks-guesty.ts`,
   `src/services/{smarttasks-client,promise-task-service}.ts`,
+  `src/services/{booking-request,booking-request-task-service}.ts` (#697),
   `src/jobs/{message-loop,handle-guesty-inbound}.ts`,
   `src/scripts/{register-guesty-webhook,test-judge-fixtures}.ts`,
   `src/test-fixtures/judge/cases.json`, Migrationen `027_add_auto_send.sql`,
-  `029_add_smarttasks_task.sql`.
+  `029_add_smarttasks_task.sql`, `030_add_booking_request.sql`.
 - **Server-Setup:** → siehe `docs/vault-deployment.md`, Abschnitt „Auto-Send-Gate
   aktivieren".
 

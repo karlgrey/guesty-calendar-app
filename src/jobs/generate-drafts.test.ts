@@ -295,6 +295,28 @@ describe('Sprach-Pin — automatischer Neuversuch bei language_mismatch (#695)',
   });
 });
 
+// #697: Buchungsanfrage-Erkennung läuft VOR dem Entwurf und wählt den Buchungsanfrage-Prompt.
+describe('Buchungsanfrage-Erkennung vor dem Entwurf (#697)', () => {
+  const bookingMessages = [
+    { id: 'm1', thread_id: 'hostex:a', direction: 'inbound', sent_at: '2026-09-21T20:34:58Z', from_name: 'Anika', from_address: null, to_address: null, subject: null, body: 'Für ein Event buchen', body_html: null, source: 'guesty', raw_meta: null },
+    { id: 'm2', thread_id: 'hostex:a', direction: 'system', sent_at: '2026-09-21T20:35:04Z', from_name: null, from_address: null, to_address: null, subject: null, body: 'New guest reservation request HMYYFAMPH8', body_html: null, source: 'guesty', raw_meta: null },
+  ];
+
+  it('System-Post erkannt → isBookingRequest=true geht an generate()', async () => {
+    const generate = vi.fn().mockResolvedValue({ kind: 'text', body: 'Rückfrage' });
+    const d = deps({ getThreads: vi.fn().mockReturnValue([mkThread('hostex:a')]), getMessages: vi.fn().mockReturnValue(bookingMessages), generate });
+    await generateDraftsForProperty(property, d);
+    expect((generate as any).mock.calls[0][0].isBookingRequest).toBe(true);
+  });
+
+  it('ohne System-Post → isBookingRequest=false', async () => {
+    const generate = vi.fn().mockResolvedValue({ kind: 'text', body: 'Antwort' });
+    const d = deps({ getThreads: vi.fn().mockReturnValue([mkThread('hostex:a')]), getMessages: vi.fn().mockReturnValue([bookingMessages[0]]), generate });
+    await generateDraftsForProperty(property, d);
+    expect((generate as any).mock.calls[0][0].isBookingRequest).toBe(false);
+  });
+});
+
 describe('resolveDraftSource', () => {
   it('maps providers to (source, listingId)', () => {
     expect(resolveDraftSource({ provider: 'hostex', hostexPropertyId: 'H1' } as unknown as PropertyConfig))

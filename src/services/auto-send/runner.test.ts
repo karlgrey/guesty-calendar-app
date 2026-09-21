@@ -49,6 +49,9 @@ function deps(over: Partial<GateDeps> = {}): GateDeps {
     claim: vi.fn().mockReturnValue(true),
     send: vi.fn().mockResolvedValue({ ok: true }),
     resolvePromiseTask: vi.fn().mockResolvedValue({ created: true, taskNumber: 742, reused: false }),
+    resolveBookingRequestTask: vi.fn().mockResolvedValue({ created: true, taskNumber: 701, reused: false }),
+    resolveBookingPeriod: vi.fn().mockReturnValue({ periodLabel: null, guestsCount: null }),
+    persistBookingRequest: vi.fn(),
     ...over,
   };
 }
@@ -212,6 +215,90 @@ describe('runAutoSendGate: Zusagen-Task (#696)', () => {
     const d = deps({ resolvePromiseTask: resolvePromiseTaskMock });
     await runAutoSendGate(input, d);
     expect(resolvePromiseTaskMock).not.toHaveBeenCalled();
+  });
+});
+
+// #697: Buchungsanfrage — mechanische Erkennung (Guesty-System-Post), Kategorie-Override,
+// Task-Anlage IMMER (nicht nur bei "würde sonst auto gehen"), Frist-Persistenz.
+describe('runAutoSendGate: Buchungsanfrage (#697, Fall Anika)', () => {
+  const bookingVerdict = { kind: 'verdict', verdict: { category: 'buchungsanfrage', answerableFromFacts: true, riskFlags: [], confidence: 'hoch', reasoning: 'r', promisedAction: null } } as const;
+  const bookingMessages = [
+    { id: 'm1', direction: 'inbound', body: 'Ich würde gern für ein Event buchen.', sent_at: '2026-09-21T20:34:58.000Z' },
+    { id: 'm2', direction: 'system', body: 'New guest reservation request HMYYFAMPH8', sent_at: '2026-09-21T20:35:04.000Z' },
+  ] as Message[];
+  const bookingInput: GateInput = { ...input, body: 'Danke! Magst du uns sagen, um welchen Anlass es geht?', messages: bookingMessages };
+
+  it('System-Post erkannt + alles grün → Task angelegt, Frist persistiert, decision auto mit Task+Frist', async () => {
+    const resolveBookingRequestTaskMock = vi.fn().mockResolvedValue({ created: true, taskNumber: 701, reused: false });
+    const persistBookingRequestMock = vi.fn();
+    const resolveBookingPeriodMock = vi.fn().mockReturnValue({ periodLabel: '29.01.2027–31.01.2027', guestsCount: 15 });
+    const d = deps({
+      judge: vi.fn().mockResolvedValue(bookingVerdict),
+      resolveBookingRequestTask: resolveBookingRequestTaskMock,
+      persistBookingRequest: persistBookingRequestMock,
+      resolveBookingPeriod: resolveBookingPeriodMock,
+    });
+    const r = await runAutoSendGate(bookingInput, d);
+    expect(r.decision.decision).toBe('auto');
+    expect(r.decision.category).toBe('buchungsanfrage');
+    expect(r.decision.reason).toBe('Buchungsanfrage: Rückfrage automatisch, Airbnb-Entscheidung bei Micha → Task #701, Frist Di 22:35');
+    expect(persistBookingRequestMock).toHaveBeenCalledWith('d1', 'request_to_book', '2026-09-22T20:35:04.000Z');
+    expect(resolveBookingRequestTaskMock).toHaveBeenCalledTimes(1);
+    expect(resolveBookingRequestTaskMock.mock.calls[0][0]).toMatchObject({
+      draftId: 'd1', threadId: 'hostex:t1', systemMessageId: 'm2', requestKind: 'request_to_book',
+      platformDeadlineAt: '2026-09-22T20:35:04.000Z', periodLabel: '29.01.2027–31.01.2027', guestsCount: 15,
+    });
+  });
+
+  it('Kategorie-Override: Judge klassifiziert anders, System-Post erzwingt buchungsanfrage trotzdem', async () => {
+    const d = deps({ judge: vi.fn().mockResolvedValue(okVerdict) /* ankunftszeit */ });
+    const r = await runAutoSendGate(bookingInput, d);
+    expect(r.decision.category).toBe('buchungsanfrage');
+  });
+
+  it('Task-Anlage schlägt fehl → wait mit fester Fehlermeldung, kein Send', async () => {
+    const d = deps({
+      judge: vi.fn().mockResolvedValue(bookingVerdict),
+      resolveBookingRequestTask: vi.fn().mockResolvedValue({ created: false, taskNumber: null, reused: false }),
+    });
+    const r = await runAutoSendGate(bookingInput, d);
+    expect(r.decision).toMatchObject({ decision: 'wait', reason: 'Task konnte nicht angelegt werden' });
+    expect(r.sent).toBe(false);
+  });
+
+  it('promises_action bei buchungsanfrage ist harter Stopp — KEINE #696-Fastlane', async () => {
+    const verdict = { kind: 'verdict', verdict: { category: 'buchungsanfrage', answerableFromFacts: true, riskFlags: ['promises_action'], confidence: 'hoch', reasoning: 'r', promisedAction: 'x' } } as const;
+    const resolvePromiseTaskMock = vi.fn();
+    const d = deps({ judge: vi.fn().mockResolvedValue(verdict), resolvePromiseTask: resolvePromiseTaskMock });
+    const r = await runAutoSendGate(bookingInput, d);
+    expect(r.decision.decision).toBe('wait');
+    expect(r.decision.reason).toMatch(/Handlung/);
+    expect(resolvePromiseTaskMock).not.toHaveBeenCalled();
+  });
+
+  it('ohne System-Post: resolveBookingRequestTask/persistBookingRequest werden NICHT aufgerufen (bestehende Tests unverändert)', async () => {
+    const resolveBookingRequestTaskMock = vi.fn();
+    const persistBookingRequestMock = vi.fn();
+    const d = deps({ resolveBookingRequestTask: resolveBookingRequestTaskMock, persistBookingRequest: persistBookingRequestMock });
+    await runAutoSendGate(input, d);
+    expect(resolveBookingRequestTaskMock).not.toHaveBeenCalled();
+    expect(persistBookingRequestMock).not.toHaveBeenCalled();
+  });
+
+  it('Schattenmodus: Task wird trotzdem angelegt, decision auto, nichts wird gesendet', async () => {
+    const resolveBookingRequestTaskMock = vi.fn().mockResolvedValue({ created: true, taskNumber: 701, reused: false });
+    const d = deps({ envMode: 'shadow', judge: vi.fn().mockResolvedValue(bookingVerdict), resolveBookingRequestTask: resolveBookingRequestTaskMock });
+    const r = await runAutoSendGate(bookingInput, d);
+    expect(r.decision.decision).toBe('auto');
+    expect(r.sent).toBe(false);
+    expect(resolveBookingRequestTaskMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('mechanischer Bestätigungswort-Treffer im Entwurf → wait', async () => {
+    const d = deps({ judge: vi.fn().mockResolvedValue(bookingVerdict) });
+    const r = await runAutoSendGate({ ...bookingInput, body: 'Das passt, von uns aus steht einer Bestätigung nichts im Weg.' }, d);
+    expect(r.decision.decision).toBe('wait');
+    expect(r.decision.flags).toContain('mech:confirmation_words');
   });
 });
 

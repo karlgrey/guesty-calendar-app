@@ -113,9 +113,15 @@ export interface MessageDraft {
   auto_judged_at: string | null;
   sent_by: 'micha' | 'auto' | null;
   sent_body_changed: number | null;
-  // Zusagen-Task (Migration 029, #696)
+  // Zusagen-Task (Migration 029, #696) — dieselben Spalten trägt auch der Buchungsanfrage-Task
+  // (#697, Migration 030): smarttasks_task_guest_message_id ist dort die Id des auslösenden
+  // Guesty-System-Posts statt einer Gastnachricht (gleiche Semantik: "Id der Nachricht, die
+  // diesen Task ausgelöst hat").
   smarttasks_task_id: number | null;
   smarttasks_task_guest_message_id: string | null;
+  // Buchungsanfrage (Migration 030, #697)
+  request_kind: 'inquiry' | 'request_to_book' | null;
+  platform_deadline_at: string | null; // ISO-8601 UTC
 }
 
 export type NewDraft = Pick<MessageDraft, 'id' | 'thread_id' | 'provider' | 'body' | 'generated_by'> & {

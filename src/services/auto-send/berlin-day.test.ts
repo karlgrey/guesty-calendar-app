@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { startOfBerlinDayIso, nextBerlinBusinessDay } from './berlin-day.js';
+import { startOfBerlinDayIso, nextBerlinBusinessDay, formatBerlinDeadline, berlinCalendarDay } from './berlin-day.js';
 
 describe('startOfBerlinDayIso', () => {
   it('Sommerzeit: 00:00 Berlin = 22:00Z Vortag', () => {
@@ -34,5 +34,30 @@ describe('nextBerlinBusinessDay (#696, Zusagen-Task-Fälligkeit)', () => {
   });
   it('kurz vor Mitternacht UTC gehört schon zum nächsten (Sonntag-)Berliner Tag → Montag', () => {
     expect(nextBerlinBusinessDay(new Date('2026-09-19T22:30:00.000Z'))).toBe('2026-09-21');
+  });
+});
+
+// #697: Buchungsanfrage-Frist (Fall Anika, System-Post 2026-09-21T20:35:04Z + 24h = 2026-09-22T20:35:04Z)
+describe('formatBerlinDeadline (#697, Buchungsanfrage-Frist)', () => {
+  it('Sommerzeit: Dienstag 20:35Z = Di 22:35 Berlin', () => {
+    expect(formatBerlinDeadline('2026-09-22T20:35:04.000Z')).toBe('Di 22:35');
+  });
+  it('Winterzeit: kein DST-Offset mehr', () => {
+    expect(formatBerlinDeadline('2026-12-05T10:00:00.000Z')).toBe('Sa 11:00');
+  });
+  it('Wochenende bleibt Wochenende (keine Werktags-Verschiebung)', () => {
+    expect(formatBerlinDeadline('2026-09-20T09:00:00.000Z')).toBe('So 11:00');
+  });
+});
+
+describe('berlinCalendarDay (#697, SmartTasks-dueDate, auch am Wochenende)', () => {
+  it('Sommerzeit', () => {
+    expect(berlinCalendarDay('2026-09-22T20:35:04.000Z')).toBe('2026-09-22');
+  });
+  it('kurz vor Mitternacht UTC gehört schon zum nächsten Berliner Kalendertag', () => {
+    expect(berlinCalendarDay('2026-09-19T22:30:00.000Z')).toBe('2026-09-20');
+  });
+  it('Samstag bleibt Samstag — bewusst keine Werktags-Regel', () => {
+    expect(berlinCalendarDay('2026-09-19T10:00:00.000Z')).toBe('2026-09-19');
   });
 });

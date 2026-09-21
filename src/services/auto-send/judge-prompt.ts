@@ -41,6 +41,10 @@ export function buildJudgeSystemPrompt(voice: string, facts: string, bookingCont
     '- beschwerde_schaden: Beschwerde, Mangel, Schaden, Streit, Unzufriedenheit.',
     '- sonderwunsch: Alles außerhalb des Standards: früher Check-in / später Checkout außerhalb der Regeln, zusätzliche Gäste, Haustiere, Feiern, Sonderausstattung.',
     '- medizin_sicherheit: Gesundheit, Notfall, Sicherheit, Polizei, Feuer, Verletzung.',
+    '- buchungsanfrage: Gast fragt an oder stellt eine Buchungsanfrage — Inquiry, Request-to-Book,',
+    '  „kann ich buchen", Verfügbarkeitsfrage, Gruppen-/Event-Anfrage. Die Annahme/Ablehnung der',
+    '  Buchung entscheidet IMMER Micha selbst in Airbnb, NIE der Entwurf — auch wenn der Entwurf',
+    '  selbst nur eine Rückfrage ohne Zusage ist.',
     '- unklar: Anliegen nicht eindeutig zuzuordnen oder mehrere Kategorien gleichrangig.',
     '',
     'RISIKO-FLAGS (alle zutreffenden setzen):',
@@ -59,10 +63,19 @@ export function buildJudgeSystemPrompt(voice: string, facts: string, bookingCont
     '  weniger überschwänglich ist als die VOICE-Beispiele.',
     '- language_mismatch: Antwortsprache ≠ Sprache der letzten Gastnachricht.',
     '- multi_topic: Gast fragt mehrere Dinge, davon mindestens eines NICHT in dank_smalltalk/ankunftszeit/playbook_fakt/checkin_standard.',
+    '- internal_rule_leak: Entwurf gibt eine INTERNE Prüfbedingung wörtlich oder sinngemäß an den Gast weiter,',
+    '  statt sie nur als Frage zu formulieren — z. B. "passt Zweck und Personenzahl", "steht einer Bestätigung',
+    '  nichts im Weg", "wenn das genehmigt wird". Interne Bedingungen sind für den Gast NIE als Aussage oder',
+    '  Zusicherung zu formulieren, nur als offene Rückfrage (z. B. statt "die Personenzahl passt" → "wie viele',
+    '  Personen wärt ihr insgesamt?"). Gilt für ALLE Kategorien, nicht nur buchungsanfrage.',
     '',
     'confidence=hoch NUR, wenn: Kategorie eindeutig, keine Flags AUSSER ggf. promises_action, und jede Sachaussage im Entwurf ' +
       '(außer der Zusage selbst) einer Zeile im OBJEKTWISSEN/BUCHUNGSKONTEXT entspricht. Eine Handlungszusage (promises_action) ' +
-      'braucht dafür KEINEN Beleg im Objektwissen — sie wird separat als Aufgabe nachgehalten, senkt confidence also nicht.',
+      'braucht dafür KEINEN Beleg im Objektwissen — sie wird separat als Aufgabe nachgehalten, senkt confidence also nicht. ' +
+      'Bei buchungsanfrage bewertet confidence AUSSCHLIESSLICH, ob die REINE RÜCKFRAGE (Dank + Rückfragen + korrekt aus dem ' +
+      'OBJEKTWISSEN zitiertes Limit/ausgeschlossene Event-Arten, ohne Zusage) selbst fehlerfrei ist — dass die eigentliche ' +
+      'Buchungsentscheidung bei Micha bleibt, ist bereits durch die Kategorie selbst sichergestellt (buchungsanfrage ist nie ' +
+      'automatisch, Annahme/Ablehnung geht immer an Micha) und darf confidence NICHT zusätzlich senken.',
     '--- VOICE ---', voice, '--- ENDE VOICE ---',
     '--- OBJEKTWISSEN ---', facts, '--- ENDE OBJEKTWISSEN ---',
   ];
