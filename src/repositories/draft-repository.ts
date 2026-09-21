@@ -81,6 +81,32 @@ export function setSentBodyChanged(id: string, changed: boolean): void {
   getDatabase().prepare(`UPDATE message_drafts SET sent_body_changed = ? WHERE id = ?`).run(changed ? 1 : 0, id);
 }
 
+// --- Zusagen-Task (Migration 029, #696) ---
+
+/** Persistiert den (neu angelegten ODER wiederverwendeten) SmartTasks-Task am Draft. */
+export function setSmartTasksTask(draftId: string, taskId: number, guestMessageId: string | null): void {
+  getDatabase().prepare(
+    `UPDATE message_drafts SET smarttasks_task_id = ?, smarttasks_task_guest_message_id = ? WHERE id = ?`,
+  ).run(taskId, guestMessageId, draftId);
+}
+
+/**
+ * Idempotenz (Spec Punkt 6): existiert im selben Thread bereits ein Task für GENAU
+ * diese Gastnachricht (z. B. ein vorheriger Draft, der wegen einer Sprach-Pin-Korrektur
+ * verworfen und neu generiert wurde, ohne dass eine neue Gastnachricht eintraf), wird
+ * dessen Task-Id zurückgegeben statt eines neuen Anlage-Versuchs. Über alle Draft-
+ * Status hinweg (auch discarded/error) — die Zusage bleibt gültig, unabhängig davon,
+ * ob der jeweilige Entwurf am Ende gesendet wurde.
+ */
+export function findExistingSmartTasksTaskId(threadId: string, guestMessageId: string): number | null {
+  const row = getDatabase().prepare(
+    `SELECT smarttasks_task_id AS id FROM message_drafts
+     WHERE thread_id = ? AND smarttasks_task_guest_message_id = ? AND smarttasks_task_id IS NOT NULL
+     ORDER BY created_at DESC LIMIT 1`,
+  ).get(threadId, guestMessageId) as { id: number } | undefined;
+  return row?.id ?? null;
+}
+
 /** Micha hat in diesem Thread schon eingegriffen (Spec 5.3 Thread-Ausschlüsse). */
 export function threadHasHumanIntervention(threadId: string): boolean {
   const row = getDatabase().prepare(
@@ -116,7 +142,7 @@ export function countAutoSentSince(sinceIso: string): number {
 export interface AwaitingDraftRow {
   id: string; thread_id: string; provider: string; status: string; created_at: string;
   reason: string; guest_name: string | null; listing_id: string; source: string;
-  last_guest_message: string | null;
+  last_guest_message: string | null; smarttasks_task_id: number | null;
 }
 
 /**
@@ -136,7 +162,7 @@ export interface AwaitingDraftRow {
  */
 export function getAwaitingDrafts(sinceIso: string, limit: number): AwaitingDraftRow[] {
   return getDatabase().prepare(
-    `SELECT d.id, d.thread_id, d.provider, d.status, d.created_at,
+    `SELECT d.id, d.thread_id, d.provider, d.status, d.created_at, d.smarttasks_task_id,
        CASE
          WHEN d.status = 'error' THEN 'Auto-Send fehlgeschlagen: ' || COALESCE(d.error, '?')
          WHEN d.status = 'sending' THEN 'Versand hängt — bitte manuell prüfen'

@@ -33,6 +33,9 @@ export interface JudgeVerdict {
   riskFlags: JudgeRiskFlag[];
   confidence: JudgeConfidence;
   reasoning: string;
+  /** Ein Satz: was wird dem Gast zugesagt? Nur gesetzt, wenn riskFlags 'promises_action'
+   *  enthält UND das Prüfmodell einen Text geliefert hat (#696) — sonst null. */
+  promisedAction: string | null;
 }
 export type JudgeResult =
   | { kind: 'verdict'; verdict: JudgeVerdict }

@@ -325,6 +325,9 @@ router.get('/drafts/awaiting', (req, res) => {
         guestName: r.guest_name, guestMessageExcerpt: guestExcerpt(r.last_guest_message),
         reason: r.reason, createdAt: sqliteToIso(r.created_at),
         adminUrl: `${config.baseUrl.replace(/\/$/, '')}/admin/messages/${encodeURIComponent(r.thread_id)}`,
+        // #696: Zusagen-Task, wenn dieser Entwurf einen SmartTasks-Task trackt (z. B. ein
+        // hängender Auto-Send, dessen Zusage bereits nachgehalten wird).
+        smartTasksTaskId: r.smarttasks_task_id ?? null,
       })),
     });
   } catch (err) { handleError(res, err); }

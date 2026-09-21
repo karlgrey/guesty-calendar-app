@@ -5,6 +5,13 @@ import { AUTO_OK_CATEGORIES, type AutoSendDecision, type AutoSendMode, type Judg
 export interface PolicyInput {
   mode: AutoSendMode; paused: boolean; judge: JudgeResult; mechanical: MechanicalFinding[];
   threadHasHumanIntervention: boolean; threadHasFailedSend: boolean; autoSentToday: number; dailyCap: number; canSend: boolean;
+  /**
+   * Ergebnis der Zusagen-Task-Anlage (#696) — nur relevant, wenn riskFlags GENAU
+   * ['promises_action'] ist (isPromiseOnlyRisk()). null/undefined = (noch) nicht
+   * versucht; der Runner ruft decide() dafür zuerst mit wouldAutoWithPromiseTask()
+   * "trocken" auf (kein I/O), bevor er den SmartTasks-Aufruf überhaupt anstößt.
+   */
+  promiseTask?: { created: boolean; taskNumber: number | null } | null;
 }
 
 const CATEGORY_LABEL: Record<JudgeCategory, string> = {
@@ -22,6 +29,15 @@ const MECH_LABEL: Record<MechanicalFlag, string> = {
   language_mismatch: 'falsche Sprache (mechanisch erkannt)', // #695
 };
 
+/**
+ * Zusage (#696): riskFlags trägt AUSSCHLIESSLICH 'promises_action' (kein weiteres Risiko)
+ * und das Prüfmodell hat einen Zusagen-Text geliefert — nur dann greift die
+ * Zusagen-Fastlane statt des generellen Risk-Flag-Waits.
+ */
+function isPromiseOnlyRisk(v: { riskFlags: JudgeRiskFlag[]; promisedAction: string | null }): boolean {
+  return v.riskFlags.length === 1 && v.riskFlags[0] === 'promises_action' && !!v.promisedAction;
+}
+
 export function decide(i: PolicyInput): AutoSendDecision {
   const verdict = i.judge.kind === 'verdict' ? i.judge.verdict : null;
   const flags = [...(verdict?.riskFlags ?? []), ...i.mechanical.map((m) => `mech:${m.flag}`)];
@@ -34,12 +50,31 @@ export function decide(i: PolicyInput): AutoSendDecision {
   const v = i.judge.verdict;
   if (!AUTO_OK_CATEGORIES.has(v.category)) return wait(`Kategorie ${CATEGORY_LABEL[v.category]} — nie automatisch`);
   if (v.category === 'playbook_fakt' && !v.answerableFromFacts) return wait('Antwort nicht eindeutig aus dem Playbook belegt');
-  if (v.riskFlags.length) return wait(`Prüfmodell: ${v.riskFlags.map((f) => RISK_LABEL[f]).join(', ')}`);
+  const promiseOnly = isPromiseOnlyRisk(v);
+  if (v.riskFlags.length && !promiseOnly) return wait(`Prüfmodell: ${v.riskFlags.map((f) => RISK_LABEL[f]).join(', ')}`);
   if (i.mechanical.length) { const m = i.mechanical[0]; return wait(`Mechanischer Check: ${MECH_LABEL[m.flag]} im Text (${m.match})`); }
   if (v.confidence !== 'hoch') return wait(`Sicherheit des Prüfmodells nur „${v.confidence}"`);
   if (i.threadHasHumanIntervention) return wait('Micha hat in diesem Thread schon eingegriffen');
   if (i.threadHasFailedSend) return wait('Vorheriger Versand in diesem Thread ist fehlgeschlagen — bitte manuell prüfen');
   if (!i.canSend) return wait('Kanal unklar — kein Versand möglich');
   if (i.autoSentToday >= i.dailyCap) return wait(`Tageslimit erreicht (${i.autoSentToday}/${i.dailyCap})`);
+  if (promiseOnly) {
+    if (!i.promiseTask?.created) return wait('Task konnte nicht angelegt werden');
+    const shadowMarker = i.mode === 'shadow' ? ' (Schattenmodus)' : '';
+    return { decision: 'auto', reason: `Zusage → Task #${i.promiseTask.taskNumber}${shadowMarker}`, category, flags };
+  }
   return { decision: 'auto', reason: `${CATEGORY_LABEL[v.category]}, keine Risiken, Sicherheit hoch`, category, flags };
+}
+
+/**
+ * Pure Vorab-Prüfung für den Runner (kein I/O): würde dieser Entwurf automatisch gehen,
+ * WENN die Zusagen-Task-Anlage gelänge? Nur dann lohnt sich der SmartTasks-Aufruf
+ * überhaupt — alle anderen Gates (Kategorie, Mechanik, Konfidenz, Thread-Zustand,
+ * Tageslimit …) werden dafür schon vorab durchlaufen (dieselbe decide()-Logik, sentinel
+ * promiseTask). Gibt false zurück, wenn der Entwurf ohnehin aus einem anderen Grund
+ * wartet, oder wenn kein Zusagen-Fall vorliegt.
+ */
+export function wouldAutoWithPromiseTask(i: Omit<PolicyInput, 'promiseTask'>): boolean {
+  const probe = decide({ ...i, promiseTask: { created: true, taskNumber: 0 } });
+  return probe.decision === 'auto' && probe.flags.includes('promises_action');
 }

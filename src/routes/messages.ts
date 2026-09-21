@@ -64,20 +64,26 @@ function fmtTime(iso: string | null | undefined): string {
   return s.length >= 16 ? s.slice(11, 16) : s;
 }
 
+// #696: Task-Kürzel für den Zusagen-Task, wenn einer getrackt wird — als Anhängsel an die
+// Erfolgs-Badges (die den vollen auto_reason-Text sonst nicht zeigen, siehe unten).
+function taskSuffix(draft: MessageDraft): string {
+  return draft.smarttasks_task_id ? ` · Task #${draft.smarttasks_task_id}` : '';
+}
+
 // Auto-Send-Gate-Ampel für Liste/Thread-Ansicht — rein (nur esc/fmtTime), keine
 // DB-Zugriffe, damit sie ohne Express-Server testbar ist (siehe messages.auto-send.test.ts).
 export function renderAutoBadge(draft: MessageDraft): string {
   if (draft.status === 'sent' && draft.sent_by === 'auto') {
-    return `<span class="badge" style="background:var(--color-forest);color:#fff;border:none">🟢 automatisch gesendet ${esc(fmtTime(draft.sent_at))}</span>`;
+    return `<span class="badge" style="background:var(--color-forest);color:#fff;border:none">🟢 automatisch gesendet ${esc(fmtTime(draft.sent_at))}${esc(taskSuffix(draft))}</span>`;
   }
   if (draft.auto_decision === 'wait') {
     return `<span class="badge" style="background:var(--color-amber);color:#fff;border:none">🟡 wartet auf dich: ${esc(draft.auto_reason)}</span>`;
   }
   if (draft.auto_decision === 'auto' && draft.auto_mode === 'shadow') {
-    return `<span class="badge">⚪ wäre automatisch gesendet worden</span>`;
+    return `<span class="badge">⚪ wäre automatisch gesendet worden${esc(taskSuffix(draft))}</span>`;
   }
   if (draft.auto_decision === 'auto' && draft.auto_mode === 'live' && draft.status === 'pending') {
-    return `<span class="badge" style="background:var(--color-amber);color:#fff;border:none">🟡 Auto-Send steht aus</span>`;
+    return `<span class="badge" style="background:var(--color-amber);color:#fff;border:none">🟡 Auto-Send steht aus${esc(taskSuffix(draft))}</span>`;
   }
   return '';
 }

@@ -113,6 +113,9 @@ export interface MessageDraft {
   auto_judged_at: string | null;
   sent_by: 'micha' | 'auto' | null;
   sent_body_changed: number | null;
+  // Zusagen-Task (Migration 029, #696)
+  smarttasks_task_id: number | null;
+  smarttasks_task_guest_message_id: string | null;
 }
 
 export type NewDraft = Pick<MessageDraft, 'id' | 'thread_id' | 'provider' | 'body' | 'generated_by'> & {

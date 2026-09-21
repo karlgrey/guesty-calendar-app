@@ -34,7 +34,8 @@ const msgs = [{ id: 'm1', direction: 'inbound', body: 'Können wir um 13 Uhr kom
 const property = { slug: 'bootshaus', autoSend: undefined } as PropertyConfig;
 const input: GateInput = { draftId: 'd1', body: 'Ja, 13 Uhr passt.', thread, messages: msgs, voice: 'V', facts: 'F', bookingContext: null, property };
 
-const okVerdict = { kind: 'verdict', verdict: { category: 'ankunftszeit', answerableFromFacts: true, riskFlags: [], confidence: 'hoch', reasoning: 'r' } } as const;
+const okVerdict = { kind: 'verdict', verdict: { category: 'ankunftszeit', answerableFromFacts: true, riskFlags: [], confidence: 'hoch', reasoning: 'r', promisedAction: null } } as const;
+const promiseVerdict = { kind: 'verdict', verdict: { category: 'dank_smalltalk', answerableFromFacts: true, riskFlags: ['promises_action'], confidence: 'hoch', reasoning: 'r', promisedAction: 'Micha kümmert sich darum.' } } as const;
 function deps(over: Partial<GateDeps> = {}): GateDeps {
   return {
     envMode: 'live', dailyCap: 10,
@@ -47,6 +48,7 @@ function deps(over: Partial<GateDeps> = {}): GateDeps {
     persistDecision: vi.fn(),
     claim: vi.fn().mockReturnValue(true),
     send: vi.fn().mockResolvedValue({ ok: true }),
+    resolvePromiseTask: vi.fn().mockResolvedValue({ created: true, taskNumber: 742, reused: false }),
     ...over,
   };
 }
@@ -157,6 +159,59 @@ describe('runAutoSendGate', () => {
       'live',
     );
     expect(d.send).not.toHaveBeenCalled();
+  });
+});
+
+// #696: Zusagen-Task-Wiring — resolvePromiseTask wird NUR aufgerufen, wenn der Entwurf
+// sonst automatisch ginge, mit den richtigen Feldern, und das Ergebnis geht in die
+// Entscheidung ein.
+describe('runAutoSendGate: Zusagen-Task (#696)', () => {
+  it('promises_action allein (sonst alles grün) → resolvePromiseTask aufgerufen, Ergebnis fließt in decision ein', async () => {
+    const resolvePromiseTaskMock = vi.fn().mockResolvedValue({ created: true, taskNumber: 742, reused: false });
+    const d = deps({ judge: vi.fn().mockResolvedValue(promiseVerdict), resolvePromiseTask: resolvePromiseTaskMock });
+    const r = await runAutoSendGate(input, d);
+    expect(r.decision.decision).toBe('auto');
+    expect(r.decision.reason).toBe('Zusage → Task #742');
+    expect(resolvePromiseTaskMock).toHaveBeenCalledTimes(1);
+    const call = resolvePromiseTaskMock.mock.calls[0][0];
+    expect(call).toMatchObject({
+      draftId: 'd1', threadId: 'hostex:t1', guestMessageId: 'm1',
+      guestName: 'Anna', guestMessage: 'Können wir um 13 Uhr kommen?',
+      promisedAction: 'Micha kümmert sich darum.', mode: 'live', property,
+    });
+  });
+  it('Task-Anlage schlägt fehl → decision wait mit fester Fehlermeldung, kein Send', async () => {
+    const d = deps({
+      judge: vi.fn().mockResolvedValue(promiseVerdict),
+      resolvePromiseTask: vi.fn().mockResolvedValue({ created: false, taskNumber: null, reused: false }),
+    });
+    const r = await runAutoSendGate(input, d);
+    expect(r.decision).toMatchObject({ decision: 'wait', reason: 'Task konnte nicht angelegt werden' });
+    expect(r.sent).toBe(false);
+    expect(d.send).not.toHaveBeenCalled();
+  });
+  it('Schattenmodus: Task wird trotzdem angelegt, Reason markiert Schatten, nichts wird gesendet', async () => {
+    const resolvePromiseTaskMock = vi.fn().mockResolvedValue({ created: true, taskNumber: 5, reused: false });
+    const d = deps({ envMode: 'shadow', judge: vi.fn().mockResolvedValue(promiseVerdict), resolvePromiseTask: resolvePromiseTaskMock });
+    const r = await runAutoSendGate(input, d);
+    expect(resolvePromiseTaskMock).toHaveBeenCalledTimes(1);
+    expect(resolvePromiseTaskMock.mock.calls[0][0].mode).toBe('shadow');
+    expect(r.decision).toMatchObject({ decision: 'auto', reason: 'Zusage → Task #5 (Schattenmodus)' });
+    expect(r.sent).toBe(false);
+    expect(d.send).not.toHaveBeenCalled();
+  });
+  it('anderes blockierendes Gate (z. B. Micha hat eingegriffen) → resolvePromiseTask wird GAR NICHT erst versucht', async () => {
+    const resolvePromiseTaskMock = vi.fn();
+    const d = deps({ judge: vi.fn().mockResolvedValue(promiseVerdict), hasHumanIntervention: vi.fn().mockReturnValue(true), resolvePromiseTask: resolvePromiseTaskMock });
+    const r = await runAutoSendGate(input, d);
+    expect(resolvePromiseTaskMock).not.toHaveBeenCalled();
+    expect(r.decision.reason).toMatch(/schon eingegriffen/);
+  });
+  it('kein promises_action → resolvePromiseTask wird nicht aufgerufen (bestehende Tests unverändert)', async () => {
+    const resolvePromiseTaskMock = vi.fn();
+    const d = deps({ resolvePromiseTask: resolvePromiseTaskMock });
+    await runAutoSendGate(input, d);
+    expect(resolvePromiseTaskMock).not.toHaveBeenCalled();
   });
 });
 
