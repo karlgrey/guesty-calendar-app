@@ -146,7 +146,8 @@ function buildBookingRequestBlock(): string {
       'Feiern) als reinen FAKT — NIEMALS als interne Prüfbedingung wie "passt das für uns" oder "steht einer ' +
       'Bestätigung nichts im Weg". Formuliere unsichere Punkte immer als Frage an den Gast, nie als Aussage über den ' +
       'Ausgang der Prüfung.',
-    '4. Hinweis, dass die endgültige Bestätigung über Airbnb erfolgt.',
+    '4. Hinweis, dass die endgültige Bestätigung noch separat folgt — OHNE die Plattform beim Namen zu nennen ' +
+      '(Voice-Regel Micha 21.09.2026: Airbnb, Guesty o. ä. nie im Text an den Gast; "über Airbnb bestätigen" ist tabu).',
     '### ENDE BUCHUNGSANFRAGE-REGELN ###',
   ].join('\n');
 }
