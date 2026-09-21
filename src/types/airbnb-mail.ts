@@ -18,6 +18,14 @@ export interface RawMail {
 }
 
 /**
+ * Placeholder date used by parseCancellation (and any other lax parser) when
+ * a mail doesn't carry real check-in/check-out dates. Shared between the
+ * parser (emits it) and the mapper (must never let it clobber a good date
+ * already on file — see #660).
+ */
+export const AIRBNB_MAIL_PLACEHOLDER_DATE = '1970-01-01';
+
+/**
  * Mail-type classification.
  */
 export type AirbnbMailType =

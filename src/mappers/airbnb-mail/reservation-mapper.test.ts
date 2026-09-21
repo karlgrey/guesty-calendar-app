@@ -52,6 +52,50 @@ describe('mapAirbnbReservation', () => {
     });
   });
 
+  // #660: Storno-Mails ohne Datumsangaben ("Diese Reservierung wurde
+  // storniert. Reservierungscode: HM…") liefern nur den Platzhalter
+  // 1970-01-01 (siehe parseCancellation). Würde der Mapper den ins
+  // inquiries-Upsert durchreichen, überschreibt das die echten Daten der
+  // ursprünglichen Buchungsmail — und getCancelledReservationIds() (Fenster
+  // heute±N Tage) findet die Stornierung danach nie mehr, das Google-Event
+  // bleibt für immer stehen (Fall Mjalli Florenz, 15.09.2026).
+  describe('cancellation date placeholder (#660)', () => {
+    const placeholderCancellation = {
+      ...base,
+      type: 'cancellation' as const,
+      checkIn: '1970-01-01',
+      checkOut: '1970-01-01',
+    };
+
+    it('substitutes the existing inquiry dates when the cancellation mail carries the placeholder', () => {
+      const { asInquiry } = mapAirbnbReservation(
+        placeholderCancellation,
+        '999',
+        defaultTimes,
+        undefined,
+        { check_in: '2026-10-04', check_out: '2026-10-11' }
+      );
+      expect(asInquiry.check_in).toBe('2026-10-04');
+      expect(asInquiry.check_out).toBe('2026-10-11');
+    });
+
+    it('falls back to the placeholder when there is no existing inquiry to recover dates from', () => {
+      const { asInquiry } = mapAirbnbReservation(placeholderCancellation, '999', defaultTimes, undefined, null);
+      expect(asInquiry.check_in).toBe('1970-01-01');
+      expect(asInquiry.check_out).toBe('1970-01-01');
+    });
+
+    it('keeps the mail dates when the cancellation mail DOES carry real dates, even with an existing inquiry on file', () => {
+      const withDates = { ...base, type: 'cancellation' as const, checkIn: '2026-07-20', checkOut: '2026-07-22' };
+      const { asInquiry } = mapAirbnbReservation(withDates, '999', defaultTimes, undefined, {
+        check_in: '2099-01-01',
+        check_out: '2099-01-05',
+      });
+      expect(asInquiry.check_in).toBe('2026-07-20');
+      expect(asInquiry.check_out).toBe('2026-07-22');
+    });
+  });
+
   describe('financial fields', () => {
     it('host_payout passed through', () => {
       const { asReservation } = mapAirbnbReservation(base, '999', defaultTimes);

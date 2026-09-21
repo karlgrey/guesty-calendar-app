@@ -7,7 +7,7 @@
  */
 
 import * as cheerio from 'cheerio';
-import type { RawMail, ParsedAirbnbMail } from '../../types/airbnb-mail.js';
+import { AIRBNB_MAIL_PLACEHOLDER_DATE, type RawMail, type ParsedAirbnbMail } from '../../types/airbnb-mail.js';
 
 const RES_CODE_RE = /(?:Reservierungscode|Buchungscode)\s*:?\s*(HM[A-Z0-9]+)/i;
 const SUBJECT_CODE_RE = /(HM[A-Z0-9]+)/;
@@ -60,8 +60,8 @@ export function parseCancellation(raw: RawMail): ParsedAirbnbMail | null {
     type: 'cancellation',
     reservationCode: codeMatch[1],
     guestName: guestMatch ? guestMatch[1].trim() : '(unknown — cancellation)',
-    checkIn: checkIn ?? '1970-01-01',
-    checkOut: checkOut ?? '1970-01-01',
+    checkIn: checkIn ?? AIRBNB_MAIL_PLACEHOLDER_DATE,
+    checkOut: checkOut ?? AIRBNB_MAIL_PLACEHOLDER_DATE,
     receivedAt: raw.receivedAt,
     messageId: raw.messageId,
   };

@@ -156,17 +156,26 @@ export async function syncGoogleCalendarForProperty(
       }
     }
 
-    // Delete cancelled/expired/closed reservations from calendar
+    // Delete cancelled/expired/closed reservations from calendar (#660:
+    // storniert bleibt sonst als Geister-Event stehen, z. B. Fall Mjalli
+    // Florenz). Idempotent: deleteEvent() liefert `false` bei 404/410
+    // (Event schon weg) statt zu werfen — mehrfacher Lauf ist ein No-Op.
     for (const reservationId of cancelledReservationIds) {
+      const eventId = toGoogleEventId(reservationId);
       try {
-        const eventId = toGoogleEventId(reservationId);
         const deleted = await googleCalendarClient.deleteEvent(calendarId, eventId);
-        if (deleted) eventsDeleted++;
+        if (deleted) {
+          eventsDeleted++;
+          logger.info(
+            { reservationId, propertySlug: slug, calendarId, eventId, reason: 'reservation cancelled/expired/declined' },
+            'Google Calendar event deleted for cancelled reservation'
+          );
+        }
         // Small delay to avoid Google Calendar API rate limits
         await new Promise(resolve => setTimeout(resolve, 200));
       } catch (error) {
         logger.warn(
-          { error: error instanceof Error ? error.message : error, reservationId, propertySlug: slug },
+          { error: error instanceof Error ? error.message : error, reservationId, propertySlug: slug, eventId },
           'Failed to delete calendar event'
         );
       }

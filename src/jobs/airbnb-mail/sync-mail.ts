@@ -27,7 +27,7 @@ import {
   setPayoutStatus,
 } from '../../repositories/airbnb-payout-repository.js';
 import { mapAirbnbReservation } from '../../mappers/airbnb-mail/reservation-mapper.js';
-import { upsertReservation } from '../../repositories/reservation-repository.js';
+import { upsertReservation, getInquiryById } from '../../repositories/reservation-repository.js';
 import { getDatabase } from '../../db/index.js';
 import logger from '../../utils/logger.js';
 import type { PropertyConfig } from '../../config/properties.js';
@@ -186,10 +186,25 @@ export async function syncAirbnbMail(property: PropertyConfig): Promise<SyncMail
           continue;
         }
 
-        const { asInquiry, asReservation } = mapAirbnbReservation(parsed, airbnbListingId, defaultTimes, {
-          coHostShareRate: property.static?.coHostShareRate,
-          incomeTaxRate: property.static?.incomeTaxRate,
-        });
+        // #660: Storno-Mails sind absichtlich lax geparst und liefern bei
+        // fehlenden Datumsangaben nur einen Platzhalter (parseCancellation).
+        // Die bereits bekannte Inquiry (aus der ursprünglichen Buchungsmail)
+        // liefert dem Mapper die echten Daten, damit das Upsert sie nicht
+        // mit dem Platzhalter überschreibt — sonst findet
+        // getCancelledReservationIds() die Stornierung nie und das
+        // Google-Calendar-Event bleibt stehen (Fall Mjalli Florenz).
+        const existingInquiry = type === 'cancellation' ? getInquiryById(parsed.reservationCode) : null;
+
+        const { asInquiry, asReservation } = mapAirbnbReservation(
+          parsed,
+          airbnbListingId,
+          defaultTimes,
+          {
+            coHostShareRate: property.static?.coHostShareRate,
+            incomeTaxRate: property.static?.incomeTaxRate,
+          },
+          existingInquiry
+        );
 
         upsertInquiry.run(
           asInquiry.inquiry_id,
