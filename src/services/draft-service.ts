@@ -55,6 +55,10 @@ export interface DraftInput {
   // #695: true beim automatischen Neuversuch nach language_mismatch — fügt eine explizite
   // Korrektur-Anweisung an (Spec Punkt 3).
   languageRetry?: boolean;
+  // #697: mechanisch erkannte Airbnb-Buchungsanfrage (booking-request.ts) — wählt den
+  // Buchungsanfrage-Prompt-Block (Rückfrage statt normaler Antwort). Optional, damit
+  // bestehende Aufrufer/Tests ohne dieses Feld weiterlaufen (dann der normale Prompt).
+  isBookingRequest?: boolean;
 }
 export interface DraftDeps {
   call: typeof callClaudeTool;
@@ -122,6 +126,31 @@ function buildThreadFactsBlock(thread: Pick<MessageThread, 'channel' | 'reservat
   ].join('\n');
 }
 
+// #697 (Fall Anika Farmhouse, 20.09.2026): eigener Prompt-Block für Airbnb-Buchungsanfragen
+// (Inquiry/Request-to-Book) — die Antwort ist NUR eine Rückfrage, nie eine Zusage/Bestätigung.
+// Der frühere Vorfall: der Entwurf gab die interne Prüfbedingung "passt Zweck und Personenzahl"
+// wörtlich an den Gast weiter UND bestätigte direkt, statt gezielt nachzufragen. Bewusst OHNE
+// die konkreten Objektregeln (Limit, ausgeschlossene Event-Arten) hier zu duplizieren — die
+// stehen im OBJEKTWISSEN (Vault), der Block weist nur an, WIE damit umzugehen ist.
+function buildBookingRequestBlock(): string {
+  return [
+    '### BUCHUNGSANFRAGE — Sonderregeln für DIESE Antwort (haben Vorrang vor allgemeinen Regeln unten) ###',
+    'Diese Nachricht ist eine Airbnb-Buchungsanfrage (Inquiry oder Request-to-Book). Deine Antwort ist AUSSCHLIESSLICH ' +
+      'eine Rückfrage — KEINE Zusage, KEINE Bestätigung, KEIN Angebot, KEIN Preis, KEIN Hold. Die Entscheidung ' +
+      '(Annehmen/Ablehnen) trifft Micha ausschließlich in Airbnb, NACHDEM der Gast auf deine Rückfrage geantwortet hat.',
+    'Baue die Antwort so auf:',
+    '1. Kurzer Dank für die Anfrage.',
+    '2. Gezielte Rückfrage(n) zu dem, was aus dem bisherigen Verlauf noch NICHT hervorgeht: Anlass/Art des Events, ' +
+      'Personenzahl INKLUSIVE Tagesgästen, grober Ablauf (ruhige Runde oder Feier).',
+    '3. Nenne das Personenlimit und die laut OBJEKTWISSEN ausgeschlossenen Event-Arten (z. B. Hochzeiten, große ' +
+      'Feiern) als reinen FAKT — NIEMALS als interne Prüfbedingung wie "passt das für uns" oder "steht einer ' +
+      'Bestätigung nichts im Weg". Formuliere unsichere Punkte immer als Frage an den Gast, nie als Aussage über den ' +
+      'Ausgang der Prüfung.',
+    '4. Hinweis, dass die endgültige Bestätigung über Airbnb erfolgt.',
+    '### ENDE BUCHUNGSANFRAGE-REGELN ###',
+  ].join('\n');
+}
+
 // Exportiert (statt privat) für das Abnahme-Werkzeug src/scripts/dump-draft-prompt.ts (#440,
 // SmartTasks-Doc #20) — der Prompt-Dump MUSS exakt dieselbe Funktion verwenden wie der echte
 // Generierungspfad, sonst könnte das Abnahme-Tool unbemerkt vom tatsächlichen Prompt abweichen.
@@ -134,18 +163,23 @@ export function buildSystemPrompt(
   // language-detect.ts), damit bestehende Aufrufer ohne dieses Argument weiterlaufen.
   guestLanguage: SupportedLanguage = 'de',
   languageRetry = false,
+  // #697: siehe DraftInput.isBookingRequest.
+  isBookingRequest = false,
 ): string {
   const lines = [
     buildThreadFactsBlock(thread),
     // #695 (Fall Lorenzo U19, 20.09.2026): als eigene harte Zeile VOR Voice/Objektwissen, damit
     // sie nicht von den (meist deutschen) Voice-Beispielen überstimmt wird.
     `ANTWORTSPRACHE: ${LANGUAGE_LABEL[guestLanguage]}`,
+  ];
+  if (isBookingRequest) lines.push(buildBookingRequestBlock());
+  lines.push(
     'Du entwirfst eine Antwort auf eine Gastnachricht für eine Ferienunterkunft, in Michas Stimme.',
     'Halte dich strikt an den folgenden Ton/Stil (Voice):',
     '--- VOICE ---', voice, '--- ENDE VOICE ---',
     'Nutze ausschließlich die folgenden Objektfakten. Erfinde nichts; fehlt ein Fakt, bleib allgemein.',
     '--- OBJEKTWISSEN ---', facts, '--- ENDE OBJEKTWISSEN ---',
-  ];
+  );
   if (bookingContext) {
     lines.push(
       '--- BUCHUNGSKONTEXT (liegt der Plattform bereits vor) ---',
@@ -171,6 +205,12 @@ export function buildSystemPrompt(
     'Beginnt eine Nachricht mit Dank, enthält aber danach eine Frage oder ein Anliegen, ist das KEIN ' +
       'Grund für no_reply_needed=true — antworte auf die Frage/das Anliegen. Im Zweifel antworten ' +
       '(no_reply_needed=false).',
+    // #697: gilt für ALLE Kategorien, nicht nur Buchungsanfragen (Fall Anika: "passt Zweck und
+    // Personenzahl, steht einer Bestätigung nichts im Weg" ging wörtlich an den Gast raus).
+    'Interne Prüfbedingungen (z. B. ob etwas "passt", "genehmigt" oder "bestätigt" werden kann) ' +
+      'NIEMALS als Aussage oder Zusicherung an den Gast schreiben — formuliere sie stattdessen als ' +
+      'offene Rückfrage an den Gast (z. B. statt "die Personenzahl passt" → "wie viele Personen ' +
+      'wärt ihr insgesamt?").',
     'Gib die Antwort über das Tool submit_reply zurück: entweder reply (nur der Nachrichtentext, ' +
       'keine Anrede-Meta) mit no_reply_needed=false, oder no_reply_needed=true mit reason.'
   );
@@ -230,6 +270,7 @@ export async function generateDraftForThread(
         input.thread,
         input.guestLanguage ?? 'de',
         input.languageRetry ?? false,
+        input.isBookingRequest ?? false,
       ),
       userMessage: buildConversation(input.messages, input.thread.guest_name),
       tool: SUBMIT_REPLY_TOOL,

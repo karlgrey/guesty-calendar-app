@@ -114,8 +114,14 @@ export interface PropertyConfig {
   /** Auto-Send-Modus dieses Objekts; effektiv gilt der restriktivere Wert gegenüber AUTO_SEND_MODE */
   autoSend?: 'off' | 'shadow' | 'live';
   /** SmartTasks-Projekt-Id des Betriebs-Projekts dieses Objekts (#696, Zusagen-Task bei
-   *  promises_action). Ohne Wert wird kein Zusagen-Task angelegt (siehe promise-task-service.ts). */
+   *  promises_action). Ohne Wert legt promise-task-service.ts den Task trotzdem an, nur ohne
+   *  Projekt-Zuordnung (Kommentar korrigiert im #697-Review — der Code prüft das nicht ab). */
   smartTasksProjectId?: number;
+  /** SmartTasks-Projekt-Id des Airbnb-Projekts dieses Objekts (#697, Buchungsanfrage-Task) —
+   *  eigenes Projekt je Objekt, getrennt vom allgemeinen Betriebs-Projekt oben (FH → 37, U19 → 36,
+   *  BH → 34, AS → 35). Ohne Wert legt booking-request-task-service.ts den Task ebenfalls ohne
+   *  Projekt-Zuordnung an. */
+  smartTasksAirbnbProjectId?: number;
   timezone: string;
   currency: string;
   bookingRecipientEmail: string;
@@ -231,6 +237,7 @@ const propertyConfigSchema = z.object({
   vaultNote: z.string().optional(),
   autoSend: z.enum(['off', 'shadow', 'live']).optional(),
   smartTasksProjectId: z.number().int().positive().optional(),
+  smartTasksAirbnbProjectId: z.number().int().positive().optional(),
   timezone: z.string().default('Europe/Berlin'),
   currency: z.string().length(3).toUpperCase().default('EUR'),
   bookingRecipientEmail: z.string().email(),

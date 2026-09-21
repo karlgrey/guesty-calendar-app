@@ -61,3 +61,32 @@ export function buildBookingContext(thread: MessageThread): string | null {
 
   return null;
 }
+
+/**
+ * Kompaktes Zeitraum/Personen-Paar für die Buchungsanfrage-Task-Anlage (#697, booking-request-
+ * task-service.ts — Titelformat "Airbnb-Anfrage <Vorname>: <Objekt> <Zeitraum>, <Personen> P.").
+ * Dieselben reservation_id/inquiry_id-Lookups wie buildBookingContext, aber strukturiert statt
+ * Prosa. null-Felder, wenn der Thread nicht verlinkt ist oder das jeweilige Feld nicht bekannt
+ * ist — der Aufrufer lässt das dann im Titel einfach weg (Spec: "sonst weglassen").
+ */
+export function resolveBookingPeriod(thread: MessageThread): { periodLabel: string | null; guestsCount: number | null } {
+  if (thread.reservation_id) {
+    const res = getReservationById(thread.reservation_id);
+    if (res) {
+      const periodLabel = res.check_in_localized && res.check_out_localized
+        ? `${deDate(res.check_in_localized)}–${deDate(res.check_out_localized)}`
+        : null;
+      return { periodLabel, guestsCount: res.guests_count ?? null };
+    }
+  }
+  if (thread.inquiry_id) {
+    const inquiry = getInquiryById(thread.inquiry_id);
+    if (inquiry) {
+      return {
+        periodLabel: `${deDate(inquiry.check_in)}–${deDate(inquiry.check_out)}`,
+        guestsCount: inquiry.guests_count ?? null,
+      };
+    }
+  }
+  return { periodLabel: null, guestsCount: null };
+}

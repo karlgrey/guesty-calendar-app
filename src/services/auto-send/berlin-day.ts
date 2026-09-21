@@ -36,3 +36,30 @@ export function nextBerlinBusinessDay(now: Date = new Date()): string {
   } while (d.getUTCDay() === 0 || d.getUTCDay() === 6);
   return d.toISOString().slice(0, 10);
 }
+
+const WEEKDAY_DE = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+
+/**
+ * "Mo 22:35" — Berliner Wochentag + Uhrzeit eines ISO-Zeitpunkts, für Reason-Text/Task-
+ * Beschreibung der Airbnb-24h-Frist einer Buchungsanfrage (#697). Wochentag wird aus dem in
+ * Berlin abgelesenen Kalendertag bestimmt (Y/M/D als UTC-Datum interpretiert — Wochentag hängt
+ * nur vom Kalendertag ab, nicht von der Uhrzeit/DST).
+ */
+export function formatBerlinDeadline(iso: string): string {
+  const at = new Date(iso);
+  const p = Object.fromEntries(berlinDateFmt.formatToParts(at).map((x) => [x.type, x.value]));
+  const weekday = WEEKDAY_DE[new Date(Date.UTC(+p.year, +p.month - 1, +p.day)).getUTCDay()];
+  return `${weekday} ${p.hour}:${p.minute}`;
+}
+
+/**
+ * "YYYY-MM-DD" Kalendertag in Europe/Berlin eines ISO-Zeitpunkts (SmartTasks-`dueDate`-Format) —
+ * für die Buchungsanfrage-Frist (#697). Bewusst OHNE Werktags-Verschiebung
+ * (anders als nextBerlinBusinessDay): die Airbnb-24h-Frist gilt real auch am Wochenende — eine
+ * bewusste Ausnahme von der sonstigen Werktags-Due-Date-Regel (im Task-Text kenntlich zu machen).
+ */
+export function berlinCalendarDay(iso: string): string {
+  const at = new Date(iso);
+  const p = Object.fromEntries(berlinDateFmt.formatToParts(at).map((x) => [x.type, x.value]));
+  return `${p.year}-${p.month}-${p.day}`;
+}

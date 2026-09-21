@@ -326,8 +326,17 @@ router.get('/drafts/awaiting', (req, res) => {
         reason: r.reason, createdAt: sqliteToIso(r.created_at),
         adminUrl: `${config.baseUrl.replace(/\/$/, '')}/admin/messages/${encodeURIComponent(r.thread_id)}`,
         // #696: Zusagen-Task, wenn dieser Entwurf einen SmartTasks-Task trackt (z. B. ein
-        // hängender Auto-Send, dessen Zusage bereits nachgehalten wird).
+        // hängender Auto-Send, dessen Zusage bereits nachgehalten wird) — dieselbe Spalte trägt
+        // seit #697 auch den Buchungsanfrage-Task.
         smartTasksTaskId: r.smarttasks_task_id ?? null,
+        // #697: Buchungsanfrage-Felder — platformDeadlineAt ist bereits ein ISO-8601-UTC-String
+        // (siehe booking-request.ts), keine sqliteToIso-Normalisierung nötig (anders als
+        // createdAt, das aus SQLite datetime('now') kommt).
+        platformDeadlineAt: r.platform_deadline_at ?? null,
+        requestKind: r.request_kind ?? null,
+        category: r.auto_category ?? null,
+        autoDecision: r.auto_decision ?? null,
+        autoMode: r.auto_mode ?? null,
       })),
     });
   } catch (err) { handleError(res, err); }

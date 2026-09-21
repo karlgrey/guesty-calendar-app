@@ -6,14 +6,17 @@ import { judgeDraft, type JudgeInput } from './judge-service.js';
 import { runMechanicalChecks, collectDigitRuns } from './mechanical-checks.js';
 import { decide, wouldAutoWithPromiseTask, type PolicyInput } from './policy.js';
 import { resolveAutoSendMode } from './mode.js';
-import { startOfBerlinDayIso } from './berlin-day.js';
+import { startOfBerlinDayIso, formatBerlinDeadline } from './berlin-day.js';
 import type { AutoSendDecision, AutoSendMode, JudgeResult } from './types.js';
 import type { SupportedLanguage } from '../../utils/language-detect.js';
-import { setAutoDecision, threadHasHumanIntervention, threadHasFailedSend, countAutoSentSince, claimDraftForSending } from '../../repositories/draft-repository.js';
+import { setAutoDecision, threadHasHumanIntervention, threadHasFailedSend, countAutoSentSince, claimDraftForSending, setBookingRequestContext } from '../../repositories/draft-repository.js';
 import { getSchedulerState } from '../../repositories/scheduler-state-repository.js';
 import { resolveOutboundModuleType } from '../guesty-channel.js';
 import { sendClaimedDraft } from '../draft-send-service.js';
 import { resolvePromiseTask, type PromiseTaskInput, type PromiseTaskResult } from '../promise-task-service.js';
+import { detectBookingRequestContext } from '../booking-request.js';
+import { resolveBookingRequestTask, type BookingRequestTaskInput, type BookingRequestTaskResult } from '../booking-request-task-service.js';
+import { resolveBookingPeriod } from '../booking-context.js';
 import logger from '../../utils/logger.js';
 
 export const PAUSE_KEY = 'auto_send_paused';
@@ -43,6 +46,13 @@ export interface GateDeps {
   // #696: Zusagen-Task — nur aufgerufen, wenn der Entwurf sonst automatisch ginge
   // (wouldAutoWithPromiseTask), siehe unten.
   resolvePromiseTask: (i: PromiseTaskInput) => Promise<PromiseTaskResult>;
+  // #697: Buchungsanfrage-Task — anders als resolvePromiseTask IMMER aufgerufen, sobald ein
+  // Guesty-System-Post erkannt wurde (unabhängig davon, ob der Entwurf sonst automatisch ginge).
+  resolveBookingRequestTask: (i: BookingRequestTaskInput) => Promise<BookingRequestTaskResult>;
+  // #697: strukturiertes Zeitraum/Personen-Paar für den Task-Titel (booking-context.ts).
+  resolveBookingPeriod: (thread: MessageThread) => { periodLabel: string | null; guestsCount: number | null };
+  // #697: persistiert request_kind/platform_deadline_at am Draft — unabhängig vom Gate-Ergebnis.
+  persistBookingRequest: (draftId: string, requestKind: 'inquiry' | 'request_to_book', platformDeadlineAt: string) => void;
 }
 export function realGateDeps(): GateDeps {
   return {
@@ -57,6 +67,9 @@ export function realGateDeps(): GateDeps {
     claim: claimDraftForSending,
     send: (id, thread, body, sentBy) => sendClaimedDraft(id, thread, body, sentBy),
     resolvePromiseTask: (i) => resolvePromiseTask(i),
+    resolveBookingRequestTask: (i) => resolveBookingRequestTask(i),
+    resolveBookingPeriod: (thread) => resolveBookingPeriod(thread),
+    persistBookingRequest: setBookingRequestContext,
   };
 }
 
@@ -103,38 +116,73 @@ export async function runAutoSendGate(input: GateInput, deps: GateDeps = realGat
   let decision: AutoSendDecision;
   try {
     const guestMessages = guestMessagesSinceLastHost(input.messages);
+    // #697: mechanische Buchungsanfrage-Erkennung (Guesty-System-Post NACH der letzten
+    // Gastnachricht) — pure, unabhängig vom Judge-Modell. Läuft VOR dem Judge-Aufruf, damit
+    // Task-Anlage + Fristpersistenz unten unabhängig vom Judge-Ausgang passieren können.
+    const bookingRequest = detectBookingRequestContext(input.messages);
+
     const judge = await deps.judge({
       guestMessages, draft: input.body, voice: input.voice, facts: input.facts,
       bookingContext: input.bookingContext, guestName: input.thread.guest_name,
       guestLanguage: input.guestLanguage,
     });
+    // Kategorie-Override: ein erkannter System-Post erzwingt 'buchungsanfrage' — unabhängig
+    // davon, was (oder ob überhaupt) der Judge klassifiziert hat (Spec: "der Judge darf sie
+    // zusätzlich erkennen", nicht muss). Bei technisch fehlgeschlagenem Judge bleibt die
+    // Kategorie null (decide() meldet ohnehin 'Prüfung technisch fehlgeschlagen') — der Task
+    // wird trotzdem unten angelegt, Micha braucht ihn unabhängig vom Judge-Ausfall.
+    const effectiveJudge: JudgeResult =
+      bookingRequest && judge.kind === 'verdict' && judge.verdict.category !== 'buchungsanfrage'
+        ? { kind: 'verdict', verdict: { ...judge.verdict, category: 'buchungsanfrage' } }
+        : judge;
+    const isBookingRequest = !!bookingRequest || (judge.kind === 'verdict' && judge.verdict.category === 'buchungsanfrage');
+
     const mechanical = runMechanicalChecks(input.body, {
       knownDigitRuns: collectDigitRuns([...guestMessages, input.bookingContext ?? '']),
       guestLanguage: input.guestLanguage,
+      isBookingRequest,
     });
-    const baseInput: Omit<PolicyInput, 'promiseTask'> = {
-      mode, paused: deps.isPaused(), judge, mechanical,
+    const baseInput: Omit<PolicyInput, 'promiseTask' | 'bookingTask'> = {
+      mode, paused: deps.isPaused(), judge: effectiveJudge, mechanical,
       threadHasHumanIntervention: deps.hasHumanIntervention(input.thread.id),
       threadHasFailedSend: deps.hasFailedSend(input.thread.id),
       autoSentToday: deps.countAutoSentSince(startOfBerlinDayIso()),
       dailyCap: deps.dailyCap,
       canSend: deps.canSend(input.thread, input.messages),
     };
+    const guestMessageId = lastInboundMessageId(input.messages);
+    const lastGuestMessage = guestMessages[guestMessages.length - 1] ?? '';
+
+    // #697: Buchungsanfrage-Task — IMMER versucht, sobald ein System-Post mechanisch erkannt
+    // wurde (nicht nur, wenn der Entwurf sonst automatisch ginge — anders als #696, Micha
+    // braucht den Task auch bei 'wait'). Frist wird unabhängig vom Gate-Ergebnis persistiert.
+    let bookingTask: PolicyInput['bookingTask'] = null;
+    if (bookingRequest) {
+      deps.persistBookingRequest(input.draftId, bookingRequest.requestKind, bookingRequest.platformDeadlineAt);
+      const { periodLabel, guestsCount } = deps.resolveBookingPeriod(input.thread);
+      const result = await deps.resolveBookingRequestTask({
+        draftId: input.draftId, threadId: input.thread.id, systemMessageId: bookingRequest.systemMessageId,
+        requestKind: bookingRequest.requestKind, platformDeadlineAt: bookingRequest.platformDeadlineAt,
+        guestName: input.thread.guest_name, guestMessage: lastGuestMessage, draftBody: input.body,
+        periodLabel, guestsCount, property: input.property, mode,
+      });
+      bookingTask = { created: result.created, taskNumber: result.taskNumber, deadlineLabel: formatBerlinDeadline(bookingRequest.platformDeadlineAt) };
+    }
+
     // #696: Zusagen-Task — die (async) SmartTasks-Anlage lohnt sich nur, wenn der Entwurf
     // SONST automatisch ginge (alle anderen Gates schon grün). wouldAutoWithPromiseTask ist
     // pure (kein I/O) und prüft genau das vorab, bevor überhaupt ein API-Aufruf passiert.
+    // Kategorie 'buchungsanfrage' läuft ohnehin nie in diese Fastlane (eigener Policy-Zweig).
     let promiseTask: PolicyInput['promiseTask'] = null;
-    if (judge.kind === 'verdict' && judge.verdict.promisedAction && wouldAutoWithPromiseTask(baseInput)) {
-      const guestMessageId = lastInboundMessageId(input.messages);
-      const lastGuestMessage = guestMessages[guestMessages.length - 1] ?? '';
+    if (effectiveJudge.kind === 'verdict' && effectiveJudge.verdict.promisedAction && wouldAutoWithPromiseTask(baseInput)) {
       const result = await deps.resolvePromiseTask({
         draftId: input.draftId, threadId: input.thread.id, guestMessageId,
         guestName: input.thread.guest_name, guestMessage: lastGuestMessage, draftBody: input.body,
-        promisedAction: judge.verdict.promisedAction, property: input.property, mode,
+        promisedAction: effectiveJudge.verdict.promisedAction, property: input.property, mode,
       });
       promiseTask = { created: result.created, taskNumber: result.taskNumber };
     }
-    decision = decide({ ...baseInput, promiseTask });
+    decision = decide({ ...baseInput, promiseTask, bookingTask });
   } catch (err) {
     // Spec 8: Prüfmodell/Deps fehlerhaft → wait statt Exception, sonst bleibt
     // auto_decision NULL (kein Push, kein Ampel-Grund).

@@ -67,6 +67,14 @@ vi.mock('../repositories/draft-repository.js', () => ({
     id: 'd1', thread_id: 'hostex:a', provider: 'hostex', status: 'pending', created_at: '2026-09-19 12:00:00',
     reason: 'Kategorie Sonderwunsch — nie automatisch', guest_name: 'Anna', listing_id: 'L1', source: 'hostex',
     last_guest_message: 'Könnten wir schon um 11 Uhr rein? Wir sind früh da.\nDanke!',
+  }, {
+    // #697: Buchungsanfrage-Draft (Fall Anika) — auto_decision='auto', live gesendet, mit Frist.
+    id: 'd2', thread_id: 'guesty:b', provider: 'guesty', status: 'sent', created_at: '2026-09-21 20:35:10',
+    reason: 'Rückfrage automatisch gesendet — Entscheidung in Airbnb nach Gast-Antwort',
+    guest_name: 'Anika', listing_id: 'L1', source: 'guesty',
+    last_guest_message: 'Ich würde gern für ein Event buchen.',
+    smarttasks_task_id: 701, request_kind: 'request_to_book', platform_deadline_at: '2026-09-22T20:35:04.000Z',
+    auto_category: 'buchungsanfrage', auto_decision: 'auto', auto_mode: 'live',
   }]),
   getAutoSendStats: vi.fn().mockReturnValue({ autoSent: 2, waited: 3, shadowWouldAuto: 10, shadowUnchanged: 9, shadowChanged: 1, shadowDiscarded: 0 }),
 }));
@@ -356,6 +364,20 @@ describe('agent-api', () => {
       expect(body.drafts[0].guestMessageExcerpt).toBe('Könnten wir schon um 11 Uhr rein? Wir sind früh da.');
       expect(body.drafts[0].adminUrl).toMatch(/\/admin\/messages\/hostex%3Aa$/);
       expect(body.drafts[0].createdAt).toBe('2026-09-19T12:00:00.000Z');
+      // #697: neue Felder auf einem "normalen" Draft ohne Buchungsanfrage sind null.
+      expect(body.drafts[0]).toMatchObject({ platformDeadlineAt: null, requestKind: null, category: null, autoDecision: null, autoMode: null });
+    });
+
+    it('#697: Buchungsanfrage-Draft liefert requestKind/platformDeadlineAt/category/autoDecision/autoMode + smartTasksTaskId', async () => {
+      const res = await fetch(`${base}/api/agent/drafts/awaiting?since=2026-09-19T00:00:00Z`, { headers: KEY });
+      const body = await res.json();
+      const d2 = body.drafts.find((d: any) => d.draftId === 'd2');
+      expect(d2).toMatchObject({
+        threadId: 'guesty:b', guestName: 'Anika',
+        reason: 'Rückfrage automatisch gesendet — Entscheidung in Airbnb nach Gast-Antwort',
+        smartTasksTaskId: 701, requestKind: 'request_to_book', category: 'buchungsanfrage',
+        autoDecision: 'auto', autoMode: 'live', platformDeadlineAt: '2026-09-22T20:35:04.000Z',
+      });
     });
 
     it('400 bei ungültigem since', async () => {

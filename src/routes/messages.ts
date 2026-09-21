@@ -16,6 +16,7 @@ import { getPropertyForThread, propertyForBadge } from '../utils/thread-property
 import { loadVoice, loadPropertyFacts } from '../services/vault-knowledge.js';
 import { generateDraftForThread, DRAFT_MODEL } from '../services/draft-service.js';
 import { buildBookingContext } from '../services/booking-context.js';
+import { detectBookingRequestContext } from '../services/booking-request.js';
 import { sendClaimedDraft } from '../services/draft-send-service.js';
 import { resolveOutboundModuleType } from '../services/guesty-channel.js';
 import { getHostexClient, type HostexConversationDetail } from '../services/hostex-client.js';
@@ -28,7 +29,7 @@ import { renderAdminPage } from './admin-layout.js';
 import { createFeedback, createSuggestion, countPendingSuggestions } from '../repositories/feedback-repository.js';
 import { generateSuggestion } from '../services/suggestion-service.js';
 import { PAUSE_KEY } from '../services/auto-send/runner.js';
-import { startOfBerlinDayIso } from '../services/auto-send/berlin-day.js';
+import { startOfBerlinDayIso, formatBerlinDeadline } from '../services/auto-send/berlin-day.js';
 import { config } from '../config/index.js';
 import type { MessageDraft } from '../types/messages.js';
 
@@ -64,10 +65,13 @@ function fmtTime(iso: string | null | undefined): string {
   return s.length >= 16 ? s.slice(11, 16) : s;
 }
 
-// #696: Task-Kürzel für den Zusagen-Task, wenn einer getrackt wird — als Anhängsel an die
-// Erfolgs-Badges (die den vollen auto_reason-Text sonst nicht zeigen, siehe unten).
+// #696/#697: Task-Kürzel für Zusagen- ODER Buchungsanfrage-Task, wenn einer getrackt wird — als
+// Anhängsel an die Erfolgs-Badges (die den vollen auto_reason-Text sonst nicht zeigen, siehe
+// unten). #697 hängt zusätzlich die Airbnb-24h-Frist an (Berlin-Zeit), wenn gesetzt.
 function taskSuffix(draft: MessageDraft): string {
-  return draft.smarttasks_task_id ? ` · Task #${draft.smarttasks_task_id}` : '';
+  const task = draft.smarttasks_task_id ? ` · Task #${draft.smarttasks_task_id}` : '';
+  const deadline = draft.platform_deadline_at ? ` · Frist ${formatBerlinDeadline(draft.platform_deadline_at)}` : '';
+  return `${task}${deadline}`;
 }
 
 // Auto-Send-Gate-Ampel für Liste/Thread-Ansicht — rein (nur esc/fmtTime), keine
@@ -515,9 +519,15 @@ router.post('/:threadId/regenerate', async (req, res, next) => {
     const facts = property?.vaultNote ? loadPropertyFacts(property.vaultNote) : null;
     if (!voice || !facts) { res.status(400).send('Kein Vault-Wissen verfügbar (VAULT_PATH/vaultNote prüfen)'); return; }
 
+    const messages = getMessagesByThread(thread.id);
     const result = await generateDraftForThread({
-      thread, messages: getMessagesByThread(thread.id), voice, facts,
+      thread, messages, voice, facts,
       bookingContext: buildBookingContext(thread),
+      // #697: manuelles Neu-Generieren bekommt denselben Buchungsanfrage-Prompt wie der
+      // automatische Pfad — sonst würde ein manueller Regenerate für eine Buchungsanfrage
+      // fälschlich den normalen Antwort-Prompt bekommen. Task-Anlage/Frist laufen hier NICHT
+      // (kein Gate-Aufruf auf diesem Pfad, wie bisher — Micha prüft den Entwurf ohnehin von Hand).
+      isBookingRequest: detectBookingRequestContext(messages) !== null,
     });
     let redirectSuffix = '';
     if (result.kind === 'text') {

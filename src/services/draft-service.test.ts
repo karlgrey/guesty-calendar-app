@@ -96,6 +96,39 @@ describe('generateDraftForThread', () => {
     const out = await generateDraftForThread({ thread: thread(), messages, voice: 'v', facts: 'f' }, { call });
     expect(out).toEqual({ kind: 'failed', error: 'claude down' });
   });
+
+  // #697: interne Prüfbedingungen dürfen NIE als Aussage an den Gast gehen — gilt für ALLE
+  // Kategorien, nicht nur Buchungsanfragen (Fall Anika: "passt Zweck und Personenzahl" ging
+  // wörtlich raus).
+  it('states the internal-rule-leak instruction in the system prompt, regardless of isBookingRequest', async () => {
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'x' });
+    await generateDraftForThread({ thread: thread(), messages, voice: 'v', facts: 'f' }, { call });
+    const prompt = call.mock.calls[0][0].systemPrompt;
+    expect(prompt).toContain('Interne Prüfbedingungen');
+    expect(prompt).toContain('NIEMALS als Aussage');
+  });
+});
+
+// #697 (Fall Anika Farmhouse): eigener Prompt-Block für Airbnb-Buchungsanfragen.
+describe('generateDraftForThread — Buchungsanfrage-Block (#697)', () => {
+  it('isBookingRequest=true fügt den Buchungsanfrage-Block VOR Voice/Objektwissen ein', async () => {
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'x' });
+    await generateDraftForThread({ thread: thread(), messages, voice: 'v', facts: 'f', bookingContext: null, isBookingRequest: true }, { call });
+    const prompt = call.mock.calls[0][0].systemPrompt;
+    expect(prompt).toContain('BUCHUNGSANFRAGE — Sonderregeln');
+    expect(prompt).toContain('AUSSCHLIESSLICH');
+    expect(prompt).toContain('eine Rückfrage');
+    expect(prompt).toContain('KEINE Zusage');
+    expect(prompt).toContain('Personenzahl INKLUSIVE Tagesgästen');
+    expect(prompt.indexOf('BUCHUNGSANFRAGE')).toBeLessThan(prompt.indexOf('--- VOICE ---'));
+  });
+
+  it('ohne isBookingRequest (default) fehlt der Block', async () => {
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'x' });
+    await generateDraftForThread({ thread: thread(), messages, voice: 'v', facts: 'f' }, { call });
+    const prompt = call.mock.calls[0][0].systemPrompt;
+    expect(prompt).not.toContain('BUCHUNGSANFRAGE — Sonderregeln');
+  });
 });
 
 describe('generateDraftForThread — Anrede nach Signatur der letzten Gastnachricht (#384)', () => {

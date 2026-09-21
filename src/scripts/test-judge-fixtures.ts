@@ -3,7 +3,7 @@
 // Aufruf: npm run test:judge — Pflicht vor jeder Änderung an judge-prompt.ts.
 import { readFileSync } from 'node:fs';
 import { judgeDraft } from '../services/auto-send/judge-service.js';
-import { decide, wouldAutoWithPromiseTask } from '../services/auto-send/policy.js';
+import { decide, wouldAutoWithPromiseTask, wouldAutoWithBookingTask } from '../services/auto-send/policy.js';
 import type { SupportedLanguage } from '../utils/language-detect.js';
 
 // #695: dieses Skript testet NUR die Judge-Schicht (Live-Aufruf gegen das Prüfmodell) — es
@@ -12,9 +12,13 @@ import type { SupportedLanguage } from '../utils/language-detect.js';
 // mechanical-checks.test.ts, runner.test.ts und generate-drafts.test.ts abgedeckt). Optionales
 // `guestLanguage` je Fixture testet, dass der neue Judge-Kontext-Fakt (Spec Punkt 1) korrekt
 // durchgereicht wird, ohne dass ein sprachlich passender Entwurf fälschlich als riskant gilt.
+// #697: optionales `bookingContext` je Fixture spiegelt den BUCHUNGSKONTEXT-Block, den echte
+// Buchungsanfragen im Judge-Prompt bekommen (booking-context.ts) — die mechanische
+// System-Post-Erkennung (booking-request.ts) selbst läuft NICHT über dieses Skript (reiner
+// Judge+Policy-Test, kein I/O), sondern ist in booking-request.test.ts/runner.test.ts abgedeckt.
 interface Case {
   name: string; guestMessages: string[]; draft: string; facts?: string; guestName?: string | null;
-  guestLanguage?: SupportedLanguage;
+  guestLanguage?: SupportedLanguage; bookingContext?: string;
   expected: {
     category: string; auto: boolean;
     // #696: optional — nur für Fälle mit Zusage gesetzt (Fixture "Lorenzo").
@@ -26,7 +30,7 @@ let failed = 0;
 for (const c of cases) {
   const r = await judgeDraft({
     guestMessages: c.guestMessages, draft: c.draft, voice: 'Du, locker, herzlich, kurz.',
-    facts: c.facts ?? '(keine Fakten)', bookingContext: null, guestName: c.guestName ?? null,
+    facts: c.facts ?? '(keine Fakten)', bookingContext: c.bookingContext ?? null, guestName: c.guestName ?? null,
     guestLanguage: c.guestLanguage,
   });
   if (r.kind !== 'verdict') { console.log(`✗ ${c.name}: technisch fehlgeschlagen (${r.error})`); failed++; continue; }
@@ -35,8 +39,9 @@ for (const c of cases) {
   const d = decide({ ...baseInput, promiseTask: null });
   // #696: ein Zusagen-Fall (promises_action allein) geht bei decide() nur "auto", wenn ein
   // Task bereits angelegt wurde — den simuliert hier niemand, deshalb zusätzlich über
-  // wouldAutoWithPromiseTask prüfen, ob er es WÜRDE (kein SmartTasks-Aufruf nötig).
-  const wouldAuto = d.decision === 'auto' || wouldAutoWithPromiseTask(baseInput);
+  // wouldAutoWithPromiseTask prüfen, ob er es WÜRDE (kein SmartTasks-Aufruf nötig). #697:
+  // spiegelbildlich für die Buchungsanfrage-Task-Anlage (wouldAutoWithBookingTask).
+  const wouldAuto = d.decision === 'auto' || wouldAutoWithPromiseTask(baseInput) || wouldAutoWithBookingTask(baseInput);
   let ok = v.category === c.expected.category && wouldAuto === c.expected.auto;
   if (c.expected.riskFlags) {
     ok = ok && JSON.stringify([...v.riskFlags].sort()) === JSON.stringify([...c.expected.riskFlags].sort());
