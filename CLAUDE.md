@@ -444,6 +444,18 @@ Copy-Paste kann ein sicherer Entwurf automatisch rausgehen. Spec:
 - **Testfixtures:** `npm run test:judge` (`src/scripts/test-judge-fixtures.ts`, Live-Lauf
   gegen `JUDGE_MODEL`, 11 Fälle in `src/test-fixtures/judge/cases.json`) — **Pflicht vor
   jeder Prompt-Änderung** an `judge-prompt.ts` (aktuell 11/11 grün).
+- **Sprach-Pin (#695, 21.09.2026):** `src/utils/language-detect.ts` erkennt die Sprache der
+  letzten Gastnachricht deterministisch (Stopwort-Heuristik DE/EN/IT/ES/FR, Fallback Deutsch;
+  franc/tinyld scheiterten an Kurztexten wie „Danke, alles super!"). Die Sprache geht als harte
+  Zeile `ANTWORTSPRACHE: <Sprache>` in den Entwurfs-Systemprompt (`draft-service.ts`, vor
+  Voice/Objektwissen), als Fakt in den Judge-Kontext (`judge-service.ts`) und in die mechanischen
+  Checks (`mechanical-checks.ts`, Flag `language_mismatch` = Sprache des Entwurfs ≠ Gast-Sprache).
+  Fällt das Gate mit `language_mismatch` (Judge oder `mech:`) auf `wait`, generiert
+  `generate-drafts.ts` GENAU EINEN Neuversuch mit expliziter Korrektur-Anweisung, überschreibt den
+  Body desselben Draft-Datensatzes und lässt das Gate mit `attempt: 2` erneut laufen — der
+  persistierte `auto_reason` trägt dann den Präfix „Neuversuch: “ (nur die letzte Entscheidung
+  steht in der DB, beide im Log). `no_reply`/`failed` beim Neuversuch → erste wait-Entscheidung
+  bleibt. Fixture „lorenzo dank en" in `cases.json` (Feld `guestLanguage`).
 - **Env-Variablen:** `AUTO_SEND_MODE` (`off`|`shadow`|`live`, Default `off`),
   `AUTO_SEND_DAILY_CAP` (Default 10), `MESSAGE_LOOP_MINUTES` (Default 5), `JUDGE_MODEL`
   (Default `claude-opus-5`), `GUESTY_WEBHOOK_SECRET` (aus `npm run webhook:register`).
