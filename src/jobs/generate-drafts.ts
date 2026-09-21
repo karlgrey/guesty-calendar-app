@@ -1,13 +1,39 @@
 import { randomUUID } from 'node:crypto';
 import { getThreadsNeedingDraft, getMessagesByThread, markThreadAiNoReply } from '../repositories/message-repository.js';
-import { createDraft } from '../repositories/draft-repository.js';
+import { createDraft, updateDraftBody } from '../repositories/draft-repository.js';
 import { loadVoice, loadPropertyFacts } from '../services/vault-knowledge.js';
 import { generateDraftForThread, DRAFT_MODEL, type DraftResult } from '../services/draft-service.js';
 import { buildBookingContext } from '../services/booking-context.js';
 import { runAutoSendGate, type GateInput } from '../services/auto-send/runner.js';
+import type { AutoSendDecision, AutoSendMode } from '../services/auto-send/types.js';
+import { detectLanguage, type SupportedLanguage } from '../utils/language-detect.js';
 import type { MessageThread, Message, NewDraft } from '../types/messages.js';
 import type { PropertyConfig } from '../config/properties.js';
 import logger from '../utils/logger.js';
+
+// #695: Sprach-Pin — die deterministisch erkannte Sprache der letzten Gastnachricht (nicht die
+// erste, nicht die aller Nachrichten) entscheidet über die ANTWORTSPRACHE. Threads, die hier
+// generiert werden, haben laut deps.getThreads() immer eine letzte Nachricht mit direction
+// 'inbound' — daher genügt die letzte inbound-Nachricht in `messages`.
+function lastInboundBody(messages: Message[]): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].direction === 'inbound') return messages[i].body;
+  }
+  return '';
+}
+
+type GateResult = { decision: AutoSendDecision; mode: AutoSendMode; sent: boolean };
+
+/**
+ * #695 Spec Punkt 2: language_mismatch kann vom mechanischen Check ODER vom Prüfmodell kommen.
+ * Defensiv gegen ein unvollständiges/leeres Gate-Ergebnis (z. B. Mode 'off' oder ein Gate-Mock
+ * ohne decision-Feld) — soll nie werfen, nur „kein Neuversuch" signalisieren.
+ */
+function isLanguageMismatchWait(gateResult: GateResult | undefined): boolean {
+  if (!gateResult?.decision || gateResult.decision.decision !== 'wait') return false;
+  const flags = gateResult.decision.flags ?? [];
+  return flags.includes('language_mismatch') || flags.includes('mech:language_mismatch');
+}
 
 export const DRAFT_GEN_CAP = 10;
 // Only draft threads whose last guest message is newer than this — stale threads
@@ -36,13 +62,21 @@ export interface DraftGenDeps {
   getMessages: (threadId: string) => Message[];
   loadVoice: () => string | null;
   loadFacts: (vaultNote: string) => string | null;
-  generate: (input: { thread: MessageThread; messages: Message[]; voice: string; facts: string; bookingContext: string | null }) => Promise<DraftResult>;
+  generate: (input: {
+    thread: MessageThread; messages: Message[]; voice: string; facts: string; bookingContext: string | null;
+    // #695: Sprach-Pin — Fakt statt Prosa-Regel im Prompt (Spec Punkt 1) + Flag für den
+    // Neuversuch-Prompt-Zusatz (Spec Punkt 3).
+    guestLanguage?: SupportedLanguage; languageRetry?: boolean;
+  }) => Promise<DraftResult>;
   create: (d: NewDraft) => void;
   markNoReply: (threadId: string) => void;
   // #364: what the platform already knows about this thread's booking
   // (reservation/inquiry link) — see booking-context.ts.
   buildBookingContext: (thread: MessageThread) => string | null;
-  gate: (i: GateInput) => Promise<unknown>;
+  gate: (i: GateInput) => Promise<GateResult>;
+  // #695: Body-Update für den einen automatischen Neuversuch — derselbe Draft-Datensatz wird
+  // überschrieben statt einen zweiten anzulegen.
+  updateDraftBody: (id: string, body: string) => void;
 }
 
 const realDeps: DraftGenDeps = {
@@ -55,6 +89,7 @@ const realDeps: DraftGenDeps = {
   markNoReply: markThreadAiNoReply,
   buildBookingContext,
   gate: (i) => runAutoSendGate(i),
+  updateDraftBody,
 };
 
 export async function generateDraftsForProperty(
@@ -82,13 +117,32 @@ export async function generateDraftsForProperty(
     try {
       const bookingContext = deps.buildBookingContext(thread);
       const messages = deps.getMessages(thread.id);
-      const result = await deps.generate({ thread, messages, voice, facts, bookingContext });
+      // #695: deterministisch erkannte Sprache der letzten Gastnachricht — als Fakt in den
+      // Entwurfs-Prompt UND (weiter unten) in den Judge-Kontext, statt einer Prosa-Regel, die
+      // von den (meist deutschen) Voice-Beispielen überstimmt werden kann.
+      const guestLanguage = detectLanguage(lastInboundBody(messages));
+      const result = await deps.generate({ thread, messages, voice, facts, bookingContext, guestLanguage });
       if (result.kind === 'text') {
         const draftId = randomUUID();
         deps.create({ id: draftId, thread_id: thread.id, provider: target.source, body: result.body, generated_by: 'llm', model: DRAFT_MODEL });
         generated++;
         try {
-          await deps.gate({ draftId, body: result.body, thread, messages, voice, facts, bookingContext, property });
+          const gateResult = await deps.gate({ draftId, body: result.body, thread, messages, voice, facts, bookingContext, property, guestLanguage });
+          if (isLanguageMismatchWait(gateResult)) {
+            // #695 Spec Punkt 3: genau EIN automatischer Neuversuch mit expliziter Korrektur-
+            // Anweisung — derselbe Draft-Datensatz wird überschrieben, nicht neu angelegt.
+            const retryResult = await deps.generate({ thread, messages, voice, facts, bookingContext, guestLanguage, languageRetry: true });
+            if (retryResult.kind === 'text') {
+              deps.updateDraftBody(draftId, retryResult.body);
+              try {
+                await deps.gate({ draftId, body: retryResult.body, thread, messages, voice, facts, bookingContext, property, guestLanguage, attempt: 2 });
+              } catch (gateErr) {
+                logger.warn({ threadId: thread.id, err: gateErr instanceof Error ? gateErr.message : String(gateErr) }, 'auto-send: Gate fehlgeschlagen (Neuversuch, Entwurf bleibt pending)');
+              }
+            }
+            // retryResult.kind 'no_reply'/'failed': die ursprüngliche wait-Entscheidung aus dem
+            // ersten Gate-Lauf bleibt bestehen — kein weiterer Versuch (#695 Akzeptanzkriterium).
+          }
         } catch (gateErr) {
           logger.warn({ threadId: thread.id, err: gateErr instanceof Error ? gateErr.message : String(gateErr) }, 'auto-send: Gate fehlgeschlagen (Entwurf bleibt pending)');
         }

@@ -115,6 +115,37 @@ describe('runAutoSendGate', () => {
     await runAutoSendGate({ ...input, body: 'Bis 2026!', bookingContext: 'Check-in 19.09.2026' }, d);
     expect((d.persistDecision as any).mock.calls[0][1].flags).toEqual([]);
   });
+  // #695: guestLanguage geht an Judge UND mechanische Prüfung — ein Entwurf in der falschen
+  // Sprache wird auch dann erkannt, wenn das Prüfmodell (Mock) selbst kein Risk-Flag setzt.
+  it('gibt guestLanguage an Judge weiter und lässt die mechanische Prüfung Sprachabweichungen erkennen (#695)', async () => {
+    const d = deps();
+    const r = await runAutoSendGate({ ...input, body: 'Ja, 13 Uhr passt.', guestLanguage: 'en' }, d);
+    expect((d.judge as any).mock.calls[0][0].guestLanguage).toBe('en');
+    expect(r.decision.decision).toBe('wait');
+    expect(r.decision.flags).toContain('mech:language_mismatch');
+  });
+  it('ohne guestLanguage bleibt das Verhalten unverändert (Rückwärtskompatibilität, #695)', async () => {
+    const d = deps();
+    const r = await runAutoSendGate(input, d);
+    expect((d.judge as any).mock.calls[0][0].guestLanguage).toBeUndefined();
+    expect(r.decision.decision).toBe('auto');
+  });
+  it('attempt 2 markiert die persistierte Entscheidung mit „Neuversuch:“ im Reason (#695 Spec Punkt 3)', async () => {
+    const d = deps();
+    const r = await runAutoSendGate({ ...input, attempt: 2 }, d);
+    expect(r.decision.reason).toMatch(/^Neuversuch: /);
+    expect(d.persistDecision).toHaveBeenCalledWith(
+      'd1',
+      expect.objectContaining({ reason: expect.stringMatching(/^Neuversuch: /) }),
+      'live',
+    );
+  });
+  it('ohne attempt (erster Versuch) bleibt der Reason unpräfixiert (#695)', async () => {
+    const d = deps();
+    const r = await runAutoSendGate(input, d);
+    expect(r.decision.reason).not.toMatch(/^Neuversuch: /);
+  });
+
   it('werfende Dep (z. B. DB-Fehler) → wait statt Exception, kein Send', async () => {
     const d = deps({ hasHumanIntervention: vi.fn(() => { throw new Error('db kaputt'); }) });
     const r = await runAutoSendGate(input, d);

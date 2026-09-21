@@ -38,7 +38,12 @@ export type JudgeResult =
   | { kind: 'verdict'; verdict: JudgeVerdict }
   | { kind: 'failed'; error: string };
 
-export type MechanicalFlag = 'digits' | 'url' | 'email' | 'money' | 'phone' | 'code_words' | 'length' | 'empty';
+// #695: 'language_mismatch' zusätzlich als MechanicalFlag (eigener Wertebereich, keine Kollision
+// mit dem gleichnamigen JudgeRiskFlag oben) — der mechanische Check erkennt Sprachabweichungen
+// unabhängig vom Prüfmodell (Spec 2).
+export type MechanicalFlag =
+  | 'digits' | 'url' | 'email' | 'money' | 'phone' | 'code_words' | 'length' | 'empty'
+  | 'language_mismatch';
 export interface MechanicalFinding { flag: MechanicalFlag; match: string }
 
 export interface AutoSendDecision {

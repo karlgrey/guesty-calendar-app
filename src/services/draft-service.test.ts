@@ -245,3 +245,38 @@ describe('generateDraftForThread — Kanal-/Buchungsstatus-Fakten mit Präzedenz
     expect(prompt.indexOf('FAKTEN ZU DIESEM GESPRÄCH')).toBeLessThan(prompt.indexOf('FACTS-Y'));
   });
 });
+
+// #695: Sprach-Pin — die Sprache des Gastes wird als harter Fakt in den Prompt gegeben statt
+// als Prosa-Regel, die von den (meist deutschen) Voice-Beispielen überstimmt werden kann.
+describe('generateDraftForThread — Sprach-Pin (#695)', () => {
+  it('setzt die harte Prompt-Zeile ANTWORTSPRACHE nach der übergebenen guestLanguage', async () => {
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'Hi!' });
+    await generateDraftForThread({ thread: thread(), messages, voice: 'v', facts: 'f', guestLanguage: 'en' }, { call });
+    const prompt = call.mock.calls[0][0].systemPrompt;
+    expect(prompt).toContain('ANTWORTSPRACHE: Englisch');
+  });
+
+  it('fällt ohne guestLanguage auf Deutsch zurück (Rückwärtskompatibilität)', async () => {
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'Hallo!' });
+    await generateDraftForThread({ thread: thread(), messages, voice: 'v', facts: 'f' }, { call });
+    const prompt = call.mock.calls[0][0].systemPrompt;
+    expect(prompt).toContain('ANTWORTSPRACHE: Deutsch');
+  });
+
+  it('fügt bei languageRetry=true die explizite Neuversuch-Anweisung mit der Zielsprache an', async () => {
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'Hi again!' });
+    await generateDraftForThread(
+      { thread: thread(), messages, voice: 'v', facts: 'f', guestLanguage: 'en', languageRetry: true },
+      { call },
+    );
+    const prompt = call.mock.calls[0][0].systemPrompt;
+    expect(prompt).toContain('Die vorige Antwort war in der falschen Sprache. Schreibe ausschließlich auf Englisch.');
+  });
+
+  it('lässt die Neuversuch-Anweisung beim ersten Versuch (languageRetry=false/undefined) weg', async () => {
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'Hi!' });
+    await generateDraftForThread({ thread: thread(), messages, voice: 'v', facts: 'f', guestLanguage: 'en' }, { call });
+    const prompt = call.mock.calls[0][0].systemPrompt;
+    expect(prompt).not.toContain('Die vorige Antwort war in der falschen Sprache');
+  });
+});

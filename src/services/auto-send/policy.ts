@@ -19,6 +19,7 @@ const RISK_LABEL: Record<JudgeRiskFlag, string> = {
 const MECH_LABEL: Record<MechanicalFlag, string> = {
   digits: 'Ziffernfolge', url: 'Link', email: 'Mail-Adresse', money: 'Geldbetrag', phone: 'Telefonnummer',
   code_words: 'Code-Wort mit Ziffer', length: 'Text zu lang', empty: 'Text leer',
+  language_mismatch: 'falsche Sprache (mechanisch erkannt)', // #695
 };
 
 export function decide(i: PolicyInput): AutoSendDecision {

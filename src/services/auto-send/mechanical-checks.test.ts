@@ -48,3 +48,22 @@ describe('collectDigitRuns', () => {
     expect(collectDigitRuns(['Check-in 19.09.2026', 'Code HM12345678'])).toEqual(['2026', '12345678']);
   });
 });
+
+// #695: mechanischer Sprach-Check — unabhängig vom Prüfmodell (Spec 2).
+describe('runMechanicalChecks — language_mismatch', () => {
+  const flagsFor = (body: string, guestLanguage: 'de' | 'en' | 'it' | 'es' | 'fr') =>
+    runMechanicalChecks(body, { knownDigitRuns: [], guestLanguage }).map((f) => f.flag);
+
+  it('Entwurf auf Deutsch, Gast schrieb Englisch → language_mismatch', () => {
+    expect(flagsFor('Hallo Lorenzo, vielen Dank für deine Nachricht!', 'en')).toContain('language_mismatch');
+  });
+  it('Entwurf auf Englisch, Gast schrieb Englisch → keine Flags', () => {
+    expect(flagsFor('Hi Lorenzo, thanks so much for your message!', 'en')).toEqual([]);
+  });
+  it('Entwurf auf Deutsch, Gast schrieb Deutsch → keine Flags', () => {
+    expect(flagsFor('Hallo Anna, vielen Dank für deine Nachricht!', 'de')).toEqual([]);
+  });
+  it('ohne guestLanguage im Kontext läuft kein Sprach-Check (Rückwärtskompatibilität)', () => {
+    expect(flags('Hallo Lorenzo, vielen Dank für deine Nachricht!')).toEqual([]);
+  });
+});
