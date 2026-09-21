@@ -595,7 +595,7 @@ if (!propertyId) throw new NotFoundError('No property configured');
 - `src/test-fixtures/judge/cases.json` - 11 Testfälle fürs Prüfmodell
 
 ### Frontend
-- `public/calendar.js` - Calendar with property context (`window.__PROPERTY_SLUG__`, `__PROPERTY_NAME__`, `__BOOKING_EMAIL__`)
+- `public/calendar.js` - Calendar with property context (`window.__PROPERTY_SLUG__`, `__PROPERTY_NAME__`, `__BOOKING_EMAIL__`, `__CHECKIN_TIME__`, `__CHECKOUT_TIME__`)
 - `public/calendar.css` - Mobile-first responsive design
 - **Widget i18n (DE/EN)**: the booking widget is fully bilingual — all UI labels, the
   booking-email body, ARIA labels and currency/date formatting live in a `de`/`en` translations
@@ -604,6 +604,15 @@ if (!propertyId) throw new NotFoundError('No property configured');
   `/p/:slug?lang=en` (append the param to the iframe `src`). `detectLanguage()` runs before any
   network call and sets `document.documentElement.lang`, so there is no English-flash for DE
   visitors. Adding a new string means adding the key to BOTH language blocks.
+- **Check-in-/Checkout-Zeiten in der Anfrage-Mail (#656)**: `data/properties.json`-Felder
+  `checkInTime`/`checkOutTime` (nicht `googleCalendar.checkInTime/checkOutTime` — das sind
+  Kalender-Block-Defaults) werden von `property-routes.ts` (`GET /p/:slug`) als
+  `window.__CHECKIN_TIME__`/`__CHECKOUT_TIME__` injiziert und landen im Konstruktor von
+  `BookingCalendar` (analog `bookingEmail`). `requestBooking()` hängt sie als Suffix an die
+  Check-in-/Check-out-Zeile der Anfrage-Mail (`emailCheckInTimeSuffix`/`emailCheckOutTimeSuffix`,
+  DE „(ab 08:00 Uhr)"/„(bis 12:00 Uhr)", EN „(from 08:00)"/„(until 12:00)"); fehlt ein Feld,
+  bleibt die Zeile wie bisher nur mit Datum. Derselbe `emailBody` speist auch den
+  Kopier-Fallback (`showMailtoFallback`) — keine zweite Stelle zu pflegen.
 - **iframe-Embedding (WICHTIG)**: im iframe öffnet das Widget mailto NICHT selbst — es sendet
   `postMessage({type: 'OPEN_MAILTO', url}, '*')` an die Eltern-Seite und bricht dann ab
   (`openMailtoLink()` in `calendar.js`; `postMessage` wirft nie, daher greifen die Fallbacks im

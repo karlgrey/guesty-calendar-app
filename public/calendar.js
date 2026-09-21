@@ -106,6 +106,9 @@ class BookingCalendar {
     this.propertyName = options.propertyName || window.__PROPERTY_NAME__ || 'Property';
     this.bookingEmail = options.bookingEmail || window.__BOOKING_EMAIL__ || 'booking@farmhouse-prasser.de';
     this.propertyWebsite = options.propertyWebsite || window.__PROPERTY_WEBSITE__ || '';
+    // Check-in-/Checkout-Zeiten (#656) — fehlen sie, bleibt die Mail-Zeile wie bisher (nur Datum).
+    this.checkInTime = options.checkInTime || window.__CHECKIN_TIME__ || '';
+    this.checkOutTime = options.checkOutTime || window.__CHECKOUT_TIME__ || '';
 
     // Build API base URL based on property context
     this.apiBaseUrl = this.propertySlug ? `/p/${this.propertySlug}` : '';
@@ -207,6 +210,8 @@ class BookingCalendar {
         emailPriceOverview: 'Preisübersicht',
         emailCheckIn: 'Check-in',
         emailCheckOut: 'Check-out',
+        emailCheckInTimeSuffix: (time) => `(ab ${time} Uhr)`,
+        emailCheckOutTimeSuffix: (time) => `(bis ${time} Uhr)`,
         emailStay: 'Aufenthalt',
         emailPersons: 'Personen',
         emailNights: (nights) => `${nights} ${nights === 1 ? 'Nacht' : 'Nächte'}`,
@@ -273,6 +278,8 @@ class BookingCalendar {
         emailPriceOverview: 'Price overview',
         emailCheckIn: 'Check-in',
         emailCheckOut: 'Check-out',
+        emailCheckInTimeSuffix: (time) => `(from ${time})`,
+        emailCheckOutTimeSuffix: (time) => `(until ${time})`,
         emailStay: 'Stay',
         emailPersons: 'Persons',
         emailNights: (nights) => `${nights} ${nights === 1 ? 'night' : 'nights'}`,
@@ -2051,8 +2058,10 @@ class BookingCalendar {
     // Build detailed email body (localized)
     let emailBody = this.t('emailIntro')(propertyTitle);
     emailBody += `\n\n`;
-    emailBody += `${this.t('emailCheckIn')}: ${checkInFormatted}\n`;
-    emailBody += `${this.t('emailCheckOut')}: ${checkOutFormatted}\n`;
+    const checkInSuffix = this.checkInTime ? ` ${this.t('emailCheckInTimeSuffix')(this.checkInTime)}` : '';
+    const checkOutSuffix = this.checkOutTime ? ` ${this.t('emailCheckOutTimeSuffix')(this.checkOutTime)}` : '';
+    emailBody += `${this.t('emailCheckIn')}: ${checkInFormatted}${checkInSuffix}\n`;
+    emailBody += `${this.t('emailCheckOut')}: ${checkOutFormatted}${checkOutSuffix}\n`;
     emailBody += `${this.t('emailStay')}: ${this.t('emailNights')(quote.nights)}\n`;
     emailBody += `${this.t('emailPersons')}: ${this.t('emailGuests')(guests)}\n\n`;
 

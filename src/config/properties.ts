@@ -120,11 +120,14 @@ export interface PropertyConfig {
   /** Kanonische öffentliche Website der Unterkunft, z.B. "https://farmhouse-prasser.de".
    *  Wird in der generierten Anfragemail als Absender-/Unterkunfts-Link verwendet. */
   website?: string;
-  /** Check-in-/Checkout-Zeiten für die Gäste-Kommunikation (Rechnungs-PDF), z.B. "08:00".
+  /** Check-in-/Checkout-Zeiten für die Gäste-Kommunikation, z.B. "08:00". Speist zwei
+   *  Stellen: die Zeile in der Rechnungs-PDF UND (#656) window.__CHECKIN_TIME__/
+   *  __CHECKOUT_TIME__ (Server-Injektion in property-routes.ts) für die Check-in-/
+   *  Check-out-Zeilen der Widget-Anfrage-Mail (public/calendar.js).
    *  Bewusst getrennt von googleCalendar.checkInTime/checkOutTime — das sind Default-Zeiten
    *  für Kalender-Block-Labels und ETL-Fallbacks anderer Provider und können vom hier
    *  vereinbarten Gäste-Zeitfenster abweichen. Nur setzen, wenn die Zeit verifiziert ist;
-   *  ohne Wert fällt die Zeile im Dokument einfach weg. */
+   *  ohne Wert fällt die Zeile in Rechnung und Widget-Mail einfach weg. */
   checkInTime?: string;
   checkOutTime?: string;
   weeklyReport: WeeklyReportConfig;
