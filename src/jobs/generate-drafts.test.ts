@@ -25,6 +25,7 @@ function deps(over: Partial<DraftGenDeps> = {}): DraftGenDeps {
     markNoReply: vi.fn(),
     buildBookingContext: vi.fn().mockReturnValue(null),
     gate: vi.fn().mockResolvedValue({}),
+    updateDraftBody: vi.fn(),
     ...over,
   };
 }
@@ -147,6 +148,150 @@ describe('Auto-Send-Gate in der Kette', () => {
     const d = deps();
     await generateDraftsForProperty(property, d, { onlyThreadIds: ['hostex:b'] });
     expect(d.getThreads).toHaveBeenCalledWith('hostex', 'L1', 100, DRAFT_SINCE_MODIFIER);
+  });
+});
+
+// #695: automatischer Neuversuch bei language_mismatch (Spec Punkt 3, Fall Lorenzo U19 20.09.2026).
+describe('Sprach-Pin — automatischer Neuversuch bei language_mismatch (#695)', () => {
+  const englishInboundMessages = [
+    { id: 'm1', direction: 'inbound', body: 'Thanks so much, all good! 🙏', sent_at: '2026-09-20T10:00:00Z' },
+  ] as any;
+
+  it('mechanischer language_mismatch → genau ein Neuversuch, Draft-Body wird ersetzt, Gate läuft erneut mit attempt=2', async () => {
+    const gate = vi.fn()
+      .mockResolvedValueOnce({ decision: { decision: 'wait', reason: 'Mechanischer Check: falsche Sprache', category: null, flags: ['mech:language_mismatch'] }, mode: 'live', sent: false })
+      .mockResolvedValueOnce({ decision: { decision: 'auto', reason: 'ok', category: 'dank_smalltalk', flags: [] }, mode: 'live', sent: true });
+    const generate = vi.fn()
+      .mockResolvedValueOnce({ kind: 'text', body: 'Hallo, danke dir!' })
+      .mockResolvedValueOnce({ kind: 'text', body: 'Hi, thanks a lot!' });
+    const updateDraftBody = vi.fn();
+    const d = deps({
+      getThreads: vi.fn().mockReturnValue([mkThread('hostex:a')]),
+      getMessages: vi.fn().mockReturnValue(englishInboundMessages),
+      generate, gate, updateDraftBody,
+    });
+
+    const res = await generateDraftsForProperty(property, d);
+
+    expect(res).toEqual({ generated: 1, skipped: 0 });
+    expect(d.create).toHaveBeenCalledTimes(1); // kein zweiter Draft-Datensatz für den Neuversuch
+    expect(generate).toHaveBeenCalledTimes(2);
+    expect(generate.mock.calls[0][0]).toMatchObject({ guestLanguage: 'en' });
+    expect(generate.mock.calls[0][0].languageRetry).toBeFalsy();
+    expect(generate.mock.calls[1][0]).toMatchObject({ guestLanguage: 'en', languageRetry: true });
+    const draftId = (d.create as any).mock.calls[0][0].id;
+    expect(updateDraftBody).toHaveBeenCalledWith(draftId, 'Hi, thanks a lot!');
+    expect(gate).toHaveBeenCalledTimes(2);
+    expect(gate.mock.calls[0][0]).toMatchObject({ draftId, body: 'Hallo, danke dir!' });
+    expect(gate.mock.calls[0][0].attempt).toBeFalsy();
+    expect(gate.mock.calls[1][0]).toMatchObject({ draftId, body: 'Hi, thanks a lot!', attempt: 2 });
+  });
+
+  it('vom Prüfmodell erkannter language_mismatch (ohne mech:-Präfix) löst denselben Neuversuch aus', async () => {
+    const gate = vi.fn()
+      .mockResolvedValueOnce({ decision: { decision: 'wait', reason: 'Prüfmodell: falsche Sprache', category: 'dank_smalltalk', flags: ['language_mismatch'] }, mode: 'live', sent: false })
+      .mockResolvedValueOnce({ decision: { decision: 'auto', reason: 'ok', category: 'dank_smalltalk', flags: [] }, mode: 'live', sent: true });
+    const generate = vi.fn()
+      .mockResolvedValueOnce({ kind: 'text', body: 'Hallo, danke dir!' })
+      .mockResolvedValueOnce({ kind: 'text', body: 'Hi, thanks a lot!' });
+    const d = deps({
+      getThreads: vi.fn().mockReturnValue([mkThread('hostex:a')]),
+      getMessages: vi.fn().mockReturnValue(englishInboundMessages),
+      generate, gate,
+    });
+
+    await generateDraftsForProperty(property, d);
+
+    expect(generate).toHaveBeenCalledTimes(2);
+    expect(gate).toHaveBeenCalledTimes(2);
+  });
+
+  it('mismatcht auch der zweite Versuch, bleibt es bei wait — kein dritter Anlauf', async () => {
+    const gate = vi.fn().mockResolvedValue({ decision: { decision: 'wait', reason: 'falsche Sprache', category: null, flags: ['mech:language_mismatch'] }, mode: 'live', sent: false });
+    const generate = vi.fn()
+      .mockResolvedValueOnce({ kind: 'text', body: 'Hallo, danke dir!' })
+      .mockResolvedValueOnce({ kind: 'text', body: 'Hallo nochmal!' });
+    const updateDraftBody = vi.fn();
+    const d = deps({
+      getThreads: vi.fn().mockReturnValue([mkThread('hostex:a')]),
+      getMessages: vi.fn().mockReturnValue(englishInboundMessages),
+      generate, gate, updateDraftBody,
+    });
+
+    const res = await generateDraftsForProperty(property, d);
+
+    expect(res).toEqual({ generated: 1, skipped: 0 });
+    expect(generate).toHaveBeenCalledTimes(2); // nicht 3 — genau EIN Neuversuch
+    expect(gate).toHaveBeenCalledTimes(2);
+    expect(updateDraftBody).toHaveBeenCalledTimes(1);
+  });
+
+  it('kein Neuversuch bei anderen Wait-Gründen (z. B. Kategorie Geld)', async () => {
+    const gate = vi.fn().mockResolvedValue({ decision: { decision: 'wait', reason: 'Kategorie Geld — nie automatisch', category: 'geld', flags: [] }, mode: 'live', sent: false });
+    const generate = vi.fn().mockResolvedValue({ kind: 'text', body: 'Hallo, danke dir!' });
+    const updateDraftBody = vi.fn();
+    const d = deps({
+      getThreads: vi.fn().mockReturnValue([mkThread('hostex:a')]),
+      getMessages: vi.fn().mockReturnValue(englishInboundMessages),
+      generate, gate, updateDraftBody,
+    });
+
+    await generateDraftsForProperty(property, d);
+
+    expect(generate).toHaveBeenCalledTimes(1);
+    expect(gate).toHaveBeenCalledTimes(1);
+    expect(updateDraftBody).not.toHaveBeenCalled();
+  });
+
+  it('kein Neuversuch/kein Gate-Aufruf bei no_reply — unverändertes Verhalten (Akzeptanzkriterium)', async () => {
+    const gate = vi.fn();
+    const updateDraftBody = vi.fn();
+    const generate = vi.fn().mockResolvedValue({ kind: 'no_reply', reason: 'reine Dankesnachricht' });
+    const d = deps({
+      getThreads: vi.fn().mockReturnValue([mkThread('hostex:a')]),
+      getMessages: vi.fn().mockReturnValue(englishInboundMessages),
+      generate, gate, updateDraftBody,
+    });
+
+    const res = await generateDraftsForProperty(property, d);
+
+    expect(res).toEqual({ generated: 0, skipped: 1 });
+    expect(gate).not.toHaveBeenCalled();
+    expect(updateDraftBody).not.toHaveBeenCalled();
+  });
+
+  it('kein Neuversuch/kein Gate-Aufruf bei failed — unverändertes Verhalten (Akzeptanzkriterium)', async () => {
+    const gate = vi.fn();
+    const updateDraftBody = vi.fn();
+    const generate = vi.fn().mockResolvedValue({ kind: 'failed', error: 'kaputt' });
+    const d = deps({
+      getThreads: vi.fn().mockReturnValue([mkThread('hostex:a')]),
+      getMessages: vi.fn().mockReturnValue(englishInboundMessages),
+      generate, gate, updateDraftBody,
+    });
+
+    const res = await generateDraftsForProperty(property, d);
+
+    expect(res).toEqual({ generated: 0, skipped: 1 });
+    expect(gate).not.toHaveBeenCalled();
+    expect(updateDraftBody).not.toHaveBeenCalled();
+  });
+
+  it('Gate-Fehler beim Neuversuch bricht die Kette nicht ab', async () => {
+    const gate = vi.fn()
+      .mockResolvedValueOnce({ decision: { decision: 'wait', reason: 'falsche Sprache', category: null, flags: ['mech:language_mismatch'] }, mode: 'live', sent: false })
+      .mockRejectedValueOnce(new Error('gate down'));
+    const generate = vi.fn()
+      .mockResolvedValueOnce({ kind: 'text', body: 'Hallo, danke dir!' })
+      .mockResolvedValueOnce({ kind: 'text', body: 'Hi, thanks a lot!' });
+    const d = deps({
+      getThreads: vi.fn().mockReturnValue([mkThread('hostex:a')]),
+      getMessages: vi.fn().mockReturnValue(englishInboundMessages),
+      generate, gate,
+    });
+
+    const res = await generateDraftsForProperty(property, d);
+    expect(res).toEqual({ generated: 1, skipped: 0 });
   });
 });
 

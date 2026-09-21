@@ -8,6 +8,7 @@ import { decide } from './policy.js';
 import { resolveAutoSendMode } from './mode.js';
 import { startOfBerlinDayIso } from './berlin-day.js';
 import type { AutoSendDecision, AutoSendMode, JudgeResult } from './types.js';
+import type { SupportedLanguage } from '../../utils/language-detect.js';
 import { setAutoDecision, threadHasHumanIntervention, threadHasFailedSend, countAutoSentSince, claimDraftForSending } from '../../repositories/draft-repository.js';
 import { getSchedulerState } from '../../repositories/scheduler-state-repository.js';
 import { resolveOutboundModuleType } from '../guesty-channel.js';
@@ -19,6 +20,13 @@ export const PAUSE_KEY = 'auto_send_paused';
 export interface GateInput {
   draftId: string; body: string; thread: MessageThread; messages: Message[];
   voice: string; facts: string; bookingContext: string | null; property: PropertyConfig;
+  // #695: deterministisch erkannte Sprache der letzten Gastnachricht — geht an Judge und
+  // mechanische Prüfung weiter (Spec 1+2). Optional, damit bestehende Aufrufer/Tests ohne
+  // dieses Feld weiterlaufen (dann läuft kein Sprach-Check).
+  guestLanguage?: SupportedLanguage;
+  // #695 Spec Punkt 3: 2 markiert den automatischen Neuversuch nach language_mismatch — die
+  // persistierte Entscheidung bekommt dann den Präfix „Neuversuch: “ im Reason (auto_reason).
+  attempt?: 1 | 2;
 }
 export interface GateDeps {
   envMode: AutoSendMode; dailyCap: number;
@@ -75,8 +83,15 @@ export async function runAutoSendGate(input: GateInput, deps: GateDeps = realGat
   let decision: AutoSendDecision;
   try {
     const guestMessages = guestMessagesSinceLastHost(input.messages);
-    const judge = await deps.judge({ guestMessages, draft: input.body, voice: input.voice, facts: input.facts, bookingContext: input.bookingContext, guestName: input.thread.guest_name });
-    const mechanical = runMechanicalChecks(input.body, { knownDigitRuns: collectDigitRuns([...guestMessages, input.bookingContext ?? '']) });
+    const judge = await deps.judge({
+      guestMessages, draft: input.body, voice: input.voice, facts: input.facts,
+      bookingContext: input.bookingContext, guestName: input.thread.guest_name,
+      guestLanguage: input.guestLanguage,
+    });
+    const mechanical = runMechanicalChecks(input.body, {
+      knownDigitRuns: collectDigitRuns([...guestMessages, input.bookingContext ?? '']),
+      guestLanguage: input.guestLanguage,
+    });
     decision = decide({
       mode, paused: deps.isPaused(), judge, mechanical,
       threadHasHumanIntervention: deps.hasHumanIntervention(input.thread.id),
@@ -91,6 +106,12 @@ export async function runAutoSendGate(input: GateInput, deps: GateDeps = realGat
     const msg = err instanceof Error ? err.message : String(err);
     logger.warn({ draftId: input.draftId, threadId: input.thread.id, err: msg }, 'auto-send: Prüfung fehlgeschlagen, werte als wait');
     decision = { decision: 'wait', reason: `Prüfung technisch fehlgeschlagen: ${msg}`, category: null, flags: [] };
+  }
+  if (input.attempt === 2) {
+    // #695 Spec Punkt 3: beide Versuche protokollieren — der auto_reason des Neuversuchs nennt
+    // "Neuversuch", damit im Ampel-/Board-Blick nachvollziehbar bleibt, dass hier bereits ein
+    // zweiter Anlauf lief.
+    decision = { ...decision, reason: `Neuversuch: ${decision.reason}` };
   }
   deps.persistDecision(input.draftId, decision, mode);
   logger.info({ draftId: input.draftId, threadId: input.thread.id, mode, decision: decision.decision, reason: decision.reason, flags: decision.flags }, 'auto-send: Entscheidung');

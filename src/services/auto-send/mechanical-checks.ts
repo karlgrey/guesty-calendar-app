@@ -1,5 +1,6 @@
 // Modellunabhängige Schicht des Auto-Send-Gates (Spec 5.2): reine String-Regeln, kein I/O.
 import type { MechanicalFinding } from './types.js';
+import { detectLanguage, type SupportedLanguage } from '../../utils/language-detect.js';
 
 export const MAX_DRAFT_LENGTH = 1200;
 const DIGIT_RUN = /\d{4,}/g;
@@ -16,11 +17,22 @@ export function collectDigitRuns(texts: string[]): string[] {
   return [...out];
 }
 
-export function runMechanicalChecks(body: string, context: { knownDigitRuns: string[] }): MechanicalFinding[] {
+export function runMechanicalChecks(
+  body: string,
+  // #695: guestLanguage optional (Rückwärtskompatibilität bestehender Aufrufer/Tests) — ohne
+  // sie läuft der Sprach-Check nicht (Verhalten unverändert).
+  context: { knownDigitRuns: string[]; guestLanguage?: SupportedLanguage },
+): MechanicalFinding[] {
   const f: MechanicalFinding[] = [];
   const text = body ?? '';
   if (!text.trim()) return [{ flag: 'empty', match: '' }];
   if (text.length > MAX_DRAFT_LENGTH) f.push({ flag: 'length', match: `${text.length} Zeichen` });
+  if (context.guestLanguage) {
+    const draftLanguage = detectLanguage(text);
+    if (draftLanguage !== context.guestLanguage) {
+      f.push({ flag: 'language_mismatch', match: draftLanguage });
+    }
+  }
   const known = new Set(context.knownDigitRuns);
   for (const m of text.matchAll(DIGIT_RUN)) if (!known.has(m[0])) { f.push({ flag: 'digits', match: m[0] }); break; }
   const url = text.match(URL); if (url) f.push({ flag: 'url', match: url[0] });

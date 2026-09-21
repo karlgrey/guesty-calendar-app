@@ -1,5 +1,6 @@
 import { callClaudeTool, type ClaudeToolDefinition } from './anthropic-client.js';
 import type { MessageThread, Message } from '../types/messages.js';
+import { LANGUAGE_LABEL, type SupportedLanguage } from '../utils/language-detect.js';
 
 export const DRAFT_MODEL = 'claude-sonnet-5';
 
@@ -48,6 +49,12 @@ export interface DraftInput {
   // (dates, nights, guests, confirmation code) — see booking-context.ts.
   // null when the thread isn't linked to a reservation/inquiry.
   bookingContext: string | null;
+  // #695: deterministisch erkannte Sprache der letzten Gastnachricht (language-detect.ts) —
+  // optional mit Fallback Deutsch, damit bestehende Aufrufer/Tests ohne dieses Feld weiterlaufen.
+  guestLanguage?: SupportedLanguage;
+  // #695: true beim automatischen Neuversuch nach language_mismatch — fügt eine explizite
+  // Korrektur-Anweisung an (Spec Punkt 3).
+  languageRetry?: boolean;
 }
 export interface DraftDeps {
   call: typeof callClaudeTool;
@@ -123,9 +130,16 @@ export function buildSystemPrompt(
   facts: string,
   bookingContext: string | null,
   thread: Pick<MessageThread, 'channel' | 'reservation_status'>,
+  // #695: harter Fakt statt Prosa-Regel — Default Deutsch (deckungsgleich mit dem Fallback in
+  // language-detect.ts), damit bestehende Aufrufer ohne dieses Argument weiterlaufen.
+  guestLanguage: SupportedLanguage = 'de',
+  languageRetry = false,
 ): string {
   const lines = [
     buildThreadFactsBlock(thread),
+    // #695 (Fall Lorenzo U19, 20.09.2026): als eigene harte Zeile VOR Voice/Objektwissen, damit
+    // sie nicht von den (meist deutschen) Voice-Beispielen überstimmt wird.
+    `ANTWORTSPRACHE: ${LANGUAGE_LABEL[guestLanguage]}`,
     'Du entwirfst eine Antwort auf eine Gastnachricht für eine Ferienunterkunft, in Michas Stimme.',
     'Halte dich strikt an den folgenden Ton/Stil (Voice):',
     '--- VOICE ---', voice, '--- ENDE VOICE ---',
@@ -140,8 +154,18 @@ export function buildSystemPrompt(
       'Diese Buchungsdaten sind der Plattform bekannt — frage den Gast NIEMALS erneut nach Zeitraum, Nächten oder Personenzahl; beziehe dich stattdessen direkt darauf (z. B. bei Bestätigungen den Zeitraum nennen).'
     );
   }
+  if (languageRetry) {
+    // #695 Spec Punkt 3: genau ein automatischer Neuversuch nach mechanisch/vom Prüfmodell
+    // erkanntem language_mismatch — explizite Korrektur-Anweisung statt stillem zweiten Versuch.
+    lines.push(
+      `Die vorige Antwort war in der falschen Sprache. Schreibe ausschließlich auf ${LANGUAGE_LABEL[guestLanguage]}.`,
+    );
+  }
   lines.push(
-    'Regeln: Kein Auto-Versand von Zugangscodes. Antworte in der Sprache des Gastes (Default Deutsch). Kurz und konkret.',
+    // #695: verweist auf die harte ANTWORTSPRACHE-Zeile oben statt eigener Prosa-Regel — die
+    // Sprache ist ein Fakt, kein Stilhinweis, den Voice-Beispiele überstimmen dürfen.
+    'Regeln: Kein Auto-Versand von Zugangscodes. Antworte AUSSCHLIESSLICH auf der oben festgelegten ' +
+      'ANTWORTSPRACHE — unabhängig von der Sprache der Voice-Beispiele, kein Sprachenmix. Kurz und konkret.',
     'Keine Antwort nötig (no_reply_needed=true) NUR, wenn die Nachricht WEDER eine Frage NOCH ein ' +
       'Anliegen/eine Bitte enthält — also eine reine Dankes-/Bestätigungsnachricht oder ein bloßes Emoji.',
     'Beginnt eine Nachricht mit Dank, enthält aber danach eine Frage oder ein Anliegen, ist das KEIN ' +
@@ -199,7 +223,14 @@ export async function generateDraftForThread(
   let out: unknown;
   try {
     out = await deps.call({
-      systemPrompt: buildSystemPrompt(input.voice, input.facts, input.bookingContext ?? null, input.thread),
+      systemPrompt: buildSystemPrompt(
+        input.voice,
+        input.facts,
+        input.bookingContext ?? null,
+        input.thread,
+        input.guestLanguage ?? 'de',
+        input.languageRetry ?? false,
+      ),
       userMessage: buildConversation(input.messages, input.thread.guest_name),
       tool: SUBMIT_REPLY_TOOL,
       model: DRAFT_MODEL,

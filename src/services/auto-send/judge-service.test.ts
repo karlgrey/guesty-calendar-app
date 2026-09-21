@@ -55,4 +55,16 @@ describe('judgeDraft', () => {
     expect(m).toContain('--- ENTWURF');
     expect(m).toContain('13 Uhr');
   });
+
+  // #695: die deterministisch erkannte Gastsprache geht als Fakt in den Judge-Kontext, damit
+  // das Prüfmodell language_mismatch nicht mehr allein aus dem Gesprächstext erraten muss.
+  it('User-Message enthält die erkannte ANTWORTSPRACHE, wenn guestLanguage gesetzt ist', () => {
+    const m = buildJudgeUserMessage({ ...input, guestLanguage: 'en' });
+    expect(m).toContain('ANTWORTSPRACHE');
+    expect(m).toContain('Englisch');
+  });
+  it('ohne guestLanguage bleibt die User-Message unverändert (Rückwärtskompatibilität)', () => {
+    const m = buildJudgeUserMessage(input);
+    expect(m).not.toContain('ANTWORTSPRACHE');
+  });
 });

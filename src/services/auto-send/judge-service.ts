@@ -2,6 +2,7 @@ import { callClaudeTool } from '../anthropic-client.js';
 import { config } from '../../config/index.js';
 import { JUDGE_DRAFT_TOOL, buildJudgeSystemPrompt } from './judge-prompt.js';
 import { JUDGE_CATEGORIES, JUDGE_RISK_FLAGS, type JudgeCategory, type JudgeResult, type JudgeRiskFlag } from './types.js';
+import { LANGUAGE_LABEL, type SupportedLanguage } from '../../utils/language-detect.js';
 
 export interface JudgeInput {
   guestMessages: string[];      // Gastnachrichten seit der letzten Host-Antwort, chronologisch
@@ -10,6 +11,10 @@ export interface JudgeInput {
   facts: string;
   bookingContext: string | null;
   guestName: string | null;
+  // #695: deterministisch erkannte Sprache der letzten Gastnachricht (language-detect.ts) — als
+  // Fakt in den Judge-Kontext, statt language_mismatch allein aus dem Text erraten zu lassen.
+  // Optional, damit bestehende Aufrufer/Tests ohne dieses Feld weiterlaufen.
+  guestLanguage?: SupportedLanguage;
 }
 export interface JudgeDeps { call: typeof callClaudeTool; model: string }
 // deps-Default liest config.judgeModel erst beim tatsächlichen Aufruf (nicht beim Modul-Import) —
@@ -17,13 +22,21 @@ export interface JudgeDeps { call: typeof callClaudeTool; model: string }
 const defaultDeps = (): JudgeDeps => ({ call: callClaudeTool, model: config.judgeModel });
 
 export function buildJudgeUserMessage(input: JudgeInput): string {
-  return [
+  const lines = [
     `Gast: ${input.guestName ?? 'unbekannt'}`,
+  ];
+  // #695: nur anhängen, wenn übergeben — hält die User-Message für Aufrufer ohne guestLanguage
+  // unverändert (Rückwärtskompatibilität, z. B. Testfixtures in test-judge-fixtures.ts).
+  if (input.guestLanguage) {
+    lines.push(`ANTWORTSPRACHE laut deterministischer Erkennung: ${LANGUAGE_LABEL[input.guestLanguage]}`);
+  }
+  lines.push(
     '--- GASTNACHRICHT(EN), chronologisch ---',
     ...input.guestMessages.map((m, i) => `[${i + 1}] ${m}`),
     '--- ENDE GASTNACHRICHT ---',
     '--- ENTWURF (zu prüfen) ---', input.draft, '--- ENDE ENTWURF ---',
-  ].join('\n');
+  );
+  return lines.join('\n');
 }
 
 export async function judgeDraft(input: JudgeInput, deps: JudgeDeps = defaultDeps()): Promise<JudgeResult> {
