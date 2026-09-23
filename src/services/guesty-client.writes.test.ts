@@ -67,6 +67,14 @@ describe('GuestyClient writes', () => {
     expect(JSON.parse(options.body)).toEqual({ phones: ['+49 1'], address: { city: 'Potsdam' } });
   });
 
+  it('updateGuest reicht company durch (#715 Firmenrechnung zu Airbnb-Buchung)', async () => {
+    const { client, spy } = clientWithMockedRequest({ ok: true });
+    await client.updateGuest('guest-1', { company: 'momox SE', email: 'x@momox.com' });
+    const [endpoint, options] = spy.mock.calls[0];
+    expect(endpoint).toBe('/guests-crud/guest-1');
+    expect(JSON.parse(options.body)).toEqual({ company: 'momox SE', email: 'x@momox.com' });
+  });
+
   it('updateReservationStatus PUTtet an /reservations-v3/{id}/status', async () => {
     const { client, spy } = clientWithMockedRequest({ ok: true });
     await client.updateReservationStatus('res-1', 'canceled');

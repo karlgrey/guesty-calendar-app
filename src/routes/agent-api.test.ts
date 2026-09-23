@@ -33,6 +33,12 @@ vi.mock('../services/guesty-client.js', () => ({
   guestyClient: {
     getReservation: vi.fn().mockResolvedValue({ _id: 'res-1', status: 'reserved' }),
     updateGuest: vi.fn().mockResolvedValue(undefined),
+    getGuest: vi.fn().mockResolvedValue({
+      _id: 'guest-1', firstName: 'Lenia', lastName: 'K.', fullName: 'Lenia K.',
+      email: 'l@example.com', phones: ['+49 30 1'], company: 'momox SE',
+      address: { street: 'Straße 1', city: 'Berlin', zipcode: '10115', country: 'DE', full: 'Straße 1, 10115 Berlin' },
+      notes: 'intern', tags: ['vip'],
+    }),
   },
 }));
 vi.mock('../repositories/message-repository.js', () => ({
@@ -188,6 +194,69 @@ describe('agent-api', () => {
     });
     expect(r.status).toBe(200);
     expect(guestyClient.updateGuest).toHaveBeenCalledWith('guest-1', { address: { city: 'Potsdam' } });
+  });
+
+  it('PUT /guests/:id reicht company durch (#715)', async () => {
+    const { guestyClient } = await import('../services/guesty-client.js');
+    (guestyClient.updateGuest as any).mockClear();
+    const r = await fetch(`${base}/api/agent/guests/guest-1`, {
+      method: 'PUT', headers: KEY,
+      body: JSON.stringify({ company: 'momox SE', email: 'x@momox.com', address: { city: 'Berlin' } }),
+    });
+    expect(r.status).toBe(200);
+    expect(guestyClient.updateGuest).toHaveBeenCalledWith('guest-1', {
+      company: 'momox SE', email: 'x@momox.com', address: { city: 'Berlin' },
+    });
+  });
+
+  it('PUT /guests/:id → 400 bei unbekanntem Feld (Whitelist, nichts blind an Guesty) (#715)', async () => {
+    const { guestyClient } = await import('../services/guesty-client.js');
+    (guestyClient.updateGuest as any).mockClear();
+    const r = await fetch(`${base}/api/agent/guests/guest-1`, {
+      method: 'PUT', headers: KEY, body: JSON.stringify({ phones: ['+49 1'] }),
+    });
+    expect(r.status).toBe(400);
+    expect((await r.json()).error).toContain('phones');
+    expect(guestyClient.updateGuest).not.toHaveBeenCalled();
+  });
+
+  it('PUT /guests/:id → 400 bei leerem Body (#715)', async () => {
+    const r = await fetch(`${base}/api/agent/guests/guest-1`, {
+      method: 'PUT', headers: KEY, body: JSON.stringify({}),
+    });
+    expect(r.status).toBe(400);
+  });
+
+  it('GET /guests/:id → Ist-Stand ohne interne Felder (#715)', async () => {
+    const r = await fetch(`${base}/api/agent/guests/guest-1`, { headers: KEY });
+    expect(r.status).toBe(200);
+    const body = await r.json();
+    expect(body).toEqual({
+      id: 'guest-1', firstName: 'Lenia', lastName: 'K.', fullName: 'Lenia K.',
+      email: 'l@example.com', phone: '+49 30 1', company: 'momox SE',
+      address: { street: 'Straße 1', city: 'Berlin', zipcode: '10115', country: 'DE', full: 'Straße 1, 10115 Berlin' },
+    });
+    expect(body).not.toHaveProperty('notes');
+    expect(body).not.toHaveProperty('tags');
+  });
+
+  it('GET /guests/:id → null-Felder statt undefined bei dünnem Guesty-Datensatz (#715)', async () => {
+    const { guestyClient } = await import('../services/guesty-client.js');
+    (guestyClient.getGuest as any).mockResolvedValueOnce({ _id: 'guest-2', firstName: 'Ben' });
+    const r = await fetch(`${base}/api/agent/guests/guest-2`, { headers: KEY });
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({
+      id: 'guest-2', firstName: 'Ben', lastName: null, fullName: null, email: null,
+      phone: null, company: null, address: null,
+    });
+  });
+
+  it('GET /guests/:id → 404 wenn Guesty 404 liefert (#715)', async () => {
+    const { guestyClient } = await import('../services/guesty-client.js');
+    const { ExternalApiError } = await import('../utils/errors.js');
+    (guestyClient.getGuest as any).mockRejectedValueOnce(new ExternalApiError('Guesty API error: 404 Not Found', 404, 'Guesty'));
+    const r = await fetch(`${base}/api/agent/guests/nope`, { headers: KEY });
+    expect(r.status).toBe(404);
   });
 
   it('confirm + cancel → 200', async () => {
