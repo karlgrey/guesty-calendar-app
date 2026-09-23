@@ -885,12 +885,17 @@ export class GuestyClient {
 
   /**
    * Update an existing guest (Kundenstamm-Nachpflege, z. B. Rechnungsanschrift).
+   * `company` (#715): Firmenzeile für Firmenrechnungen — der Dokument-Service
+   * nimmt guest.company direkt als Empfänger-Firmenzeile, damit der Gastname
+   * (z. B. bei Airbnb-Buchungen) nicht mehr als Workaround überschrieben
+   * werden muss (alte Konvention: Firma im firstName-Feld).
    */
   async updateGuest(guestId: string, fields: {
     firstName?: string;
     lastName?: string;
     email?: string;
     phone?: string;
+    company?: string;
     address?: { street?: string; city?: string; zipcode?: string; country?: string };
   }): Promise<void> {
     const { phone, ...rest } = fields;

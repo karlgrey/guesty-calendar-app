@@ -233,6 +233,8 @@ export interface GuestyGuest {
   fullName?: string;
   email?: string;
   phone?: string;
+  /** Guesty guests-crud liefert Telefonnummern als Array (Write-Shape ebenfalls `phones`) */
+  phones?: string[];
   address?: GuestyGuestAddress;
   company?: string;
   hometown?: string;

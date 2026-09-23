@@ -81,9 +81,53 @@ router.get('/reservations/:id/invoice.pdf', async (req, res) => {
   } catch (err) { handleError(res, err); }
 });
 
+// Kundenstamm lesen (#715): Ist-Stand vor einem PUT sichtbar machen, damit die
+// Session nichts blind überschreibt. Bewusst reduzierter Shape — Guesty-interne
+// Felder (notes, tags, hometown …) bleiben draußen.
+router.get('/guests/:guestId', async (req, res) => {
+  try {
+    const g = await guestyClient.getGuest(req.params.guestId);
+    const address = g.address
+      ? {
+          street: g.address.street ?? null,
+          city: g.address.city ?? null,
+          zipcode: g.address.zipcode ?? (g.address as any).zipCode ?? null,
+          country: g.address.country ?? null,
+          full: g.address.full ?? null,
+        }
+      : null;
+    res.json({
+      id: g._id ?? req.params.guestId,
+      firstName: g.firstName ?? null,
+      lastName: g.lastName ?? null,
+      fullName: g.fullName ?? null,
+      email: g.email ?? null,
+      phone: g.phone ?? g.phones?.[0] ?? null,
+      company: g.company ?? null,
+      address,
+    });
+  } catch (err) { handleError(res, err); }
+});
+
+// Whitelist der schreibbaren Felder — der Body ging bisher ungefiltert an
+// Guesty (#715): Tippfehler wie `phones` statt `phone` sollen als 400 auffallen,
+// nicht still in Guesty landen.
+const GUEST_WRITABLE_FIELDS = ['firstName', 'lastName', 'email', 'phone', 'company', 'address'] as const;
+
 router.put('/guests/:guestId', async (req, res) => {
   try {
-    await guestyClient.updateGuest(req.params.guestId, req.body);
+    const body = req.body;
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      throw new ValidationError('Body muss ein JSON-Objekt sein');
+    }
+    const unknown = Object.keys(body).filter((k) => !(GUEST_WRITABLE_FIELDS as readonly string[]).includes(k));
+    if (unknown.length > 0) {
+      throw new ValidationError(`Unbekannte Felder: ${unknown.join(', ')} — erlaubt: ${GUEST_WRITABLE_FIELDS.join(', ')}`);
+    }
+    if (Object.keys(body).length === 0) {
+      throw new ValidationError(`Body ist leer — erlaubt: ${GUEST_WRITABLE_FIELDS.join(', ')}`);
+    }
+    await guestyClient.updateGuest(req.params.guestId, body);
     res.json({ ok: true });
   } catch (err) { handleError(res, err); }
 });
