@@ -140,6 +140,48 @@ describe('regenerateStaleDraftIfNeeded', () => {
     expect(d.claim).not.toHaveBeenCalled();
   });
 
+  // Review-Gate #699: in der DB kommt created_at/regenerated_at aus datetime('now') im
+  // SQLite-Format "YYYY-MM-DD HH:MM:SS" (ohne "Z"), messages.sent_at dagegen als ISO mit "Z"
+  // (Hostex/Guesty createdAt). Der Vergleich "neue Gastnachricht seit Referenzzeit" muss beide
+  // Formate als UTC lesen — sonst verschiebt sich die Referenzzeit um den lokalen Offset.
+  describe('gemischte Zeitformate (SQLite-UTC vs. ISO)', () => {
+    const sqliteUtc = (ms: number) => new Date(ms).toISOString().replace('T', ' ').slice(0, 19);
+
+    it('Draft created_at im SQLite-Format (7h alt), Gastnachricht ISO 8h alt → regenerated', async () => {
+      const d = deps({
+        getActiveDraftByThread: vi.fn().mockReturnValue(mkDraft({ created_at: sqliteUtc(Date.now() - 7 * HOUR) })),
+        getMessages: vi.fn().mockReturnValue([mkMessage({ sent_at: new Date(Date.now() - 8 * HOUR).toISOString() })]),
+      });
+      const res = await regenerateStaleDraftIfNeeded(mkThread(), d);
+      expect(res).toEqual({ kind: 'regenerated' });
+    });
+
+    it('Draft regenerated_at im SQLite-Format (7h alt), Gastnachricht ISO 6h alt (also NACH der Referenzzeit) → skipped', async () => {
+      const d = deps({
+        getActiveDraftByThread: vi.fn().mockReturnValue(mkDraft({
+          created_at: sqliteUtc(Date.now() - 20 * HOUR),
+          regenerated_at: sqliteUtc(Date.now() - 7 * HOUR),
+        })),
+        getMessages: vi.fn().mockReturnValue([mkMessage({ sent_at: new Date(Date.now() - 6 * HOUR).toISOString() })]),
+      });
+      const res = await regenerateStaleDraftIfNeeded(mkThread(), d);
+      expect(res.kind).toBe('skipped');
+      expect(d.claim).not.toHaveBeenCalled();
+    });
+
+    it('Draft regenerated_at im SQLite-Format erst 2h alt (created_at 20h) → fresh, Referenzzeit ist regenerated_at', async () => {
+      const d = deps({
+        getActiveDraftByThread: vi.fn().mockReturnValue(mkDraft({
+          created_at: sqliteUtc(Date.now() - 20 * HOUR),
+          regenerated_at: sqliteUtc(Date.now() - 2 * HOUR),
+        })),
+      });
+      const res = await regenerateStaleDraftIfNeeded(mkThread(), d);
+      expect(res).toEqual({ kind: 'fresh' });
+      expect(d.claim).not.toHaveBeenCalled();
+    });
+  });
+
   it('hängender Live-Auto-Send (auto_decision=auto, auto_mode=live) → skipped, kein claim', async () => {
     const d = deps({ getActiveDraftByThread: vi.fn().mockReturnValue(mkDraft({ auto_decision: 'auto', auto_mode: 'live' })) });
     const res = await regenerateStaleDraftIfNeeded(mkThread(), d);
