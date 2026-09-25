@@ -631,6 +631,32 @@ Copy-Paste kann ein sicherer Entwurf automatisch rausgehen. Spec:
     `releaseAutoSendForThread`), `booking-request.test.ts` (`findOpenBookingRequest`) und die
     drei End-to-End-Fixtures in `runner.roundscope.test.ts` (echte Repository-Funktionen gegen
     In-Memory-SQLite, Judge gemockt).
+- **HEUTE-Fakt (#698, 25.09.2026, Fall Lorenzo U19):** der Entwurfs-/Judge-Systemprompt kannte
+  bisher weder Wochentag noch Uhrzeit — ein Gast schrieb sonntags „have a wonderful Sunday", der
+  Entwurf spiegelte „schönen Sonntag", gesendet wurde aber erst montags. `today-facts.ts`
+  (`buildTodayBlock`, `parseBookingPeriod`, `allowedWeekdays` — reine Funktionen, kein I/O) baut
+  aus `berlin-day.ts` (`formatBerlinToday`, `berlinWeekdayIndex`, `WEEKDAY_DE_LONG`) und dem
+  Prosa-Zeitraum aus `booking-context.ts` (`Zeitraum TT.MM.JJJJ–TT.MM.JJJJ`, Format dort
+  kommentiert) einen `HEUTE: …`-Block + optional GENAU eine Relationszeile (Anreise in N Tagen/
+  HEUTE, Gast vor Ort, Abreise HEUTE/vor N Tagen). Der Block geht als harter Fakt direkt nach
+  `ANTWORTSPRACHE` in `draft-service.ts` (`buildSystemPrompt`, neuer optionaler `now`-Parameter,
+  Default `new Date()`) UND vor `--- VOICE ---` in `judge-prompt.ts`
+  (`buildJudgeSystemPrompt`) — beide rückwärtskompatibel, `dump-draft-prompt.ts` bleibt
+  unverändert lauffähig. Neue Prompt-Regel (Entwurf): Tages-/Tageszeitwünsche des Gastes NIE
+  wörtlich spiegeln, AUSNAHME für buchungsbezogene Zeitangaben. Judge-Kriterium
+  `contradicts_facts` erweitert um „Wochentag/Tageszeit passt nicht zum HEUTE-Fakt" (keine neue
+  Flag-Art). **Mechanischer Zusatz-Check** `zeitbezug_veraltet` (`mechanical-checks.ts`, neues
+  `MechanicalFlag`, Label in `policy.ts` `MECH_LABEL`): läuft NUR, wenn der Runner (`runner.ts`,
+  ein `now` je Gate-Lauf) ein `now` übergibt — erkennt deutsche/englische Wochentagsnamen (ohne
+  trailing Wortgrenze, damit Komposita wie „Sonntagabend" matchen) außerhalb von
+  `allowedWeekdays(now, bookingContext)`. `allowedWeekdays` ist bewusst eine Obermenge (heutiger
+  Wochentag ∪ ALLE Aufenthaltstage, nicht nur An-/Abreise — Abweichung von der Task-Spec), um
+  Fehlalarme wie „am Samstag könnt ihr …" während eines Fr–So-Aufenthalts zu vermeiden.
+  **Testfixtures:** „Lorenzo — Entwurf spiegelt 'schönen Sonntag' am Montag (#698)" (`auto:
+  false`) und „Lorenzo — neutrale Zeitformulierung statt gespiegeltem Sonntag (#698)" (`auto:
+  true`) in `cases.json` (neues optionales `now`-Feld je Fixture). `test-judge-fixtures.ts` lässt
+  die Mechanik seitdem für ALLE Fälle laufen (wie live im Runner), nicht mehr nur für
+  `buchungsanfrage`.
 - **Judge-Begründung persistiert (#702 Punkt 4, 21.09.2026):** das `reasoning`-Feld des
   `judge_draft`-Tools (types.ts `JudgeVerdict.reasoning`) wurde bisher nur geloggt — eine
   Einordnung wie im Fall Anika (Folgenachricht landete in `sonderwunsch`) ließ sich im
@@ -644,8 +670,8 @@ Copy-Paste kann ein sicherer Entwurf automatisch rausgehen. Spec:
   `AUTO_SEND_DAILY_CAP` (Default 10), `MESSAGE_LOOP_MINUTES` (Default 5), `JUDGE_MODEL`
   (Default `claude-opus-5`), `GUESTY_WEBHOOK_SECRET` (aus `npm run webhook:register`),
   `SMARTTASKS_API_KEY`/`SMARTTASKS_API_URL` (#696, siehe „SmartTasks-Client" oben).
-- **Key Files:** `src/services/auto-send/{types,mode,berlin-day,mechanical-checks,
-  judge-prompt,judge-service,policy,runner}.ts`, `src/services/draft-send-service.ts`,
+- **Key Files:** `src/services/auto-send/{types,mode,berlin-day,today-facts,mechanical-checks,
+  judge-prompt,judge-service,policy,runner}.ts` (`today-facts.ts` seit #698), `src/services/draft-send-service.ts`,
   `src/services/guesty-webhook-signature.ts`, `src/routes/webhooks-guesty.ts`,
   `src/services/{smarttasks-client,promise-task-service}.ts`,
   `src/services/{booking-request,booking-request-task-service}.ts` (#697/#702,
