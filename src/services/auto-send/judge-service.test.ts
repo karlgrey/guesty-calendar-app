@@ -104,4 +104,13 @@ describe('judgeDraft', () => {
     // ignoriert, da dort riskFlags auf genau ['promises_action'] geprüft wird.
     expect(r.kind === 'verdict' && r.verdict.promisedAction).toBe('Sollte nicht vorkommen');
   });
+
+  // #698 (Fall Lorenzo U19): HEUTE-Fakt im Judge-Systemprompt — analog zum Entwurfsprompt
+  // (draft-service.ts), damit das Prüfmodell einen falsch gespiegelten Wochentag erkennen kann.
+  it('Systemprompt enthält die HEUTE-Zeile bei injiziertem now', async () => {
+    const call = vi.fn().mockResolvedValue({ category: 'dank_smalltalk', answerable_from_facts: true, risk_flags: [], confidence: 'hoch', reasoning: 'x' });
+    await judgeDraft({ ...input, now: new Date('2026-09-21T09:00:00.000Z') }, { call, model: 'm' });
+    const prompt = call.mock.calls[0][0].systemPrompt;
+    expect(prompt).toContain('HEUTE: Montag, 21.09.2026');
+  });
 });

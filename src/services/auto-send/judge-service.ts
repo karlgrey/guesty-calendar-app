@@ -15,6 +15,10 @@ export interface JudgeInput {
   // Fakt in den Judge-Kontext, statt language_mismatch allein aus dem Text erraten zu lassen.
   // Optional, damit bestehende Aufrufer/Tests ohne dieses Feld weiterlaufen.
   guestLanguage?: SupportedLanguage;
+  // #698 (Fall Lorenzo U19): Zeitpunkt der Prüfung für den HEUTE-Fakt (today-facts.ts) — optional,
+  // Default new Date() in judgeDraft/buildJudgeSystemPrompt, damit bestehende Aufrufer/Tests ohne
+  // dieses Feld weiterlaufen.
+  now?: Date;
 }
 export interface JudgeDeps { call: typeof callClaudeTool; model: string }
 // deps-Default liest config.judgeModel erst beim tatsächlichen Aufruf (nicht beim Modul-Import) —
@@ -43,7 +47,7 @@ export async function judgeDraft(input: JudgeInput, deps: JudgeDeps = defaultDep
   let out: unknown;
   try {
     out = await deps.call({
-      systemPrompt: buildJudgeSystemPrompt(input.voice, input.facts, input.bookingContext),
+      systemPrompt: buildJudgeSystemPrompt(input.voice, input.facts, input.bookingContext, input.now ?? new Date()),
       userMessage: buildJudgeUserMessage(input),
       tool: JUDGE_DRAFT_TOOL,
       model: deps.model,
