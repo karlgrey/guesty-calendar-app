@@ -52,6 +52,11 @@ const sendReply = vi.fn();
 vi.mock('../services/message-sender.js', () => ({
   sendReply: (...args: unknown[]) => sendReply(...args),
 }));
+// #699: neuer messages.ts-Import — dieser Testfile prüft nur POST .../reply, nicht
+// GET /:threadId, daher komplett gemockt.
+vi.mock('../services/stale-draft-regen.js', () => ({
+  regenerateStaleDraftIfNeeded: vi.fn().mockResolvedValue({ kind: 'skipped', reason: 'test' }),
+}));
 
 import messagesRoutes from './messages.js';
 

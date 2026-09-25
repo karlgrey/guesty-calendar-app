@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { startOfBerlinDayIso, nextBerlinBusinessDay, formatBerlinDeadline, berlinCalendarDay, berlinWeekdayIndex, formatBerlinToday, WEEKDAY_DE_LONG } from './berlin-day.js';
+import { startOfBerlinDayIso, nextBerlinBusinessDay, formatBerlinDeadline, formatBerlinDateTime, berlinCalendarDay, berlinWeekdayIndex, formatBerlinToday, WEEKDAY_DE_LONG } from './berlin-day.js';
 
 describe('startOfBerlinDayIso', () => {
   it('Sommerzeit: 00:00 Berlin = 22:00Z Vortag', () => {
@@ -47,6 +47,19 @@ describe('formatBerlinDeadline (#697, Buchungsanfrage-Frist)', () => {
   });
   it('Wochenende bleibt Wochenende (keine Werktags-Verschiebung)', () => {
     expect(formatBerlinDeadline('2026-09-20T09:00:00.000Z')).toBe('So 11:00');
+  });
+});
+
+// #699: Stale-Draft-Regeneration — Alters-/Vorversions-Zeiten im Admin-UI.
+describe('formatBerlinDateTime (#699, Stale-Draft-Warnhinweis)', () => {
+  it('ISO-UTC (Sommerzeit)', () => {
+    expect(formatBerlinDateTime('2026-09-22T20:35:04.000Z')).toBe('22.09. 22:35');
+  });
+  it('SQLite-UTC-Format ohne "Z" (datetime(\'now\')) wird als UTC gelesen, nicht als lokale Zeit', () => {
+    expect(formatBerlinDateTime('2026-09-22 20:35:04')).toBe('22.09. 22:35');
+  });
+  it('Winterzeit: kein DST-Offset mehr', () => {
+    expect(formatBerlinDateTime('2026-12-05T10:00:00.000Z')).toBe('05.12. 11:00');
   });
 });
 

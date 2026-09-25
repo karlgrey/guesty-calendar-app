@@ -1,3 +1,5 @@
+import { parseUtc } from '../../utils/date.js';
+
 const berlinDateFmt = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Europe/Berlin', year: 'numeric', month: '2-digit', day: '2-digit',
   hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
@@ -50,6 +52,21 @@ export function formatBerlinDeadline(iso: string): string {
   const p = Object.fromEntries(berlinDateFmt.formatToParts(at).map((x) => [x.type, x.value]));
   const weekday = WEEKDAY_DE[new Date(Date.UTC(+p.year, +p.month - 1, +p.day)).getUTCDay()];
   return `${weekday} ${p.hour}:${p.minute}`;
+}
+
+/**
+ * "TT.MM. HH:MM" — Berliner Datum + Uhrzeit eines ISO- ODER SQLite-UTC-Zeitpunkts (#699,
+ * Stale-Draft-Regeneration: Alters-Warnhinweis + Vorversions-Zeiten im Admin-UI,
+ * `src/routes/messages.ts`). Anders als `formatBerlinDeadline` (Wochentag, für Fristen) hier
+ * das Kalenderdatum — beide teilen dasselbe Muster (Y/M/D+H/M aus `berlinDateFmt`). Nutzt
+ * `parseUtc` statt `new Date(iso)` direkt: `message_drafts`-Zeitstempel kommen aus
+ * `datetime('now')` im SQLite-Format "YYYY-MM-DD HH:MM:SS" (kein "Z"), das `new Date()` sonst
+ * fälschlich als lokale Zeit statt UTC läse.
+ */
+export function formatBerlinDateTime(iso: string): string {
+  const at = new Date(parseUtc(iso));
+  const p = Object.fromEntries(berlinDateFmt.formatToParts(at).map((x) => [x.type, x.value]));
+  return `${p.day}.${p.month}. ${p.hour}:${p.minute}`;
 }
 
 /**

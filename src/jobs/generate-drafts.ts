@@ -16,7 +16,8 @@ import logger from '../utils/logger.js';
 // erste, nicht die aller Nachrichten) entscheidet über die ANTWORTSPRACHE. Threads, die hier
 // generiert werden, haben laut deps.getThreads() immer eine letzte Nachricht mit direction
 // 'inbound' — daher genügt die letzte inbound-Nachricht in `messages`.
-function lastInboundBody(messages: Message[]): string {
+// Exportiert (#699): stale-draft-regen.ts braucht denselben Sprach-Pin-Input, keine Kopie.
+export function lastInboundBody(messages: Message[]): string {
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i].direction === 'inbound') return messages[i].body;
   }

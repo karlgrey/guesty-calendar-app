@@ -30,20 +30,16 @@ import { renderAdminPage } from './admin-layout.js';
 import { createFeedback, createSuggestion, countPendingSuggestions } from '../repositories/feedback-repository.js';
 import { generateSuggestion } from '../services/suggestion-service.js';
 import { PAUSE_KEY } from '../services/auto-send/runner.js';
-import { startOfBerlinDayIso, formatBerlinDeadline } from '../services/auto-send/berlin-day.js';
+import { startOfBerlinDayIso, formatBerlinDeadline, formatBerlinDateTime } from '../services/auto-send/berlin-day.js';
 import { config } from '../config/index.js';
 import type { MessageDraft } from '../types/messages.js';
+import { parseUtc } from '../utils/date.js';
+import { regenerateStaleDraftIfNeeded } from '../services/stale-draft-regen.js';
 
 const router = express.Router();
 
 function esc(s: string | null | undefined): string {
   return String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
-}
-
-// Robust UTC parse for DB timestamps (ISO "…Z" or SQLite "YYYY-MM-DD HH:MM:SS").
-function parseUtc(s: string): number {
-  const iso = s.includes('T') ? s : s.replace(' ', 'T');
-  return Date.parse(/Z|[+-]\d{2}:?\d{2}$/.test(iso) ? iso : `${iso}Z`);
 }
 
 // ISO timestamp -> "2026-06-29 08:37" (trim seconds/timezone for readability).
@@ -104,6 +100,43 @@ export function renderAutoBadge(draft: MessageDraft): string {
     return `<span class="badge" style="background:var(--color-amber);color:#fff;border:none">🟡 Auto-Send steht aus${esc(taskSuffix(draft))}</span>`;
   }
   return '';
+}
+
+// Stale-Draft-Regeneration (#699): Referenzzeit fürs Entwurfs-Alter — dieselbe Logik wie
+// stale-draft-regen.ts (dort nicht importierbar ohne Zirkelbezug, daher hier separat, aber
+// exportiert + getestet statt als Kopie unbemerkt auseinanderzulaufen).
+export function draftReferenceTime(draft: MessageDraft): string {
+  return draft.regenerated_at ?? draft.created_at;
+}
+
+// true, wenn der Entwurf (nach einem etwaigen Regenerations-Lauf) IMMER NOCH älter als
+// staleHours ist — Grundlage für den gelben Warnhinweis unten. Rein (kein Date.now()-Mock
+// nötig in Tests dank optionalem `now`).
+export function isDraftStale(draft: MessageDraft, staleHours: number, now: number = Date.now()): boolean {
+  const ageMs = now - parseUtc(draftReferenceTime(draft));
+  return ageMs >= staleHours * 60 * 60 * 1000;
+}
+
+// Gelber Warnhinweis, wenn der (ggf. gerade neu generierte) Entwurf immer noch älter als
+// staleHours ist — z. B. weil die Neugenerierung technisch fehlschlug (stale-draft-regen.ts
+// gibt dann 'failed' zurück, der alte Entwurf bleibt stehen). Rein, testbar wie renderAutoBadge.
+export function renderStaleDraftWarning(draft: MessageDraft, staleHours: number, now: number = Date.now()): string {
+  if (draft.generated_by !== 'llm' || !isDraftStale(draft, staleHours, now)) return '';
+  return `<p class="subtitle" style="background:var(--color-sand);padding:10px 14px;border-radius:8px">
+    Entwurf vom ${esc(formatBerlinDateTime(draftReferenceTime(draft)))}, Zeitbezüge prüfen.
+  </p>`;
+}
+
+// Aufklappbare Vorversion nach einer automatischen Stale-Draft-Regeneration (#699) — nur
+// vorhanden, wenn previous_body gesetzt ist (mind. einmal automatisch neu generiert).
+export function renderPreviousDraftBody(draft: MessageDraft): string {
+  if (!draft.previous_body) return '';
+  const previousAt = draft.previous_body_at ? formatBerlinDateTime(draft.previous_body_at) : '?';
+  const regeneratedAt = draft.regenerated_at ? formatBerlinDateTime(draft.regenerated_at) : '?';
+  return `<details style="margin-top:12px">
+    <summary style="cursor:pointer;color:var(--color-warm-gray)">Vorversion (Entwurf vom ${esc(previousAt)}) — automatisch neu generiert ${esc(regeneratedAt)}</summary>
+    <div style="margin-top:8px;white-space:pre-wrap">${esc(draft.previous_body)}</div>
+  </details>`;
 }
 
 // ISO/SQLite-Timestamp -> "YYYY-MM-DD" (Gruppierungsschlüssel je Kalendertag).
@@ -284,9 +317,19 @@ router.post('/auto-send/pause', express.urlencoded({ extended: true }), (req, re
 });
 
 // Thread-Detail + Draft-Formular
-router.get('/:threadId', (req, res) => {
+router.get('/:threadId', async (req, res) => {
   const thread = getThreadById(req.params.threadId);
   if (!thread) { res.status(404).send('Thread nicht gefunden'); return; }
+  // #699: ein zu alter pending-KI-Entwurf wird hier still neu generiert (derselbe Datensatz),
+  // BEVOR die Seite gerendert wird — ein Fehler dabei darf die Seite nie mit 500 zum Absturz
+  // bringen, nur loggen (der alte Entwurf bleibt dann einfach stehen).
+  try {
+    await regenerateStaleDraftIfNeeded(thread);
+  } catch (err) {
+    logger.warn({ threadId: thread.id, err: err instanceof Error ? err.message : String(err) }, 'GET /:threadId: Stale-Draft-Regeneration fehlgeschlagen');
+  }
+  // Frisch laden: der Draft kann durch die Regeneration (und einen daran anschließenden
+  // Live-Auto-Send) inzwischen einen anderen Body haben oder ganz verschwunden (gesendet) sein.
   const msgs = getMessagesByThread(thread.id);
   const draft = getActiveDraftByThread(thread.id);
   // Ohne aktiven Draft: den zuletzt gesendeten heranziehen, damit das grüne
@@ -343,6 +386,7 @@ router.get('/:threadId', (req, res) => {
   const canSendHint = '<p class="subtitle">Kanal unklar — bitte direkt in der Guesty-Inbox antworten.</p>';
   const draftBlock = draft
     ? `<h3>${draft.generated_by === 'llm' ? 'KI-Entwurf' : 'Entwurf'}</h3>
+       ${renderStaleDraftWarning(draft, config.draftStaleHours)}
        ${canSend
          ? `<form method="POST" action="/admin/messages/drafts/${encodeURIComponent(draft.id)}/send">
               <textarea name="body" rows="7">${esc(draft.body)}</textarea>
@@ -350,6 +394,7 @@ router.get('/:threadId', (req, res) => {
             </form>`
          : `<textarea rows="7" readonly>${esc(draft.body)}</textarea>
             ${canSendHint}`}
+       ${renderPreviousDraftBody(draft)}
        <div class="actions">
          ${draft.generated_by === 'llm' ? `<form method="POST" action="/admin/messages/${encodeURIComponent(thread.id)}/regenerate"><button type="submit" class="btn btn-ghost">Neu generieren</button></form>` : ''}
          <form method="POST" action="/admin/messages/drafts/${encodeURIComponent(draft.id)}/discard">

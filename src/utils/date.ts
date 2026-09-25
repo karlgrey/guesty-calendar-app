@@ -25,3 +25,14 @@ export function addDays(dateStr: string, days: number): string {
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().split('T')[0];
 }
+
+/**
+ * Robust UTC parse for DB timestamps (ISO "…Z" or SQLite "YYYY-MM-DD HH:MM:SS", das Format,
+ * das `datetime('now')` liefert). Geteilt von `routes/messages.ts` (Alters-Anzeige im
+ * Admin-UI) und `services/stale-draft-regen.ts` (#699, Referenzzeit fürs Entwurfs-Alter) —
+ * vormals in messages.ts dupliziert.
+ */
+export function parseUtc(s: string): number {
+  const iso = s.includes('T') ? s : s.replace(' ', 'T');
+  return Date.parse(/Z|[+-]\d{2}:?\d{2}$/.test(iso) ? iso : `${iso}Z`);
+}
