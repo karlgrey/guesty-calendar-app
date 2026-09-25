@@ -135,6 +135,10 @@ export async function runAutoSendGate(input: GateInput, deps: GateDeps = realGat
 
   let decision: AutoSendDecision;
   try {
+    // #698 (Fall Lorenzo U19): EINMAL je Gate-Lauf bestimmt — geht an Judge UND mechanischen
+    // Check, damit beide vom selben HEUTE-Zeitpunkt ausgehen (kein Auseinanderdriften bei einem
+    // Lauf, der über eine Sekundengrenze hinweg dauert).
+    const now = new Date();
     const guestMessages = guestMessagesSinceLastHost(input.messages);
     // #697/#702: mechanische Buchungsanfrage-Erkennung — pure, unabhängig vom Judge-Modell.
     // Läuft VOR dem Judge-Aufruf, damit Task-Anlage + Fristpersistenz unten unabhängig vom
@@ -150,7 +154,7 @@ export async function runAutoSendGate(input: GateInput, deps: GateDeps = realGat
     const judge = await deps.judge({
       guestMessages, draft: input.body, voice: input.voice, facts: input.facts,
       bookingContext: input.bookingContext, guestName: input.thread.guest_name,
-      guestLanguage: input.guestLanguage,
+      guestLanguage: input.guestLanguage, now,
     });
     // Kategorie-Override: ein erkannter System-Post erzwingt 'buchungsanfrage' — unabhängig
     // davon, was (oder ob überhaupt) der Judge klassifiziert hat (Spec: "der Judge darf sie
@@ -167,6 +171,7 @@ export async function runAutoSendGate(input: GateInput, deps: GateDeps = realGat
       knownDigitRuns: collectDigitRuns([...guestMessages, input.bookingContext ?? '']),
       guestLanguage: input.guestLanguage,
       isBookingRequest,
+      now, bookingContext: input.bookingContext,
     });
     const baseInput: Omit<PolicyInput, 'promiseTask' | 'bookingTask'> = {
       mode, paused: deps.isPaused(), judge: effectiveJudge, mechanical,

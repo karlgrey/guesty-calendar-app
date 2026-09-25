@@ -38,6 +38,7 @@ const MECH_LABEL: Record<MechanicalFlag, string> = {
   code_words: 'Code-Wort mit Ziffer', length: 'Text zu lang', empty: 'Text leer',
   language_mismatch: 'falsche Sprache (mechanisch erkannt)', // #695
   confirmation_words: 'Bestätigungswort in einer Buchungsanfrage-Rückfrage', // #697
+  zeitbezug_veraltet: 'Wochentag passt nicht zu heute/Buchung', // #698
 };
 
 /**

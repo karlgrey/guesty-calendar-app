@@ -104,3 +104,43 @@ describe('runMechanicalChecks — confirmation_words (#697, nur Buchungsanfrage-
     expect(flags('Das ist bestätigt, freuen uns auf euch!')).not.toContain('confirmation_words');
   });
 });
+
+// #698 (Fall Lorenzo U19, 20.09.2026): Wochentags-Check — der Entwurfs-Systemprompt kannte
+// bisher weder Wochentag noch Uhrzeit, ein sonntags gepostetes "have a wonderful Sunday" wurde
+// deshalb erst montags mit gespiegeltem "schönen Sonntag" versandt.
+describe('runMechanicalChecks — zeitbezug_veraltet (#698)', () => {
+  const monday = new Date('2026-09-21T09:00:00.000Z'); // Montag, Europe/Berlin 11:00
+  const flagsFor = (body: string, now: Date = monday, bookingContext: string | null = null) =>
+    runMechanicalChecks(body, { knownDigitRuns: [], now, bookingContext }).map((f) => f.flag);
+
+  it('(a) "Schönen Sonntag noch!" bei now=Montag → zeitbezug_veraltet', () => {
+    expect(flagsFor('Schönen Sonntag noch!')).toContain('zeitbezug_veraltet');
+  });
+  it('(b) "Schönen Montag!" bei now=Montag → keine Flags', () => {
+    expect(flagsFor('Schönen Montag!')).toEqual([]);
+  });
+  it('(c) EN "Enjoy your Sunday" bei now=Montag → zeitbezug_veraltet', () => {
+    expect(flagsFor('Enjoy your Sunday!')).toContain('zeitbezug_veraltet');
+  });
+  it('(d) Anreise Freitag laut bookingContext, Entwurf "bis Freitag!" bei now=Montag → keine Flags', () => {
+    const bookingContext = 'Buchung: Zeitraum 25.09.2026–27.09.2026, 2 Nächte, 2 Personen, Konfirmationscode X.';
+    expect(flagsFor('Wir freuen uns, bis Freitag!', monday, bookingContext)).toEqual([]);
+  });
+  it('(e) Aufenthalt Fr–So, "am Samstag" → keine Flags', () => {
+    const bookingContext = 'Buchung: Zeitraum 25.09.2026–27.09.2026, 2 Nächte, 2 Personen, Konfirmationscode X.';
+    expect(flagsFor('Am Samstag ist auch der Markt geöffnet.', monday, bookingContext)).toEqual([]);
+  });
+  it('(f) ohne now läuft der Check nicht (Rückwärtskompatibilität)', () => {
+    expect(flags('Schönen Sonntag noch!')).not.toContain('zeitbezug_veraltet');
+  });
+  it('(g) Fall Lorenzo: neutrale Formulierung ohne Wochentag → keine Flags', () => {
+    expect(flagsFor('Danke dir! Euch eine gute Zeit.')).toEqual([]);
+  });
+  it('Komposita wie „Sonntagabend" matchen ebenfalls (kein trailing Wortgrenze)', () => {
+    expect(flagsFor('Wir wünschen einen schönen Sonntagabend.')).toContain('zeitbezug_veraltet');
+  });
+  it('liefert Fundstelle', () => {
+    const f = runMechanicalChecks('Schönen Sonntag noch!', { knownDigitRuns: [], now: monday, bookingContext: null });
+    expect(f).toEqual([{ flag: 'zeitbezug_veraltet', match: 'Sonntag' }]);
+  });
+});

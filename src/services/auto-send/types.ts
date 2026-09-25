@@ -60,7 +60,11 @@ export type MechanicalFlag =
   | 'language_mismatch'
   // #697: Bestätigungs-/Zusagewort im Entwurf einer Buchungsanfrage (nur relevant, wenn der
   // mechanische Check im Buchungsanfrage-Kontext läuft, siehe mechanical-checks.ts).
-  | 'confirmation_words';
+  | 'confirmation_words'
+  // #698 (Fall Lorenzo U19): Entwurf nennt einen Wochentag (DE/EN), der nicht zum heutigen
+  // Berliner Kalendertag bzw. zum Aufenthaltszeitraum passt (nur relevant, wenn der mechanische
+  // Check mit `now` läuft, siehe mechanical-checks.ts/today-facts.ts).
+  | 'zeitbezug_veraltet';
 export interface MechanicalFinding { flag: MechanicalFlag; match: string }
 
 export interface AutoSendDecision {
