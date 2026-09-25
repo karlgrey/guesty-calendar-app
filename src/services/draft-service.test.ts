@@ -313,3 +313,54 @@ describe('generateDraftForThread — Sprach-Pin (#695)', () => {
     expect(prompt).not.toContain('Die vorige Antwort war in der falschen Sprache');
   });
 });
+
+// #698 (Fall Lorenzo U19, 20.09.2026): HEUTE-Fakt im Entwurfs-Systemprompt — der Prompt kannte
+// bisher weder Wochentag noch Uhrzeit, ein sonntags gepostetes "have a wonderful Sunday" wurde
+// deshalb erst montags mit gespiegeltem "schönen Sonntag" versandt.
+describe('generateDraftForThread — HEUTE-Fakt (#698)', () => {
+  it('setzt die HEUTE-Zeile im Systemprompt für ein festes now', async () => {
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'x' });
+    await generateDraftForThread(
+      { thread: thread(), messages, voice: 'v', facts: 'f', now: new Date('2026-09-25T06:45:00.000Z') },
+      { call },
+    );
+    const prompt = call.mock.calls[0][0].systemPrompt;
+    expect(prompt).toContain('HEUTE: Freitag, 25.09.2026, 08:45 Uhr (Europe/Berlin)');
+  });
+
+  it('setzt die Relationszeile bei vorhandenem Buchungskontext', async () => {
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'x' });
+    await generateDraftForThread(
+      {
+        thread: thread(), messages, voice: 'v', facts: 'f',
+        bookingContext: 'Buchung: Zeitraum 28.09.2026–02.10.2026, 4 Nächte, 2 Personen, Konfirmationscode X.',
+        now: new Date('2026-09-25T06:45:00.000Z'),
+      },
+      { call },
+    );
+    const prompt = call.mock.calls[0][0].systemPrompt;
+    expect(prompt).toContain('Anreise in 3 Tagen (Montag, 28.09.2026); Abreise Freitag, 02.10.2026');
+  });
+
+  it('enthält die Nicht-Spiegeln-Regel für Tages-/Tageszeitwünsche', async () => {
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'x' });
+    await generateDraftForThread({ thread: thread(), messages, voice: 'v', facts: 'f' }, { call });
+    const prompt = call.mock.calls[0][0].systemPrompt;
+    expect(prompt).toContain('NIEMALS wörtlich spiegeln');
+    expect(prompt).toContain('AUSNAHME');
+  });
+
+  it('Fall Lorenzo: now=Montag, Gastnachricht "have a wonderful Sunday" → HEUTE: Montag im Prompt + Nicht-Spiegeln-Regel', async () => {
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'x' });
+    const lorenzoMessages: Message[] = [
+      { id: 'm1', thread_id: 'hostex:c1', direction: 'inbound', sent_at: '2026-09-21T09:00Z', from_name: 'Lorenzo', from_address: null, to_address: null, subject: null, body: 'Thanks, have a wonderful Sunday!', body_html: null, source: 'hostex', raw_meta: null },
+    ];
+    await generateDraftForThread(
+      { thread: thread(), messages: lorenzoMessages, voice: 'v', facts: 'f', now: new Date('2026-09-21T09:00:00.000Z') },
+      { call },
+    );
+    const prompt = call.mock.calls[0][0].systemPrompt;
+    expect(prompt).toContain('HEUTE: Montag, 21.09.2026');
+    expect(prompt).toContain('NIEMALS wörtlich spiegeln');
+  });
+});

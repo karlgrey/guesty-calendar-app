@@ -1,6 +1,7 @@
 import { callClaudeTool, type ClaudeToolDefinition } from './anthropic-client.js';
 import type { MessageThread, Message } from '../types/messages.js';
 import { LANGUAGE_LABEL, type SupportedLanguage } from '../utils/language-detect.js';
+import { buildTodayBlock } from './auto-send/today-facts.js';
 
 export const DRAFT_MODEL = 'claude-sonnet-5';
 
@@ -59,6 +60,11 @@ export interface DraftInput {
   // Buchungsanfrage-Prompt-Block (Rückfrage statt normaler Antwort). Optional, damit
   // bestehende Aufrufer/Tests ohne dieses Feld weiterlaufen (dann der normale Prompt).
   isBookingRequest?: boolean;
+  // #698 (Fall Lorenzo U19): Zeitpunkt der Entwurfs-Generierung für den HEUTE-Fakt
+  // (today-facts.ts) — optional, Default new Date() in generateDraftForThread/buildSystemPrompt,
+  // damit bestehende Aufrufer/Tests ohne dieses Feld weiterlaufen. In Tests injizierbar, damit
+  // Datum/Wochentag deterministisch geprüft werden können.
+  now?: Date;
 }
 export interface DraftDeps {
   call: typeof callClaudeTool;
@@ -166,12 +172,21 @@ export function buildSystemPrompt(
   languageRetry = false,
   // #697: siehe DraftInput.isBookingRequest.
   isBookingRequest = false,
+  // #698 (Fall Lorenzo U19): LETZTER optionaler Parameter — Signatur bleibt rückwärtskompatibel,
+  // dump-draft-prompt.ts (#440-Abnahme-Werkzeug) ruft buildSystemPrompt ohne dieses Argument
+  // weiterhin unverändert lauffähig auf.
+  now: Date = new Date(),
 ): string {
   const lines = [
     buildThreadFactsBlock(thread),
     // #695 (Fall Lorenzo U19, 20.09.2026): als eigene harte Zeile VOR Voice/Objektwissen, damit
     // sie nicht von den (meist deutschen) Voice-Beispielen überstimmt wird.
     `ANTWORTSPRACHE: ${LANGUAGE_LABEL[guestLanguage]}`,
+    // #698 (Fall Lorenzo U19, 20.09.2026): der Prompt kannte bisher weder Wochentag noch
+    // Uhrzeit — Zeitbezüge kamen ausschließlich aus der Gastnachricht. Ein sonntags gepostetes
+    // "have a wonderful Sunday" wurde deshalb erst montags mit gespiegeltem "schönen Sonntag"
+    // versandt. Direkt nach ANTWORTSPRACHE, vor Voice/Objektwissen — als harter Fakt.
+    buildTodayBlock(now, bookingContext),
   ];
   if (isBookingRequest) lines.push(buildBookingRequestBlock());
   lines.push(
@@ -201,6 +216,17 @@ export function buildSystemPrompt(
     // Sprache ist ein Fakt, kein Stilhinweis, den Voice-Beispiele überstimmen dürfen.
     'Regeln: Kein Auto-Versand von Zugangscodes. Antworte AUSSCHLIESSLICH auf der oben festgelegten ' +
       'ANTWORTSPRACHE — unabhängig von der Sprache der Voice-Beispiele, kein Sprachenmix. Kurz und konkret.',
+    // #698 (Fall Lorenzo U19, 20.09.2026): Tages-/Tageszeitwünsche des Gastes NICHT wörtlich
+    // spiegeln — der Entwurf wird ggf. an einem anderen Tag/zu anderer Zeit gelesen (Vorfall:
+    // Gast schrieb sonntags "have a wonderful Sunday", der Entwurf spiegelte "schönen Sonntag",
+    // gesendet wurde aber erst montags). AUSNAHME für buchungsbezogene Zeitangaben (Check-in-
+    // Zeit, Anreise-/Abreisetag) — die bleiben konkret, siehe HEUTE-Block oben/Buchungskontext.
+    'Tages- und Tageszeitwünsche des Gastes (z. B. „schönen Sonntag", „guten Abend", „have a nice ' +
+      'Sunday") NIEMALS wörtlich spiegeln — deine Antwort wird möglicherweise erst an einem anderen ' +
+      'Tag oder zu einer anderen Uhrzeit gelesen. Formuliere stattdessen neutral (z. B. „euch eine ' +
+      'gute Zeit", „eine schöne Woche"). AUSNAHME: Zeitangaben, die die Buchung selbst betreffen ' +
+      '(Check-in-Zeit, Anreise-/Abreisetag laut HEUTE-Block/Buchungskontext), bleiben konkret. Nenne ' +
+      'einen Wochentag nur, wenn er zum HEUTE-Fakt oder zu Anreise/Abreise passt.',
     'Keine Antwort nötig (no_reply_needed=true) NUR, wenn die Nachricht WEDER eine Frage NOCH ein ' +
       'Anliegen/eine Bitte enthält — also eine reine Dankes-/Bestätigungsnachricht oder ein bloßes Emoji.',
     'Beginnt eine Nachricht mit Dank, enthält aber danach eine Frage oder ein Anliegen, ist das KEIN ' +
@@ -272,6 +298,7 @@ export async function generateDraftForThread(
         input.guestLanguage ?? 'de',
         input.languageRetry ?? false,
         input.isBookingRequest ?? false,
+        input.now ?? new Date(),
       ),
       userMessage: buildConversation(input.messages, input.thread.guest_name),
       tool: SUBMIT_REPLY_TOOL,

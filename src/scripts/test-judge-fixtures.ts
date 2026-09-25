@@ -17,9 +17,13 @@ import type { SupportedLanguage } from '../utils/language-detect.js';
 // Buchungsanfragen im Judge-Prompt bekommen (booking-context.ts) — die mechanische
 // System-Post-Erkennung (booking-request.ts) selbst läuft NICHT über dieses Skript (reiner
 // Judge+Policy-Test, kein I/O), sondern ist in booking-request.test.ts/runner.test.ts abgedeckt.
+// #698: optionales `now` (ISO) je Fixture — geht an judgeDraft (HEUTE-Fakt im Judge-Prompt) UND
+// an die mechanischen Checks (Wochentags-Check). Ohne `now` bleibt beides wie bisher aus (die
+// meisten Alt-Fixtures haben keine Zeitbezug-Erwartung und sollen nicht plötzlich vom
+// tatsächlichen Live-now abhängen).
 interface Case {
   name: string; guestMessages: string[]; draft: string; facts?: string; guestName?: string | null;
-  guestLanguage?: SupportedLanguage; bookingContext?: string;
+  guestLanguage?: SupportedLanguage; bookingContext?: string; now?: string;
   expected: {
     category: string | string[]; auto: boolean;
     // #696: optional — nur für Fälle mit Zusage gesetzt (Fixture "Lorenzo").
@@ -29,18 +33,25 @@ interface Case {
 const cases = JSON.parse(readFileSync(new URL('../test-fixtures/judge/cases.json', import.meta.url), 'utf8')) as Case[];
 let failed = 0;
 for (const c of cases) {
+  const now = c.now ? new Date(c.now) : undefined;
   const r = await judgeDraft({
     guestMessages: c.guestMessages, draft: c.draft, voice: 'Du, locker, herzlich, kurz.',
     facts: c.facts ?? '(keine Fakten)', bookingContext: c.bookingContext ?? null, guestName: c.guestName ?? null,
-    guestLanguage: c.guestLanguage,
+    guestLanguage: c.guestLanguage, now,
   });
   if (r.kind !== 'verdict') { console.log(`✗ ${c.name}: technisch fehlgeschlagen (${r.error})`); failed++; continue; }
   const v = r.verdict;
-  // #697 (Review): Buchungsanfrage-Entwürfe laufen hier auch durch die mechanischen Checks inkl.
-  // confirmation_words — sonst würde eine Fixture „auto“ melden, die live am Bestätigungswort stoppt.
-  const mechanical = v.category === 'buchungsanfrage'
-    ? runMechanicalChecks(c.draft, { knownDigitRuns: collectDigitRuns([...c.guestMessages, c.bookingContext ?? '']), guestLanguage: c.guestLanguage, isBookingRequest: true })
-    : [];
+  // #698 (Review): die Mechanik läuft jetzt für ALLE Fälle (wie live im Runner, runner.ts) statt
+  // nur für buchungsanfrage — sonst würde eine Fixture „auto“ melden, die live an
+  // zeitbezug_veraltet oder einem anderen mechanischen Check stoppt. isBookingRequest bleibt an
+  // die Kategorie gekoppelt (confirmation_words ist nur dort relevant); now/bookingContext gehen
+  // unconditional durch (ohne `now` läuft der Wochentags-Check ohnehin nicht, siehe oben).
+  const mechanical = runMechanicalChecks(c.draft, {
+    knownDigitRuns: collectDigitRuns([...c.guestMessages, c.bookingContext ?? '']),
+    guestLanguage: c.guestLanguage,
+    isBookingRequest: v.category === 'buchungsanfrage',
+    now, bookingContext: c.bookingContext ?? null,
+  });
   const baseInput = { mode: 'live' as const, paused: false, judge: r, mechanical, threadHasHumanIntervention: false, threadHasFailedSend: false, autoSentToday: 0, dailyCap: 10, canSend: true };
   const d = decide({ ...baseInput, promiseTask: null });
   // #696: ein Zusagen-Fall (promises_action allein) geht bei decide() nur "auto", wenn ein

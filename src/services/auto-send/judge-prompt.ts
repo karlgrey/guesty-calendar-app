@@ -3,6 +3,7 @@
 // von draft-service.ts und review-classifier.ts. Kategorien/Flags: types.ts.
 import type { ClaudeToolDefinition } from '../anthropic-client.js';
 import { JUDGE_CATEGORIES, JUDGE_RISK_FLAGS } from './types.js';
+import { buildTodayBlock } from './today-facts.js';
 
 export const JUDGE_DRAFT_TOOL: ClaudeToolDefinition = {
   name: 'judge_draft',
@@ -25,7 +26,14 @@ export const JUDGE_DRAFT_TOOL: ClaudeToolDefinition = {
   },
 };
 
-export function buildJudgeSystemPrompt(voice: string, facts: string, bookingContext: string | null): string {
+export function buildJudgeSystemPrompt(
+  voice: string,
+  facts: string,
+  bookingContext: string | null,
+  // #698 (Fall Lorenzo U19): letzter optionaler Parameter, Default new Date() — rückwärts-
+  // kompatibel für bestehende Aufrufer.
+  now: Date = new Date(),
+): string {
   const lines = [
     'Du bist die unabhängige Prüfinstanz für automatische Gästeantworten einer Ferienvermietung.',
     'Ein anderes Modell hat einen Antwortentwurf geschrieben. Du entscheidest NICHT, ob die Antwort gut klingt,',
@@ -63,7 +71,9 @@ export function buildJudgeSystemPrompt(voice: string, facts: string, bookingCont
     '  Fülle in diesem Fall zusätzlich promised_action mit einem Satz, was konkret zugesagt wird — die Zusage wird',
     '  dann als Aufgabe nachgehalten, ist also (allein) KEIN Grund, den Entwurf zurückzuhalten.',
     '- mentions_code: Entwurf nennt oder umschreibt Zugangscodes, Tresor-/Schloss-Kombinationen.',
-    '- contradicts_facts: Entwurf widerspricht OBJEKTWISSEN oder BUCHUNGSKONTEXT.',
+    '- contradicts_facts: Entwurf widerspricht OBJEKTWISSEN oder BUCHUNGSKONTEXT — oder der Entwurf ' +
+      'nennt einen Wochentag oder eine Tageszeit (z. B. „schönen Sonntag", „guten Abend"), die nicht ' +
+      'zum HEUTE-Fakt bzw. zu Anreise/Abreise passt (#698).',
     '- tone_off: Ton weicht DEUTLICH von der VOICE ab — z. B. durchgehend förmliches "Sie" statt geforderter',
     '  Du-Ansprache, unfreundlich, oder auffällig unpassender Slang. Eine knappe, sachliche, aber freundliche',
     '  Formulierung OHNE explizite Distanzsignale (kein "Sie", keine Kälte) ist KEIN tone_off, auch wenn sie',
@@ -83,6 +93,10 @@ export function buildJudgeSystemPrompt(voice: string, facts: string, bookingCont
       'OBJEKTWISSEN zitiertes Limit/ausgeschlossene Event-Arten, ohne Zusage) selbst fehlerfrei ist — dass die eigentliche ' +
       'Buchungsentscheidung bei Micha bleibt, ist bereits durch die Kategorie selbst sichergestellt (buchungsanfrage ist nie ' +
       'automatisch, Annahme/Ablehnung geht immer an Micha) und darf confidence NICHT zusätzlich senken.',
+    // #698 (Fall Lorenzo U19, 20.09.2026): HEUTE-Fakt VOR VOICE — dasselbe Muster wie im
+    // Entwurfs-Systemprompt (draft-service.ts), damit das Prüfmodell einen im Entwurf falsch
+    // gespiegelten Wochentag/Tageszeitwunsch als contradicts_facts erkennen kann.
+    buildTodayBlock(now, bookingContext),
     '--- VOICE ---', voice, '--- ENDE VOICE ---',
     '--- OBJEKTWISSEN ---', facts, '--- ENDE OBJEKTWISSEN ---',
   ];

@@ -37,6 +37,10 @@ export function buildBookingContext(thread: MessageThread): string | null {
       const code = res.confirmation_code ?? res.reservation_id;
       const label = status === 'confirmed' ? 'Bestätigte Buchung' : 'Buchung';
 
+      // #698: das Format "Zeitraum TT.MM.JJJJ–TT.MM.JJJJ" (Gedankenstrich) wird von
+      // today-facts.ts (parseBookingPeriod) geparst, um den HEUTE-Fakt/allowedWeekdays zu
+      // berechnen — Format hier NICHT ändern, ohne today-facts.ts mitzuziehen ("?" statt eines
+      // Datums ist dabei bewusst OK, matcht dort nicht und liefert konservativ null).
       return (
         `${label} (Status: ${status}): Zeitraum ${checkIn}–${checkOut}, ` +
         `${res.nights_count} Nächte, ${guests}, Konfirmationscode ${code}.`

@@ -63,3 +63,30 @@ export function berlinCalendarDay(iso: string): string {
   const p = Object.fromEntries(berlinDateFmt.formatToParts(at).map((x) => [x.type, x.value]));
   return `${p.year}-${p.month}-${p.day}`;
 }
+
+/**
+ * Wochentagsindex (0=So … 6=Sa) des Berliner Kalendertags von `at` (#698, HEUTE-Fakt —
+ * Fall Lorenzo U19: der Entwurfs-Systemprompt kannte bisher weder Wochentag noch Uhrzeit, ein
+ * sonntags gepostetes "have a wonderful Sunday" wurde deshalb erst montags gespiegelt versandt).
+ * Gleiches Muster wie formatBerlinDeadline: Y/M/D des in Berlin abgelesenen Kalendertags als
+ * UTC-Datum interpretiert, Wochentag hängt nur vom Kalendertag ab.
+ */
+export function berlinWeekdayIndex(at: Date): number {
+  const p = Object.fromEntries(berlinDateFmt.formatToParts(at).map((x) => [x.type, x.value]));
+  return new Date(Date.UTC(+p.year, +p.month - 1, +p.day)).getUTCDay();
+}
+
+export const WEEKDAY_DE_LONG = ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag'];
+
+/**
+ * "Freitag, 25.09.2026, 08:45 Uhr (Europe/Berlin)" — der HEUTE-Fakt für Entwurfs-/Judge-Prompt
+ * (#698, today-facts.ts). Anders als berlinWeekdayIndex/formatBerlinDeadline (nur Kalendertag)
+ * gibt dieser Helfer auch die Uhrzeit aus — deshalb bewusst die tatsächliche Berliner Uhrzeit
+ * von `now` verwenden (inkl. DST-Offset zum Zeitpunkt `now`, nicht zur Mitternacht wie bei
+ * startOfBerlinDayIso).
+ */
+export function formatBerlinToday(now: Date = new Date()): string {
+  const p = Object.fromEntries(berlinDateFmt.formatToParts(now).map((x) => [x.type, x.value]));
+  const weekday = WEEKDAY_DE_LONG[berlinWeekdayIndex(now)];
+  return `${weekday}, ${p.day}.${p.month}.${p.year}, ${p.hour}:${p.minute} Uhr (Europe/Berlin)`;
+}
