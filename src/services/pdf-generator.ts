@@ -12,6 +12,7 @@ import logger from '../utils/logger.js';
 import type { Document, DocumentType } from '../repositories/document-repository.js';
 import { getReservationById } from '../repositories/reservation-repository.js';
 import { getPropertyByGuestyId } from '../config/properties.js';
+import { berlinCalendarDay } from './auto-send/berlin-day.js';
 
 // ============================================================================
 // TYPES
@@ -70,6 +71,10 @@ export interface DocumentTemplateData {
   // Check-in/-out (aus PropertyConfig.checkInTime/checkOutTime — nur gesetzt, wenn beide
   // Werte in data/properties.json hinterlegt sind, sonst fehlt die Zeile im Dokument)
   checkInOutText: string | undefined;
+
+  // Vergangener Aufenthalt (#716): Berliner Kalendertag des Check-outs liegt vor heute —
+  // Template schaltet auf "Vielen Dank für euren Aufenthalt." um und blendet Check-in/-out aus
+  isPastStay: boolean;
 
   // Logo
   logoBase64: string;
@@ -161,8 +166,8 @@ function resolveCheckInOutText(reservationId: string): string | undefined {
 /**
  * Convert Document to template data
  */
-export function documentToTemplateData(doc: Document): DocumentTemplateData {
-  const today = new Date();
+export function documentToTemplateData(doc: Document, now: Date = new Date()): DocumentTemplateData {
+  const today = now;
   const validUntil = new Date(today);
   validUntil.setDate(validUntil.getDate() + 7); // Quote valid for 7 days
 
@@ -211,6 +216,8 @@ export function documentToTemplateData(doc: Document): DocumentTemplateData {
     isAirbnb: doc.source?.toLowerCase().includes('airbnb') ?? false,
 
     checkInOutText: resolveCheckInOutText(doc.reservationId),
+
+    isPastStay: berlinCalendarDay(doc.checkOut) < berlinCalendarDay(now.toISOString()),
 
     logoBase64: getLogoBase64(),
   };

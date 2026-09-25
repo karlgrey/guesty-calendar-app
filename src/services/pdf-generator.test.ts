@@ -94,3 +94,45 @@ describe('documentToTemplateData — checkInOutText', () => {
     expect(getPropertyByGuestyIdMock).not.toHaveBeenCalled();
   });
 });
+
+describe('documentToTemplateData — isPastStay (#716)', () => {
+  beforeEach(() => {
+    getReservationByIdMock.mockReset();
+    getPropertyByGuestyIdMock.mockReset();
+    getReservationByIdMock.mockReturnValue(null);
+  });
+
+  const now = new Date('2026-09-25T10:00:00.000Z'); // 25.09. 12:00 in Berlin
+
+  it('ist true, wenn der Check-out gestern war', () => {
+    const data = documentToTemplateData(baseDocument({ checkOut: '2026-09-24' }), now);
+    expect(data.isPastStay).toBe(true);
+  });
+
+  it('ist false, wenn der Check-out heute ist', () => {
+    const data = documentToTemplateData(baseDocument({ checkOut: '2026-09-25' }), now);
+    expect(data.isPastStay).toBe(false);
+  });
+
+  it('ist false, wenn der Check-out morgen ist', () => {
+    const data = documentToTemplateData(baseDocument({ checkOut: '2026-09-26' }), now);
+    expect(data.isPastStay).toBe(false);
+  });
+
+  it('nutzt den Berliner Kalendertag von heute (22:30Z ist bereits der Folgetag in Berlin)', () => {
+    const lateNow = new Date('2026-09-25T22:30:00.000Z'); // 26.09. 00:30 in Berlin
+    const data = documentToTemplateData(baseDocument({ checkOut: '2026-09-25' }), lateNow);
+    expect(data.isPastStay).toBe(true);
+  });
+
+  it('nutzt den Berliner Kalendertag des Check-outs (ISO-Zeitpunkt kurz nach Berliner Mitternacht)', () => {
+    // 24.09. 22:30Z = 25.09. 00:30 Berlin → Check-out heute, nicht vergangen
+    const data = documentToTemplateData(baseDocument({ checkOut: '2026-09-24T22:30:00.000Z' }), now);
+    expect(data.isPastStay).toBe(false);
+  });
+
+  it('verwendet now auch für dateFormatted', () => {
+    const data = documentToTemplateData(baseDocument(), now);
+    expect(data.dateFormatted).toBe('25.09.2026');
+  });
+});

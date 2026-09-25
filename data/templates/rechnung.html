@@ -380,15 +380,17 @@
     </div>
 
     {{#if checkInOutText}}
+    {{#unless isPastStay}}
     <!-- Check-in/-out -->
     <div class="payment-terms">
       {{checkInOutText}}
     </div>
+    {{/unless}}
     {{/if}}
 
     <!-- Closing text -->
     <div class="closing-text">
-      Vielen Dank für eure Buchung. Wir freuen uns auf euch.
+      {{#if isPastStay}}Vielen Dank für euren Aufenthalt.{{else}}Vielen Dank für eure Buchung. Wir freuen uns auf euch.{{/if}}
     </div>
 
     <!-- Footer -->
