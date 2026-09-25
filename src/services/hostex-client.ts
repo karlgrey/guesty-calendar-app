@@ -19,6 +19,8 @@ import type {
   HostexReservation,
   HostexReservationsData,
   HostexCalendarResponse,
+  HostexPropertyAvailability,
+  HostexAvailabilitiesData,
 } from '../types/hostex.js';
 
 // ── Conversation / Messaging types ───────────────────────────────────────────
@@ -232,6 +234,46 @@ export class HostexClient {
       end_date: opts.endDate,
       listings: opts.listings,
     });
+  }
+
+  /**
+   * GET /v3/availabilities — Owner-Block-Kalender für eine oder mehrere
+   * Properties (#725). `startDate`/`endDate` als "YYYY-MM-DD", beide Enden
+   * inklusive.
+   */
+  async getAvailabilities(
+    propertyIds: string[],
+    startDate: string,
+    endDate: string,
+  ): Promise<HostexPropertyAvailability[]> {
+    const params = new URLSearchParams();
+    params.set('property_ids', propertyIds.join(','));
+    params.set('start_date', startDate);
+    params.set('end_date', endDate);
+    const data = await this.call<HostexAvailabilitiesData>('GET', `/availabilities?${params.toString()}`);
+    return data.properties;
+  }
+
+  /**
+   * POST /v3/availabilities — Owner-Block setzen/aufheben (#725).
+   * `available=false` sperrt den Kalender, `true` gibt ihn frei. Die Hostex-
+   * Antwort enthält nur das Envelope (kein Block-Objekt/keine ID) und wird
+   * asynchron verarbeitet — Channel-Sync ist nicht garantiert, Aufrufer
+   * sollten den Stand per `getAvailabilities` nachprüfen.
+   */
+  async updateAvailabilities(opts: {
+    propertyIds: string[];
+    startDate: string;
+    endDate: string;
+    available: boolean;
+  }): Promise<{ ok: true }> {
+    await this.call<unknown>('POST', '/availabilities', {
+      property_ids: opts.propertyIds.map((id) => Number(id)),
+      start_date: opts.startDate,
+      end_date: opts.endDate,
+      available: opts.available,
+    });
+    return { ok: true };
   }
 
   /**

@@ -22,6 +22,9 @@ import { listDocumentsForAgent } from '../repositories/document-repository.js';
 import { AppError, NotFoundError, ValidationError } from '../utils/errors.js';
 import { config } from '../config/index.js';
 import logger from '../utils/logger.js';
+import { getHostexClient } from '../services/hostex-client.js';
+import { groupBlockedRanges } from '../services/availability-blocks.js';
+import { berlinCalendarDay } from '../services/auto-send/berlin-day.js';
 
 const router = express.Router();
 router.use(requireAgentKey);
@@ -408,5 +411,116 @@ router.get('/auto-send/stats', (req, res) => {
     });
   } catch (err) { handleError(res, err); }
 });
+
+// Hostex Owner-Blocks (#725) — Kalender sperren/freigeben für Hostex-Objekte
+// (Bootshaus, Alte Schilderwerkstatt). Guesty-Blocks sind NICHT Teil dieses
+// Auftrags; die Provider-Weiche unten liefert bei provider=guesty/airbnb-mail
+// bewusst 400, damit ein Guesty-Zweig später ergänzt werden kann, ohne den
+// Endpunkt neu zu schneiden.
+const HOSTEX_MAX_RANGE_DAYS = 400;
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function isValidCalendarDate(value: string): boolean {
+  const [y, m, d] = value.split('-').map(Number);
+  const date = new Date(Date.UTC(y, m - 1, d));
+  return date.getUTCFullYear() === y && date.getUTCMonth() === m - 1 && date.getUTCDate() === d;
+}
+
+function requireValidDate(label: string, value: string): void {
+  if (!DATE_RE.test(value) || !isValidCalendarDate(value)) {
+    throw new ValidationError(`${label} muss ein gültiges Datum im Format YYYY-MM-DD sein: ${value}`);
+  }
+}
+
+function daysBetween(fromStr: string, toStr: string): number {
+  const [fy, fm, fd] = fromStr.split('-').map(Number);
+  const [ty, tm, td] = toStr.split('-').map(Number);
+  return Math.round((Date.UTC(ty, tm - 1, td) - Date.UTC(fy, fm - 1, fd)) / 86_400_000);
+}
+
+function addDaysToDateString(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
+/** Slug → hostex-Property auflösen, 404 bei unbekanntem Slug, 400 bei Nicht-Hostex-Provider. */
+function getHostexProperty(slug: string): PropertyConfig {
+  const property = getPropertyBySlug(slug);
+  if (!property) throw new NotFoundError(`Unbekanntes property: ${slug} (erlaubt: ${getPropertySlugs().join('|')})`);
+  if (property.provider !== 'hostex') {
+    throw new ValidationError(`property ${slug} hat Provider "${property.provider}" — dieser Endpunkt gilt nur für provider=hostex`);
+  }
+  return property;
+}
+
+/** from/to validieren: Format, echte Kalendertage, from<=to, max. Spanne, to nicht in der Vergangenheit. */
+function validateAvailabilityRange(fromRaw: string, toRaw: string): { from: string; to: string } {
+  requireValidDate('from', fromRaw);
+  requireValidDate('to', toRaw);
+  if (fromRaw > toRaw) {
+    throw new ValidationError(`from (${fromRaw}) darf nicht nach to (${toRaw}) liegen`);
+  }
+  const rangeDays = daysBetween(fromRaw, toRaw) + 1;
+  if (rangeDays > HOSTEX_MAX_RANGE_DAYS) {
+    throw new ValidationError(`Zeitraum zu groß: max. ${HOSTEX_MAX_RANGE_DAYS} Tage (angefragt: ${rangeDays})`);
+  }
+  const todayBerlin = berlinCalendarDay(new Date().toISOString());
+  if (toRaw < todayBerlin) {
+    throw new ValidationError(`to (${toRaw}) darf nicht in der Vergangenheit liegen (heute: ${todayBerlin})`);
+  }
+  return { from: fromRaw, to: toRaw };
+}
+
+function hostexPropertySummary(property: PropertyConfig, hostexPropertyId: string) {
+  return { slug: property.slug, name: property.name, provider: property.provider, hostexPropertyId };
+}
+
+router.get('/availability/:slug', async (req, res) => {
+  try {
+    const property = getHostexProperty(req.params.slug);
+    const todayBerlin = berlinCalendarDay(new Date().toISOString());
+    const fromRaw = typeof req.query.from === 'string' && req.query.from !== '' ? req.query.from : todayBerlin;
+    requireValidDate('from', fromRaw);
+    const toRaw = typeof req.query.to === 'string' && req.query.to !== '' ? req.query.to : addDaysToDateString(fromRaw, 365);
+    const { from, to } = validateAvailabilityRange(fromRaw, toRaw);
+
+    const hostexPropertyId = getListingId(property);
+    const [propertyAvailability] = await getHostexClient().getAvailabilities([hostexPropertyId], from, to);
+    const days = (propertyAvailability?.availabilities ?? []).map((d) => ({
+      date: d.date, available: d.available, remarks: d.remarks ?? '',
+    }));
+
+    res.json({
+      property: hostexPropertySummary(property, hostexPropertyId),
+      from, to, days,
+      blockedRanges: groupBlockedRanges(days),
+    });
+  } catch (err) { handleError(res, err); }
+});
+
+async function handleAvailabilityMutation(req: express.Request, res: express.Response, available: boolean) {
+  try {
+    const property = getHostexProperty(req.params.slug);
+    const body = req.body;
+    if (!body || typeof body.from !== 'string' || typeof body.to !== 'string') {
+      throw new ValidationError('Body muss from und to (YYYY-MM-DD) enthalten');
+    }
+    const { from, to } = validateAvailabilityRange(body.from, body.to);
+    const hostexPropertyId = getListingId(property);
+
+    await getHostexClient().updateAvailabilities({ propertyIds: [hostexPropertyId], startDate: from, endDate: to, available });
+    logger.info({ slug: property.slug, from, to, available }, 'Hostex availability mutation');
+
+    res.json({
+      property: hostexPropertySummary(property, hostexPropertyId),
+      from, to, available, nights: daysBetween(from, to) + 1,
+      async: true,
+      note: 'Hostex verarbeitet asynchron — Stand mit GET /availability prüfen',
+    });
+  } catch (err) { handleError(res, err); }
+}
+
+router.post('/availability/:slug/block', (req, res) => handleAvailabilityMutation(req, res, false));
+router.post('/availability/:slug/unblock', (req, res) => handleAvailabilityMutation(req, res, true));
 
 export default router;
