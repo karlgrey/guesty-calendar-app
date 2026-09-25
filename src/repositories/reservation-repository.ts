@@ -76,7 +76,10 @@ export function upsertReservation(
         reserved_at = excluded.reserved_at,
         last_synced_at = excluded.last_synced_at,
         internal_guest_id = excluded.internal_guest_id,
-        guest_company = excluded.guest_company,
+        -- #729: Sync darf eine per Backfill/PUT gesetzte Firma nicht mit dem
+        -- Fingerprint-NULL löschen (Review-Gate Fable) — liefert der Mapper
+        -- einen Wert (Guesty-company oder Namens-Fingerprint), gewinnt der.
+        guest_company = COALESCE(excluded.guest_company, reservations.guest_company),
         updated_at = datetime('now')
     `);
 
@@ -147,7 +150,10 @@ export function upsertReservationBatch(
         reserved_at = excluded.reserved_at,
         last_synced_at = excluded.last_synced_at,
         internal_guest_id = excluded.internal_guest_id,
-        guest_company = excluded.guest_company,
+        -- #729: Sync darf eine per Backfill/PUT gesetzte Firma nicht mit dem
+        -- Fingerprint-NULL löschen (Review-Gate Fable) — liefert der Mapper
+        -- einen Wert (Guesty-company oder Namens-Fingerprint), gewinnt der.
+        guest_company = COALESCE(excluded.guest_company, reservations.guest_company),
         updated_at = datetime('now')
     `);
 

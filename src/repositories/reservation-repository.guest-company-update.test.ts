@@ -97,3 +97,23 @@ describe('updateGuestCompanyByGuestId (#729)', () => {
     expect(changed).toBe(0);
   });
 });
+
+describe('Upsert erhält eine gesetzte guest_company (#729, Review-Gate)', () => {
+  it('Re-Sync mit guest_company=null (Fingerprint findet keine Firma) löscht die Backfill-Firma nicht', () => {
+    upsertReservation(baseRow() as any);
+    expect(updateGuestCompanyByGuestId('guest-1', 'momox SE')).toBe(1);
+
+    upsertReservation(baseRow({ last_synced_at: '2026-09-26T00:00:00Z' }) as any);
+
+    const row = db.prepare('SELECT guest_company FROM reservations WHERE reservation_id = ?').get('res-1') as { guest_company: string | null };
+    expect(row.guest_company).toBe('momox SE');
+  });
+
+  it('Re-Sync mit neuem guest_company-Wert (z. B. Guesty-company im Payload) überschreibt', () => {
+    upsertReservation(baseRow({ guest_company: 'Alt GmbH' }) as any);
+    upsertReservation(baseRow({ guest_company: 'Neu GmbH' }) as any);
+
+    const row = db.prepare('SELECT guest_company FROM reservations WHERE reservation_id = ?').get('res-1') as { guest_company: string | null };
+    expect(row.guest_company).toBe('Neu GmbH');
+  });
+});
