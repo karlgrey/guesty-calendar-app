@@ -28,6 +28,17 @@ if [ -n "$(git status --porcelain)" ]; then
   exit 1
 fi
 
+# Stolperdraht (Micha, 25.09.2026, TheBrain2 #724): auf main darf nur landen, was die
+# Fable-Hauptsession abgenommen hat — der jüngste Commit trägt den Trailer
+# "Review-Gate: Fable". Manuelles Deploy ohne Claude: DEPLOY_NO_GATE=1 ./deploy.sh
+if ! git log -1 --format=%B | grep -q '^Review-Gate: Fable'; then
+  if [ "${DEPLOY_NO_GATE:-0}" != "1" ]; then
+    echo "✗ Abbruch: jüngster Commit ohne Trailer 'Review-Gate: Fable' (Review der Hauptsession fehlt)." >&2
+    echo "  Manuell ohne Gate: DEPLOY_NO_GATE=1 ./deploy.sh" >&2
+    exit 1
+  fi
+fi
+
 echo "→ Lokal pushen"
 git push
 
