@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import express from 'express';
 import type { Server } from 'http';
 
@@ -98,6 +98,18 @@ vi.mock('../utils/thread-property.js', () => ({
         ? { slug: 'uferstrasse', name: 'Uferstraße 19', shortCode: 'U19' }
         : undefined,
   ),
+}));
+
+// #725: Hostex Owner-Blocks — Client mocken, echte properties.json (Slug
+// bootshaus-alte-oder, hostexPropertyId '12659677') wie bei /reservations.
+const getAvailabilitiesMock = vi.fn();
+const updateAvailabilitiesMock = vi.fn();
+const getHostexClientMock = vi.fn(() => ({
+  getAvailabilities: (...args: unknown[]) => getAvailabilitiesMock(...args),
+  updateAvailabilities: (...args: unknown[]) => updateAvailabilitiesMock(...args),
+}));
+vi.mock('../services/hostex-client.js', () => ({
+  getHostexClient: (...args: unknown[]) => getHostexClientMock(...args),
 }));
 
 import agentApiRoutes from './agent-api.js';
@@ -467,6 +479,153 @@ describe('agent-api', () => {
 
     it('401 ohne Key', async () => {
       const r = await fetch(`${base}/api/agent/auto-send/stats`);
+      expect(r.status).toBe(401);
+    });
+  });
+
+  // #725: Hostex Owner-Blocks. Systemzeit fixiert (Default-from/to und die
+  // Vergangenheits-Prüfung hängen an "heute"), echter Slug bootshaus-alte-oder
+  // (hostexPropertyId '12659677') aus data/properties.json wie bei /reservations.
+  describe('GET/POST /availability/:slug (#725, Hostex Owner-Blocks)', () => {
+    beforeEach(() => {
+      // Nur die Systemzeit einfrieren (kein vi.useFakeTimers()) — sonst hängt
+      // fetch() gegen den lokalen Test-Server, weil Node/undici intern auf
+      // echte Timer angewiesen sind.
+      vi.setSystemTime(new Date('2026-09-25T08:00:00.000Z'));
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('200 GET mit gruppierten Bereichen (3 Tage blocked, 1 frei, 2 blocked → 2 Ranges)', async () => {
+      getAvailabilitiesMock.mockResolvedValueOnce([
+        {
+          id: 12659677,
+          availabilities: [
+            { date: '2027-07-19', available: false, remarks: 'Sommercamp' },
+            { date: '2027-07-20', available: false, remarks: '' },
+            { date: '2027-07-21', available: false, remarks: '' },
+            { date: '2027-07-22', available: true, remarks: '' },
+            { date: '2027-07-23', available: false, remarks: 'Zweiter Block' },
+            { date: '2027-07-24', available: false, remarks: '' },
+          ],
+        },
+      ]);
+      const r = await fetch(
+        `${base}/api/agent/availability/bootshaus-alte-oder?from=2027-07-19&to=2027-07-24`,
+        { headers: KEY },
+      );
+      expect(r.status).toBe(200);
+      expect(getAvailabilitiesMock).toHaveBeenCalledWith(['12659677'], '2027-07-19', '2027-07-24');
+      const body = await r.json();
+      expect(body.property).toMatchObject({ slug: 'bootshaus-alte-oder', provider: 'hostex', hostexPropertyId: '12659677' });
+      expect(body.from).toBe('2027-07-19');
+      expect(body.to).toBe('2027-07-24');
+      expect(body.days).toHaveLength(6);
+      expect(body.blockedRanges).toEqual([
+        { from: '2027-07-19', to: '2027-07-21', nights: 3, remarks: 'Sommercamp' },
+        { from: '2027-07-23', to: '2027-07-24', nights: 2, remarks: 'Zweiter Block' },
+      ]);
+    });
+
+    it('Default from=heute (Berlin), to=from+365 Tage ohne Query-Parameter', async () => {
+      getAvailabilitiesMock.mockResolvedValueOnce([{ id: 12659677, availabilities: [] }]);
+      const r = await fetch(`${base}/api/agent/availability/bootshaus-alte-oder`, { headers: KEY });
+      expect(r.status).toBe(200);
+      expect(getAvailabilitiesMock).toHaveBeenCalledWith(['12659677'], '2026-09-25', '2027-09-25');
+      const body = await r.json();
+      expect(body.from).toBe('2026-09-25');
+      expect(body.to).toBe('2027-09-25');
+    });
+
+    it('400 bei from > to', async () => {
+      const r = await fetch(
+        `${base}/api/agent/availability/bootshaus-alte-oder?from=2026-08-01&to=2026-07-01`,
+        { headers: KEY },
+      );
+      expect(r.status).toBe(400);
+    });
+
+    it('400 bei ungültigem Datum', async () => {
+      const r = await fetch(
+        `${base}/api/agent/availability/bootshaus-alte-oder?from=2026-13-40&to=2026-13-41`,
+        { headers: KEY },
+      );
+      expect(r.status).toBe(400);
+    });
+
+    it('400 bei Zeitraum > 400 Tagen', async () => {
+      const r = await fetch(
+        `${base}/api/agent/availability/bootshaus-alte-oder?from=2026-09-25&to=2028-01-01`,
+        { headers: KEY },
+      );
+      expect(r.status).toBe(400);
+    });
+
+    it('400 bei Guesty-Slug (z. B. farmhouse)', async () => {
+      const r = await fetch(`${base}/api/agent/availability/farmhouse`, { headers: KEY });
+      expect(r.status).toBe(400);
+    });
+
+    it('404 bei unbekanntem Slug', async () => {
+      const r = await fetch(`${base}/api/agent/availability/does-not-exist`, { headers: KEY });
+      expect(r.status).toBe(404);
+    });
+
+    it('401 ohne Key', async () => {
+      const r = await fetch(`${base}/api/agent/availability/bootshaus-alte-oder`);
+      expect(r.status).toBe(401);
+    });
+
+    it('200 POST block ruft updateAvailabilities mit available=false und propertyIds [12659677]', async () => {
+      updateAvailabilitiesMock.mockResolvedValueOnce({ ok: true });
+      const r = await fetch(`${base}/api/agent/availability/bootshaus-alte-oder/block`, {
+        method: 'POST', headers: KEY, body: JSON.stringify({ from: '2027-07-19', to: '2027-08-01' }),
+      });
+      expect(r.status).toBe(200);
+      expect(updateAvailabilitiesMock).toHaveBeenCalledWith({
+        propertyIds: ['12659677'], startDate: '2027-07-19', endDate: '2027-08-01', available: false,
+      });
+      const body = await r.json();
+      expect(body).toMatchObject({
+        from: '2027-07-19', to: '2027-08-01', available: false, nights: 14, async: true,
+        note: 'Hostex verarbeitet asynchron — Stand mit GET /availability prüfen',
+      });
+      expect(body.property).toMatchObject({ slug: 'bootshaus-alte-oder', hostexPropertyId: '12659677' });
+    });
+
+    it('200 POST unblock mit available=true', async () => {
+      updateAvailabilitiesMock.mockResolvedValueOnce({ ok: true });
+      const r = await fetch(`${base}/api/agent/availability/bootshaus-alte-oder/unblock`, {
+        method: 'POST', headers: KEY, body: JSON.stringify({ from: '2027-07-19', to: '2027-08-01' }),
+      });
+      expect(r.status).toBe(200);
+      expect(updateAvailabilitiesMock).toHaveBeenCalledWith({
+        propertyIds: ['12659677'], startDate: '2027-07-19', endDate: '2027-08-01', available: true,
+      });
+      const body = await r.json();
+      expect(body).toMatchObject({ from: '2027-07-19', to: '2027-08-01', available: true, nights: 14, async: true });
+    });
+
+    it('400 bei POST block ohne from/to', async () => {
+      const r = await fetch(`${base}/api/agent/availability/bootshaus-alte-oder/block`, {
+        method: 'POST', headers: KEY, body: JSON.stringify({}),
+      });
+      expect(r.status).toBe(400);
+    });
+
+    it('400 wenn to in der Vergangenheit liegt', async () => {
+      const r = await fetch(`${base}/api/agent/availability/bootshaus-alte-oder/block`, {
+        method: 'POST', headers: KEY, body: JSON.stringify({ from: '2026-01-01', to: '2026-01-02' }),
+      });
+      expect(r.status).toBe(400);
+    });
+
+    it('401 ohne Key bei POST block', async () => {
+      const r = await fetch(`${base}/api/agent/availability/bootshaus-alte-oder/block`, {
+        method: 'POST', body: JSON.stringify({ from: '2027-07-19', to: '2027-08-01' }),
+        headers: { 'Content-Type': 'application/json' },
+      });
       expect(r.status).toBe(401);
     });
   });

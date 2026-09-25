@@ -119,3 +119,19 @@ export interface HostexCalendarResponse {
  */
 export interface HostexPropertiesData { properties: HostexProperty[] }
 export interface HostexReservationsData { reservations: HostexReservation[] }
+
+/**
+ * Availability day — from GET /v3/availabilities (#725, Owner-Blocks)
+ */
+export interface HostexAvailabilityDay {
+  date: string; // "YYYY-MM-DD"
+  available: boolean;
+  remarks?: string;
+}
+
+export interface HostexPropertyAvailability {
+  id: number;
+  availabilities: HostexAvailabilityDay[];
+}
+
+export interface HostexAvailabilitiesData { properties: HostexPropertyAvailability[] }
