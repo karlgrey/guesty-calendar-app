@@ -195,6 +195,18 @@ Felder: `reservations.internal_guest_id` (Slug), `reservations.guest_company` (K
 vor dem Backfill auf Production einen Force-Sync laufen lassen:
 `npx tsx src/scripts/sync-property.ts farmhouse` und `... u19`.
 
+**Firma in der Buchungsliste (#729, Fall momox):** Das Admin-Dashboard zeigt `guestCompany`
+(Firma fett, Gastname klein darunter — Muster Dokumentenliste) in der Buchungsliste (`/dashboard-data`)
+und filtert clientseitig über Name + Firma (`bookingsFilter`-Feld). Quelle bleibt
+`reservations.guest_company`: der Mapper (`reservation-mapper.ts`) gibt einem `guest.company` aus dem
+Guesty-Kalender-Payload Vorrang vor dem Namens-Fingerprint — bislang unbeobachtet, siehe Typ-Kommentar in
+`types/guesty.ts` — und `PUT /api/agent/guests/:guestId` (#715) spiegelt eine gesetzte Firma sofort in
+alle Reservierungen des `guest_id` (`updateGuestCompanyByGuestId`). Für Bestandsfälle ohne
+Guesty-company im Payload (der Regelfall) einmalig nachziehen:
+`npx tsx src/scripts/backfill-guest-company.ts --dry-run [--limit N]` /
+`npx tsx src/scripts/backfill-guest-company.ts --apply [--limit N]` (ein `getGuest`-Call je eindeutiger
+`guest_id`, überschreibt einen lokalen Bestand nie mit NULL).
+
 ### Hostex Integration
 
 Zweiter Booking-Provider neben Guesty. Parallel-Modul-Architektur, ETL-Dispatch nach `provider`-Feld in `properties.json`.

@@ -52,4 +52,41 @@ describe('extractReservationFromCalendar', () => {
     const mapped = extractReservationFromCalendar(dayWithReservation(baseRes), '2026-08-14T00:00:00Z');
     expect(mapped!.guests_count).toBeNull();
   });
+
+  /**
+   * #729 (Fall momox): Guestys Kalender-Payload liefert `guest.company` bislang
+   * nicht (siehe Typ-Kommentar in types/guesty.ts) — der Mapper-Vorrang ist
+   * trotzdem eingebaut, falls Guesty es doch einmal mitliefert. Der reguläre
+   * Weg bleibt der Backfill (src/scripts/backfill-guest-company.ts).
+   */
+  describe('guest_company: Guesty-company hat Vorrang vor dem Namens-Fingerprint (#729)', () => {
+    it('übernimmt guest.company unverändert, auch wenn der Name selbst keine Rechtsform enthält', () => {
+      const res = { ...baseRes, guest: { fullName: 'Lenia Karallus', company: 'momox SE' } };
+      const mapped = extractReservationFromCalendar(dayWithReservation(res), '2026-08-14T00:00:00Z');
+      expect(mapped!.guest_company).toBe('momox SE');
+    });
+
+    it('guest.company gewinnt auch gegen einen abweichenden Fingerprint-Treffer', () => {
+      const res = { ...baseRes, guest: { fullName: 'Netlight Consulting GmbH Nina Lattke', company: 'momox SE' } };
+      const mapped = extractReservationFromCalendar(dayWithReservation(res), '2026-08-14T00:00:00Z');
+      expect(mapped!.guest_company).toBe('momox SE');
+    });
+
+    it('trimmt guest.company', () => {
+      const res = { ...baseRes, guest: { fullName: 'Anna Lindvall', company: '  momox SE  ' } };
+      const mapped = extractReservationFromCalendar(dayWithReservation(res), '2026-08-14T00:00:00Z');
+      expect(mapped!.guest_company).toBe('momox SE');
+    });
+
+    it('fällt bei leerem/whitespace-only guest.company auf den Fingerprint zurück', () => {
+      const res = { ...baseRes, guest: { fullName: 'Netlight Consulting GmbH Nina Lattke', company: '   ' } };
+      const mapped = extractReservationFromCalendar(dayWithReservation(res), '2026-08-14T00:00:00Z');
+      expect(mapped!.guest_company).toBe('Netlight Consulting GmbH');
+    });
+
+    it('ohne guest.company bleibt der bisherige Fingerprint-Weg unverändert (Regression)', () => {
+      const mapped = extractReservationFromCalendar(dayWithReservation(baseRes), '2026-08-14T00:00:00Z');
+      expect(mapped!.guest_company).toBeNull();
+    });
+  });
 });

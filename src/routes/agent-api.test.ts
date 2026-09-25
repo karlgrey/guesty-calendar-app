@@ -99,6 +99,12 @@ vi.mock('../utils/thread-property.js', () => ({
         : undefined,
   ),
 }));
+// #729: PUT /guests/:guestId spiegelt company in reservations.guest_company —
+// Repository-Funktion gemockt, DB-Verhalten selbst hat einen eigenen Test
+// (reservation-repository.guest-company-update.test.ts).
+vi.mock('../repositories/reservation-repository.js', () => ({
+  updateGuestCompanyByGuestId: vi.fn().mockReturnValue(2),
+}));
 
 // #725: Hostex Owner-Blocks — Client mocken, echte properties.json (Slug
 // bootshaus-alte-oder, hostexPropertyId '12659677') wie bei /reservations.
@@ -219,6 +225,36 @@ describe('agent-api', () => {
     expect(guestyClient.updateGuest).toHaveBeenCalledWith('guest-1', {
       company: 'momox SE', email: 'x@momox.com', address: { city: 'Berlin' },
     });
+  });
+
+  it('PUT /guests/:id mit company spiegelt reservations.guest_company für den guest_id (#729)', async () => {
+    const { updateGuestCompanyByGuestId } = await import('../repositories/reservation-repository.js');
+    (updateGuestCompanyByGuestId as any).mockClear();
+    const r = await fetch(`${base}/api/agent/guests/guest-1`, {
+      method: 'PUT', headers: KEY, body: JSON.stringify({ company: 'momox SE' }),
+    });
+    expect(r.status).toBe(200);
+    expect(updateGuestCompanyByGuestId).toHaveBeenCalledWith('guest-1', 'momox SE');
+  });
+
+  it('PUT /guests/:id ohne company im Body ruft updateGuestCompanyByGuestId NICHT (#729)', async () => {
+    const { updateGuestCompanyByGuestId } = await import('../repositories/reservation-repository.js');
+    (updateGuestCompanyByGuestId as any).mockClear();
+    const r = await fetch(`${base}/api/agent/guests/guest-1`, {
+      method: 'PUT', headers: KEY, body: JSON.stringify({ email: 'x@momox.com' }),
+    });
+    expect(r.status).toBe(200);
+    expect(updateGuestCompanyByGuestId).not.toHaveBeenCalled();
+  });
+
+  it('PUT /guests/:id mit company: null löscht reservations.guest_company (#729)', async () => {
+    const { updateGuestCompanyByGuestId } = await import('../repositories/reservation-repository.js');
+    (updateGuestCompanyByGuestId as any).mockClear();
+    const r = await fetch(`${base}/api/agent/guests/guest-1`, {
+      method: 'PUT', headers: KEY, body: JSON.stringify({ company: null }),
+    });
+    expect(r.status).toBe(200);
+    expect(updateGuestCompanyByGuestId).toHaveBeenCalledWith('guest-1', null);
   });
 
   it('PUT /guests/:id → 400 bei unbekanntem Feld (Whitelist, nichts blind an Guesty) (#715)', async () => {

@@ -76,7 +76,10 @@ export function upsertReservation(
         reserved_at = excluded.reserved_at,
         last_synced_at = excluded.last_synced_at,
         internal_guest_id = excluded.internal_guest_id,
-        guest_company = excluded.guest_company,
+        -- #729: Sync darf eine per Backfill/PUT gesetzte Firma nicht mit dem
+        -- Fingerprint-NULL löschen (Review-Gate Fable) — liefert der Mapper
+        -- einen Wert (Guesty-company oder Namens-Fingerprint), gewinnt der.
+        guest_company = COALESCE(excluded.guest_company, reservations.guest_company),
         updated_at = datetime('now')
     `);
 
@@ -147,7 +150,10 @@ export function upsertReservationBatch(
         reserved_at = excluded.reserved_at,
         last_synced_at = excluded.last_synced_at,
         internal_guest_id = excluded.internal_guest_id,
-        guest_company = excluded.guest_company,
+        -- #729: Sync darf eine per Backfill/PUT gesetzte Firma nicht mit dem
+        -- Fingerprint-NULL löschen (Review-Gate Fable) — liefert der Mapper
+        -- einen Wert (Guesty-company oder Namens-Fingerprint), gewinnt der.
+        guest_company = COALESCE(excluded.guest_company, reservations.guest_company),
         updated_at = datetime('now')
     `);
 
@@ -168,6 +174,30 @@ export function upsertReservationBatch(
     logger.error({ error, count: reservations.length }, 'Failed to upsert reservation batch');
     throw new DatabaseError(
       `Failed to upsert reservation batch: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
+  }
+}
+
+/**
+ * #729 (Fall momox): spiegelt eine über PUT /api/agent/guests/:guestId gesetzte
+ * Firma (#715, Guesty guests-crud) sofort in ALLE bestehenden Reservierungen
+ * dieses guest_id — sonst ist die Firma erst nach dem nächsten Backfill/ETL im
+ * Dashboard sichtbar. `company: null` löscht die Firma wieder (Guesty erlaubt
+ * das Leeren des Felds). Gibt die Anzahl geänderter Reservierungszeilen zurück.
+ */
+export function updateGuestCompanyByGuestId(guestId: string, company: string | null): number {
+  const db = getDatabase();
+
+  try {
+    const result = db
+      .prepare(`UPDATE reservations SET guest_company = ?, updated_at = datetime('now') WHERE guest_id = ?`)
+      .run(company, guestId);
+
+    return result.changes;
+  } catch (error) {
+    logger.error({ error, guestId }, 'Failed to update guest_company by guest_id');
+    throw new DatabaseError(
+      `Failed to update guest_company by guest_id: ${error instanceof Error ? error.message : 'Unknown error'}`
     );
   }
 }
