@@ -24,9 +24,11 @@ const NOTHING_IN_THE_WAY = /steht[^.!?]{0,60}nichts im weg/i;
 // Check mit `now` läuft. Bewusst OHNE trailing Wortgrenze (`\b<Name>` statt `\b<Name>\b`), damit
 // Komposita wie „Sonntagabend“/„Sunday evening“ ebenfalls matchen — bei den deutschen Namen gibt
 // es keine bekannten Wörter, die zufällig mit einem Wochentagsnamen beginnen; bei den englischen
-// ist z. B. „Mondays“ als Treffer ausdrücklich in Ordnung (Spec).
+// ist z. B. „Mondays“ als Treffer ausdrücklich in Ordnung (Spec). Einzige deutsche Kollision
+// (Review Hauptsession 25.09.): „Montage“/„Montagearbeiten“ beginnt mit „Montag“ — deshalb dort
+// ein negatives Lookahead auf „e“ („Montagabend“/„Montags“ matchen weiterhin).
 const WEEKDAY_NAMES: Array<{ name: string; index: number }> = [
-  { name: 'Sonntag', index: 0 }, { name: 'Montag', index: 1 }, { name: 'Dienstag', index: 2 },
+  { name: 'Sonntag', index: 0 }, { name: 'Montag(?!e)', index: 1 }, { name: 'Dienstag', index: 2 },
   { name: 'Mittwoch', index: 3 }, { name: 'Donnerstag', index: 4 }, { name: 'Freitag', index: 5 },
   { name: 'Samstag', index: 6 },
   { name: 'Sunday', index: 0 }, { name: 'Monday', index: 1 }, { name: 'Tuesday', index: 2 },

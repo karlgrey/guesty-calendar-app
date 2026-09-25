@@ -119,6 +119,12 @@ describe('runMechanicalChecks — zeitbezug_veraltet (#698)', () => {
   it('(b) "Schönen Montag!" bei now=Montag → keine Flags', () => {
     expect(flagsFor('Schönen Montag!')).toEqual([]);
   });
+  it('(b2) „Montage“ ist kein Wochentag (Review 25.09.): bei now=Sonntag kein Flag, „Montagabend“ aber schon', () => {
+    const sunday = new Date('2026-09-20T09:00:00.000Z');
+    const at = (b: string) => runMechanicalChecks(b, { knownDigitRuns: [], now: sunday }).map((f) => f.flag);
+    expect(at('Die Montage der Küche ist fertig.')).toEqual([]);
+    expect(at('Bis Montagabend!')).toContain('zeitbezug_veraltet');
+  });
   it('(c) EN "Enjoy your Sunday" bei now=Montag → zeitbezug_veraltet', () => {
     expect(flagsFor('Enjoy your Sunday!')).toContain('zeitbezug_veraltet');
   });
