@@ -68,6 +68,56 @@ export function updateDraftBody(id: string, body: string): void {
   db.prepare(`UPDATE message_drafts SET body = ? WHERE id = ?`).run(body, id);
 }
 
+// --- Stale-Draft-Regeneration (Migration 032, #699) ---
+
+/**
+ * Atomarer Drossel-Claim: "höchstens ein Neugenerierungs-Versuch pro Draft und Fenster" — auch
+ * bei parallelem Öffnen desselben Threads (zwei Tabs) und nach einem Fehlschlag (kein
+ * Dauer-LLM-Kosten beim wiederholten Öffnen). Referenzzeit fürs Alter ist
+ * COALESCE(regenerated_at, created_at) — nach einer erfolgreichen Neugenerierung zählt deren
+ * Zeitpunkt, nicht mehr die ursprüngliche Anlage. Ein vorheriger Versuch (Erfolg ODER
+ * Fehlschlag) sperrt weitere Claims, bis er selbst außerhalb des Fensters liegt. true bei
+ * genau einer betroffenen Zeile (changes===1) — der zweite gleichzeitige Aufruf bekommt false.
+ */
+export function claimDraftRegeneration(id: string, staleHours: number): boolean {
+  const db = getDatabase();
+  const result = db
+    .prepare(
+      `UPDATE message_drafts
+       SET regen_attempted_at = datetime('now')
+       WHERE id = ?
+         AND status = 'pending'
+         AND generated_by = 'llm'
+         AND datetime(COALESCE(regenerated_at, created_at)) < datetime('now', '-' || ? || ' hours')
+         AND (regen_attempted_at IS NULL OR datetime(regen_attempted_at) < datetime('now', '-' || ? || ' hours'))`,
+    )
+    .run(id, staleHours, staleHours);
+  return result.changes === 1;
+}
+
+/**
+ * Übernimmt eine erfolgreich neu generierte Fassung IN DENSELBEN Draft-Datensatz (draftId bleibt
+ * gleich — der Push-Watcher dedupliziert darüber, ein neuer Datensatz würde einen zweiten Push
+ * auslösen). Sichert den bisherigen Text als previous_body/previous_body_at, bevor er
+ * überschrieben wird. WHERE status='pending' schützt gegen ein Wettrennen mit Senden/Verwerfen,
+ * das zwischen Claim und Anwenden passiert ist — dann bleibt der gesendete/verworfene Draft
+ * unangetastet (false).
+ */
+export function applyDraftRegeneration(id: string, newBody: string): boolean {
+  const db = getDatabase();
+  const result = db
+    .prepare(
+      `UPDATE message_drafts
+       SET previous_body = body,
+           previous_body_at = COALESCE(regenerated_at, created_at),
+           body = ?,
+           regenerated_at = datetime('now')
+       WHERE id = ? AND status = 'pending'`,
+    )
+    .run(newBody, id);
+  return result.changes === 1;
+}
+
 // --- Auto-Send-Gate (Migration 027) ---
 
 // #702 Punkt 4: auto_judge_reasoning trägt das reasoning-Feld des Prüfmodells (decide() reicht

@@ -152,6 +152,10 @@ const configSchema = z.object({
   guestyWebhookSecret: z.string().optional(),
   judgeModel: z.string().default('claude-opus-5'),
 
+  // Stale-Draft-Regeneration (#699): ein KI-Entwurf, der beim Öffnen im Admin-UI älter als
+  // diese Schwelle ist, wird still neu generiert (stale-draft-regen.ts).
+  draftStaleHours: z.coerce.number().positive().default(6),
+
   // SmartTasks-Client (#696): eigener API-Key "guesty-app", nur Task-Anlage/-Kommentare,
   // keine Wiki-/Vault-Rechte (Kernschutz). Ausfall der API darf den Versand nie blockieren —
   // siehe promise-task-service.ts.
@@ -222,6 +226,7 @@ function parseConfig() {
     messageLoopMinutes: process.env.MESSAGE_LOOP_MINUTES,
     guestyWebhookSecret: process.env.GUESTY_WEBHOOK_SECRET,
     judgeModel: process.env.JUDGE_MODEL,
+    draftStaleHours: process.env.DRAFT_STALE_HOURS,
     smartTasksApiKey: process.env.SMARTTASKS_API_KEY,
     smartTasksApiUrl: process.env.SMARTTASKS_API_URL,
   };

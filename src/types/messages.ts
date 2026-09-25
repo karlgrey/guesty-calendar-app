@@ -132,6 +132,16 @@ export interface MessageDraft {
   // bestehendes Test-Fixture baut ein volles MessageDraft-Literal, siehe
   // messages.auto-send.test.ts), Migration 031.
   auto_judge_reasoning?: string | null;
+  // Stale-Draft-Regeneration (Migration 032, #699): regenerated_at = Zeitpunkt der letzten
+  // ERFOLGREICHEN Neugenerierung (Referenzzeit fürs Alter statt created_at, sobald gesetzt);
+  // regen_attempted_at = letzter Versuch (Erfolg ODER Fehlschlag — Drossel gegen
+  // Dauer-LLM-Kosten bei wiederholtem Öffnen); previous_body/previous_body_at = Text + Zeitpunkt
+  // der Vorversion. Optional wie auto_judge_reasoning oben (bestehende Test-Fixtures ohne diese
+  // Felder bleiben gültig).
+  regenerated_at?: string | null;
+  regen_attempted_at?: string | null;
+  previous_body?: string | null;
+  previous_body_at?: string | null;
 }
 
 export type NewDraft = Pick<MessageDraft, 'id' | 'thread_id' | 'provider' | 'body' | 'generated_by'> & {

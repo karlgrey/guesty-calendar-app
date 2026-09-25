@@ -277,7 +277,7 @@ erweitert auf Guesty-Properties (Farmhouse, U19) — Spec:
 - `GET /` — Threadliste (letzte Gastnachricht zuerst, nur letzte 14 Tage, farbige
   Objekt-Kürzel via `shortCode`/`uiColor` in properties.json) + "Jetzt syncen"-Button +
   verboser Sync-Fortschritt (Auto-Reload alle 4s während des Laufs)
-- `GET /:threadId` — Verlauf, bearbeitbarer Entwurf-Textarea, Senden/Verwerfen/Neu-generieren/Manuell-speichern, einklappbares "Passt nicht?"-Feedback-Formular
+- `GET /:threadId` — Verlauf, bearbeitbarer Entwurf-Textarea, Senden/Verwerfen/Neu-generieren/Manuell-speichern, einklappbares "Passt nicht?"-Feedback-Formular. Generiert vor dem Rendern still einen zu alten pending-KI-Entwurf neu (#699, siehe Auto-Send-Gate „Stale-Draft-Regeneration").
 - `POST /sync` — startet Sync+Drafts asynchron für Hostex- UND Guesty-Properties, leitet sofort zurück (kein Proxy-Timeout); Guesty-Conversations werden pro Run nur EINMAL account-weit gefetcht
 - `POST /:threadId/draft` — manueller Entwurf; lehnt ab wenn schon `pending`-Draft existiert
 - `POST /drafts/:draftId/send` — sendet (mit optionalem Body-Edit), atomic claim
@@ -678,21 +678,57 @@ Copy-Paste kann ein sicherer Entwurf automatisch rausgehen. Spec:
   (Migration 031) — `auto_reason` bleibt daneben der Policy-Text. Ausgabe: `GET
   /api/agent/drafts/awaiting` (`judgeReasoning`) und Admin-UI-Thread-Ansicht (kursive Zeile
   „Prüfmodell: …" unter der Ampel, `src/routes/messages.ts`).
+- **Stale-Draft-Regeneration (#699, 25.09.2026, Fall Farmhouse-Entwurf So→Mo):** ein
+  pending-KI-Entwurf, den Micha im Admin-UI öffnet (`GET /admin/messages/:threadId`), war teils
+  Stunden/Tage alt — ein Entwurf von So 15:34 wurde erst Mo gesendet, der Zeitbezug ("schönen
+  Sonntag") passte nicht mehr. Auslöser: die Route ruft VOR dem Rendern
+  `regenerateStaleDraftIfNeeded(thread)` (neu: `src/services/stale-draft-regen.ts`) auf und lädt
+  Draft/Nachrichten danach frisch (der Draft kann durch einen anschließenden Live-Auto-Send
+  inzwischen gesendet sein) — ein Fehler dabei wird nur geloggt, die Seite rendert trotzdem
+  (kein 500). **Felder/Migration 032** (`032_add_draft_regeneration.sql`):
+  `message_drafts.regenerated_at` (Zeitpunkt der letzten ERFOLGREICHEN Neugenerierung — ab dann
+  Referenzzeit fürs Alter statt `created_at`), `regen_attempted_at` (letzter Versuch, Erfolg ODER
+  Fehlschlag), `previous_body`/`previous_body_at` (Text + Entstehungszeit der Vorversion).
+  **Drossel:** `claimDraftRegeneration` (`draft-repository.ts`) ist ein atomarer Claim —
+  höchstens ein Neugenerierungs-Versuch pro Draft und Fenster (`DRAFT_STALE_HOURS`), auch bei
+  parallelem Öffnen (zwei Tabs) und nach einem Fehlschlag (kein Dauer-LLM-Kosten beim
+  wiederholten Öffnen). Weitere Skip-Gründe: kein aktiver/kein LLM-Entwurf, Quelle nicht
+  hostex/guesty, neue Gastnachricht seit der Referenzzeit (bestehender Draft-Pfad ist dann
+  zuständig), hängender Live-Auto-Send (`auto_decision='auto' AND auto_mode='live'`, um nicht in
+  einen laufenden Claim reinzufunken). **`draftId` bleibt IMMER gleich** —
+  `applyDraftRegeneration` überschreibt denselben Datensatz (der Push-Watcher, TheBrain2
+  `tools/labs/draft-push.sh`, dedupliziert über `draftId`) — bewusst anders als der
+  „Neu generieren"-Button (`POST /:threadId/regenerate`, verwirft + legt neu an, unverändert).
+  Generiert wird mit denselben Inputs wie `generateDraftsForProperty`
+  (`bookingContext`/`guestLanguage`/`isBookingRequest`, `lastInboundBody` dafür aus
+  `generate-drafts.ts` exportiert statt kopiert). **Das Gate läuft danach UNVERÄNDERT neu**
+  (`runAutoSendGate`, setzt `auto_*` inkl. `auto_judged_at` neu) — im Modus `live` kann es die
+  neue Fassung also automatisch versenden, das ist die definierte Kette, nicht unterdrückt; ein
+  Gate-Fehler wird nur geloggt. `no_reply`/`failed`/jede Exception bei der Generierung → der
+  alte Entwurf bleibt unangetastet stehen (kein `markThreadAiNoReply`, nur `logger.warn`).
+  **Admin-UI:** ist der Entwurf danach immer noch älter als `DRAFT_STALE_HOURS`, zeigt die
+  Thread-Ansicht einen gelben Warnhinweis „Entwurf vom TT.MM. HH:MM, Zeitbezüge prüfen"
+  (Europe/Berlin, `formatBerlinDateTime` in `berlin-day.ts`); ist `previous_body` gesetzt, ein
+  aufklappbares „Vorversion (Entwurf vom …) — automatisch neu generiert …“ unter dem Textarea
+  (`renderStaleDraftWarning`/`renderPreviousDraftBody`, rein/exportiert wie `renderAutoBadge`).
 - **Env-Variablen:** `AUTO_SEND_MODE` (`off`|`shadow`|`live`, Default `off`),
   `AUTO_SEND_DAILY_CAP` (Default 10), `MESSAGE_LOOP_MINUTES` (Default 5), `JUDGE_MODEL`
   (Default `claude-opus-5`), `GUESTY_WEBHOOK_SECRET` (aus `npm run webhook:register`),
-  `SMARTTASKS_API_KEY`/`SMARTTASKS_API_URL` (#696, siehe „SmartTasks-Client" oben).
+  `SMARTTASKS_API_KEY`/`SMARTTASKS_API_URL` (#696, siehe „SmartTasks-Client" oben),
+  `DRAFT_STALE_HOURS` (#699, Default 6).
 - **Key Files:** `src/services/auto-send/{types,mode,berlin-day,today-facts,mechanical-checks,
-  judge-prompt,judge-service,policy,runner}.ts` (`today-facts.ts` seit #698), `src/services/draft-send-service.ts`,
+  judge-prompt,judge-service,policy,runner}.ts` (`today-facts.ts` seit #698,
+  `formatBerlinDateTime` in `berlin-day.ts` seit #699), `src/services/draft-send-service.ts`,
   `src/services/guesty-webhook-signature.ts`, `src/routes/webhooks-guesty.ts`,
   `src/services/{smarttasks-client,promise-task-service}.ts`,
   `src/services/{booking-request,booking-request-task-service}.ts` (#697/#702,
-  `findOpenBookingRequest` seit #702), `src/jobs/{message-loop,handle-guesty-inbound}.ts`,
+  `findOpenBookingRequest` seit #702), `src/services/stale-draft-regen.ts` (#699),
+  `src/jobs/{message-loop,handle-guesty-inbound}.ts`,
   `src/scripts/{register-guesty-webhook,test-judge-fixtures}.ts`,
   `src/test-fixtures/judge/cases.json`, `src/services/auto-send/runner.roundscope.test.ts`
   (#702 End-to-End-Fixtures), Migrationen `027_add_auto_send.sql`,
   `029_add_smarttasks_task.sql`, `030_add_booking_request.sql`,
-  `031_add_judge_reasoning_and_release.sql`.
+  `031_add_judge_reasoning_and_release.sql`, `032_add_draft_regeneration.sql` (#699).
 - **Server-Setup:** → siehe `docs/vault-deployment.md`, Abschnitt „Auto-Send-Gate
   aktivieren".
 
@@ -881,6 +917,7 @@ Optional:
 - `MESSAGE_LOOP_MINUTES` - Takt des eigenständigen Nachrichten-Loops (default: 5)
 - `JUDGE_MODEL` - Modell für die Auto-Send-Prüfung (default: `claude-opus-5`)
 - `GUESTY_WEBHOOK_SECRET` - Svix-Secret des Guesty-Webhooks, aus `npm run webhook:register`
+- `DRAFT_STALE_HOURS` - Ab wann ein pending-KI-Entwurf beim Öffnen im Admin-UI still neu generiert wird (default: 6, siehe Auto-Send-Gate-Abschnitt „Stale-Draft-Regeneration")
 
 ## Guesty API Quirks
 

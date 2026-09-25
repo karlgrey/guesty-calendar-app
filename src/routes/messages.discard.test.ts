@@ -48,6 +48,12 @@ vi.mock('../utils/thread-property.js', () => ({
   getPropertyForThread: vi.fn().mockReturnValue(undefined),
   propertyForBadge: vi.fn().mockReturnValue(undefined),
 }));
+// #699: neuer messages.ts-Import — dieser Testfile prüft nur den Discard-Handler, nicht
+// GET /:threadId, daher komplett gemockt statt der echten Service-Deps (draft-repository.js
+// bleibt bewusst ohne claimDraftRegeneration/applyDraftRegeneration in diesem File).
+vi.mock('../services/stale-draft-regen.js', () => ({
+  regenerateStaleDraftIfNeeded: vi.fn().mockResolvedValue({ kind: 'skipped', reason: 'test' }),
+}));
 vi.mock('../services/message-sender.js', () => ({
   sendReply: vi.fn(),
 }));

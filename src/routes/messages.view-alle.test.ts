@@ -55,6 +55,11 @@ vi.mock('../utils/thread-property.js', () => ({
       : undefined,
   ),
 }));
+// #699: neuer messages.ts-Import — dieser Testfile prüft GET '/' (Offen + Alle-View), nicht
+// GET /:threadId, daher komplett gemockt.
+vi.mock('../services/stale-draft-regen.js', () => ({
+  regenerateStaleDraftIfNeeded: vi.fn().mockResolvedValue({ kind: 'skipped', reason: 'test' }),
+}));
 
 import messagesRoutes from './messages.js';
 
