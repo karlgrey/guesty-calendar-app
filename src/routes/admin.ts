@@ -847,6 +847,13 @@ router.get('/', (_req, res) => {
       <h2>🛏️ Aktuell belegt</h2>
       <div id="currentBookingsTable" style="margin-bottom: 28px;">Loading…</div>
       <h2 id="bookingsTitle">📅 Upcoming Bookings</h2>
+      <input
+        type="text"
+        id="bookingsFilter"
+        placeholder="Suche nach Gastname oder Firma…"
+        oninput="renderFilteredBookings()"
+        style="width: 100%; max-width: 360px; margin-bottom: 12px; padding: 8px 12px; border: 1px solid var(--color-stone, #e8e4df); border-radius: 6px; font-size: 14px;"
+      />
       <div id="bookingsTable">Loading bookings...</div>
     </div>
 
@@ -856,6 +863,8 @@ router.get('/', (_req, res) => {
     let currentPeriod = 'future'; // Track current period
     let currentProperty = null; // Track current property slug
     let propertiesMap = {}; // Track property metadata
+    let lastBookings = []; // #729: letzte /dashboard-data-Buchungen für das Filterfeld
+    let lastCurrency = 'EUR';
 
     // Load available properties for selector
     async function loadProperties() {
@@ -885,6 +894,8 @@ router.get('/', (_req, res) => {
     function switchProperty(slug) {
       if (slug && slug !== currentProperty) {
         currentProperty = slug;
+        const filterInput = document.getElementById('bookingsFilter');
+        if (filterInput) filterInput.value = ''; // #729: Filter nicht objektübergreifend stehen lassen
         applyPropertyContext();
         loadDashboard();
         updateAnalyticsVisibility();
@@ -1132,6 +1143,96 @@ router.get('/', (_req, res) => {
       }
     }
 
+    // Shared booking-rows renderer (used by the list and the "Aktuell belegt" block).
+    // #729: escaped, weil booking.guestName/guestCompany aus Guesty/Fingerprint-Daten
+    // stammt und roh in innerHTML landet.
+    function escapeHtml(value) {
+      const div = document.createElement('div');
+      div.textContent = value == null ? '' : String(value);
+      return div.innerHTML;
+    }
+
+    function renderBookingsTable(list, currency) {
+      if (!list || list.length === 0) return '';
+      return \`
+        <table>
+          <thead>
+            <tr>
+              <th>Confirmation</th>
+              <th>Guest Name</th>
+              <th>Check-In</th>
+              <th>Check-Out</th>
+              <th>Nights</th>
+              <th>Guests</th>
+              <th>Status</th>
+              <th>Source</th>
+              <th>Total Price</th>
+              <th>Documents</th>
+            </tr>
+          </thead>
+          <tbody>
+            \${list.map(booking => {
+              const checkIn = new Date(booking.checkIn);
+              const checkOut = new Date(booking.checkOut);
+
+              const statusClass = booking.status === 'confirmed' ? 'running' : 'stopped';
+              const statusText = booking.status || 'Unknown';
+
+              // #729 (Fall momox): Firma fett, Gastname klein darunter (Muster
+              // Dokumentenliste/renderLastDoc) — ohne Firma unverändert nur der Name.
+              const guestDisplay = booking.guestCompany
+                ? \`<strong>\${escapeHtml(booking.guestCompany)}</strong><br/><small style="color: #666;">\${escapeHtml(booking.guestName)}</small>\`
+                : escapeHtml(booking.guestName);
+
+              return \`
+                <tr>
+                  <td style="font-family: monospace; font-size: 12px;">\${booking.confirmationCode || booking.reservationId.substring(0, 8)}</td>
+                  <td>\${guestDisplay}</td>
+                  <td>\${checkIn.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
+                  <td>\${checkOut.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
+                  <td>\${booking.nights}</td>
+                  <td>\${booking.guestsCount}</td>
+                  <td><span class="status \${statusClass}">\${statusText}</span></td>
+                  <td>\${booking.source}</td>
+                  <td style="font-weight: 600;">\${currency} \${Math.round(booking.totalPrice).toLocaleString()}</td>
+                  <td>
+                    <button class="doc-btn quote-btn" onclick="generateDocument('\${booking.reservationId}', 'quote')" title="Angebot erstellen/laden">\${booking.quoteNumber || 'A'}</button>
+                    <button class="doc-btn invoice-btn" onclick="generateDocument('\${booking.reservationId}', 'invoice')" title="Rechnung erstellen/laden">\${booking.invoiceNumber || 'R'}</button>
+                    <button class="doc-btn refresh-btn" onclick="refreshDocument('\${booking.reservationId}', 'quote')" title="Angebot mit aktuellen Guesty-Daten neu generieren">↻ A</button>
+                    <button class="doc-btn refresh-btn" onclick="refreshDocument('\${booking.reservationId}', 'invoice')" title="Rechnung mit aktuellen Guesty-Daten neu generieren">↻ R</button>
+                  </td>
+                </tr>
+              \`;
+            }).join('')}
+          </tbody>
+        </table>
+      \`;
+    }
+
+    // #729: clientseitiges Filterfeld über Gastname + Firma (keine Server-Suche
+    // vorhanden) — filtert die zuletzt geladenen Buchungen ohne Re-Fetch.
+    function renderFilteredBookings() {
+      const bookingsTable = document.getElementById('bookingsTable');
+      if (!bookingsTable) return;
+      const filterInput = document.getElementById('bookingsFilter');
+      const query = (filterInput?.value || '').trim().toLowerCase();
+
+      const filtered = query
+        ? lastBookings.filter(b =>
+            (b.guestName || '').toLowerCase().includes(query) ||
+            (b.guestCompany || '').toLowerCase().includes(query)
+          )
+        : lastBookings;
+
+      if (lastBookings.length === 0) {
+        bookingsTable.innerHTML = '<p style="color: #888;">No bookings found for this period.</p>';
+      } else if (filtered.length === 0) {
+        bookingsTable.innerHTML = '<p style="color: #888;">Keine Buchung passt zu „' + escapeHtml(filterInput.value) + '".</p>';
+      } else {
+        bookingsTable.innerHTML = renderBookingsTable(filtered, lastCurrency);
+      }
+    }
+
     async function loadDashboard() {
       try {
         const propertyParam = currentProperty ? \`&property=\${currentProperty}\` : '';
@@ -1191,69 +1292,17 @@ router.get('/', (_req, res) => {
           </div>
         \`;
 
-        // Shared booking-rows renderer (used by the list and the "Aktuell belegt" block)
-        function renderBookingsTable(list, currency) {
-          if (!list || list.length === 0) return '';
-          return \`
-            <table>
-              <thead>
-                <tr>
-                  <th>Confirmation</th>
-                  <th>Guest Name</th>
-                  <th>Check-In</th>
-                  <th>Check-Out</th>
-                  <th>Nights</th>
-                  <th>Guests</th>
-                  <th>Status</th>
-                  <th>Source</th>
-                  <th>Total Price</th>
-                  <th>Documents</th>
-                </tr>
-              </thead>
-              <tbody>
-                \${list.map(booking => {
-                  const checkIn = new Date(booking.checkIn);
-                  const checkOut = new Date(booking.checkOut);
-
-                  const statusClass = booking.status === 'confirmed' ? 'running' : 'stopped';
-                  const statusText = booking.status || 'Unknown';
-
-                  return \`
-                    <tr>
-                      <td style="font-family: monospace; font-size: 12px;">\${booking.confirmationCode || booking.reservationId.substring(0, 8)}</td>
-                      <td>\${booking.guestName}</td>
-                      <td>\${checkIn.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
-                      <td>\${checkOut.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</td>
-                      <td>\${booking.nights}</td>
-                      <td>\${booking.guestsCount}</td>
-                      <td><span class="status \${statusClass}">\${statusText}</span></td>
-                      <td>\${booking.source}</td>
-                      <td style="font-weight: 600;">\${currency} \${Math.round(booking.totalPrice).toLocaleString()}</td>
-                      <td>
-                        <button class="doc-btn quote-btn" onclick="generateDocument('\${booking.reservationId}', 'quote')" title="Angebot erstellen/laden">\${booking.quoteNumber || 'A'}</button>
-                        <button class="doc-btn invoice-btn" onclick="generateDocument('\${booking.reservationId}', 'invoice')" title="Rechnung erstellen/laden">\${booking.invoiceNumber || 'R'}</button>
-                        <button class="doc-btn refresh-btn" onclick="refreshDocument('\${booking.reservationId}', 'quote')" title="Angebot mit aktuellen Guesty-Daten neu generieren">↻ A</button>
-                        <button class="doc-btn refresh-btn" onclick="refreshDocument('\${booking.reservationId}', 'invoice')" title="Rechnung mit aktuellen Guesty-Daten neu generieren">↻ R</button>
-                      </td>
-                    </tr>
-                  \`;
-                }).join('')}
-              </tbody>
-            </table>
-          \`;
-        }
-
         // "Aktuell belegt" block — always visible (both periods)
         const currentEl = document.getElementById('currentBookingsTable');
         currentEl.innerHTML = (data.currentBookings && data.currentBookings.length > 0)
           ? renderBookingsTable(data.currentBookings, data.listing.currency)
           : '<p style="color: #888;">Aktuell nicht belegt</p>';
 
-        // Period bookings list
-        const bookingsTable = document.getElementById('bookingsTable');
-        bookingsTable.innerHTML = (data.bookings.length === 0)
-          ? '<p style="color: #888;">No bookings found for this period.</p>'
-          : renderBookingsTable(data.bookings, data.listing.currency);
+        // Period bookings list — #729: über lastBookings/lastCurrency + renderFilteredBookings
+        // gerendert, damit das Filterfeld ohne Re-Fetch neu rendern kann.
+        lastBookings = data.bookings;
+        lastCurrency = data.listing.currency;
+        renderFilteredBookings();
       } catch (error) {
         console.error('Failed to load dashboard data:', error);
         document.getElementById('statsGrid').innerHTML = '<p style="color: #dc3545;">Failed to load stats</p>';
@@ -2165,6 +2214,7 @@ router.get('/dashboard-data', async (req, res, next) => {
         checkOut: r.check_out,
         nights: r.nights_count,
         guestName: r.guest_name || 'Unknown Guest',
+        guestCompany: r.guest_company || null, // #729 (Fall momox)
         guestsCount: r.guests_count || 0,
         status: r.status,
         confirmationCode: r.confirmation_code,
@@ -2187,6 +2237,7 @@ router.get('/dashboard-data', async (req, res, next) => {
         checkOut: r.check_out,
         nights: r.nights_count,
         guestName: r.guest_name || 'Unknown Guest',
+        guestCompany: r.guest_company || null, // #729 (Fall momox)
         guestsCount: r.guests_count || 0,
         status: r.status,
         confirmationCode: r.confirmation_code,

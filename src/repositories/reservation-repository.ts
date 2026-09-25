@@ -173,6 +173,30 @@ export function upsertReservationBatch(
 }
 
 /**
+ * #729 (Fall momox): spiegelt eine über PUT /api/agent/guests/:guestId gesetzte
+ * Firma (#715, Guesty guests-crud) sofort in ALLE bestehenden Reservierungen
+ * dieses guest_id — sonst ist die Firma erst nach dem nächsten Backfill/ETL im
+ * Dashboard sichtbar. `company: null` löscht die Firma wieder (Guesty erlaubt
+ * das Leeren des Felds). Gibt die Anzahl geänderter Reservierungszeilen zurück.
+ */
+export function updateGuestCompanyByGuestId(guestId: string, company: string | null): number {
+  const db = getDatabase();
+
+  try {
+    const result = db
+      .prepare(`UPDATE reservations SET guest_company = ?, updated_at = datetime('now') WHERE guest_id = ?`)
+      .run(company, guestId);
+
+    return result.changes;
+  } catch (error) {
+    logger.error({ error, guestId }, 'Failed to update guest_company by guest_id');
+    throw new DatabaseError(
+      `Failed to update guest_company by guest_id: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
+  }
+}
+
+/**
  * Get a reservation by ID
  */
 export function getReservationById(reservationId: string): Reservation | null {

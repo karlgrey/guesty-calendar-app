@@ -138,9 +138,15 @@ export interface GuestyCalendarDay {
       confirmationCode?: string;
       source?: string;
       guestId?: string;
+      // #729: `company` ist im Kalender-API-Payload (blockRefs[].reservation.guest)
+      // NICHT dokumentiert/beobachtet — nur `_id`/`fullName` sind belegt. Optional
+      // getypt für den Fall, dass Guesty es doch mal mitliefert (Mapper gibt dem
+      // dann Vorrang vor dem Namens-Fingerprint); der reguläre Fall bleibt der
+      // Backfill über guestyClient.getGuest (src/scripts/backfill-guest-company.ts).
       guest?: {
         _id: string;
         fullName?: string;
+        company?: string;
       };
       money?: {
         balanceDue?: number;

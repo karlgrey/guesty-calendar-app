@@ -79,7 +79,10 @@ export function extractReservationFromCalendar(
       last_synced_at: lastSyncedAt,
 
       // Local-only fingerprint (computed from guest_name, see src/utils/guest-fingerprint.ts)
-      ...fingerprintGuestSafe(res.guest?.fullName || null),
+      // — Guesty-company hat Vorrang, falls das Kalender-Payload es mitliefert (#729,
+      // Fall momox: aktuell unbeobachtet, siehe Typ-Kommentar in types/guesty.ts —
+      // der reguläre Weg ist der Backfill in src/scripts/backfill-guest-company.ts).
+      ...fingerprintGuestSafe(res.guest?.fullName || null, normalizeCompanyOverride(res.guest?.company)),
     };
   } catch (error) {
     logger.error({ error, reservationId: res._id }, 'Failed to map reservation from calendar day');
@@ -108,17 +111,28 @@ export function extractReservationsFromCalendar(
 }
 
 /**
+ * #729: trimmt ein eventuelles guest.company aus dem Kalender-Payload und
+ * verwirft leere/whitespace-only Werte (Fingerprint bleibt dann maßgeblich).
+ */
+function normalizeCompanyOverride(rawCompany: string | undefined): string | null {
+  const trimmed = rawCompany?.trim();
+  return trimmed ? trimmed : null;
+}
+
+/**
  * Defensive wrapper: any fingerprint failure logs warn but never crashes the mapper.
- * Returns the two fields needed for the Reservation object.
+ * Returns the two fields needed for the Reservation object. `companyOverride` (#729)
+ * hat Vorrang vor dem aus dem Namen abgeleiteten Fingerprint-Company-Wert.
  */
 function fingerprintGuestSafe(
-  rawName: string | null
+  rawName: string | null,
+  companyOverride: string | null
 ): { internal_guest_id: string | null; guest_company: string | null } {
   try {
     const fp = fingerprintGuest(rawName);
-    return { internal_guest_id: fp.id, guest_company: fp.company };
+    return { internal_guest_id: fp.id, guest_company: companyOverride ?? fp.company };
   } catch (error) {
     logger.warn({ error, rawName }, 'fingerprintGuest threw, falling back to nulls');
-    return { internal_guest_id: null, guest_company: null };
+    return { internal_guest_id: null, guest_company: companyOverride ?? null };
   }
 }

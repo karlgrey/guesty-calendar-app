@@ -12,6 +12,7 @@ import {
 } from '../services/reservation-service.js';
 import { createOrGetDocument, refreshDocument } from '../services/document-service.js';
 import { guestyClient } from '../services/guesty-client.js';
+import { updateGuestCompanyByGuestId } from '../repositories/reservation-repository.js';
 import { getThreadsUpdatedSince, getThreadById, getMessagesByThread } from '../repositories/message-repository.js';
 import { getAwaitingDrafts, getAutoSendStats } from '../repositories/draft-repository.js';
 import { propertyForBadge } from '../utils/thread-property.js';
@@ -131,6 +132,23 @@ router.put('/guests/:guestId', async (req, res) => {
       throw new ValidationError(`Body ist leer — erlaubt: ${GUEST_WRITABLE_FIELDS.join(', ')}`);
     }
     await guestyClient.updateGuest(req.params.guestId, body);
+
+    // #729 (Fall momox): eine mitgeschickte company spiegelt sich sofort in
+    // ALLE bestehenden Reservierungen dieses guest_id (Dashboard zeigt die
+    // Firma dann ohne Wartezeit auf den nächsten Backfill/ETL). Best-effort:
+    // der Guesty-Schreibvorgang ist bereits durch — ein DB-Problem hier soll
+    // die Antwort nicht zum Fehler machen.
+    if (Object.prototype.hasOwnProperty.call(body, 'company')) {
+      try {
+        updateGuestCompanyByGuestId(req.params.guestId, typeof body.company === 'string' ? body.company : null);
+      } catch (dbError) {
+        logger.warn(
+          { dbError, guestId: req.params.guestId },
+          'guest_company-Spiegelung in reservations fehlgeschlagen (Guesty-Update war erfolgreich)'
+        );
+      }
+    }
+
     res.json({ ok: true });
   } catch (err) { handleError(res, err); }
 });
