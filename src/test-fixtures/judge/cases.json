@@ -410,5 +410,31 @@
       "category": "buchungsanfrage",
       "auto": false
     }
+  },
+  {
+    "name": "Lorenzo — Entwurf spiegelt 'schönen Sonntag' am Montag (#698)",
+    "guestMessages": [
+      "Vielen Dank, habt einen schönen Sonntag!"
+    ],
+    "draft": "Danke dir, Lorenzo! Dir auch einen schönen Sonntag.",
+    "guestName": "Lorenzo",
+    "now": "2026-09-21T09:00:00.000Z",
+    "expected": {
+      "category": "dank_smalltalk",
+      "auto": false
+    }
+  },
+  {
+    "name": "Lorenzo — neutrale Zeitformulierung statt gespiegeltem Sonntag (#698)",
+    "guestMessages": [
+      "Vielen Dank, habt einen schönen Sonntag!"
+    ],
+    "draft": "Danke dir, Lorenzo! Euch eine gute Zeit.",
+    "guestName": "Lorenzo",
+    "now": "2026-09-21T09:00:00.000Z",
+    "expected": {
+      "category": "dank_smalltalk",
+      "auto": true
+    }
   }
 ]
