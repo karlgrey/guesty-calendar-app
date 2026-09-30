@@ -59,6 +59,9 @@ const MAX_OAUTH_RETRY_WAIT_MS = 60 * 1000;
 /** Sperre nach 400/401 am Token-Endpunkt (falsche Client-ID/Secret) */
 const OAUTH_CREDENTIAL_ERROR_BLOCK_MS = 15 * 60 * 1000;
 
+/** Guesty PUT /reservations-v3/:id/status — Enum canceledBy (Default bei Guesty: TEAM_MEMBER). */
+export type CanceledBy = 'OWNER' | 'GUEST' | 'TEAM_MEMBER' | 'HOST';
+
 export class GuestyClient {
   private readonly baseUrl: string;
   private readonly oauthUrl: string;
@@ -982,6 +985,7 @@ export class GuestyClient {
     reservationId: string,
     status: 'confirmed' | 'canceled' | 'expired' | 'closed',
     cancellationReason: string = 'Cancelled Due to Hold/Expiration',
+    canceledBy?: CanceledBy,
   ): Promise<void> {
     // Smoke-Test-Befunde 24.07.2026: ein Hold (status 'reserved') ist NICHT
     // 'canceled'-bar ("Reservation not cancellable"); 'canceled' braucht einen
@@ -995,6 +999,7 @@ export class GuestyClient {
       body: JSON.stringify({
         status,
         ...(status === 'canceled' ? { cancellationReason } : {}),
+        ...(status === 'canceled' && canceledBy ? { canceledBy } : {}),
       }),
     });
     logger.info({ reservationId, status }, 'Updated Guesty reservation status');

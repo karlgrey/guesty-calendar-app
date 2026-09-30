@@ -331,7 +331,31 @@ describe('agent-api', () => {
       method: 'POST', headers: KEY, body: JSON.stringify({ reason: '  Cancelled by guest ' }),
     });
     expect(x.status).toBe(200);
-    expect(cancelReservation).toHaveBeenLastCalledWith('res-1', 'Cancelled by guest');
+    expect(cancelReservation).toHaveBeenLastCalledWith('res-1', 'Cancelled by guest', undefined);
+  });
+
+  it('cancel reicht canceledBy durch, ungültiger Wert → 400', async () => {
+    const { cancelReservation } = await import('../services/reservation-service.js');
+    const ok = await fetch(`${base}/api/agent/reservations/res-1/cancel`, {
+      method: 'POST', headers: KEY, body: JSON.stringify({ reason: 'Guest cancelled', canceledBy: 'GUEST' }),
+    });
+    expect(ok.status).toBe(200);
+    expect(cancelReservation).toHaveBeenLastCalledWith('res-1', 'Guest cancelled', 'GUEST');
+    const bad = await fetch(`${base}/api/agent/reservations/res-1/cancel`, {
+      method: 'POST', headers: KEY, body: JSON.stringify({ canceledBy: 'NOBODY' }),
+    });
+    expect(bad.status).toBe(400);
+  });
+
+  it('cancel: ExternalApiError liefert details in der Antwort', async () => {
+    const { cancelReservation } = await import('../services/reservation-service.js');
+    const { ExternalApiError } = await import('../utils/errors.js');
+    const details = { message: 'Invalid cancellationReason' };
+    (cancelReservation as any).mockRejectedValueOnce(
+      new ExternalApiError('Guesty API error: 400 Bad Request', 400, 'guesty', details));
+    const x = await fetch(`${base}/api/agent/reservations/res-1/cancel`, { method: 'POST', headers: KEY });
+    expect(x.status).toBe(400);
+    expect(await x.json()).toEqual({ error: 'Guesty API error: 400 Bad Request', details });
   });
 
   it('cancel mit leerem/ungültigem reason → 400 (#771)', async () => {

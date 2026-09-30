@@ -16,6 +16,7 @@ import {
   createCancellationForInvoice,
   getCancellationWithPDF,
 } from '../services/document-service.js';
+import type { CanceledBy } from '../services/guesty-client.js';
 import { guestyClient } from '../services/guesty-client.js';
 import { updateGuestCompanyByGuestId } from '../repositories/reservation-repository.js';
 import { getThreadsUpdatedSince, getThreadById, getMessagesByThread } from '../repositories/message-repository.js';
@@ -25,7 +26,7 @@ import { runConsistencyCheck, listOpenReservations } from '../jobs/consistency-c
 import { getPropertyBySlug, getPropertySlugs, getListingId } from '../config/properties.js';
 import type { PropertyConfig } from '../config/properties.js';
 import { listDocumentsForAgent, getDocumentById } from '../repositories/document-repository.js';
-import { AppError, NotFoundError, ValidationError } from '../utils/errors.js';
+import { AppError, ExternalApiError, NotFoundError, ValidationError } from '../utils/errors.js';
 import { config } from '../config/index.js';
 import logger from '../utils/logger.js';
 import { getHostexClient } from '../services/hostex-client.js';
@@ -37,6 +38,12 @@ router.use(requireAgentKey);
 
 function handleError(res: express.Response, err: unknown) {
   if (err instanceof AppError) {
+    // Externe API-Fehler (Guesty & Co.): Details (Fehlertext des Anbieters)
+    // an den Agent durchreichen und loggen, sonst ist der Grund eines 4xx weg.
+    if (err instanceof ExternalApiError && err.details !== undefined) {
+      logger.warn({ err, details: err.details }, 'Agent API: external API error');
+      return res.status(err.statusCode).json({ error: err.message, details: err.details });
+    }
     return res.status(err.statusCode).json({ error: err.message });
   }
   logger.error({ err }, 'Agent API: unexpected error');
@@ -165,6 +172,8 @@ router.post('/reservations/:id/confirm', async (req, res) => {
   } catch (err) { handleError(res, err); }
 });
 
+const CANCELED_BY_VALUES: readonly CanceledBy[] = ['OWNER', 'GUEST', 'TEAM_MEMBER', 'HOST'];
+
 // Storno/Freigabe (#771): Hold/Anfrage -> 'closed', bestätigt -> 'canceled'
 // mit Grund (Body optional {"reason": "..."}), schon storniert -> No-op.
 router.post('/reservations/:id/cancel', async (req, res) => {
@@ -173,7 +182,11 @@ router.post('/reservations/:id/cancel', async (req, res) => {
     if (reason !== undefined && (typeof reason !== 'string' || reason.trim() === '')) {
       throw new ValidationError('reason muss ein nicht-leerer String sein');
     }
-    const result = await cancelReservation(req.params.id, reason?.trim());
+    const canceledBy = req.body?.canceledBy;
+    if (canceledBy !== undefined && !CANCELED_BY_VALUES.includes(canceledBy as CanceledBy)) {
+      throw new ValidationError(`canceledBy muss einer von ${CANCELED_BY_VALUES.join('/')} sein`);
+    }
+    const result = await cancelReservation(req.params.id, reason?.trim(), canceledBy);
     res.json({ ok: true, ...result });
   } catch (err) { handleError(res, err); }
 });

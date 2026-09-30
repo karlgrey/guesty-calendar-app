@@ -10,7 +10,7 @@
  *
  * Spec: docs/superpowers/specs/2026-07-24-agent-reservierung-design.md
  */
-import { guestyClient } from './guesty-client.js';
+import { guestyClient, type CanceledBy } from './guesty-client.js';
 import { createOrGetDocument } from './document-service.js';
 import { areDatesAvailable } from '../repositories/availability-repository.js';
 import { upsertReservation, applyCancellationLocally } from '../repositories/reservation-repository.js';
@@ -273,7 +273,7 @@ const ALREADY_RELEASED_STATUSES = ['canceled', 'cancelled', 'closed'];
  * Status in inquiries, Google-Kalender-Event best effort löschen (sonst erst
  * beim nächsten Sync).
  */
-export async function cancelReservation(reservationId: string, reason?: string): Promise<CancelReservationResult> {
+export async function cancelReservation(reservationId: string, reason?: string, canceledBy?: CanceledBy): Promise<CancelReservationResult> {
   const reservation = await guestyClient.getReservation(reservationId);
   const previousStatus: string = reservation?.status ?? 'unknown';
 
@@ -285,7 +285,12 @@ export async function cancelReservation(reservationId: string, reason?: string):
     await releaseOfferReservation(reservationId);
   } else if (previousStatus === 'confirmed') {
     newStatus = 'canceled';
-    await guestyClient.updateReservationStatus(reservationId, 'canceled', reason || DEFAULT_CANCELLATION_REASON);
+    const cancelReason = reason || DEFAULT_CANCELLATION_REASON;
+    if (canceledBy) {
+      await guestyClient.updateReservationStatus(reservationId, 'canceled', cancelReason, canceledBy);
+    } else {
+      await guestyClient.updateReservationStatus(reservationId, 'canceled', cancelReason);
+    }
   } else {
     throw new ConflictError(`Reservierung im Status '${previousStatus}' ist nicht stornierbar`);
   }

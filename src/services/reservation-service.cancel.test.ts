@@ -56,6 +56,12 @@ describe('cancelReservation (#771)', () => {
     expect(updateStatus).toHaveBeenCalledWith('res-1', 'canceled', 'Guest cancelled');
   });
 
+  it('canceledBy wird an Guesty durchgereicht', async () => {
+    getReservation.mockResolvedValue({ status: 'confirmed', listingId: 'listing-fh' });
+    await cancelReservation('res-1', 'Guest cancelled', 'GUEST');
+    expect(updateStatus).toHaveBeenCalledWith('res-1', 'canceled', 'Guest cancelled', 'GUEST');
+  });
+
   it.each(['reserved', 'inquiry'])('Hold/Anfrage (%s) -> closed wie bisher', async (status) => {
     getReservation.mockResolvedValue({ status, listingId: 'listing-fh' });
     const r = await cancelReservation('res-2');
