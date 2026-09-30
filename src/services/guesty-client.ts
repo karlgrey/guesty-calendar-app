@@ -54,6 +54,11 @@ function sleep(ms: number): Promise<void> {
 /**
  * Guesty API Client with OAuth 2.0 authentication and rate limit handling
  */
+/** Längste Wartezeit, die der Token-Request bei 429 noch selbst aussitzt */
+const MAX_OAUTH_RETRY_WAIT_MS = 60 * 1000;
+/** Sperre nach 400/401 am Token-Endpunkt (falsche Client-ID/Secret) */
+const OAUTH_CREDENTIAL_ERROR_BLOCK_MS = 15 * 60 * 1000;
+
 export class GuestyClient {
   private readonly baseUrl: string;
   private readonly oauthUrl: string;
@@ -63,6 +68,11 @@ export class GuestyClient {
 
   private accessToken: string | null = null;
   private tokenExpiresAt: number | null = null;
+  /** Laufender Token-Request, den parallele Aufrufer teilen (#767) */
+  private tokenRequest: Promise<string> | null = null;
+  /** Bis wann keine Token-Requests gestellt werden (Fail fast, #767) */
+  private tokenBlockedUntil = 0;
+  private tokenBlockedReason = '';
   private rateLimitInfo: RateLimitInfo = {
     limitPerSecond: null,
     remainingPerSecond: null,
@@ -114,7 +124,14 @@ export class GuestyClient {
   }
 
   /**
-   * Exchange client credentials for access token with retry logic
+   * Access token (cached) — parallele Aufrufer teilen sich EINEN Token-Request.
+   *
+   * Vorfall 30.09.2026 (#765/#767): ohne In-flight-Promise feuerten
+   * Nachrichten-Loop, ETL und Agent-API je einen eigenen Token-Request; nach
+   * einem 400 invalid_client verlängerten die Wiederholungen die Sperre am
+   * Token-Endpunkt (Retry-After ≈ 16 h), und die App schlief so lange in der
+   * Retry-Schleife. Jetzt: ein geteilter Request, Credential-Fehler (400/401)
+   * und lange Retry-After sperren weitere Versuche für eine Weile (Fail fast).
    */
   private async getAccessToken(): Promise<string> {
     // Return cached token if still valid (with 5 minute buffer)
@@ -122,6 +139,36 @@ export class GuestyClient {
       return this.accessToken;
     }
 
+    if (Date.now() < this.tokenBlockedUntil) {
+      throw new ExternalApiError(
+        `OAuth token requests suspended until ${new Date(this.tokenBlockedUntil).toISOString()} (${this.tokenBlockedReason})`,
+        503,
+        'Guesty OAuth',
+        { blockedUntil: new Date(this.tokenBlockedUntil).toISOString() }
+      );
+    }
+
+    if (!this.tokenRequest) {
+      this.tokenRequest = this.fetchAccessToken().finally(() => {
+        this.tokenRequest = null;
+      });
+    }
+    return this.tokenRequest;
+  }
+
+  private blockTokenRequests(ms: number, reason: string): void {
+    this.tokenBlockedUntil = Date.now() + ms;
+    this.tokenBlockedReason = reason;
+    logger.error(
+      { blockedUntil: new Date(this.tokenBlockedUntil).toISOString(), reason },
+      'OAuth token requests suspended'
+    );
+  }
+
+  /**
+   * Exchange client credentials for access token with retry logic
+   */
+  private async fetchAccessToken(): Promise<string> {
     logger.info('Fetching new OAuth access token from Guesty');
 
     const maxRetries = 5; // More retries for OAuth since it's critical
@@ -158,6 +205,19 @@ export class GuestyClient {
             delayMs = Math.pow(2, attempt + 1) * 1000;
           }
 
+          // Lange Sperre (Vorfall: Retry-After ≈ 57.300 s): nicht stundenlang
+          // schlafen und danach erneut anklopfen, sondern sofort abbrechen und
+          // weitere Versuche bis zum Ende der Sperre unterdrücken.
+          if (delayMs > MAX_OAUTH_RETRY_WAIT_MS) {
+            this.blockTokenRequests(delayMs, `429 Retry-After ${retryAfterHeader ?? '?'}s`);
+            throw new ExternalApiError(
+              `OAuth token endpoint rate limited, Retry-After ${retryAfterHeader}s — not retrying`,
+              429,
+              'Guesty OAuth',
+              { retryAfter: retryAfterHeader }
+            );
+          }
+
           // Add jitter (±20%) to prevent thundering herd
           const jitter = delayMs * 0.2 * (Math.random() * 2 - 1);
           delayMs = Math.floor(delayMs + jitter);
@@ -186,6 +246,11 @@ export class GuestyClient {
 
         if (!response.ok) {
           const errorText = await response.text();
+          // 400/401 = Credentials falsch (invalid_client …): Wiederholen hilft
+          // nie, verlängert aber die Sperre am Token-Endpunkt.
+          if (response.status === 400 || response.status === 401) {
+            this.blockTokenRequests(OAUTH_CREDENTIAL_ERROR_BLOCK_MS, `${response.status} ${errorText.slice(0, 120)}`);
+          }
           throw new ExternalApiError(
             `OAuth token exchange failed: ${response.status} ${response.statusText}`,
             response.status,
@@ -212,8 +277,9 @@ export class GuestyClient {
       } catch (error) {
         lastError = error as Error | ExternalApiError;
 
-        // If it's an ExternalApiError and not a rate limit, throw immediately
-        if (error instanceof ExternalApiError && error.statusCode !== 429) {
+        // If it's an ExternalApiError and not a rate limit, throw immediately —
+        // ebenso, wenn Token-Requests gerade gesperrt wurden (lange Retry-After)
+        if (error instanceof ExternalApiError && (error.statusCode !== 429 || Date.now() < this.tokenBlockedUntil)) {
           throw error;
         }
 

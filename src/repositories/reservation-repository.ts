@@ -528,7 +528,40 @@ export function deleteStaleReservationsInRange(
       return 0;
     }
 
-    const staleIds = staleReservations.map(r => r.reservation_id);
+    const candidateIds = staleReservations.map(r => r.reservation_id);
+
+    // GoBD (#771): Reservierungen mit Rechnung oder Storno-Beleg werden NIE
+    // gelöscht (die Belege hingen früher per FK an der Zeile und gingen mit
+    // unter). Sie verschwinden aus dem Kalender, weil sie storniert sind ->
+    // lokal als 'canceled' markieren, damit Dashboard und Google-Kalender sie
+    // nicht mehr als aktiv führen. Taucht die Reservierung wieder auf (z. B.
+    // nach einem fehlerhaften Chunk), setzt der nächste Upsert den Status zurück.
+    const candidatePlaceholders = candidateIds.map(() => '?').join(',');
+    const protectedIds = new Set(
+      (db.prepare(
+        `SELECT DISTINCT reservation_id FROM documents
+         WHERE document_type IN ('invoice', 'cancellation')
+         AND reservation_id IN (${candidatePlaceholders})`
+      ).all(...candidateIds) as { reservation_id: string }[]).map(r => r.reservation_id)
+    );
+    const staleIds = candidateIds.filter(id => !protectedIds.has(id));
+
+    if (protectedIds.size > 0) {
+      const protectedList = [...protectedIds];
+      const marked = db.prepare(
+        `UPDATE reservations SET status = 'canceled'
+         WHERE reservation_id IN (${protectedList.map(() => '?').join(',')})
+         AND status IN (${ACTIVE_STATUS_SQL_LIST})`
+      ).run(...protectedList);
+      logger.info(
+        { listingId, protectedIds: protectedList, markedCanceled: marked.changes },
+        'Stale reservations with invoice kept (GoBD) and marked canceled'
+      );
+    }
+
+    if (staleIds.length === 0) {
+      return 0;
+    }
 
     // Use a transaction to delete documents first, then reservations
     const deleteStale = db.transaction(() => {
@@ -650,4 +683,26 @@ export function getRevenueForCheckInMonth(listingId: string, yyyymm: string): nu
     )
     .get(listingId, yyyymm) as { revenue: number | null };
   return row.revenue ?? 0;
+}
+
+/**
+ * Reservierung lokal als storniert führen (#771), sofort nach dem
+ * Guesty-Statuswechsel — ohne auf ETL/Inquiry-Sync zu warten: Dashboard und
+ * getReservationsByPeriod (aktive Stati) lassen sie fallen, und der
+ * Google-Kalender-Sync findet sie über inquiries in getCancelledReservationIds
+ * (Event-Löschung wie beim Airbnb-Storno, #660). Idempotent.
+ */
+export function markReservationStatusLocally(reservationId: string, status: string): { reservations: number; inquiries: number } {
+  const db = getDatabase();
+
+  try {
+    const res = db.prepare('UPDATE reservations SET status = ? WHERE reservation_id = ?').run(status, reservationId);
+    const inq = db.prepare('UPDATE inquiries SET status = ? WHERE inquiry_id = ?').run(status, reservationId);
+    return { reservations: res.changes, inquiries: inq.changes };
+  } catch (error) {
+    logger.error({ error, reservationId, status }, 'Failed to mark reservation status locally');
+    throw new DatabaseError(
+      `Failed to mark reservation status: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
+  }
 }

@@ -11,7 +11,12 @@ vi.mock('../config/properties.js', () => ({
   getPropertyByGuestyId: (...args: unknown[]) => getPropertyByGuestyIdMock(...args),
 }));
 
-const { formatCheckInOutText, documentToTemplateData } = await import('./pdf-generator.js');
+const getDocumentByIdMock = vi.fn();
+vi.mock('../repositories/document-repository.js', () => ({
+  getDocumentById: (...args: unknown[]) => getDocumentByIdMock(...args),
+}));
+
+const { formatCheckInOutText, documentToTemplateData, formatStoredDateGerman } = await import('./pdf-generator.js');
 
 function baseDocument(overrides: Partial<Document> = {}): Document {
   return {
@@ -134,5 +139,48 @@ describe('documentToTemplateData — isPastStay (#716)', () => {
   it('verwendet now auch für dateFormatted', () => {
     const data = documentToTemplateData(baseDocument(), now);
     expect(data.dateFormatted).toBe('25.09.2026');
+  });
+});
+
+describe('documentToTemplateData — Storno-Beleg (#771)', () => {
+  beforeEach(() => {
+    getReservationByIdMock.mockReset();
+    getDocumentByIdMock.mockReset();
+  });
+
+  it('verweist auf Nummer und Datum der stornierten Rechnung, Belegdatum = Erstellung', () => {
+    getDocumentByIdMock.mockReturnValue(baseDocument({ id: 114, documentNumber: '2026-0035', createdAt: '2026-09-22 08:15:00' }));
+    const data = documentToTemplateData(
+      baseDocument({
+        id: 115, documentType: 'cancellation', documentNumber: '2026-0036', cancelsDocumentId: 114,
+        total: -21400, subtotal: -20000, taxAmount: -1400, discountTotal: 500,
+        createdAt: '2026-09-30 13:00:00',
+      }),
+      new Date('2026-12-24T10:00:00Z'),
+    );
+    expect(getDocumentByIdMock).toHaveBeenCalledWith(114);
+    expect(data.isCancellation).toBe(true);
+    expect(data.cancelsDocumentNumber).toBe('2026-0035');
+    expect(data.cancelsDocumentDateFormatted).toBe('22.09.2026');
+    expect(data.dateFormatted).toBe('30.09.2026');
+    expect(data.totalFormatted).toBe('-214,00');
+    expect(data.servicePeriodFormatted).toBe('01.09.2026 - 03.09.2026');
+    expect(data.hasDiscount).toBe(true);
+  });
+
+  it('Rechnung: kein Storno-Verweis, kein DB-Lookup', () => {
+    const data = documentToTemplateData(baseDocument());
+    expect(data.isCancellation).toBe(false);
+    expect(data.cancelsDocumentNumber).toBeUndefined();
+    expect(getDocumentByIdMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('formatStoredDateGerman (#771)', () => {
+  it('liest SQLite-UTC als Berliner Kalendertag (23:30 UTC = Folgetag)', () => {
+    expect(formatStoredDateGerman('2026-09-21 23:30:00')).toBe('22.09.2026');
+  });
+  it('akzeptiert ISO mit Zone', () => {
+    expect(formatStoredDateGerman('2026-09-22T08:00:00.000Z')).toBe('22.09.2026');
   });
 });

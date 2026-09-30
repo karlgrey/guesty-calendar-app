@@ -6,14 +6,19 @@
  */
 
 import { getDatabase } from '../db/index.js';
-import { DatabaseError } from '../utils/errors.js';
+import { ConflictError, DatabaseError } from '../utils/errors.js';
 import logger from '../utils/logger.js';
 
 // ============================================================================
 // TYPES
 // ============================================================================
 
-export type DocumentType = 'quote' | 'invoice';
+/**
+ * 'cancellation' = Storno-Beleg (Stornorechnung) zu einer Rechnung (#771):
+ * negative Beträge, Nummer aus dem Rechnungs-Nummernkreis, verweist über
+ * cancelsDocumentId auf die stornierte Rechnung.
+ */
+export type DocumentType = 'quote' | 'invoice' | 'cancellation';
 
 export interface DocumentCustomer {
   name: string | null;
@@ -51,6 +56,7 @@ export interface DocumentData {
   validUntil?: string;           // for quotes
   servicePeriodStart?: string;   // for invoices
   servicePeriodEnd?: string;     // for invoices
+  cancelsDocumentId?: number;    // for cancellations: the cancelled invoice
 }
 
 export interface Document extends DocumentData {
@@ -94,6 +100,7 @@ export interface DocumentRow {
   valid_until: string | null;
   service_period_start: string | null;
   service_period_end: string | null;
+  cancels_document_id?: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -139,6 +146,7 @@ function rowToDocument(row: DocumentRow): Document {
     validUntil: row.valid_until || undefined,
     servicePeriodStart: row.service_period_start || undefined,
     servicePeriodEnd: row.service_period_end || undefined,
+    cancelsDocumentId: row.cancels_document_id ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -159,7 +167,9 @@ function rowToDocument(row: DocumentRow): Document {
 export function getNextDocumentNumber(type: DocumentType): string {
   const db = getDatabase();
   const year = new Date().getFullYear();
-  const sequenceType = type;
+  // Storno-Belege sind Rechnungen im Sinne von §14 UStG und laufen im
+  // lückenlosen Rechnungs-Nummernkreis mit (#771).
+  const sequenceType: DocumentType = type === 'quote' ? 'quote' : 'invoice';
 
   try {
     // Use a transaction to ensure atomicity
@@ -307,7 +317,11 @@ export function createDocument(data: DocumentData): Document {
   try {
     // Generate document number
     // Uses existing number if quote or invoice already exists for this reservation
-    const documentNumber = getDocumentNumberForReservation(data.reservationId, data.documentType);
+    // Storno-Belege bekommen IMMER eine frische Nummer (höchstens einer je
+    // Rechnung, per Unique-Index auf cancels_document_id abgesichert).
+    const documentNumber = data.documentType === 'cancellation'
+      ? getNextDocumentNumber('cancellation')
+      : getDocumentNumberForReservation(data.reservationId, data.documentType);
 
     const stmt = db.prepare(`
       INSERT INTO documents (
@@ -318,7 +332,8 @@ export function createDocument(data: DocumentData): Document {
         extra_guest_total, extra_guest_rate, extra_guest_nights,
         cleaning_fee, discount_total, discount_description,
         subtotal, tax_rate, tax_amount, total,
-        guest_notes, valid_until, service_period_start, service_period_end
+        guest_notes, valid_until, service_period_start, service_period_end,
+        cancels_document_id
       ) VALUES (
         @documentType, @documentNumber, @reservationId,
         @customerName, @customerCompany, @customerStreet, @customerCity, @customerZip, @customerCountry,
@@ -327,7 +342,8 @@ export function createDocument(data: DocumentData): Document {
         @extraGuestTotal, @extraGuestRate, @extraGuestNights,
         @cleaningFee, @discountTotal, @discountDescription,
         @subtotal, @taxRate, @taxAmount, @total,
-        @guestNotes, @validUntil, @servicePeriodStart, @servicePeriodEnd
+        @guestNotes, @validUntil, @servicePeriodStart, @servicePeriodEnd,
+        @cancelsDocumentId
       )
     `);
 
@@ -364,6 +380,7 @@ export function createDocument(data: DocumentData): Document {
       validUntil: data.validUntil || null,
       servicePeriodStart: data.servicePeriodStart || null,
       servicePeriodEnd: data.servicePeriodEnd || null,
+      cancelsDocumentId: data.cancelsDocumentId ?? null,
     });
 
     logger.info(
@@ -386,6 +403,15 @@ export function createDocument(data: DocumentData): Document {
  */
 export function updateDocument(id: number, data: Omit<DocumentData, 'documentType' | 'reservationId'>): Document {
   const db = getDatabase();
+
+  // GoBD (#771): eine stornierte Rechnung und der Storno-Beleg selbst sind
+  // festgeschrieben — nie überschreiben.
+  const target = getDocumentById(id);
+  if (target?.documentType === 'cancellation' || (target && getCancellationForDocument(id))) {
+    throw new ConflictError(
+      `Beleg ${target.documentNumber} ist storniert bzw. ein Storno-Beleg und darf nicht mehr geändert werden`
+    );
+  }
 
   try {
     const stmt = db.prepare(`
@@ -612,7 +638,7 @@ export function getDocumentSequenceInfo(year: number = new Date().getFullYear())
     const lastInvoiceRow = db
       .prepare(`
         SELECT * FROM documents
-        WHERE document_type = 'invoice'
+        WHERE document_type IN ('invoice', 'cancellation')
         AND document_number LIKE ?
         ORDER BY document_number DESC
         LIMIT 1
@@ -691,6 +717,27 @@ export function getDocumentsByReservation(reservationId: string): Document[] {
     logger.error({ error, reservationId }, 'Failed to get documents for reservation');
     throw new DatabaseError(
       `Failed to get documents: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
+  }
+}
+
+/**
+ * Storno-Beleg zu einer Rechnung (#771) — oder null, wenn die Rechnung nicht
+ * storniert ist.
+ */
+export function getCancellationForDocument(documentId: number): Document | null {
+  const db = getDatabase();
+
+  try {
+    const row = db
+      .prepare("SELECT * FROM documents WHERE document_type = 'cancellation' AND cancels_document_id = ?")
+      .get(documentId) as DocumentRow | undefined;
+
+    return row ? rowToDocument(row) : null;
+  } catch (error) {
+    logger.error({ error, documentId }, 'Failed to get cancellation for document');
+    throw new DatabaseError(
+      `Failed to get cancellation: ${error instanceof Error ? error.message : 'Unknown error'}`
     );
   }
 }

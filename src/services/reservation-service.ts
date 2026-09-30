@@ -13,8 +13,10 @@
 import { guestyClient } from './guesty-client.js';
 import { createOrGetDocument } from './document-service.js';
 import { areDatesAvailable } from '../repositories/availability-repository.js';
-import { upsertReservation } from '../repositories/reservation-repository.js';
-import { getPropertyBySlug } from '../config/properties.js';
+import { upsertReservation, markReservationStatusLocally } from '../repositories/reservation-repository.js';
+import { getPropertyBySlug, getPropertyByGuestyId } from '../config/properties.js';
+import { googleCalendarClient } from './google-calendar-client.js';
+import { toGoogleEventId } from './google-event-id.js';
 import { ValidationError, ConflictError } from '../utils/errors.js';
 import logger from '../utils/logger.js';
 
@@ -241,4 +243,74 @@ export async function releaseOfferReservation(reservationId: string): Promise<vo
   // (inkl. automatisch angelegter Puffer-Blöcke). Ein manuell gesetztes
   // 'expired' ließ die Blöcke stehen — Fall Büchler 14.08.2026 (#329).
   await guestyClient.updateReservationStatus(reservationId, 'closed');
+}
+
+/**
+ * Default-Stornogrund für bestätigte Reservierungen (#771). Guesty verlangt
+ * bei 'canceled' einen cancellationReason aus fester (undokumentierter)
+ * Liste — der Aufrufer kann ihn per Body überschreiben.
+ */
+export const DEFAULT_CANCELLATION_REASON = 'Cancelled by guest';
+
+export interface CancelReservationResult {
+  previousStatus: string;
+  newStatus: string;
+  /** true, wenn die Reservierung schon storniert/freigegeben war (kein Guesty-Write) */
+  unchanged: boolean;
+  googleEventDeleted: boolean | null;
+}
+
+const HOLD_STATUSES = ['reserved', 'inquiry'];
+const ALREADY_RELEASED_STATUSES = ['canceled', 'cancelled', 'closed'];
+
+/**
+ * Reservierung stornieren bzw. freigeben (Agent-API POST …/:id/cancel, #771):
+ * - Hold/Anfrage (`reserved`/`inquiry`) -> `closed` (räumt Blöcke inkl. Puffer)
+ * - bestätigt (`confirmed`) -> `canceled` mit cancellationReason
+ * - schon `canceled`/`closed` -> No-op (idempotent)
+ * - alles andere (checked_in, declined, expired …) -> 409
+ * Danach lokal sofort nachziehen: Status in reservations/inquiries und das
+ * Google-Kalender-Event best effort löschen (sonst erst beim nächsten Sync).
+ */
+export async function cancelReservation(reservationId: string, reason?: string): Promise<CancelReservationResult> {
+  const reservation = await guestyClient.getReservation(reservationId);
+  const previousStatus: string = reservation?.status ?? 'unknown';
+
+  let newStatus: 'closed' | 'canceled';
+  if (ALREADY_RELEASED_STATUSES.includes(previousStatus)) {
+    return { previousStatus, newStatus: previousStatus, unchanged: true, googleEventDeleted: null };
+  } else if (HOLD_STATUSES.includes(previousStatus)) {
+    newStatus = 'closed';
+    await releaseOfferReservation(reservationId);
+  } else if (previousStatus === 'confirmed') {
+    newStatus = 'canceled';
+    await guestyClient.updateReservationStatus(reservationId, 'canceled', reason || DEFAULT_CANCELLATION_REASON);
+  } else {
+    throw new ConflictError(`Reservierung im Status '${previousStatus}' ist nicht stornierbar`);
+  }
+
+  logger.info({ reservationId, previousStatus, newStatus }, 'Reservation cancelled via agent API');
+
+  // Guesty ist durch — lokale Nacharbeit ist best effort und darf die
+  // Antwort nicht zum Fehler machen.
+  try {
+    markReservationStatusLocally(reservationId, newStatus);
+  } catch (error) {
+    logger.warn({ error, reservationId }, 'Lokales Status-Nachziehen nach Storno fehlgeschlagen (Guesty-Update war erfolgreich)');
+  }
+
+  let googleEventDeleted: boolean | null = null;
+  const property = reservation?.listingId ? getPropertyByGuestyId(reservation.listingId) : undefined;
+  if (property?.googleCalendar?.enabled && property.googleCalendar.calendarId) {
+    try {
+      googleEventDeleted = await googleCalendarClient.deleteEvent(
+        property.googleCalendar.calendarId,
+        toGoogleEventId(reservationId),
+      );
+    } catch (error) {
+      logger.warn({ error, reservationId }, 'Google-Kalender-Event nach Storno nicht gelöscht (nächster Sync räumt nach)');
+    }
+  }
+
+  return { previousStatus, newStatus, unchanged: false, googleEventDeleted };
 }

@@ -8,9 +8,14 @@ import { requireAgentKey } from '../middleware/agent-key.js';
 import {
   createOfferReservation,
   confirmOfferReservation,
-  releaseOfferReservation,
+  cancelReservation,
 } from '../services/reservation-service.js';
-import { createOrGetDocument, refreshDocument } from '../services/document-service.js';
+import {
+  createOrGetDocument,
+  refreshDocument,
+  createCancellationForInvoice,
+  getCancellationWithPDF,
+} from '../services/document-service.js';
 import { guestyClient } from '../services/guesty-client.js';
 import { updateGuestCompanyByGuestId } from '../repositories/reservation-repository.js';
 import { getThreadsUpdatedSince, getThreadById, getMessagesByThread } from '../repositories/message-repository.js';
@@ -19,7 +24,7 @@ import { propertyForBadge } from '../utils/thread-property.js';
 import { runConsistencyCheck, listOpenReservations } from '../jobs/consistency-check.js';
 import { getPropertyBySlug, getPropertySlugs, getListingId } from '../config/properties.js';
 import type { PropertyConfig } from '../config/properties.js';
-import { listDocumentsForAgent } from '../repositories/document-repository.js';
+import { listDocumentsForAgent, getDocumentById } from '../repositories/document-repository.js';
 import { AppError, NotFoundError, ValidationError } from '../utils/errors.js';
 import { config } from '../config/index.js';
 import logger from '../utils/logger.js';
@@ -160,10 +165,50 @@ router.post('/reservations/:id/confirm', async (req, res) => {
   } catch (err) { handleError(res, err); }
 });
 
+// Storno/Freigabe (#771): Hold/Anfrage -> 'closed', bestätigt -> 'canceled'
+// mit Grund (Body optional {"reason": "..."}), schon storniert -> No-op.
 router.post('/reservations/:id/cancel', async (req, res) => {
   try {
-    await releaseOfferReservation(req.params.id);
-    res.json({ ok: true });
+    const reason = req.body?.reason;
+    if (reason !== undefined && (typeof reason !== 'string' || reason.trim() === '')) {
+      throw new ValidationError('reason muss ein nicht-leerer String sein');
+    }
+    const result = await cancelReservation(req.params.id, reason?.trim());
+    res.json({ ok: true, ...result });
+  } catch (err) { handleError(res, err); }
+});
+
+// Storno-Beleg zur Rechnung der Reservierung (#771): negativer Beleg mit
+// eigener Nummer aus dem Rechnungs-Nummernkreis, Originalrechnung bleibt
+// unverändert. Idempotent (201 neu, 200 bereits vorhanden).
+router.post('/reservations/:id/invoice-cancel', async (req, res) => {
+  try {
+    const { document, invoice, isNew } = await createCancellationForInvoice(req.params.id);
+    res.status(isNew ? 201 : 200).json({
+      ok: true,
+      isNew,
+      documentId: document.id,
+      documentNumber: document.documentNumber,
+      documentType: document.documentType,
+      cancelsDocumentId: invoice.id,
+      cancelsDocumentNumber: invoice.documentNumber,
+      total: document.total / 100,
+      currency: document.currency,
+      createdAt: document.createdAt,
+      pdfPath: `/api/agent/reservations/${req.params.id}/cancellation.pdf`,
+    });
+  } catch (err) { handleError(res, err); }
+});
+
+// Storno-Beleg als PDF — legt NIE an (404, solange keiner existiert).
+router.get('/reservations/:id/cancellation.pdf', async (req, res) => {
+  try {
+    const result = await getCancellationWithPDF(req.params.id);
+    if (!result) throw new NotFoundError('Kein Storno-Beleg zu dieser Reservierung');
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('X-Document-Number', result.document.documentNumber);
+    res.setHeader('Content-Disposition', `attachment; filename="Stornorechnung_${result.document.documentNumber}.pdf"`);
+    res.send(result.pdf);
   } catch (err) { handleError(res, err); }
 });
 
@@ -292,7 +337,7 @@ router.get('/reservations', async (req, res) => {
   } catch (err) { handleError(res, err); }
 });
 
-const VALID_DOCUMENT_TYPES = ['invoice', 'quote'] as const;
+const VALID_DOCUMENT_TYPES = ['invoice', 'quote', 'cancellation'] as const;
 
 // Zahlungsabgleich (#425, monatlicher Kontoabgleich statt Einzelcheck je
 // Buchung) — read-only Liste aus der documents-Tabelle. HARTE REGEL: dieser
@@ -301,12 +346,12 @@ const VALID_DOCUMENT_TYPES = ['invoice', 'quote'] as const;
 // legen fehlende Dokumente an — genau das darf hier nicht passieren).
 router.get('/documents', (req, res) => {
   try {
-    let type: 'invoice' | 'quote' | undefined;
+    let type: (typeof VALID_DOCUMENT_TYPES)[number] | undefined;
     if (typeof req.query.type === 'string' && req.query.type !== '') {
       if (!VALID_DOCUMENT_TYPES.includes(req.query.type as (typeof VALID_DOCUMENT_TYPES)[number])) {
         throw new ValidationError(`Unbekannter type: ${req.query.type} (erlaubt: ${VALID_DOCUMENT_TYPES.join('|')})`);
       }
-      type = req.query.type as 'invoice' | 'quote';
+      type = req.query.type as (typeof VALID_DOCUMENT_TYPES)[number];
     }
 
     let year: number | undefined;
@@ -350,6 +395,8 @@ router.get('/documents', (req, res) => {
         total: d.total / 100,
         currency: d.currency,
         source: d.source ?? null,
+        cancelsDocumentId: d.cancelsDocumentId ?? null,
+        cancelsDocumentNumber: d.cancelsDocumentId ? (getDocumentById(d.cancelsDocumentId)?.documentNumber ?? null) : null,
         createdAt: d.createdAt,
       })),
     });
