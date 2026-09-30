@@ -10,7 +10,7 @@ vi.mock('./guesty-client.js', () => ({
 vi.mock('../repositories/availability-repository.js', () => ({ areDatesAvailable: vi.fn() }));
 vi.mock('../repositories/reservation-repository.js', () => ({
   upsertReservation: vi.fn(),
-  markReservationStatusLocally: vi.fn().mockReturnValue({ reservations: 1, inquiries: 1 }),
+  applyCancellationLocally: vi.fn().mockReturnValue({ reservations: 1, inquiries: 1 }),
 }));
 vi.mock('./document-service.js', () => ({ createOrGetDocument: vi.fn() }));
 vi.mock('../config/properties.js', () => ({
@@ -27,7 +27,7 @@ vi.mock('./google-calendar-client.js', () => ({
 }));
 
 import { guestyClient } from './guesty-client.js';
-import { markReservationStatusLocally } from '../repositories/reservation-repository.js';
+import { applyCancellationLocally } from '../repositories/reservation-repository.js';
 import { googleCalendarClient } from './google-calendar-client.js';
 import { toGoogleEventId } from './google-event-id.js';
 import { cancelReservation, DEFAULT_CANCELLATION_REASON } from './reservation-service.js';
@@ -46,7 +46,7 @@ describe('cancelReservation (#771)', () => {
     const r = await cancelReservation('res-1');
     expect(updateStatus).toHaveBeenCalledWith('res-1', 'canceled', DEFAULT_CANCELLATION_REASON);
     expect(r).toEqual({ previousStatus: 'confirmed', newStatus: 'canceled', unchanged: false, googleEventDeleted: true });
-    expect(markReservationStatusLocally).toHaveBeenCalledWith('res-1', 'canceled');
+    expect(applyCancellationLocally).toHaveBeenCalledWith('res-1', 'canceled');
     expect(googleCalendarClient.deleteEvent).toHaveBeenCalledWith('cal-fh', toGoogleEventId('res-1'));
   });
 
@@ -61,7 +61,7 @@ describe('cancelReservation (#771)', () => {
     const r = await cancelReservation('res-2');
     expect(updateStatus).toHaveBeenCalledWith('res-2', 'closed');
     expect(r).toMatchObject({ previousStatus: status, newStatus: 'closed', unchanged: false });
-    expect(markReservationStatusLocally).toHaveBeenCalledWith('res-2', 'closed');
+    expect(applyCancellationLocally).toHaveBeenCalledWith('res-2', 'closed');
   });
 
   it.each(['canceled', 'closed'])('schon %s -> No-op, kein Guesty-Write', async (status) => {
@@ -86,7 +86,7 @@ describe('cancelReservation (#771)', () => {
 
   it('Fehler beim lokalen Nachziehen/Google-Delete machen den Storno nicht zum Fehler', async () => {
     getReservation.mockResolvedValue({ status: 'confirmed', listingId: 'listing-fh' });
-    (markReservationStatusLocally as any).mockImplementationOnce(() => { throw new Error('db'); });
+    (applyCancellationLocally as any).mockImplementationOnce(() => { throw new Error('db'); });
     (googleCalendarClient.deleteEvent as any).mockRejectedValueOnce(new Error('google'));
     const r = await cancelReservation('res-6');
     expect(r).toMatchObject({ newStatus: 'canceled', googleEventDeleted: null });
@@ -96,6 +96,6 @@ describe('cancelReservation (#771)', () => {
     getReservation.mockResolvedValue({ status: 'confirmed', listingId: 'listing-fh' });
     updateStatus.mockRejectedValueOnce(new Error('400 invalid cancellationReason'));
     await expect(cancelReservation('res-7', 'Quatsch')).rejects.toThrow('400');
-    expect(markReservationStatusLocally).not.toHaveBeenCalled();
+    expect(applyCancellationLocally).not.toHaveBeenCalled();
   });
 });

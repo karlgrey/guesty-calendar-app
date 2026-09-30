@@ -24,7 +24,7 @@ import {
   type DocumentData,
 } from '../repositories/document-repository.js';
 import { createCancellationForInvoice, getCancellationWithPDF, buildCancellationData } from './document-service.js';
-import { deleteStaleReservationsInRange, markReservationStatusLocally } from '../repositories/reservation-repository.js';
+import { deleteStaleReservationsInRange, applyCancellationLocally } from '../repositories/reservation-repository.js';
 import { ConflictError, NotFoundError } from '../utils/errors.js';
 
 let db: Database.Database;
@@ -170,23 +170,30 @@ describe('Storno-Beleg (#771)', () => {
 });
 
 describe('ETL-Stale-Delete schützt Belege (#771, GoBD)', () => {
-  it('Reservierung mit Rechnung wird NICHT gelöscht, sondern als canceled markiert — Belege bleiben', async () => {
+  it('Reservierungszeile wird wie bisher gelöscht (reservations = aktive Buchungen) — Rechnung und Storno bleiben', async () => {
     createDocument(invoiceData());
     await createCancellationForInvoice('res-klinik');
 
     const deleted = deleteStaleReservationsInRange('listing-fh', '2027-01-01', '2027-12-31', []);
-    expect(deleted).toBe(0);
-    const row = db.prepare('SELECT status FROM reservations WHERE reservation_id = ?').get('res-klinik') as any;
-    expect(row.status).toBe('canceled');
-    expect(listDocumentsForAgent({})).toHaveLength(2);
+    expect(deleted).toBe(1);
+    expect(db.prepare('SELECT COUNT(*) AS n FROM reservations WHERE reservation_id = ?').get('res-klinik')).toEqual({ n: 0 });
+    expect(listDocumentsForAgent({}).map((d) => d.documentType)).toEqual(['invoice', 'cancellation']);
   });
 
-  it('Hold nur mit Angebot wird weiterhin abgeräumt (bisheriges Verhalten)', () => {
+  it('Hold nur mit Angebot wird samt Angebot abgeräumt (bisheriges Verhalten)', () => {
     insertReservation('res-hold', 'reserved');
     createDocument(invoiceData({ documentType: 'quote', reservationId: 'res-hold' }));
     const deleted = deleteStaleReservationsInRange('listing-fh', '2027-01-01', '2027-12-31', ['res-klinik']);
     expect(deleted).toBe(1);
     expect(db.prepare('SELECT COUNT(*) AS n FROM documents WHERE reservation_id = ?').get('res-hold')).toEqual({ n: 0 });
+  });
+
+  it('bestätigte Buchung mit Angebot UND Rechnung: nur das Angebot fällt weg', () => {
+    createDocument(invoiceData({ documentType: 'quote' }));
+    createDocument(invoiceData());
+    deleteStaleReservationsInRange('listing-fh', '2027-01-01', '2027-12-31', []);
+    expect(listDocumentsForAgent({ type: 'quote' })).toHaveLength(0);
+    expect(listDocumentsForAgent({ type: 'invoice' })).toHaveLength(1);
   });
 
   it('Belege überleben auch ohne lokale Reservierungszeile (kein FK mehr)', () => {
@@ -195,10 +202,16 @@ describe('ETL-Stale-Delete schützt Belege (#771, GoBD)', () => {
   });
 });
 
-describe('markReservationStatusLocally (#771)', () => {
-  it('setzt reservations und inquiries', () => {
+describe('applyCancellationLocally (#771)', () => {
+  it('löscht die reservations-Zeile (wie #660), setzt inquiries-Status, Belege bleiben', async () => {
+    createDocument(invoiceData());
+    await createCancellationForInvoice('res-klinik');
     db.prepare(`INSERT INTO inquiries (inquiry_id, listing_id, status, check_in, check_out, last_synced_at) VALUES ('res-klinik', 'listing-fh', 'confirmed', '2027-07-02', '2027-07-04', datetime('now'))`).run();
-    expect(markReservationStatusLocally('res-klinik', 'canceled')).toEqual({ reservations: 1, inquiries: 1 });
+    expect(applyCancellationLocally('res-klinik', 'canceled')).toEqual({ reservations: 1, inquiries: 1 });
+    expect(db.prepare(`SELECT COUNT(*) AS n FROM reservations WHERE reservation_id = 'res-klinik'`).get()).toEqual({ n: 0 });
     expect((db.prepare(`SELECT status FROM inquiries WHERE inquiry_id = 'res-klinik'`).get() as any).status).toBe('canceled');
+    expect(listDocumentsForAgent({})).toHaveLength(2);
+    // idempotent
+    expect(applyCancellationLocally('res-klinik', 'canceled')).toEqual({ reservations: 0, inquiries: 1 });
   });
 });

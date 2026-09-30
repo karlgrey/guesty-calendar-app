@@ -13,7 +13,7 @@
 import { guestyClient } from './guesty-client.js';
 import { createOrGetDocument } from './document-service.js';
 import { areDatesAvailable } from '../repositories/availability-repository.js';
-import { upsertReservation, markReservationStatusLocally } from '../repositories/reservation-repository.js';
+import { upsertReservation, applyCancellationLocally } from '../repositories/reservation-repository.js';
 import { getPropertyBySlug, getPropertyByGuestyId } from '../config/properties.js';
 import { googleCalendarClient } from './google-calendar-client.js';
 import { toGoogleEventId } from './google-event-id.js';
@@ -269,8 +269,9 @@ const ALREADY_RELEASED_STATUSES = ['canceled', 'cancelled', 'closed'];
  * - bestätigt (`confirmed`) -> `canceled` mit cancellationReason
  * - schon `canceled`/`closed` -> No-op (idempotent)
  * - alles andere (checked_in, declined, expired …) -> 409
- * Danach lokal sofort nachziehen: Status in reservations/inquiries und das
- * Google-Kalender-Event best effort löschen (sonst erst beim nächsten Sync).
+ * Danach lokal sofort nachziehen (wie #660): Zeile aus reservations raus,
+ * Status in inquiries, Google-Kalender-Event best effort löschen (sonst erst
+ * beim nächsten Sync).
  */
 export async function cancelReservation(reservationId: string, reason?: string): Promise<CancelReservationResult> {
   const reservation = await guestyClient.getReservation(reservationId);
@@ -294,9 +295,9 @@ export async function cancelReservation(reservationId: string, reason?: string):
   // Guesty ist durch — lokale Nacharbeit ist best effort und darf die
   // Antwort nicht zum Fehler machen.
   try {
-    markReservationStatusLocally(reservationId, newStatus);
+    applyCancellationLocally(reservationId, newStatus);
   } catch (error) {
-    logger.warn({ error, reservationId }, 'Lokales Status-Nachziehen nach Storno fehlgeschlagen (Guesty-Update war erfolgreich)');
+    logger.warn({ error, reservationId }, 'Lokales Nachziehen nach Storno fehlgeschlagen (Guesty-Update war erfolgreich)');
   }
 
   let googleEventDeleted: boolean | null = null;

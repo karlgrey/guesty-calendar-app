@@ -491,7 +491,7 @@ export function deleteOldReservations(listingId: string, beforeDate: string): nu
 /**
  * Delete reservations that are no longer in the API response (cancelled/removed)
  * Removes reservations in the given date range that are not in the keepReservationIds list
- * Also deletes associated documents to avoid foreign key constraint violations
+ * Also deletes their quotes; invoices and cancellation documents are kept (GoBD, #771)
  */
 export function deleteStaleReservationsInRange(
   listingId: string,
@@ -528,51 +528,21 @@ export function deleteStaleReservationsInRange(
       return 0;
     }
 
-    const candidateIds = staleReservations.map(r => r.reservation_id);
+    const staleIds = staleReservations.map(r => r.reservation_id);
 
-    // GoBD (#771): Reservierungen mit Rechnung oder Storno-Beleg werden NIE
-    // gelöscht (die Belege hingen früher per FK an der Zeile und gingen mit
-    // unter). Sie verschwinden aus dem Kalender, weil sie storniert sind ->
-    // lokal als 'canceled' markieren, damit Dashboard und Google-Kalender sie
-    // nicht mehr als aktiv führen. Taucht die Reservierung wieder auf (z. B.
-    // nach einem fehlerhaften Chunk), setzt der nächste Upsert den Status zurück.
-    const candidatePlaceholders = candidateIds.map(() => '?').join(',');
-    const protectedIds = new Set(
-      (db.prepare(
-        `SELECT DISTINCT reservation_id FROM documents
-         WHERE document_type IN ('invoice', 'cancellation')
-         AND reservation_id IN (${candidatePlaceholders})`
-      ).all(...candidateIds) as { reservation_id: string }[]).map(r => r.reservation_id)
-    );
-    const staleIds = candidateIds.filter(id => !protectedIds.has(id));
-
-    if (protectedIds.size > 0) {
-      const protectedList = [...protectedIds];
-      const marked = db.prepare(
-        `UPDATE reservations SET status = 'canceled'
-         WHERE reservation_id IN (${protectedList.map(() => '?').join(',')})
-         AND status IN (${ACTIVE_STATUS_SQL_LIST})`
-      ).run(...protectedList);
-      logger.info(
-        { listingId, protectedIds: protectedList, markedCanceled: marked.changes },
-        'Stale reservations with invoice kept (GoBD) and marked canceled'
-      );
-    }
-
-    if (staleIds.length === 0) {
-      return 0;
-    }
-
-    // Use a transaction to delete documents first, then reservations
+    // Die Reservierungszeile geht wie bisher (reservations = aktive Buchungen;
+    // Dashboard-/BI-Statistiken und getReservationsInRange filtern NICHT nach
+    // Status). GoBD (#771): Rechnungen und Storno-Belege bleiben stehen — seit
+    // Migration 033 hängt documents nicht mehr per FK an reservations. Nur
+    // Angebote zu freigegebenen Holds werden weiter mit abgeräumt.
     const deleteStale = db.transaction(() => {
-      // Delete associated documents first (to avoid FK constraint)
       const docPlaceholders = staleIds.map(() => '?').join(',');
       const docResult = db.prepare(
-        `DELETE FROM documents WHERE reservation_id IN (${docPlaceholders})`
+        `DELETE FROM documents WHERE document_type = 'quote' AND reservation_id IN (${docPlaceholders})`
       ).run(...staleIds);
 
       if (docResult.changes > 0) {
-        logger.info({ deletedDocuments: docResult.changes }, 'Deleted documents for stale reservations');
+        logger.info({ deletedDocuments: docResult.changes }, 'Deleted quotes for stale reservations');
       }
 
       // Now delete the reservations
@@ -686,23 +656,25 @@ export function getRevenueForCheckInMonth(listingId: string, yyyymm: string): nu
 }
 
 /**
- * Reservierung lokal als storniert führen (#771), sofort nach dem
- * Guesty-Statuswechsel — ohne auf ETL/Inquiry-Sync zu warten: Dashboard und
- * getReservationsByPeriod (aktive Stati) lassen sie fallen, und der
- * Google-Kalender-Sync findet sie über inquiries in getCancelledReservationIds
- * (Event-Löschung wie beim Airbnb-Storno, #660). Idempotent.
+ * Storno lokal nachziehen (#771), sofort nach dem Guesty-Statuswechsel — ohne
+ * auf ETL/Inquiry-Sync zu warten. Muster wie beim Airbnb-Storno (#660,
+ * sync-mail.ts): die Zeile in `reservations` (= aktive Buchungen, von
+ * Dashboard/BI/Google-Sync ohne Status-Filter gelesen) wird GELÖSCHT, der
+ * Status in `inquiries` (BI-Pool, alle Stati) gesetzt — darüber findet
+ * getCancelledReservationIds das Google-Event zum Löschen. Belege bleiben
+ * (kein FK mehr seit Migration 033). Idempotent.
  */
-export function markReservationStatusLocally(reservationId: string, status: string): { reservations: number; inquiries: number } {
+export function applyCancellationLocally(reservationId: string, status: string): { reservations: number; inquiries: number } {
   const db = getDatabase();
 
   try {
-    const res = db.prepare('UPDATE reservations SET status = ? WHERE reservation_id = ?').run(status, reservationId);
+    const res = db.prepare('DELETE FROM reservations WHERE reservation_id = ?').run(reservationId);
     const inq = db.prepare('UPDATE inquiries SET status = ? WHERE inquiry_id = ?').run(status, reservationId);
     return { reservations: res.changes, inquiries: inq.changes };
   } catch (error) {
-    logger.error({ error, reservationId, status }, 'Failed to mark reservation status locally');
+    logger.error({ error, reservationId, status }, 'Failed to apply cancellation locally');
     throw new DatabaseError(
-      `Failed to mark reservation status: ${error instanceof Error ? error.message : 'Unknown error'}`
+      `Failed to apply cancellation locally: ${error instanceof Error ? error.message : 'Unknown error'}`
     );
   }
 }
