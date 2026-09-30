@@ -31,6 +31,7 @@ import { applyCancellationLocally } from '../repositories/reservation-repository
 import { googleCalendarClient } from './google-calendar-client.js';
 import { toGoogleEventId } from './google-event-id.js';
 import { cancelReservation, DEFAULT_CANCELLATION_REASON } from './reservation-service.js';
+import { GUESTY_CANCELLATION_REASONS } from './guesty-cancellation.js';
 import { ConflictError } from '../utils/errors.js';
 
 const getReservation = guestyClient.getReservation as any;
@@ -48,6 +49,11 @@ describe('cancelReservation (#771)', () => {
     expect(r).toEqual({ previousStatus: 'confirmed', newStatus: 'canceled', unchanged: false, googleEventDeleted: true });
     expect(applyCancellationLocally).toHaveBeenCalledWith('res-1', 'canceled');
     expect(googleCalendarClient.deleteEvent).toHaveBeenCalledWith('cal-fh', toGoogleEventId('res-1'));
+  });
+
+  it('Default-Grund ist ein von Guesty akzeptierter Wert (#776)', () => {
+    expect(DEFAULT_CANCELLATION_REASON).toBe('Guest Convenience');
+    expect(GUESTY_CANCELLATION_REASONS).toContain(DEFAULT_CANCELLATION_REASON);
   });
 
   it('übergebener Grund geht an Guesty', async () => {

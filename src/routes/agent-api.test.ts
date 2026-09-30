@@ -328,19 +328,32 @@ describe('agent-api', () => {
   it('cancel reicht reason an den Service durch (#771)', async () => {
     const { cancelReservation } = await import('../services/reservation-service.js');
     const x = await fetch(`${base}/api/agent/reservations/res-1/cancel`, {
-      method: 'POST', headers: KEY, body: JSON.stringify({ reason: '  Cancelled by guest ' }),
+      method: 'POST', headers: KEY, body: JSON.stringify({ reason: '  Guest Convenience ' }),
     });
     expect(x.status).toBe(200);
-    expect(cancelReservation).toHaveBeenLastCalledWith('res-1', 'Cancelled by guest', undefined);
+    expect(cancelReservation).toHaveBeenLastCalledWith('res-1', 'Guest Convenience', undefined);
+  });
+
+  it('cancel: Grund außerhalb der Guesty-Liste → 400 mit erlaubten Werten, kein Service-Aufruf (#776)', async () => {
+    const { cancelReservation } = await import('../services/reservation-service.js');
+    (cancelReservation as any).mockClear();
+    const bad = await fetch(`${base}/api/agent/reservations/res-1/cancel`, {
+      method: 'POST', headers: KEY, body: JSON.stringify({ reason: 'Cancelled by guest' }),
+    });
+    expect(bad.status).toBe(400);
+    const body = await bad.json();
+    expect(body.error).toContain('Guest Convenience');
+    expect(body.error).toContain('No Reason Provided');
+    expect(cancelReservation).not.toHaveBeenCalled();
   });
 
   it('cancel reicht canceledBy durch, ungültiger Wert → 400', async () => {
     const { cancelReservation } = await import('../services/reservation-service.js');
     const ok = await fetch(`${base}/api/agent/reservations/res-1/cancel`, {
-      method: 'POST', headers: KEY, body: JSON.stringify({ reason: 'Guest cancelled', canceledBy: 'GUEST' }),
+      method: 'POST', headers: KEY, body: JSON.stringify({ reason: 'Personal Circumstances', canceledBy: 'GUEST' }),
     });
     expect(ok.status).toBe(200);
-    expect(cancelReservation).toHaveBeenLastCalledWith('res-1', 'Guest cancelled', 'GUEST');
+    expect(cancelReservation).toHaveBeenLastCalledWith('res-1', 'Personal Circumstances', 'GUEST');
     const bad = await fetch(`${base}/api/agent/reservations/res-1/cancel`, {
       method: 'POST', headers: KEY, body: JSON.stringify({ canceledBy: 'NOBODY' }),
     });

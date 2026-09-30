@@ -17,6 +17,7 @@ import {
   getCancellationWithPDF,
 } from '../services/document-service.js';
 import type { CanceledBy } from '../services/guesty-client.js';
+import { GUESTY_CANCELLATION_REASONS, isGuestyCancellationReason } from '../services/guesty-cancellation.js';
 import { guestyClient } from '../services/guesty-client.js';
 import { updateGuestCompanyByGuestId } from '../repositories/reservation-repository.js';
 import { getThreadsUpdatedSince, getThreadById, getMessagesByThread } from '../repositories/message-repository.js';
@@ -175,12 +176,17 @@ router.post('/reservations/:id/confirm', async (req, res) => {
 const CANCELED_BY_VALUES: readonly CanceledBy[] = ['OWNER', 'GUEST', 'TEAM_MEMBER', 'HOST'];
 
 // Storno/Freigabe (#771): Hold/Anfrage -> 'closed', bestätigt -> 'canceled'
-// mit Grund (Body optional {"reason": "..."}), schon storniert -> No-op.
+// mit Grund (Body optional {"reason": "..."} aus GUESTY_CANCELLATION_REASONS,
+// Default 'Guest Convenience'), schon storniert -> No-op.
 router.post('/reservations/:id/cancel', async (req, res) => {
   try {
     const reason = req.body?.reason;
     if (reason !== undefined && (typeof reason !== 'string' || reason.trim() === '')) {
       throw new ValidationError('reason muss ein nicht-leerer String sein');
+    }
+    // Guesty nimmt nur Gründe aus fester Liste (#776) — vorab prüfen statt 400-Roundtrip.
+    if (reason !== undefined && !isGuestyCancellationReason(reason.trim())) {
+      throw new ValidationError(`reason muss einer von: ${GUESTY_CANCELLATION_REASONS.join(' · ')}`);
     }
     const canceledBy = req.body?.canceledBy;
     if (canceledBy !== undefined && !CANCELED_BY_VALUES.includes(canceledBy as CanceledBy)) {
