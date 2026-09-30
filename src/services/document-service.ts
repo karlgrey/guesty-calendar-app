@@ -12,12 +12,14 @@ import {
   updateDocument,
   getDocumentByReservation,
   getDocumentById,
+  getCancellationForDocument,
   type DocumentType,
   type DocumentData,
   type Document,
 } from '../repositories/document-repository.js';
 import { getListingById } from '../repositories/listings-repository.js';
 import logger from '../utils/logger.js';
+import { NotFoundError } from '../utils/errors.js';
 import type { GuestyGuest } from '../types/guesty.js';
 
 // ============================================================================
@@ -435,4 +437,85 @@ export async function regeneratePDF(documentId: number): Promise<Buffer | null> 
   pdfGenerator.clearTemplateCache();
 
   return pdfGenerator.generatePDF(document);
+}
+
+/**
+ * Storno-Beleg (Stornorechnung) zu der Rechnung einer Reservierung (#771).
+ *
+ * Spiegelt den Snapshot der Rechnung mit negativen Beträgen — die Rechnung
+ * selbst bleibt unverändert (GoBD), der Beleg verweist über
+ * cancelsDocumentId auf sie. Keine Guesty-Abfrage: maßgeblich ist, was auf
+ * der Rechnung stand. Idempotent: existiert schon ein Storno-Beleg, wird er
+ * zurückgegeben (isNew=false), es wird keine zweite Nummer verbraucht.
+ */
+export async function createCancellationForInvoice(reservationId: string): Promise<DocumentResult & { invoice: Document }> {
+  const invoice = getDocumentByReservation(reservationId, 'invoice');
+  if (!invoice) {
+    throw new NotFoundError(`Keine Rechnung zur Reservierung ${reservationId} vorhanden`);
+  }
+
+  const existing = getCancellationForDocument(invoice.id);
+  if (existing) {
+    logger.info(
+      { documentNumber: existing.documentNumber, invoiceNumber: invoice.documentNumber, reservationId },
+      'Returning existing cancellation document'
+    );
+    const pdf = await pdfGenerator.generatePDF(existing);
+    return { document: existing, pdf, isNew: false, invoice };
+  }
+
+  const document = createDocument(buildCancellationData(invoice));
+  logger.info(
+    { documentNumber: document.documentNumber, invoiceNumber: invoice.documentNumber, reservationId },
+    'Cancellation document created'
+  );
+
+  const pdf = await pdfGenerator.generatePDF(document);
+  return { document, pdf, isNew: true, invoice };
+}
+
+/**
+ * Storno-Beleg zu einer Reservierung laden (ohne anzulegen) — oder null.
+ */
+export async function getCancellationWithPDF(reservationId: string): Promise<DocumentResult | null> {
+  const invoice = getDocumentByReservation(reservationId, 'invoice');
+  const cancellation = invoice ? getCancellationForDocument(invoice.id) : null;
+  if (!cancellation) return null;
+  const pdf = await pdfGenerator.generatePDF(cancellation);
+  return { document: cancellation, pdf, isNew: false };
+}
+
+/**
+ * Rechnungs-Snapshot -> Storno-Daten: alle Beträge negiert, Stammdaten und
+ * Leistungszeitraum identisch.
+ */
+export function buildCancellationData(invoice: Document): DocumentData {
+  const neg = (cents: number) => (cents === 0 ? 0 : -cents);
+  return {
+    documentType: 'cancellation',
+    reservationId: invoice.reservationId,
+    customer: { ...invoice.customer },
+    checkIn: invoice.checkIn,
+    checkOut: invoice.checkOut,
+    nights: invoice.nights,
+    guestsCount: invoice.guestsCount,
+    guestsIncluded: invoice.guestsIncluded,
+    currency: invoice.currency,
+    source: invoice.source,
+    accommodationTotal: neg(invoice.accommodationTotal),
+    accommodationRate: neg(invoice.accommodationRate),
+    extraGuestTotal: neg(invoice.extraGuestTotal),
+    extraGuestRate: invoice.extraGuestRate,
+    extraGuestNights: invoice.extraGuestNights,
+    cleaningFee: neg(invoice.cleaningFee),
+    discountTotal: neg(invoice.discountTotal),
+    discountDescription: invoice.discountDescription,
+    subtotal: neg(invoice.subtotal),
+    taxRate: invoice.taxRate,
+    taxAmount: neg(invoice.taxAmount),
+    total: neg(invoice.total),
+    servicePeriodStart: invoice.servicePeriodStart,
+    servicePeriodEnd: invoice.servicePeriodEnd,
+    cancelsDocumentId: invoice.id,
+  };
 }

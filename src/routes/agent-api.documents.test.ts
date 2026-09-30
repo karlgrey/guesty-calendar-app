@@ -247,4 +247,21 @@ describe('GET /api/agent/documents', () => {
     const docCount = db.prepare('SELECT COUNT(*) as n FROM documents').get() as { n: number };
     expect(docCount.n).toBe(4);
   });
+
+  it('Storno-Beleg (#771): type=cancellation filtert, cancelsDocumentNumber aufgelöst, negativer Betrag', async () => {
+    db.exec('ALTER TABLE documents ADD COLUMN cancels_document_id INTEGER');
+    const invoiceId = (db.prepare("SELECT id FROM documents WHERE document_number = '2026-0035'").get() as any).id;
+    db.prepare(`INSERT INTO documents (document_type, document_number, reservation_id, check_in, check_out, nights,
+                  currency, accommodation_total, accommodation_rate, subtotal, tax_amount, total, cancels_document_id, created_at)
+                VALUES ('cancellation', '2026-0036', 'res-farmhouse-2', '2026-09-05', '2026-09-06', 1,
+                  'EUR', -10000, -10000, -10000, -700, -10700, ?, '2026-09-30T10:00:00.000Z')`).run(invoiceId);
+    const r = await fetch(`${base}/api/agent/documents?type=cancellation`, { headers: KEY });
+    expect(r.status).toBe(200);
+    const body = await r.json();
+    expect(body.count).toBe(1);
+    expect(body.documents[0]).toMatchObject({
+      documentNumber: '2026-0036', documentType: 'cancellation', total: -107,
+      cancelsDocumentId: invoiceId, cancelsDocumentNumber: '2026-0035',
+    });
+  });
 });

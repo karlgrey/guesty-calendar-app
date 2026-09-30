@@ -9,7 +9,7 @@ import Handlebars from 'handlebars';
 import fs from 'fs';
 import path from 'path';
 import logger from '../utils/logger.js';
-import type { Document, DocumentType } from '../repositories/document-repository.js';
+import { getDocumentById, type Document, type DocumentType } from '../repositories/document-repository.js';
 import { getReservationById } from '../repositories/reservation-repository.js';
 import { getPropertyByGuestyId } from '../config/properties.js';
 import { berlinCalendarDay } from './auto-send/berlin-day.js';
@@ -76,6 +76,11 @@ export interface DocumentTemplateData {
   // Template schaltet auf "Vielen Dank für euren Aufenthalt." um und blendet Check-in/-out aus
   isPastStay: boolean;
 
+  // Storno-Beleg (#771): Verweis auf die stornierte Rechnung
+  isCancellation: boolean;
+  cancelsDocumentNumber: string | undefined;
+  cancelsDocumentDateFormatted: string | undefined;
+
   // Logo
   logoBase64: string;
 }
@@ -116,6 +121,20 @@ function formatDateGerman(dateStr: string): string {
     day: '2-digit',
     month: '2-digit',
     year: 'numeric',
+  });
+}
+
+/**
+ * SQLite-Zeitstempel ("YYYY-MM-DD HH:MM:SS", UTC ohne Zone) als Berliner
+ * Kalenderdatum, z. B. "22.09.2026" — Belegdatum eines gespeicherten Dokuments.
+ */
+export function formatStoredDateGerman(stored: string): string {
+  const iso = /[zZ]|[+-]\d{2}:?\d{2}$/.test(stored) ? stored : `${stored.replace(' ', 'T')}Z`;
+  return new Date(iso).toLocaleDateString('de-DE', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    timeZone: 'Europe/Berlin',
   });
 }
 
@@ -174,14 +193,22 @@ export function documentToTemplateData(doc: Document, now: Date = new Date()): D
   // Calculate combined accommodation + extra guest fee
   const accommodationWithExtra = doc.accommodationTotal + doc.extraGuestTotal;
 
+  const isCancellation = doc.documentType === 'cancellation';
+  const cancelledInvoice = isCancellation && doc.cancelsDocumentId
+    ? getDocumentById(doc.cancelsDocumentId)
+    : null;
+
   return {
     documentNumber: doc.documentNumber,
     customerNumber: generateCustomerNumber(doc.reservationId),
-    dateFormatted: formatDateGerman(today.toISOString()),
+    // Storno-Beleg: festes Belegdatum (Erstellung), nicht der Tag des PDF-Abrufs
+    dateFormatted: isCancellation
+      ? formatStoredDateGerman(doc.createdAt)
+      : formatDateGerman(today.toISOString()),
     validUntilFormatted: doc.documentType === 'quote'
       ? formatDateGerman(doc.validUntil || validUntil.toISOString())
       : undefined,
-    servicePeriodFormatted: doc.documentType === 'invoice'
+    servicePeriodFormatted: doc.documentType === 'invoice' || isCancellation
       ? `${formatDateGerman(doc.checkIn)} - ${formatDateGerman(doc.checkOut)}`
       : undefined,
 
@@ -202,7 +229,9 @@ export function documentToTemplateData(doc: Document, now: Date = new Date()): D
     extraGuestRateFormatted: formatCurrency(doc.extraGuestRate),
     extraGuestTotalFormatted: formatCurrency(doc.extraGuestTotal),
     cleaningFeeFormatted: formatCurrency(doc.cleaningFee),
-    hasDiscount: doc.discountTotal < 0,
+    // Storno-Beleg: der (negierte) Rabatt ist positiv — nur dort != 0 werten,
+    // auf Rechnungen bleibt ein positiver discountTotal wie bisher unterdrückt
+    hasDiscount: isCancellation ? doc.discountTotal !== 0 : doc.discountTotal < 0,
     discountTotalFormatted: formatCurrency(doc.discountTotal), // Will be negative like "-650,00"
     discountDescription: doc.discountDescription,
     subtotalFormatted: formatCurrency(doc.subtotal),
@@ -218,6 +247,10 @@ export function documentToTemplateData(doc: Document, now: Date = new Date()): D
     checkInOutText: resolveCheckInOutText(doc.reservationId),
 
     isPastStay: berlinCalendarDay(doc.checkOut) < berlinCalendarDay(now.toISOString()),
+
+    isCancellation,
+    cancelsDocumentNumber: cancelledInvoice?.documentNumber,
+    cancelsDocumentDateFormatted: cancelledInvoice ? formatStoredDateGerman(cancelledInvoice.createdAt) : undefined,
 
     logoBase64: getLogoBase64(),
   };
@@ -263,7 +296,9 @@ class PDFGenerator {
       return this.templates.get(type)!;
     }
 
-    const templateFile = type === 'quote' ? 'angebot.html' : 'rechnung.html';
+    const templateFile = type === 'quote'
+      ? 'angebot.html'
+      : type === 'cancellation' ? 'stornorechnung.html' : 'rechnung.html';
     const templatePath = path.join(this.templatesDir, templateFile);
 
     if (!fs.existsSync(templatePath)) {

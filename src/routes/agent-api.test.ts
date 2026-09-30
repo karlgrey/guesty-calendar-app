@@ -19,7 +19,9 @@ vi.mock('../services/reservation-service.js', () => ({
     holdUntil: '2026-08-07', priceSource: 'manual',
   }),
   confirmOfferReservation: vi.fn().mockResolvedValue(undefined),
-  releaseOfferReservation: vi.fn().mockResolvedValue(undefined),
+  cancelReservation: vi.fn().mockResolvedValue({
+    previousStatus: 'reserved', newStatus: 'closed', unchanged: false, googleEventDeleted: true,
+  }),
 }));
 vi.mock('../services/document-service.js', () => ({
   createOrGetDocument: vi.fn().mockResolvedValue({
@@ -28,6 +30,12 @@ vi.mock('../services/document-service.js', () => ({
   refreshDocument: vi.fn().mockResolvedValue({
     document: { documentNumber: 'A-2026-0042' }, pdf: Buffer.from('%PDF-fresh'), isNew: false,
   }),
+  createCancellationForInvoice: vi.fn().mockResolvedValue({
+    document: { id: 115, documentNumber: '2026-0036', documentType: 'cancellation', total: -518950, currency: 'EUR', createdAt: '2026-09-30 13:00:00' },
+    invoice: { id: 114, documentNumber: '2026-0035' },
+    pdf: Buffer.from('%PDF-storno'), isNew: true,
+  }),
+  getCancellationWithPDF: vi.fn().mockResolvedValue(null),
 }));
 vi.mock('../services/guesty-client.js', () => ({
   guestyClient: {
@@ -312,6 +320,76 @@ describe('agent-api', () => {
     expect(c.status).toBe(200);
     const x = await fetch(`${base}/api/agent/reservations/res-1/cancel`, { method: 'POST', headers: KEY });
     expect(x.status).toBe(200);
+    expect(await x.json()).toEqual({
+      ok: true, previousStatus: 'reserved', newStatus: 'closed', unchanged: false, googleEventDeleted: true,
+    });
+  });
+
+  it('cancel reicht reason an den Service durch (#771)', async () => {
+    const { cancelReservation } = await import('../services/reservation-service.js');
+    const x = await fetch(`${base}/api/agent/reservations/res-1/cancel`, {
+      method: 'POST', headers: KEY, body: JSON.stringify({ reason: '  Cancelled by guest ' }),
+    });
+    expect(x.status).toBe(200);
+    expect(cancelReservation).toHaveBeenLastCalledWith('res-1', 'Cancelled by guest');
+  });
+
+  it('cancel mit leerem/ungültigem reason → 400 (#771)', async () => {
+    for (const reason of ['', 42]) {
+      const x = await fetch(`${base}/api/agent/reservations/res-1/cancel`, {
+        method: 'POST', headers: KEY, body: JSON.stringify({ reason }),
+      });
+      expect(x.status).toBe(400);
+    }
+  });
+
+  it('cancel: Konflikt aus dem Service → 409 (#771)', async () => {
+    const { cancelReservation } = await import('../services/reservation-service.js');
+    const { ConflictError } = await import('../utils/errors.js');
+    (cancelReservation as any).mockRejectedValueOnce(new ConflictError("Reservierung im Status 'checked_in' ist nicht stornierbar"));
+    const x = await fetch(`${base}/api/agent/reservations/res-1/cancel`, { method: 'POST', headers: KEY });
+    expect(x.status).toBe(409);
+  });
+
+  it('POST invoice-cancel → 201 mit Storno-Nummer und Verweis auf die Rechnung (#771)', async () => {
+    const x = await fetch(`${base}/api/agent/reservations/res-1/invoice-cancel`, { method: 'POST', headers: KEY });
+    expect(x.status).toBe(201);
+    expect(await x.json()).toMatchObject({
+      ok: true, isNew: true, documentId: 115, documentNumber: '2026-0036', documentType: 'cancellation',
+      cancelsDocumentId: 114, cancelsDocumentNumber: '2026-0035', total: -5189.5, currency: 'EUR',
+      pdfPath: '/api/agent/reservations/res-1/cancellation.pdf',
+    });
+  });
+
+  it('POST invoice-cancel bereits vorhanden → 200 isNew=false (#771)', async () => {
+    const { createCancellationForInvoice } = await import('../services/document-service.js');
+    const base_ = await (createCancellationForInvoice as any)();
+    (createCancellationForInvoice as any).mockResolvedValueOnce({ ...base_, isNew: false });
+    const x = await fetch(`${base}/api/agent/reservations/res-1/invoice-cancel`, { method: 'POST', headers: KEY });
+    expect(x.status).toBe(200);
+    expect((await x.json()).isNew).toBe(false);
+  });
+
+  it('POST invoice-cancel ohne Rechnung → 404 (#771)', async () => {
+    const { createCancellationForInvoice } = await import('../services/document-service.js');
+    const { NotFoundError } = await import('../utils/errors.js');
+    (createCancellationForInvoice as any).mockRejectedValueOnce(new NotFoundError('Keine Rechnung'));
+    const x = await fetch(`${base}/api/agent/reservations/res-1/invoice-cancel`, { method: 'POST', headers: KEY });
+    expect(x.status).toBe(404);
+  });
+
+  it('GET cancellation.pdf: 404 ohne Beleg, PDF mit Nummer-Header wenn vorhanden (#771)', async () => {
+    const none = await fetch(`${base}/api/agent/reservations/res-1/cancellation.pdf`, { headers: KEY });
+    expect(none.status).toBe(404);
+    const { getCancellationWithPDF } = await import('../services/document-service.js');
+    (getCancellationWithPDF as any).mockResolvedValueOnce({
+      document: { documentNumber: '2026-0036' }, pdf: Buffer.from('%PDF-storno'), isNew: false,
+    });
+    const r = await fetch(`${base}/api/agent/reservations/res-1/cancellation.pdf`, { headers: KEY });
+    expect(r.status).toBe(200);
+    expect(r.headers.get('content-type')).toBe('application/pdf');
+    expect(r.headers.get('x-document-number')).toBe('2026-0036');
+    expect(r.headers.get('content-disposition')).toContain('Stornorechnung_2026-0036.pdf');
   });
 
   it('GET /threads → Liste mit Property/Gastname/needsReply, neueste zuerst', async () => {
