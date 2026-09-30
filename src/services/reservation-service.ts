@@ -11,6 +11,7 @@
  * Spec: docs/superpowers/specs/2026-07-24-agent-reservierung-design.md
  */
 import { guestyClient, type CanceledBy } from './guesty-client.js';
+import { DEFAULT_CANCELLATION_REASON } from './guesty-cancellation.js';
 import { createOrGetDocument } from './document-service.js';
 import { areDatesAvailable } from '../repositories/availability-repository.js';
 import { upsertReservation, applyCancellationLocally } from '../repositories/reservation-repository.js';
@@ -245,12 +246,9 @@ export async function releaseOfferReservation(reservationId: string): Promise<vo
   await guestyClient.updateReservationStatus(reservationId, 'closed');
 }
 
-/**
- * Default-Stornogrund für bestätigte Reservierungen (#771). Guesty verlangt
- * bei 'canceled' einen cancellationReason aus fester (undokumentierter)
- * Liste — der Aufrufer kann ihn per Body überschreiben.
- */
-export const DEFAULT_CANCELLATION_REASON = 'Cancelled by guest';
+// Default-Stornogrund für bestätigte Reservierungen (#771/#776) — muss aus
+// Guestys fester Liste stammen, siehe guesty-cancellation.ts.
+export { DEFAULT_CANCELLATION_REASON };
 
 export interface CancelReservationResult {
   previousStatus: string;
