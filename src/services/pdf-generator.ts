@@ -229,8 +229,9 @@ export function documentToTemplateData(doc: Document, now: Date = new Date()): D
     extraGuestRateFormatted: formatCurrency(doc.extraGuestRate),
     extraGuestTotalFormatted: formatCurrency(doc.extraGuestTotal),
     cleaningFeeFormatted: formatCurrency(doc.cleaningFee),
-    // != 0 statt < 0: im Storno-Beleg ist der (negierte) Rabatt positiv
-    hasDiscount: doc.discountTotal !== 0,
+    // Storno-Beleg: der (negierte) Rabatt ist positiv — nur dort != 0 werten,
+    // auf Rechnungen bleibt ein positiver discountTotal wie bisher unterdrückt
+    hasDiscount: isCancellation ? doc.discountTotal !== 0 : doc.discountTotal < 0,
     discountTotalFormatted: formatCurrency(doc.discountTotal), // Will be negative like "-650,00"
     discountDescription: doc.discountDescription,
     subtotalFormatted: formatCurrency(doc.subtotal),

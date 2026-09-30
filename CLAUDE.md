@@ -151,6 +151,11 @@ Optional per property. Configured in `properties.json` `ga4` field (or omit for 
 - **Document numbering is SHARED across all properties** (one global sequence per type per year)
 - Document numbers are **permanently stable** once created (never change, even on refresh)
 - Refresh button (↻) fetches fresh Guesty data but preserves the document number
+- **Storno-Belege (#771, Migration 033):** Typ `cancellation`, Template `stornorechnung.html`. Nummer aus dem
+  RECHNUNGS-Nummernkreis (`YYYY-NNNN`, lückenlos), negierter Snapshot der Rechnung, `cancels_document_id` →
+  Rechnung (Unique: max. ein Storno je Rechnung). Belegdatum = `created_at` (fest), Text „Storno zu Rechnung X
+  vom <created_at der Rechnung>“. GoBD: stornierte Rechnung + Storno-Beleg sind gegen `updateDocument`/Refresh
+  gesperrt (409). `documents` hat seit 033 KEINEN FK mehr auf `reservations` — Belege überleben Storno und ETL.
 - Company names (GmbH, AG, UG, Ltd, etc.) in guest firstName auto-detected
 - **Airbnb invoices = what the GUEST pays**, NOT the host payout. In `document-service.ts`
   `extractPricingFromReservation`, the `isAirbnb` branch sets
@@ -922,6 +927,7 @@ Optional:
 ## Guesty API Quirks
 
 - OAuth tokens: 24h validity, cached until 5min before expiry
+- OAuth-Token-Fetch (#771/#767): parallele Aufrufer teilen EIN Promise; 400/401 am Token-Endpunkt (`invalid_client`) → kein Retry, 15 min Sperre; 429 mit `Retry-After` > 60 s → sofortiger Abbruch + Sperre bis Ablauf (Vorfall #765: sonst 16 h Schlaf in der Retry-Schleife). Sperre lebt nur im Prozess.
 - Calendar endpoint: unwrap `data.days` from response
 - Rate limits: 15 req/sec, 120 req/min, 5000 req/hour
 - `listings.nickname` may be null → fallback to `title`
@@ -940,9 +946,10 @@ API-Key-geschützte Endpoints für den maschinellen Angebots-Workflow
 
 - Auth: Header `X-Agent-Key` gegen die Vereinigungsmenge aus `AGENT_API_KEY` (Einzelwert, Legacy) und `AGENT_API_KEYS` (kommagetrennte Liste, Whitespace toleriert) aus `.env`, aufgelöst in `config.agentApiKeySet` — jeder Key min. 32 Zeichen, Vergleich zeitkonstant; kein Key konfiguriert → 503, falscher Key → 401 (#671).
 - `POST /api/agent/reservations` — Gast + Hold (`reserved`, `reservedUntil: -1`) + Angebots-PDF; Body siehe `src/services/reservation-service.ts` (`CreateOfferInput`).
-- `GET /api/agent/reservations/:id` · `GET …/:id/offer.pdf` (`?refresh=1` = frische Guesty-Daten, Nummer stabil) · `POST …/:id/confirm` · `POST …/:id/cancel` · `GET /api/agent/guests/:guestId` (Ist-Stand: id/firstName/lastName/fullName/email/phone/company/address — vor jedem PUT lesen, nichts blind überschreiben; #715) · `PUT /api/agent/guests/:guestId` (Kundenstamm-Nachpflege; Whitelist `firstName|lastName|email|phone|company|address`, unbekannte Felder oder leerer Body → 400)
+- `GET /api/agent/reservations/:id` · `GET …/:id/offer.pdf` (`?refresh=1` = frische Guesty-Daten, Nummer stabil) · `POST …/:id/confirm` · `POST …/:id/cancel` (siehe Storno unten) · `GET /api/agent/guests/:guestId` (Ist-Stand: id/firstName/lastName/fullName/email/phone/company/address — vor jedem PUT lesen, nichts blind überschreiben; #715) · `PUT /api/agent/guests/:guestId` (Kundenstamm-Nachpflege; Whitelist `firstName|lastName|email|phone|company|address`, unbekannte Felder oder leerer Body → 400)
 - **Kundenstamm:** Gast beim Anlegen IMMER mit `address` (street/city/zipcode/country) + `phone` versorgen — die Anschrift fließt aus dem Guesty-Gastdatensatz ins Angebots-/Rechnungs-PDF (Regel Micha, 24.07.2026).
 - Admin-Pendant: Formular unter `/admin/reservations/new`.
+- **Storno (#771):** `POST …/:id/cancel` liest den Guesty-Status: `reserved`/`inquiry` → `closed`; `confirmed` → `canceled` mit `cancellationReason` (Body optional `{"reason":"…"}`, Default `Cancelled by guest`); schon `canceled`/`closed` → No-op (`unchanged:true`); sonst 409. Antwort `{ok, previousStatus, newStatus, unchanged, googleEventDeleted}`. Lokal wird die `reservations`-Zeile sofort gelöscht (wie Airbnb-Storno #660), `inquiries.status` gesetzt, Google-Event best effort gelöscht. `POST …/:id/invoice-cancel` erzeugt den Storno-Beleg zur Rechnung (201 neu / 200 vorhanden / 404 ohne Rechnung), `GET …/:id/cancellation.pdf` liefert ihn (legt nie an). `GET /documents?type=cancellation` listet Storno-Belege inkl. `cancelsDocumentNumber` — für den Zahlungsabgleich OHNE `property`-Filter abfragen (der Filter joint `reservations`, stornierte Buchungen fehlen dort).
 - Hold-Fristen verwaltet der aufrufende Agent (kein Auto-Expiry in der App; `holdUntil` ist rein informativ).
 - **Firmenkunden (seit #715, 23.09.2026):** Firmenname ins Guesty-Feld `company` (`PUT /api/agent/guests/:guestId {"company":"momox SE"}`) — der Dokument-Service nimmt `guest.company` direkt als Firmenzeile im Empfängerblock, Vor-/Nachname bleiben Ansprechpartner. So entsteht eine Firmenrechnung auch zu einer Airbnb-Buchung, ohne den Gastnamen zu überschreiben (`GET …/:id/invoice.pdf?refresh=1`, Airbnb-Preislogik + „über Airbnb beglichen"). **Alte Konvention bleibt als Fallback:** Firmenname im `firstName`-Feld, Ansprechpartner im `lastName`-Feld (z. B. firstName "S. Fischer Verlage GmbH", lastName "Katharina Matroß") wird über COMPANY_SUFFIXES weiter erkannt. Kunden-USt-IdNr. gibt es weder im Guesty-Gast noch auf der Rechnung (für Inlandsrechnungen nicht Pflicht; #715 (c) bewusst weggelassen).
 - **Nummernkreise:** Quelle ist `document_sequences` in der Server-DB — wird ein Angebot/eine Rechnung MANUELL außerhalb der App nummeriert, den Zähler nachziehen (Admin-UI `/admin/system` oder `POST /admin/api/document-sequence`), sonst laufen Automatik und Hand auseinander (Abgleich 24.07.2026: quote=28, invoice=27).
@@ -953,7 +960,7 @@ API-Key-geschützte Endpoints für den maschinellen Angebots-Workflow
 - `POST /reservations-v3` antwortet mit `reservationId` (nicht `_id`); Creates werden ASYNCHRON verarbeitet — sofortiger `GET /reservations/{id}` kann 404en (Service pollt bis ~18 s).
 - Ein Hold (`reserved`) ist NICHT stornierbar — Freigabe = Status **`closed`** (`PUT /reservations-v3/{id}/status`): nur `closed` entfernt auch die Kalender-Blöcke des Holds inkl. Puffer-Blöcken (Guesty-Doku + Fall Büchler 14.08.2026 — manuell gesetztes `expired` ließ die Blöcke stehen und ist auf bereits expirte Reservierungen nicht mehr korrigierbar, Status-PUT 404t dann). `canceled` gilt für bestätigte Reservierungen und verlangt einen `cancellationReason` aus fester Liste.
 - **Sonderpreise via `totalGross`** (Ziel-GESAMTSUMME inkl. Reinigung + USt): der Service rechnet rückwärts auf den `accommodationFare`-Override — `fare = (totalGross/(1+USt-Satz) − fareCleaning) / Rabattfaktor`. USt-Satz und Rabattfaktor (`fareAccommodationAdjusted/fareAccommodation`, z. B. Length-of-Stay 10 %) kommen aus der Quote, denn Guesty schlägt die USt AUF und wendet Rate-Plan-Rabatte AUCH auf Overrides an (verifiziert 24.07.2026: Ziel 500 € → Punktlandung). Reinigungsgebühr bleibt separater Posten; `actualTotal` in der Antwort ist der Kontrollwert.
-- `documents.reservation_id` hat einen FK auf die lokale `reservations`-Tabelle → der Service spiegelt die frische Reservierung sofort lokal (ETL überschreibt später). Achtung Follow-up: nach Hold-Freigabe räumt `deleteStaleReservationsInRange` die Zeile + Dokument-Zeile wieder ab.
+- Der Service spiegelt die frische Reservierung sofort lokal (ETL überschreibt später). Nach Storno/Hold-Freigabe räumt `deleteStaleReservationsInRange` die Zeile ab — seit #771 nur noch mit ihren ANGEBOTEN; Rechnungen und Storno-Belege bleiben (kein FK `documents → reservations` mehr).
 
 ## Git & Deployment
 
