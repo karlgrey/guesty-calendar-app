@@ -20,6 +20,7 @@ import { googleCalendarClient } from './google-calendar-client.js';
 import { toGoogleEventId } from './google-event-id.js';
 import { ValidationError, ConflictError } from '../utils/errors.js';
 import logger from '../utils/logger.js';
+import { fingerprintGuest } from '../utils/guest-fingerprint.js';
 
 export interface CreateOfferInput {
   propertySlug: string;
@@ -187,12 +188,34 @@ async function getReservationWithRetry(reservationId: string, attempts = 6, dela
   throw lastErr;
 }
 
-async function mirrorReservationLocally(
+/** Minimaler Fallback-Datensatz fürs lokale Spiegeln (Create-Input oder Stand vor einem Update). */
+export interface MirrorFallback {
+  checkIn: string;
+  checkOut: string;
+  guestsCount: number;
+  guest: { firstName: string; lastName: string };
+}
+
+/**
+ * Spiegelt die Guesty-Reservierung lokal. `fresh` = bereits gelesene Guesty-Antwort
+ * (#792: Update-Service liest einmal nach der Mutation und reicht sie durch);
+ * ohne `fresh` wird mit Retry gelesen (Create ist asynchron).
+ */
+export async function mirrorReservationLocally(
   reservationId: string,
   listingId: string,
-  input: CreateOfferInput,
+  input: MirrorFallback,
+  fresh?: any,
 ): Promise<number | undefined> {
-  const r = await getReservationWithRetry(reservationId);
+  const r = fresh ?? await getReservationWithRetry(reservationId);
+  const guestName = fresh?.guest?.fullName ?? `${input.guest.firstName} ${input.guest.lastName}`.trim();
+  // Fingerprint wie der ETL-Mapper (reservation-mapper.ts) — der Upsert ersetzt
+  // internal_guest_id ohne COALESCE; `null` würde bis zum nächsten ETL den
+  // Repeat-Customer-Schlüssel einer bestehenden Zeile löschen (Review-Gate #792).
+  let internalGuestId: string | null = null;
+  try { internalGuestId = fingerprintGuest(guestName).id; } catch (error) {
+    logger.warn({ error, guestName }, 'fingerprintGuest threw, internal_guest_id bleibt null');
+  }
   const nights = Math.max(
     1,
     Math.round((new Date(input.checkOut).getTime() - new Date(input.checkIn).getTime()) / (24 * 60 * 60 * 1000)),
@@ -205,18 +228,19 @@ async function mirrorReservationLocally(
     check_in_localized: r?.checkInDateLocalized ?? input.checkIn,
     check_out_localized: r?.checkOutDateLocalized ?? input.checkOut,
     nights_count: nights,
-    guest_id: r?.guestId ?? null,
-    guest_name: `${input.guest.firstName} ${input.guest.lastName}`,
+    // GET /reservations/:id liefert den Gast als `guest._id`, nicht immer als `guestId` (#557)
+    guest_id: r?.guestId ?? r?.guest?._id ?? null,
+    guest_name: guestName,
     guests_count: input.guestsCount,
     adults_count: input.guestsCount,
     children_count: null,
     infants_count: null,
     status: r?.status ?? 'reserved',
     confirmation_code: r?.confirmationCode ?? null,
-    source: 'manual',
+    source: r?.source ?? 'manual',
     platform: 'direct',
-    planned_arrival: null,
-    planned_departure: null,
+    planned_arrival: r?.plannedArrival ?? null,
+    planned_departure: r?.plannedDeparture ?? null,
     currency: r?.money?.currency ?? 'EUR',
     total_price: r?.money?.totalPrice ?? r?.money?.subTotalPrice ?? null,
     host_payout: r?.money?.hostPayout ?? null,
@@ -225,8 +249,8 @@ async function mirrorReservationLocally(
     created_at_guesty: r?.createdAt ?? null,
     reserved_at: r?.reservedAt ?? new Date().toISOString(),
     last_synced_at: new Date().toISOString(),
-    internal_guest_id: null,
-    guest_company: null,
+    internal_guest_id: internalGuestId,
+    guest_company: null, // COALESCE im Upsert: Bestand bleibt (#729)
   });
   // Gastpreis inkl. Steuern (Guesty: hostPayout = subTotal + totalTaxes bei Direktbuchung)
   const m = r?.money;
