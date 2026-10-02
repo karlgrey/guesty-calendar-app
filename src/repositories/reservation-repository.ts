@@ -66,8 +66,10 @@ export function upsertReservation(
         source = excluded.source,
         platform = excluded.platform,
         -- #793: geplante Zeiten (Late-Checkout/früher Check-in, per PATCH #792 gesetzt) nie mit
-        -- NULL löschen — liefert das Kalender-Payload sie nicht mit, würde der ETL die Marker
-        -- (Google-Kalender, Wanja-Nachricht) stündlich wieder wegräumen.
+        -- NULL löschen. Das Kalender-Payload liefert plannedArrival/plannedDeparture (Befund
+        -- Review-Gate 02.10.2026: 48/48 airbnb2, 14/39 manual) — COALESCE ist also nur Schutz
+        -- gegen lückenhafte Payloads. Preis: ein Rücksetzen auf LEER kommt lokal nie an
+        -- (Rücksetzen auf die Standardzeit, z. B. 12:00, schon).
         planned_arrival = COALESCE(excluded.planned_arrival, reservations.planned_arrival),
         planned_departure = COALESCE(excluded.planned_departure, reservations.planned_departure),
         currency = excluded.currency,
@@ -143,8 +145,10 @@ export function upsertReservationBatch(
         source = excluded.source,
         platform = excluded.platform,
         -- #793: geplante Zeiten (Late-Checkout/früher Check-in, per PATCH #792 gesetzt) nie mit
-        -- NULL löschen — liefert das Kalender-Payload sie nicht mit, würde der ETL die Marker
-        -- (Google-Kalender, Wanja-Nachricht) stündlich wieder wegräumen.
+        -- NULL löschen. Das Kalender-Payload liefert plannedArrival/plannedDeparture (Befund
+        -- Review-Gate 02.10.2026: 48/48 airbnb2, 14/39 manual) — COALESCE ist also nur Schutz
+        -- gegen lückenhafte Payloads. Preis: ein Rücksetzen auf LEER kommt lokal nie an
+        -- (Rücksetzen auf die Standardzeit, z. B. 12:00, schon).
         planned_arrival = COALESCE(excluded.planned_arrival, reservations.planned_arrival),
         planned_departure = COALESCE(excluded.planned_departure, reservations.planned_departure),
         currency = excluded.currency,

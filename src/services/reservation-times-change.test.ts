@@ -66,10 +66,22 @@ describe('detectTimesChange', () => {
     expect(detectTimesChange(snap({ planned_departure: '12:00:00' }), snap({ planned_departure: '12:00' }), TODAY)).toBeNull();
   });
 
-  it('Check-in in der Vergangenheit -> null', () => {
+  it('Check-out in der Vergangenheit -> null', () => {
     const b = snap({ check_in_localized: '2026-01-20', check_out_localized: '2026-01-25' });
     const a = snap({ check_in_localized: '2026-01-20', check_out_localized: '2026-01-25', planned_departure: '18:00' });
     expect(detectTimesChange(b, a, TODAY)).toBeNull();
+  });
+
+  it('laufender Aufenthalt (Check-in gestern, Check-out morgen) löst aus — Late-Checkout wird meist in-house zugesagt', () => {
+    const b = snap({ check_in_localized: '2027-01-31', check_out_localized: '2027-02-02' });
+    const a = snap({ check_in_localized: '2027-01-31', check_out_localized: '2027-02-02', planned_departure: '18:00' });
+    expect(detectTimesChange(b, a, TODAY)?.changes).toEqual([{ field: 'planned_departure', from: null, to: '18:00' }]);
+  });
+
+  it('Check-out heute zählt noch', () => {
+    const b = snap({ check_in_localized: '2027-01-30', check_out_localized: TODAY });
+    const a = snap({ check_in_localized: '2027-01-30', check_out_localized: TODAY, planned_departure: '18:00' });
+    expect(detectTimesChange(b, a, TODAY)).not.toBeNull();
   });
 
   it('Check-in heute zählt noch als Zukunft', () => {

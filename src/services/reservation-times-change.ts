@@ -49,7 +49,9 @@ export function detectTimesChange(
 ): TimesChange | null {
   if (!before) return null;
   if (!NOTIFY_STATUSES.includes(after.status)) return null;
-  if (day(after.check_in_localized, after.check_in) < today) return null;
+  // Review-Gate #793: Check-OUT (nicht Check-in) muss noch bevorstehen — der typische
+  // Late-Checkout wird während des Aufenthalts zugesagt, der Check-in liegt dann schon zurück.
+  if (day(after.check_out_localized, after.check_out) < today) return null;
 
   const pairs: Array<[TimesField, string | null, string | null]> = [
     ['check_in', day(before.check_in_localized, before.check_in), day(after.check_in_localized, after.check_in)],
