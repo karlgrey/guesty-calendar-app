@@ -14,6 +14,7 @@ import { config } from '../config/index.js';
 import { getAllProperties, type PropertyConfig } from '../config/properties.js';
 import { getListingById } from '../repositories/listings-repository.js';
 import { getReservationById, upsertReservationBatch } from '../repositories/reservation-repository.js';
+import { getOverridesForReservations, type StayTimeOverride } from '../repositories/stay-time-override-repository.js';
 import {
   claimTimesChangeNotification,
   releaseTimesChangeNotification,
@@ -33,6 +34,10 @@ export interface NotifierDeps {
   getListingTimes: (listingId: string) => { checkIn: string | null; checkOut: string | null };
   /** nur für Tests (YYYY-MM-DD) */
   today?: string;
+  /** #799: Wanja-WhatsApp an? Default `config.timesChangeWhatsapp` (TIMES_CHANGE_WHATSAPP, Default aus). */
+  whatsappEnabled?: boolean;
+  /** #799: Override-Lookup für die Konflikt-Logzeile (Tests). Default `getOverridesForReservations`. */
+  getOverrides?: (ids: string[]) => Map<string, StayTimeOverride>;
 }
 
 function defaultDeps(): NotifierDeps {
@@ -126,9 +131,17 @@ export function upsertReservationsTrackingTimes(
 
   const result = upsert(rows);
 
+  // #799: Wanja-WhatsApp nur mit Flag (Default aus); Erkennung/Dedupe/Code bleiben.
+  const whatsappEnabled = deps?.whatsappEnabled ?? config.timesChangeWhatsapp;
+  const providerTimeChanged: TimesSnapshot[] = [];
+
   for (const [id, b] of before) {
     try {
       const a = snapshotOf(id);
+      if (a && (time5(b.planned_arrival) !== time5(a.planned_arrival) || time5(b.planned_departure) !== time5(a.planned_departure))) {
+        providerTimeChanged.push(a);
+      }
+      if (!whatsappEnabled) continue;
       // Listing-Standardzeit gleicher Weg wie in notifyTimesChange: fehlende planned_* = Standard (#793-Fix).
       const defaults = a ? (deps ?? defaultDeps()).getListingTimes(a.listing_id) : null;
       const change = a ? detectTimesChange(b, a, deps?.today, defaults) : null;
@@ -137,5 +150,35 @@ export function upsertReservationsTrackingTimes(
       logger.warn({ error, reservationId: id }, 'timesChanged: Erkennung/Benachrichtigung fehlgeschlagen (non-fatal)');
     }
   }
+  logOverrideConflicts(providerTimeChanged, deps);
   return result;
+}
+
+const time5 = (t: string | null): string | null => (t ? t.slice(0, 5) : null);
+
+/**
+ * #799: Schreibt der Provider eigene `planned_*`, die vom Override abweichen (beide non-null,
+ * ungleich), bleibt der Override führend; die Logzeile hilft beim Aufräumen. Keine Auto-Löschung.
+ * Billig: nur für Reservierungen, deren planned_* sich in diesem Lauf geändert haben, EIN Lookup.
+ */
+function logOverrideConflicts(changed: TimesSnapshot[], deps?: NotifierDeps): void {
+  if (changed.length === 0) return;
+  try {
+    const overrides = (deps?.getOverrides ?? getOverridesForReservations)(changed.map((s) => s.reservation_id));
+    for (const s of changed) {
+      const o = overrides.get(s.reservation_id);
+      if (!o) continue;
+      const fields = [
+        { field: 'planned_arrival', override: time5(o.plannedArrival), provider: time5(s.planned_arrival) },
+        { field: 'planned_departure', override: time5(o.plannedDeparture), provider: time5(s.planned_departure) },
+      ];
+      for (const f of fields) {
+        if (f.override && f.provider && f.override !== f.provider) {
+          logger.info({ reservationId: s.reservation_id, field: f.field, override: f.override, provider: f.provider }, 'override weicht vom Provider ab');
+        }
+      }
+    }
+  } catch (error) {
+    logger.warn({ error }, 'Override-Konfliktprüfung fehlgeschlagen (non-fatal)');
+  }
 }

@@ -113,6 +113,10 @@ export interface PropertyConfig {
   vaultNote?: string; // Dateiname der Objekt-Notiz im Vault (Areas/Hosting/Properties/<vaultNote>)
   /** Auto-Send-Modus dieses Objekts; effektiv gilt der restriktivere Wert gegenüber AUTO_SEND_MODE */
   autoSend?: 'off' | 'shadow' | 'live';
+  /** #799: true = ein zugesagter Late-Checkout blockt bei diesem Objekt den Folgetag (nur Farmhouse:
+   *  Putz-/Wechseltag knapp). Steuert Admin-Checkbox „Folgetag blocken" und den Guesty-Schreibzugriff
+   *  in next-day-block.ts. Fehlt das Flag, wird nie in Guesty geschrieben (Override wird trotzdem gespeichert). */
+  blocksNextDayOnLateCheckout?: boolean;
   /** SmartTasks-Projekt-Id des Betriebs-Projekts dieses Objekts (#696, Zusagen-Task bei
    *  promises_action). Ohne Wert legt promise-task-service.ts den Task trotzdem an, nur ohne
    *  Projekt-Zuordnung (Kommentar korrigiert im #697-Review — der Code prüft das nicht ab). */
@@ -236,6 +240,7 @@ const propertyConfigSchema = z.object({
   uiColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   vaultNote: z.string().optional(),
   autoSend: z.enum(['off', 'shadow', 'live']).optional(),
+  blocksNextDayOnLateCheckout: z.boolean().optional(),
   smartTasksProjectId: z.number().int().positive().optional(),
   smartTasksAirbnbProjectId: z.number().int().positive().optional(),
   timezone: z.string().default('Europe/Berlin'),
@@ -409,6 +414,16 @@ export function getListingId(property: PropertyConfig): string {
   }
   if (!property.guestyPropertyId) throw new Error(`Guesty property ${property.slug} missing guestyPropertyId`);
   return property.guestyPropertyId;
+}
+
+/**
+ * Get a property by its provider-specific listing ID (= `reservations.listing_id`),
+ * regardless of provider.
+ */
+export function findPropertyByListingId(listingId: string): PropertyConfig | undefined {
+  return loadPropertiesConfig().find((p) => {
+    try { return getListingId(p) === listingId; } catch { return false; }
+  });
 }
 
 /**

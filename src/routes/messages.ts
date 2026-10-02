@@ -35,6 +35,9 @@ import { config } from '../config/index.js';
 import type { MessageDraft } from '../types/messages.js';
 import { parseUtc } from '../utils/date.js';
 import { regenerateStaleDraftIfNeeded } from '../services/stale-draft-regen.js';
+import { getStayTimes, setStayTimes, deleteStayTimes } from '../services/stay-times-service.js';
+import { renderTimesPanel, timesFormToInput } from './messages-times.js';
+import { AppError } from '../utils/errors.js';
 
 const router = express.Router();
 
@@ -462,14 +465,75 @@ router.get('/:threadId', async (req, res) => {
          Nachricht gesendet.
        </p>`
     : '';
+  // #799: Zeit-Abweichung nur, wenn der Thread eine Reservierung mit lokaler Zeile hat (non-fatal).
+  let timesPanel = '';
+  if (thread.reservation_id) {
+    try {
+      const view = getStayTimes(thread.reservation_id);
+      if (view) timesPanel = renderTimesPanel(thread.id, view, req.query);
+    } catch (err) {
+      logger.warn({ threadId: thread.id, err: err instanceof Error ? err.message : String(err) }, 'GET /:threadId: Zeit-Abweichung nicht ladbar');
+    }
+  }
   const body = `<a class="back-link" href="/admin/messages">&larr; Alle Nachrichten</a>
     <h1>${name}</h1>
     <p class="subtitle"><span class="badge">${esc(thread.channel)}</span>${property ? ` · <strong>${esc(property.name)}</strong>` : ''} · Provider: ${esc(thread.source)}</p>
     <div class="section"><h3>Verlauf</h3>${history}</div>
+    ${timesPanel}
     ${autoPanel}
     ${autoSendBlockedPanel}
     <div class="section">${noDraftNotice}${genFailedNotice}${sendBlockedNotice}${draftExistsNotice}${sentNotice}${draftBlock}</div>`;
   res.type('html').send(renderAdminPage({ title: name, body, active: 'messages' }));
+});
+
+// #799: Zeit-Abweichung speichern/löschen — dieselbe Service-Funktion wie die Agent-API
+// (source 'admin'). Fehler und Hinweise als Query-Param zurück zum Thread.
+function timesRedirect(threadId: string, qs: Record<string, string>): string {
+  return `/admin/messages/${encodeURIComponent(threadId)}?${new URLSearchParams(qs).toString()}`;
+}
+function timesErrorMessage(err: unknown): string {
+  if (err instanceof AppError && err.statusCode < 500) return err.message;
+  logger.error({ err }, 'Zeit-Abweichung (Admin): unerwarteter Fehler');
+  return 'Unerwarteter Fehler — Details im Log';
+}
+
+router.post('/:threadId/times', express.urlencoded({ extended: true }), async (req, res) => {
+  const thread = getThreadById(req.params.threadId);
+  if (!thread) { res.status(404).send('Thread nicht gefunden'); return; }
+  if (!thread.reservation_id) { res.status(400).send('Thread hat keine Reservierung'); return; }
+  try {
+    const view = getStayTimes(thread.reservation_id);
+    if (!view) { res.redirect(timesRedirect(thread.id, { timeserr: 'Reservierung ist lokal nicht bekannt' })); return; }
+    const input = timesFormToInput(req.body, view.blocksNextDay);
+    if (!input.plannedArrival && !input.plannedDeparture && !input.note && !input.blockNextDay) {
+      res.redirect(timesRedirect(thread.id, { timeserr: 'Nichts zu speichern — zum Entfernen „Abweichung löschen“ nutzen' }));
+      return;
+    }
+    const result = await setStayTimes(thread.reservation_id, input, 'admin');
+    if (result.blockError) {
+      res.redirect(timesRedirect(thread.id, { timeserr: `Gespeichert, aber Folgetag-Block bei Guesty fehlgeschlagen: ${result.blockError.message}` }));
+      return;
+    }
+    res.redirect(timesRedirect(thread.id, { times: 'saved', calsync: result.calendarSynced ? '1' : '0' }));
+  } catch (err) {
+    res.redirect(timesRedirect(thread.id, { timeserr: timesErrorMessage(err) }));
+  }
+});
+
+router.post('/:threadId/times/delete', async (req, res) => {
+  const thread = getThreadById(req.params.threadId);
+  if (!thread) { res.status(404).send('Thread nicht gefunden'); return; }
+  if (!thread.reservation_id) { res.status(400).send('Thread hat keine Reservierung'); return; }
+  try {
+    const result = await deleteStayTimes(thread.reservation_id);
+    if (result.blockError) {
+      res.redirect(timesRedirect(thread.id, { timeserr: `Folgetag-Block bei Guesty nicht aufgehoben (Abweichung bleibt bestehen): ${result.blockError.message}` }));
+      return;
+    }
+    res.redirect(timesRedirect(thread.id, { times: 'deleted', calsync: result.calendarSynced ? '1' : '0' }));
+  } catch (err) {
+    res.redirect(timesRedirect(thread.id, { timeserr: timesErrorMessage(err) }));
+  }
 });
 
 // Draft anlegen (manuell)

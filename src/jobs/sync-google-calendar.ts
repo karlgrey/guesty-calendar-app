@@ -8,6 +8,7 @@
 import { googleCalendarClient, toGoogleEventId } from '../services/google-calendar-client.js';
 import { getReservationsByPeriod, getCancelledReservationIds } from '../repositories/reservation-repository.js';
 import { getListingById } from '../repositories/listings-repository.js';
+import { getOverridesForReservations, type StayTimeOverride } from '../repositories/stay-time-override-repository.js';
 import { getListingId, type PropertyConfig } from '../config/properties.js';
 import type { Reservation } from '../types/models.js';
 import logger from '../utils/logger.js';
@@ -77,12 +78,16 @@ function timeDeviation(planned: string | null | undefined, standard: string | un
  * #793: weicht `planned_arrival`/`planned_departure` vom Listing-Standard ab, trägt der
  * Titel einen Marker (`⏰ Late-Checkout 18:00` / `⏰ Check-in 14:00`) und die Beschreibung
  * die tatsächlichen Zeiten. Das Event bleibt ganztägig (Dauer-Logik unverändert).
+ *
+ * #799: `override` (stay_time_overrides, unsere DB, plattformneutral) geht vor dem
+ * Provider-Feld `planned_*`; Override-Feld null = Provider-Wert gilt.
  */
 export function buildCalendarEvent(
   reservation: Reservation,
   propertyName: string,
   checkInTime: string | undefined,
-  checkOutTime: string | undefined
+  checkOutTime: string | undefined,
+  override?: Pick<StayTimeOverride, 'plannedArrival' | 'plannedDeparture'> | null,
 ) {
   const guestName = reservation.guest_name || 'Unknown Guest';
   const nights = reservation.nights_count || 0;
@@ -93,10 +98,12 @@ export function buildCalendarEvent(
   const checkOut = (reservation.check_out_localized || reservation.check_out).split('T')[0];
   const { start: checkIn, endExclusive: endDate } = reservationEventSpan(reservation);
 
-  const arrival = timeDeviation(reservation.planned_arrival, checkInTime);
-  const departure = timeDeviation(reservation.planned_departure, checkOutTime);
-  const effIn = hhmm(reservation.planned_arrival) ?? checkInTime;
-  const effOut = hhmm(reservation.planned_departure) ?? checkOutTime;
+  const plannedArrival = override?.plannedArrival || reservation.planned_arrival;
+  const plannedDeparture = override?.plannedDeparture || reservation.planned_departure;
+  const arrival = timeDeviation(plannedArrival, checkInTime);
+  const departure = timeDeviation(plannedDeparture, checkOutTime);
+  const effIn = hhmm(plannedArrival) ?? checkInTime;
+  const effOut = hhmm(plannedDeparture) ?? checkOutTime;
 
   const markers: string[] = [];
   if (arrival) markers.push(`⏰ Check-in ${arrival.actual}`);
@@ -162,6 +169,15 @@ export async function syncGoogleCalendarForProperty(
       activeReservations.push(r);
     }
 
+    // #799: Zeit-Abweichungen (Override vor Provider) mit EINEM Query für alle Reservierungen.
+    // Non-fatal: ohne Overrides läuft der Sync mit den Provider-Zeiten weiter.
+    let overrides = new Map<string, StayTimeOverride>();
+    try {
+      overrides = getOverridesForReservations(activeReservations.map((r) => r.reservation_id));
+    } catch (error) {
+      logger.warn({ error: error instanceof Error ? error.message : error, propertySlug: slug }, 'Overrides nicht lesbar — Kalender-Sync nutzt Provider-Zeiten');
+    }
+
     let eventsUpserted = 0;
     let eventsDeleted = 0;
 
@@ -169,7 +185,7 @@ export async function syncGoogleCalendarForProperty(
     for (const reservation of activeReservations) {
       try {
         const eventId = toGoogleEventId(reservation.reservation_id);
-        const event = buildCalendarEvent(reservation, name, checkInTime, checkOutTime);
+        const event = buildCalendarEvent(reservation, name, checkInTime, checkOutTime, overrides.get(reservation.reservation_id));
         await googleCalendarClient.upsertEvent(calendarId, eventId, event);
         eventsUpserted++;
         // Small delay to avoid Google Calendar API rate limits
@@ -217,7 +233,11 @@ export async function syncGoogleCalendarForProperty(
     const spans = buildBlockSpans(
       availability.map((a) => ({ date: a.date, status: a.status, block_type: a.block_type }))
     );
-    const lateDays = lateCheckoutDates(activeReservations, checkOutTime);
+    // #799: auch der Override-Late-Checkout färbt den Folgetag-Block als Reinigung/Late-Checkout
+    const lateDays = lateCheckoutDates(
+      activeReservations.map((r) => ({ ...r, planned_departure: overrides.get(r.reservation_id)?.plannedDeparture || r.planned_departure })),
+      checkOutTime,
+    );
     const desiredBlockIds = new Set(spans.map((s) => blockEventId(listingId, s.startDate)));
 
     let blockEventsUpserted = 0;

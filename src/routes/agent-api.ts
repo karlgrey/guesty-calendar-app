@@ -20,6 +20,7 @@ import type { CanceledBy } from '../services/guesty-client.js';
 import { GUESTY_CANCELLATION_REASONS, isGuestyCancellationReason } from '../services/guesty-cancellation.js';
 import { guestyClient } from '../services/guesty-client.js';
 import { updateReservation, toReservationView } from '../services/reservation-update-service.js';
+import { setStayTimes, deleteStayTimes, getStayTimes, type StayTimesResult } from '../services/stay-times-service.js';
 import { updateGuestCompanyByGuestId } from '../repositories/reservation-repository.js';
 import { getThreadsUpdatedSince, getThreadById, getMessagesByThread } from '../repositories/message-repository.js';
 import { getAwaitingDrafts, getAutoSendStats } from '../repositories/draft-repository.js';
@@ -62,7 +63,45 @@ router.post('/reservations', async (req, res) => {
 router.get('/reservations/:id', async (req, res) => {
   try {
     const r = await guestyClient.getReservation(req.params.id);
-    res.json(toReservationView(r, req.params.id));
+    // #799: effektive Zeiten aus unserer DB dazu (Lookup non-fatal; keine lokale Zeile -> null)
+    let times = null;
+    try { times = getStayTimes(req.params.id)?.times ?? null; } catch (error) {
+      logger.warn({ error, reservationId: req.params.id }, 'Agent API: times-Lookup fehlgeschlagen (non-fatal)');
+    }
+    res.json({ ...toReservationView(r, req.params.id), times });
+  } catch (err) { handleError(res, err); }
+});
+
+// Zeit-Abweichungen plattformneutral (#799, Guesty + Hostex, Migration 035): Zusagen (Late-
+// Checkout, früher Check-in, Folgetag-Block) leben in unserer DB; der Kalender-Marker für die
+// Putzcrew entsteht beim Kalender-Sync. Guesty wird nur für den Folgetag-Block geschrieben
+// (nur Objekte mit blocksNextDayOnLateCheckout). Logik: services/stay-times-service.ts.
+function sendTimesResult(res: express.Response, result: StayTimesResult) {
+  if (result.blockError) {
+    // Override ist gespeichert (Marker wichtiger als Block) — aber Guesty hat den Block abgelehnt.
+    const { blockError, ok: _ok, ...rest } = result;
+    return res.status(409).json({ error: `Folgetag-Block bei Guesty fehlgeschlagen: ${blockError.message}`, details: blockError.details, ...rest });
+  }
+  return res.json(result);
+}
+
+router.get('/reservations/:id/times', (req, res) => {
+  try {
+    const view = getStayTimes(req.params.id);
+    if (!view) throw new NotFoundError(`Reservierung ${req.params.id} ist lokal nicht bekannt`);
+    res.json(view);
+  } catch (err) { handleError(res, err); }
+});
+
+router.put('/reservations/:id/times', async (req, res) => {
+  try {
+    sendTimesResult(res, await setStayTimes(req.params.id, req.body, 'agent'));
+  } catch (err) { handleError(res, err); }
+});
+
+router.delete('/reservations/:id/times', async (req, res) => {
+  try {
+    sendTimesResult(res, await deleteStayTimes(req.params.id));
   } catch (err) { handleError(res, err); }
 });
 
