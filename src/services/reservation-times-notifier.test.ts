@@ -27,6 +27,7 @@ function deps(over: Partial<NotifierDeps> = {}): NotifierDeps {
   };
 }
 
+const LDEF = { checkIn: '16:00', checkOut: '12:00' };
 const snap = (o: Partial<TimesSnapshot> = {}): TimesSnapshot => ({
   reservation_id: 'res-1', listing_id: 'L1', status: 'confirmed',
   check_in: '2027-02-21', check_out: '2027-02-23', check_in_localized: '2027-02-21', check_out_localized: '2027-02-23',
@@ -45,7 +46,7 @@ const files = () => fs.readdirSync(outbox).filter((f) => f.endsWith('.json'));
 const texts = () => files().map((f) => JSON.parse(fs.readFileSync(path.join(outbox, f), 'utf8')).text);
 
 describe('notifyTimesChange', () => {
-  const change = () => detectTimesChange(snap(), snap({ planned_departure: '18:00' }), '2027-02-01')!;
+  const change = () => detectTimesChange(snap(), snap({ planned_departure: '18:00' }), '2027-02-01', LDEF)!;
 
   it('schreibt Outbox-Datei an Wanja mit Text', () => {
     notifyTimesChange(change(), deps());
@@ -72,13 +73,13 @@ describe('notifyTimesChange', () => {
   });
 
   it('Hostex-Objekt -> kein Versand', () => {
-    const c = detectTimesChange(snap({ listing_id: 'H1' }), snap({ listing_id: 'H1', planned_departure: '18:00' }), '2027-02-01')!;
+    const c = detectTimesChange(snap({ listing_id: 'H1' }), snap({ listing_id: 'H1', planned_departure: '18:00' }), '2027-02-01', LDEF)!;
     notifyTimesChange(c, deps());
     expect(files()).toHaveLength(0);
   });
 
   it('unbekanntes Listing -> kein Versand', () => {
-    const c = detectTimesChange(snap({ listing_id: 'X' }), snap({ listing_id: 'X', planned_departure: '18:00' }), '2027-02-01')!;
+    const c = detectTimesChange(snap({ listing_id: 'X' }), snap({ listing_id: 'X', planned_departure: '18:00' }), '2027-02-01', LDEF)!;
     notifyTimesChange(c, deps());
     expect(files()).toHaveLength(0);
   });
@@ -110,6 +111,19 @@ describe('upsertReservationsTrackingTimes (ETL-/Spiegel-Einhängung)', () => {
     expect(texts()).toHaveLength(1);
     upsertReservationsTrackingTimes(rows, upsertFn('18:00'), deps());
     expect(texts()).toHaveLength(1);
+  });
+
+  it('AVOW-Fehlalarm: NULL -> Standardzeiten (PATCH-Spiegel) + Datumsänderung -> nur "dates"', () => {
+    const rows = [{ reservation_id: 'res-1' }] as any;
+    const mirror = (r: any[]) => {
+      for (const x of r) {
+        db.prepare(`UPDATE reservations SET check_in_localized='2027-02-20', check_out_localized='2027-02-22',
+          planned_arrival='08:00', planned_departure='12:00' WHERE reservation_id = ?`).run(x.reservation_id);
+      }
+      return r.length;
+    };
+    upsertReservationsTrackingTimes(rows, mirror, deps({ getListingTimes: () => ({ checkIn: '08:00:00', checkOut: '12:00:00' }) }));
+    expect(texts()).toEqual(['Farmhouse: neu 20.–22.02. (statt 21.–23.02.). Micha']);
   });
 
   it('neue Reservierung (kein Vorher-Stand) -> keine Nachricht', () => {

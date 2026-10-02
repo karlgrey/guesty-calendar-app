@@ -129,7 +129,9 @@ export function upsertReservationsTrackingTimes(
   for (const [id, b] of before) {
     try {
       const a = snapshotOf(id);
-      const change = a ? detectTimesChange(b, a, deps?.today) : null;
+      // Listing-Standardzeit gleicher Weg wie in notifyTimesChange: fehlende planned_* = Standard (#793-Fix).
+      const defaults = a ? (deps ?? defaultDeps()).getListingTimes(a.listing_id) : null;
+      const change = a ? detectTimesChange(b, a, deps?.today, defaults) : null;
       if (change) notifyTimesChange(change, deps);
     } catch (error) {
       logger.warn({ error, reservationId: id }, 'timesChanged: Erkennung/Benachrichtigung fehlgeschlagen (non-fatal)');
