@@ -48,8 +48,10 @@ export PATH="$NODE_BIN:\$PATH"
 cd '$REMOTE_PATH'
 # DB-Backup (ein Stand pro Tag reicht; ältere räumt der Monats-Lint ab)
 cp -n data/calendar.db "data/calendar.db.bak-\$(date +%F)" || true
-# DB und Backups nur für deploy lesbar (#767, Vorfall #765): vorher 644 für alle lokalen User
-chmod 640 data/calendar.db data/calendar.db.bak-* 2>/dev/null || true
+# Backups nur für deploy lesbar (#767, Vorfall #765): vorher 644 für alle lokalen User.
+# Die Live-DB bleibt 644, solange claude@labs (Skill anfragen-beantworten, sqlite3 read-only)
+# nicht in der Gruppe deploy ist — dann DB ebenfalls auf 640 ziehen.
+chmod 640 data/calendar.db.bak-* 2>/dev/null || true
 git pull --ff-only origin main
 npm ci --silent
 npm run build

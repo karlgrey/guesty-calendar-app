@@ -797,8 +797,8 @@ der einfach nie wieder erfolgreich pollt (Florence stand so 10 Wochen unbemerkt 
   `GET /sync/status`) steht hinter `requireAgentKeyOrSession` (Agent-Key ODER
   Admin-Session, sonst 401 JSON) — das Admin-UI nutzt `/admin/sync/*`. Der
   Guesty-Token-Cache `data/.guesty-token-cache.json` wird mit 0600 geschrieben und beim
-  Laden auf 0600 gezogen; `deploy.sh`/`claude-deploy` setzen DB + `calendar.db.bak-*`
-  auf 640. Caddy soll `X-Agent-Key` aus dem Access-Log filtern (Caddyfile `format filter`,
+  Laden auf 0600 gezogen; `deploy.sh`/`claude-deploy` setzen `calendar.db.bak-*` auf 640 (Live-DB
+  bleibt 644: claude@labs liest sie read-only für Skill anfragen-beantworten). Caddy soll `X-Agent-Key` aus dem Access-Log filtern (Caddyfile `format filter`,
   sudo → Micha; ob das live ist, steht im Task #767, nicht hier).
   Agent-Keys rotieren: `tools/rotate-agent-keys.sh` in TheBrain2.
 
