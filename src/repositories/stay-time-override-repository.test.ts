@@ -15,6 +15,7 @@ beforeEach(() => {
   db = new Database(':memory:');
   db.exec(readFileSync(join(migrationsDir, '035_add_stay_time_overrides.sql'), 'utf-8'));
   db.exec(readFileSync(join(migrationsDir, '036_add_stay_time_override_block_state.sql'), 'utf-8'));
+  db.exec(readFileSync(join(migrationsDir, '037_add_stay_time_override_block_date.sql'), 'utf-8'));
   setDatabase(db);
 });
 afterEach(() => { resetDatabase(); db.close(); });
@@ -23,13 +24,26 @@ describe('stay-time-override-repository', () => {
   it('Migration 036: block_state ist standardmäßig null; setBlockState schreibt/löscht, Upsert lässt ihn stehen', () => {
     upsertOverride({ reservationId: 'r1', plannedDeparture: '18:00', source: 'agent' });
     expect(getOverride('r1')!.blockState).toBeNull();
-    expect(setBlockState('r1', 'set-by-us')).toBe(true);
+    expect(setBlockState('r1', 'set-by-us', '2026-12-04')).toBe(true);
     upsertOverride({ reservationId: 'r1', note: 'x', source: 'admin' });
     expect(getOverride('r1')!.blockState).toBe('set-by-us');
     expect(getOverridesForReservations(['r1']).get('r1')!.blockState).toBe('set-by-us');
-    setBlockState('r1', null);
+    setBlockState('r1', null, null);
     expect(getOverride('r1')!.blockState).toBeNull();
-    expect(setBlockState('nix', 'already-blocked')).toBe(false);
+    expect(setBlockState('nix', 'already-blocked', '2026-12-04')).toBe(false);
+  });
+
+  it('Migration 037: block_date ist standardmäßig null; setBlockState schreibt/löscht beide Spalten, Upsert lässt es stehen', () => {
+    upsertOverride({ reservationId: 'r1', plannedDeparture: '18:00', source: 'agent' });
+    expect(getOverride('r1')!.blockDate).toBeNull();
+    setBlockState('r1', 'set-by-us', '2026-12-04');
+    upsertOverride({ reservationId: 'r1', note: 'x', source: 'admin' });
+    expect(getOverride('r1')).toMatchObject({ blockState: 'set-by-us', blockDate: '2026-12-04' });
+    expect(getOverridesForReservations(['r1']).get('r1')!.blockDate).toBe('2026-12-04');
+    setBlockState('r1', 'already-blocked', '2026-12-05');
+    expect(getOverride('r1')).toMatchObject({ blockState: 'already-blocked', blockDate: '2026-12-05' });
+    setBlockState('r1', null, null);
+    expect(getOverride('r1')).toMatchObject({ blockState: null, blockDate: null });
   });
 
   it('legt einen Override an und liest ihn', () => {
@@ -102,6 +116,7 @@ describe('Migration 036 im Runner', () => {
     runMigrations();
     const cols = (d.prepare('PRAGMA table_info(stay_time_overrides)').all() as Array<{ name: string }>).map((c) => c.name);
     expect(cols).toContain('block_state');
+    expect(cols).toContain('block_date');
     expect(d.prepare("SELECT 1 FROM migrations WHERE filename = '036_add_stay_time_override_block_state.sql'").get()).toBeTruthy();
     resetDatabase();
     d.close();

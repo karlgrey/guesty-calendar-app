@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { buildBlockSpans, blockEventId } from './google-calendar-blocks.js';
 import { overlapsWindow, diffCalendarEvents, type ExpectedEvent, type GoogleEventLite } from './calendar-consistency.js';
 
 describe('overlapsWindow', () => {
@@ -274,5 +275,26 @@ describe('diffCalendarEvents — Zeit-Marker und Reinigungs-Block (#793)', () =>
       extendedProperties: { private: { kind: 'owner-block' } },
     });
     expect(diffWide([exp], [act])).toEqual({ missing: [], extra: [], mismatched: [] });
+  });
+});
+
+describe('Folgetag-Block an Check-out + 1 (#802)', () => {
+  it('pt-Tag (block_type null) + 1-Nacht-manual-Block: zwei erwartete Block-Events mit eigenen IDs, bei passendem Google-Stand keine Abweichung', () => {
+    const spans = buildBlockSpans([
+      { date: '2026-12-03', status: 'blocked', block_type: null },
+      { date: '2026-12-04', status: 'blocked', block_type: 'manual' },
+    ]);
+    expect(spans).toHaveLength(2);
+    const expected: ExpectedEvent[] = spans.map((sp) => ({
+      type: 'block', eventId: blockEventId('L-FH', sp.startDate), start: sp.startDate, endExclusive: sp.endExclusive,
+    }));
+    expect(new Set(expected.map((e) => e.eventId)).size).toBe(2);
+    const actual = [
+      googleAllDay(expected[0].eventId, '2026-12-03', '2026-12-04', { summary: 'Manuell blockiert' }),
+      googleAllDay(expected[1].eventId, '2026-12-04', '2026-12-05', { summary: 'Reinigung nach Late-Checkout' }),
+    ];
+    expect(diffWide(expected, actual)).toEqual({ missing: [], extra: [], mismatched: [] });
+    // fehlt der Block am Folgetag in Google, wird genau er gemeldet
+    expect(diffWide(expected, [actual[0]]).missing.map((m) => m.eventId)).toEqual([expected[1].eventId]);
   });
 });
