@@ -417,6 +417,16 @@ export function getListingId(property: PropertyConfig): string {
 }
 
 /**
+ * Get a property by its provider-specific listing ID (= `reservations.listing_id`),
+ * regardless of provider.
+ */
+export function findPropertyByListingId(listingId: string): PropertyConfig | undefined {
+  return loadPropertiesConfig().find((p) => {
+    try { return getListingId(p) === listingId; } catch { return false; }
+  });
+}
+
+/**
  * Get all configured properties
  */
 export function getAllProperties(): PropertyConfig[] {

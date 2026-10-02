@@ -29,6 +29,11 @@ const EDITABLE_STATUSES = ['reserved', 'confirmed'];
  */
 const DIRECT_SOURCES = ['manual', 'direct'];
 
+/** Direktbuchung? (Guard-Logik von #792, geteilt mit next-day-block.ts #799) */
+export function isDirectSource(source: string | null | undefined): boolean {
+  return !!source && DIRECT_SOURCES.includes(source.toLowerCase());
+}
+
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -162,7 +167,7 @@ export async function updateReservation(
     throw new ConflictError(`Reservierung im Status '${status}' ist nicht änderbar (nur ${EDITABLE_STATUSES.join('/')})`);
   }
   const source: string | null = current?.source ?? null;
-  if (!source || !DIRECT_SOURCES.includes(source.toLowerCase())) {
+  if (!isDirectSource(source)) {
     throw new ConflictError(
       `Reservierung stammt aus Kanal '${source ?? 'unbekannt'}' — im Ursprungskanal ändern (Direktbuchungen: ${DIRECT_SOURCES.join('/')})`,
     );
