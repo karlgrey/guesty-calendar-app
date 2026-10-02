@@ -1101,6 +1101,19 @@ export class GuestyClient {
   /**
    * Load cached OAuth token from file
    */
+  /** Token-Cache-Datei auf 0600 ziehen — Altbestand war 644 (#767, Vorfall #765) */
+  private restrictCachePermissions(): void {
+    try {
+      const mode = fs.statSync(this.tokenCachePath).mode & 0o777;
+      if (mode !== 0o600) {
+        fs.chmodSync(this.tokenCachePath, 0o600);
+        logger.info({ previousMode: mode.toString(8) }, 'Tightened token cache file permissions to 0600');
+      }
+    } catch (error) {
+      logger.warn({ error }, 'Could not tighten token cache file permissions');
+    }
+  }
+
   private loadCachedToken(): void {
     try {
       if (!fs.existsSync(this.tokenCachePath)) {
@@ -1108,6 +1121,7 @@ export class GuestyClient {
         return;
       }
 
+      this.restrictCachePermissions();
       const cacheData = fs.readFileSync(this.tokenCachePath, 'utf8');
       const cached: CachedToken = JSON.parse(cacheData);
 
@@ -1158,7 +1172,10 @@ export class GuestyClient {
         expiresAt: this.tokenExpiresAt,
       };
 
-      fs.writeFileSync(this.tokenCachePath, JSON.stringify(cacheData, null, 2));
+      // Nur der App-User darf den Bearer lesen (#767, Vorfall #765): `mode` greift
+      // nur beim Anlegen, deshalb zusätzlich chmod für eine bereits vorhandene Datei.
+      fs.writeFileSync(this.tokenCachePath, JSON.stringify(cacheData, null, 2), { mode: 0o600 });
+      fs.chmodSync(this.tokenCachePath, 0o600);
 
       logger.debug({
         expiresAt: new Date(this.tokenExpiresAt).toISOString(),

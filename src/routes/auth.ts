@@ -7,6 +7,7 @@
 import express from 'express';
 import passport from 'passport';
 import { redirectIfAuthenticated } from '../middleware/auth.js';
+import { loginRateLimiter } from '../middleware/login-rate-limit.js';
 import logger from '../utils/logger.js';
 
 const router = express.Router();
@@ -166,28 +167,44 @@ router.get('/login', redirectIfAuthenticated, (req, res) => {
  * POST /auth/login
  * Handle login form submission
  */
-router.post('/login',
-  passport.authenticate('local', {
-    failureRedirect: '/auth/login?error=invalid',
-  }),
-  (req, res) => {
-    // This function will only be called if authentication succeeds
-    logger.info({ user: req.user }, 'User logged in successfully');
-
-    // Redirect to the originally requested URL or admin dashboard
-    const returnTo = req.session.returnTo || '/admin';
-    delete req.session.returnTo;
-
-    // IMPORTANT: Save session before redirecting to ensure authentication persists
-    req.session.save((err) => {
+// #767: Rate-Limit (10 Versuche / 15 min je IP) + Fehlversuche mit IP im Log.
+// Custom-Callback statt failureRedirect, weil die Passport-Strategie die IP nicht kennt.
+router.post('/login', loginRateLimiter, (req, res, next) => {
+  passport.authenticate(
+    'local',
+    (err: unknown, user: Express.User | false | undefined, info?: { message?: string }) => {
       if (err) {
-        logger.error({ err }, 'Error saving session after authentication');
-        return res.redirect('/auth/login?error=session');
+        next(err);
+        return;
       }
-      res.redirect(returnTo);
-    });
-  }
-);
+      if (!user) {
+        logger.warn({ ip: req.ip, email: req.body?.email, reason: info?.message }, 'Login failed');
+        res.redirect('/auth/login?error=invalid');
+        return;
+      }
+      req.logIn(user, (loginErr) => {
+        if (loginErr) {
+          next(loginErr);
+          return;
+        }
+        logger.info({ user: req.user, ip: req.ip }, 'User logged in successfully');
+
+        // Redirect to the originally requested URL or admin dashboard
+        const returnTo = req.session.returnTo || '/admin';
+        delete req.session.returnTo;
+
+        // IMPORTANT: Save session before redirecting to ensure authentication persists
+        req.session.save((saveErr) => {
+          if (saveErr) {
+            logger.error({ err: saveErr }, 'Error saving session after authentication');
+            return res.redirect('/auth/login?error=session');
+          }
+          res.redirect(returnTo);
+        });
+      });
+    }
+  )(req, res, next);
+});
 
 /**
  * GET /auth/logout

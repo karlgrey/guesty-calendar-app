@@ -72,3 +72,39 @@ describe('requireAgentKey', () => {
     expect(res.statusCode).toBe(401);
   });
 });
+
+// #767: Betriebs-Endpunkte — Session ODER Key
+import { requireAgentKeyOrSession } from './agent-key.js';
+
+describe('requireAgentKeyOrSession (#767)', () => {
+  beforeEach(() => { (config as any).agentApiKeySet = ['secret-key-123456789012345678901234']; });
+
+  it('next() bei angemeldeter Session ohne Key', () => {
+    const res = mockRes(); const next = vi.fn();
+    requireAgentKeyOrSession({ header: () => undefined, isAuthenticated: () => true } as any, res, next);
+    expect(next).toHaveBeenCalledOnce();
+    expect(res.statusCode).toBe(0);
+  });
+
+  it('401 ohne Session und ohne Key', () => {
+    const res = mockRes(); const next = vi.fn();
+    requireAgentKeyOrSession({ header: () => undefined, isAuthenticated: () => false } as any, res, next);
+    expect(res.statusCode).toBe(401);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('401 ohne Passport (kein isAuthenticated) und ohne Key', () => {
+    const res = mockRes(); const next = vi.fn();
+    requireAgentKeyOrSession({ header: () => undefined } as any, res, next);
+    expect(res.statusCode).toBe(401);
+  });
+
+  it('next() ohne Session mit gültigem Key', () => {
+    const res = mockRes(); const next = vi.fn();
+    requireAgentKeyOrSession({
+      header: (n: string) => (n === 'X-Agent-Key' ? 'secret-key-123456789012345678901234' : undefined),
+      isAuthenticated: () => false,
+    } as any, res, next);
+    expect(next).toHaveBeenCalledOnce();
+  });
+});

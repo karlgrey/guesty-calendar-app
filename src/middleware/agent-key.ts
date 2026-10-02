@@ -34,3 +34,16 @@ export function requireAgentKey(req: Request, res: Response, next: NextFunction)
 
   next();
 }
+
+/**
+ * Betriebs-Endpunkte (z. B. /sync, #767): angemeldete Admin-Session ODER gültiger
+ * X-Agent-Key. Ohne beides 401 als JSON — kein Login-Redirect, die Aufrufer sind
+ * Maschinen (Agent-API-Wrapper) oder das Admin-UI mit Session.
+ */
+export function requireAgentKeyOrSession(req: Request, res: Response, next: NextFunction): void {
+  if (typeof req.isAuthenticated === 'function' && req.isAuthenticated()) {
+    next();
+    return;
+  }
+  requireAgentKey(req, res, next);
+}

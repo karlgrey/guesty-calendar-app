@@ -10,8 +10,14 @@ import { syncConfiguredListing } from '../jobs/sync-listing.js';
 import { syncConfiguredAvailability } from '../jobs/sync-availability.js';
 import { getSchedulerStatus } from '../jobs/scheduler.js';
 import logger from '../utils/logger.js';
+import { requireAgentKeyOrSession } from '../middleware/agent-key.js';
 
 const router = express.Router();
+
+// #767 (Vorfall #765): /sync/* war ohne Auth erreichbar — jeder konnte ETL-Läufe
+// gegen die Guesty-API auslösen. Jetzt Agent-Key (X-Agent-Key) oder Admin-Session;
+// das Admin-UI nutzt ohnehin /admin/sync/* (requireAuth).
+router.use(requireAgentKeyOrSession);
 
 /**
  * POST /sync/all
