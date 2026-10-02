@@ -12,7 +12,8 @@ beforeEach(() => {
       ('L', '2026-12-03', 'blocked', NULL, NULL),
       ('L', '2026-12-04', 'available', NULL, NULL),
       ('L', '2026-12-05', 'available', NULL, NULL),
-      ('M', '2026-12-04', 'available', NULL, NULL);`);
+      ('M', '2026-12-04', 'available', NULL, NULL),
+      ('L', '2026-12-06', 'booked', 'reservation', 'res-1');`);
   setDatabase(db);
 });
 afterEach(() => { resetDatabase(); db.close(); });
@@ -36,6 +37,12 @@ describe('setLocalDayBlocked', () => {
 
   it('Tag ohne lokale Zeile: false, nichts angelegt', () => {
     expect(setLocalDayBlocked('L', '2027-01-01', true)).toBe(false);
-    expect(db.prepare('SELECT COUNT(*) AS n FROM availability').get()).toEqual({ n: 4 });
+    expect(db.prepare('SELECT COUNT(*) AS n FROM availability').get()).toEqual({ n: 5 });
+  });
+
+  it('booked-Zeile (Reservierung) wird nie umgeschrieben — weder blocked noch available', () => {
+    expect(setLocalDayBlocked('L', '2026-12-06', true)).toBe(false);
+    expect(setLocalDayBlocked('L', '2026-12-06', false)).toBe(false);
+    expect(row('L', '2026-12-06')).toEqual({ status: 'booked', block_type: 'reservation', block_ref: 'res-1' });
   });
 });
