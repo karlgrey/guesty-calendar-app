@@ -61,11 +61,12 @@ export function blockEventId(listingId: string, startDate: string): string {
 export const CLEANING_AFTER_LATE_CHECKOUT_LABEL = 'Reinigung nach Late-Checkout';
 
 /**
- * Check-out-Tage mit Late-Checkout (#793): `planned_departure` später als der Listing-
- * Standard. Guesty legt bei `lateCheckOut.blockDay` den Folgetag-Block auf genau diesen
- * Tag (Nacht des Check-out-Datums); lokal ist der Grund NICHT gespeichert (nur
- * `block_type` + `block_ref`), die Erkennung ist daher eine Heuristik: 1-Nacht-Block ohne
- * Reservierung, der am Check-out-Tag einer Late-Checkout-Reservierung beginnt.
+ * Zieltage des Folgetag-Blocks bei Late-Checkout (#793, korrigiert in #802): `planned_departure`
+ * später als der Listing-Standard → Tag **Check-out + 1**. Guestys Vorbereitungszeit (`pt`) blockt
+ * nur die Check-out-Nacht; unser Block (`next-day-block.ts`) liegt auf dem Folgetag. Lokal ist der
+ * Grund NICHT gespeichert: `pt`-Tage kommen als `block_type null` an, unser Block als `'manual'`
+ * (zwei getrennte 1-Nacht-Spans) — die Erkennung ist eine Heuristik: 1-Nacht-Block am
+ * Check-out-Tag + 1 einer Late-Checkout-Reservierung.
  */
 export function lateCheckoutDates(
   reservations: Array<{ status?: string; check_out: string; check_out_localized: string | null; planned_departure: string | null }>,
@@ -76,7 +77,7 @@ export function lateCheckoutDates(
   if (!std) return out;
   for (const r of reservations) {
     const dep = r.planned_departure?.slice(0, 5);
-    if (dep && dep > std) out.add((r.check_out_localized || r.check_out).split('T')[0]);
+    if (dep && dep > std) out.add(addOneDay((r.check_out_localized || r.check_out).split('T')[0]));
   }
   return out;
 }

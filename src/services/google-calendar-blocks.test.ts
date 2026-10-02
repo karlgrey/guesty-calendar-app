@@ -75,11 +75,11 @@ describe('blockEventId', () => {
   });
 });
 
-describe('Folgetag-Block nach Late-Checkout (#793)', () => {
-  const late = new Set(['2026-08-05']);
+describe('Folgetag-Block nach Late-Checkout (#793, Zieltag Check-out + 1 seit #802)', () => {
+  const late = new Set(['2026-08-05']); // = Check-out 2026-08-04 + 1
   const oneNight = { startDate: '2026-08-05', endExclusive: '2026-08-06', blockType: 'manual' };
 
-  it('1-Nacht-Block am Check-out-Tag einer Late-Checkout-Reservierung -> "Reinigung nach Late-Checkout"', () => {
+  it('1-Nacht-Block an Check-out + 1 einer Late-Checkout-Reservierung -> "Reinigung nach Late-Checkout"', () => {
     const ev = buildBlockEvent(oneNight, 'Farmhouse', 'guesty', late);
     expect(ev.summary).toBe(CLEANING_AFTER_LATE_CHECKOUT_LABEL);
     expect(ev.extendedProperties?.private?.kind).toBe('owner-block'); // Cleanup-Schlüssel bleibt
@@ -107,7 +107,30 @@ describe('Folgetag-Block nach Late-Checkout (#793)', () => {
       { check_out: '2026-08-12T10:00:00Z', check_out_localized: null, planned_departure: '20:00:00' },
       { check_out: '2026-08-15', check_out_localized: '2026-08-15', planned_departure: null },
     ];
-    expect([...lateCheckoutDates(rs, '12:00')].sort()).toEqual(['2026-08-05', '2026-08-12']);
+    // Check-out + 1: 05.08. -> 06.08., 12.08. -> 13.08.
+    expect([...lateCheckoutDates(rs, '12:00')].sort()).toEqual(['2026-08-06', '2026-08-13']);
     expect(lateCheckoutDates(rs, undefined).size).toBe(0);
+  });
+
+  it('lateCheckoutDates: Monats- und Jahreswechsel', () => {
+    const mk = (d: string) => ({ check_out: d, check_out_localized: d, planned_departure: '18:00' });
+    expect([...lateCheckoutDates([mk('2026-10-31'), mk('2026-12-31')], '12:00')].sort()).toEqual(['2026-11-01', '2027-01-01']);
+  });
+
+  it('Check-out-Tag (pt, lokal block_type null) und Check-out+1 (unser Block, manual) bleiben zwei Spans; nur der zweite heißt Reinigung', () => {
+    const spans = buildBlockSpans([
+      { date: '2026-08-05', status: 'blocked', block_type: null },
+      { date: '2026-08-06', status: 'blocked', block_type: 'manual' },
+    ]);
+    expect(spans).toEqual([
+      { startDate: '2026-08-05', endExclusive: '2026-08-06', blockType: null },
+      { startDate: '2026-08-06', endExclusive: '2026-08-07', blockType: 'manual' },
+    ]);
+    const lateDays = lateCheckoutDates([{ check_out: '2026-08-05', check_out_localized: '2026-08-05', planned_departure: '18:00' }], '12:00');
+    const [pt, ours] = spans.map((sp) => buildBlockEvent(sp, 'Farmhouse', 'guesty', lateDays));
+    expect(pt.summary).not.toBe(CLEANING_AFTER_LATE_CHECKOUT_LABEL);
+    expect(ours.summary).toBe(CLEANING_AFTER_LATE_CHECKOUT_LABEL);
+    expect(ours.start).toEqual({ date: '2026-08-06' });
+    expect(blockEventId('L', '2026-08-05')).not.toBe(blockEventId('L', '2026-08-06'));
   });
 });

@@ -2,10 +2,10 @@
  * Zeit-Abweichungen pro Aufenthalt (#799) — EIN Service für Agent-API und Admin-Formular.
  *
  * Zusagen (Chat/Mail, Guesty UND Hostex) leben in unserer DB (`stay_time_overrides`,
- * Migration 035/036); der Kalender-Sync (`sync-google-calendar.ts`) macht daraus den Marker für
+ * Migration 035/036/037); der Kalender-Sync (`sync-google-calendar.ts`) macht daraus den Marker für
  * die Putzcrew — fire-and-forget NACH der Antwort (der Sync des ganzen Objekts dauert Minuten).
  * Guesty wird nur für den Folgetag-Block geschrieben (`next-day-block.ts`, Listing-Kalender,
- * nur Objekte mit `blocksNextDayOnLateCheckout`, nur wenn der Tag frei ist). Keine Gebühren, keine Datums-/Personen-
+ * nur Objekte mit `blocksNextDayOnLateCheckout`, Zieltag Check-out + 1, nur wenn der Tag frei ist). Keine Gebühren, keine Datums-/Personen-
  * änderung (dafür PATCH #792).
  */
 import { findPropertyByListingId, type PropertyConfig } from '../config/properties.js';
@@ -18,6 +18,8 @@ import { effectiveTimes } from './effective-stay-times.js';
 import { applyNextDayBlock, type NextDayBlockResult } from './next-day-block.js';
 import { syncGoogleCalendarForProperty } from '../jobs/sync-google-calendar.js';
 import { ACTIVE_RESERVATION_STATUSES } from '../repositories/reservation-repository.js';
+import { setLocalDayBlocked } from '../repositories/availability-repository.js';
+import { addOneDay } from '../utils/date.js';
 import { berlinCalendarDay } from './auto-send/berlin-day.js';
 import { ValidationError, NotFoundError, ConflictError } from '../utils/errors.js';
 import type { Reservation } from '../types/models.js';
@@ -40,6 +42,8 @@ export interface OverrideView {
   plannedDeparture: string | null;
   blockNextDay: boolean;
   blockState: BlockState | null;
+  /** Tag (YYYY-MM-DD), auf den sich blockState bezieht (Check-out + 1) */
+  blockDate: string | null;
   note: string | null;
   source: OverrideSource;
   updatedAt: string;
@@ -119,7 +123,7 @@ function validate(body: unknown): StayTimesInput {
 function overrideView(o: StayTimeOverride | null): OverrideView | null {
   return o
     ? {
-        plannedArrival: o.plannedArrival, plannedDeparture: o.plannedDeparture, blockNextDay: o.blockNextDay, blockState: o.blockState,
+        plannedArrival: o.plannedArrival, plannedDeparture: o.plannedDeparture, blockNextDay: o.blockNextDay, blockState: o.blockState, blockDate: o.blockDate,
         note: o.note, source: o.source, updatedAt: o.updatedAt,
       }
     : null;
@@ -225,6 +229,18 @@ function blockTarget(r: Reservation) {
   };
 }
 
+/**
+ * Lokale Availability-Zeile des Zieltags nachziehen (non-fatal): der Google-Kalender-Sync liest
+ * Blöcke aus der lokalen Tabelle und soll den Block nicht erst nach dem nächsten ETL zeigen.
+ */
+function mirrorLocalBlock(listingId: string, date: string, blocked: boolean, reservationId: string): void {
+  try {
+    setLocalDayBlocked(listingId, date, blocked);
+  } catch (error) {
+    logger.warn({ error, reservationId, date, blocked }, 'Lokale Availability nach Folgetag-Block nicht nachgezogen (non-fatal)');
+  }
+}
+
 function splitBlock(b: NextDayBlockResult): Pick<StayTimesResult, 'nextDayBlock' | 'blockError'> {
   const { error, ...rest } = b;
   return { nextDayBlock: rest, ...(error ? { blockError: error } : {}) };
@@ -245,25 +261,31 @@ export async function setStayTimes(
   logger.info({ reservationId, source, fields: Object.keys(input) }, 'Zeit-Abweichung gespeichert');
 
   const prevState = previous?.blockState ?? null;
+  const prevDate = previous?.blockDate ?? null;
   let block: Pick<StayTimesResult, 'nextDayBlock' | 'blockError'> = {
-    nextDayBlock: { applied: false, method: 'none', reason: 'blockNextDay nicht angefragt', blockState: prevState },
+    nextDayBlock: { applied: false, method: 'none', reason: 'blockNextDay nicht angefragt', blockState: prevState, blockDate: prevDate },
   };
   // Nur bei ausdrücklichem blockNextDay und wenn sich dadurch etwas bei Guesty ändern kann
   // (anlegen, oder eine zuvor gesetzte Sperre aufheben) — sonst kein externer Aufruf.
   // `set-by-us` zählt auch dann, wenn block_next_day schon 0 ist: nach einer gescheiterten
   // Rücknahme (Upsert lief vor dem Guesty-Aufruf) muss der Retry per PUT false wieder greifen.
   if (input.blockNextDay !== undefined && (input.blockNextDay || previous?.blockNextDay || prevState === 'set-by-us')) {
-    const result = await applyNextDayBlock(blockTarget(r), input.blockNextDay, prevState);
+    const result = await applyNextDayBlock(blockTarget(r), input.blockNextDay, { state: prevState, blockDate: prevDate });
     block = splitBlock(result);
     // Zustand nur bei erfolgreichem Aufruf fortschreiben (bei Fehler bleibt er für den Retry).
-    if (!result.error && result.blockState !== prevState) {
-      setBlockState(reservationId, result.blockState);
+    if (!result.error && (result.blockState !== prevState || result.blockDate !== prevDate)) {
+      setBlockState(reservationId, result.blockState, result.blockDate);
       saved.blockState = result.blockState;
+      saved.blockDate = result.blockDate;
+    }
+    if (!result.error && result.applied && result.method === 'listing-calendar') {
+      if (result.blockState === 'set-by-us' && result.blockDate) mirrorLocalBlock(r.listing_id, result.blockDate, true, reservationId);
+      else if (result.blockState === null) mirrorLocalBlock(r.listing_id, prevDate ?? addOneDay(blockTarget(r).checkOutDay), false, reservationId);
     }
   } else if (input.blockNextDay !== undefined) {
-    block = { nextDayBlock: { applied: false, method: 'none', reason: 'kein Folgetag-Block gesetzt', blockState: prevState } };
+    block = { nextDayBlock: { applied: false, method: 'none', reason: 'kein Folgetag-Block gesetzt', blockState: prevState, blockDate: prevDate } };
   } else if (!findPropertyByListingId(r.listing_id)?.blocksNextDayOnLateCheckout) {
-    block = { nextDayBlock: { applied: false, method: 'none', reason: 'Objekt blockt keinen Folgetag', blockState: null } };
+    block = { nextDayBlock: { applied: false, method: 'none', reason: 'Objekt blockt keinen Folgetag', blockState: null, blockDate: null } };
   }
 
   return {
@@ -282,14 +304,18 @@ export async function deleteStayTimes(reservationId: string, opts: StayTimesOpti
   if (!existing) throw new NotFoundError(`Keine Zeit-Abweichung für Reservierung ${reservationId}`);
 
   let block: Pick<StayTimesResult, 'nextDayBlock' | 'blockError'> = {
-    nextDayBlock: { applied: false, method: 'none', reason: 'kein Folgetag-Block von uns gesetzt', blockState: null },
+    nextDayBlock: { applied: false, method: 'none', reason: 'kein Folgetag-Block von uns gesetzt', blockState: null, blockDate: null },
   };
   // Nur zurücknehmen, was wir selbst geblockt haben (block_state), nicht schon `blockNextDay` allein.
   if (existing.blockState === 'set-by-us') {
-    block = splitBlock(await applyNextDayBlock(blockTarget(r), false, existing.blockState));
+    const result = await applyNextDayBlock(blockTarget(r), false, { state: existing.blockState, blockDate: existing.blockDate });
+    block = splitBlock(result);
     if (block.blockError) {
       logger.warn({ reservationId }, 'Folgetag-Block nicht aufgehoben — Override bleibt bestehen');
       return { ok: true, reservationId, times: timesView(r, existing), ...block, calendarSync: 'Override unverändert' };
+    }
+    if (result.applied && result.method === 'listing-calendar') {
+      mirrorLocalBlock(r.listing_id, existing.blockDate ?? addOneDay(blockTarget(r).checkOutDay), false, reservationId);
     }
   }
   deleteOverride(reservationId);

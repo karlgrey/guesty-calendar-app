@@ -843,3 +843,19 @@ export function getOccupancyCounts(
     .get(listingId, startDate, endDate) as { total_days: number; occupied_days: number | null };
   return { occupiedDays: result.occupied_days ?? 0, totalDays: result.total_days ?? 0 };
 }
+
+/**
+ * Nur die eine Zeile (Listing, Tag) lokal nachziehen, nachdem wir bei Guesty einen Folgetag-Block
+ * gesetzt (#802: `blocked`/`manual`) bzw. aufgehoben haben (`available`) — damit der Google-Kalender-
+ * Sync den Block sofort zeigt statt erst nach dem nächsten stündlichen ETL. Legt keine Zeile an und
+ * fasst eine `booked`-Zeile (Reservierung, lokal evtl. veraltet) nie an — der ETL ist dort führend.
+ * true = Zeile existierte und wurde geändert.
+ */
+export function setLocalDayBlocked(listingId: string, date: string, blocked: boolean): boolean {
+  return getDatabase()
+    .prepare(
+      `UPDATE availability SET status = ?, block_type = ?, block_ref = NULL, updated_at = datetime('now')
+       WHERE listing_id = ? AND date = ? AND status <> 'booked'`,
+    )
+    .run(blocked ? 'blocked' : 'available', blocked ? 'manual' : null, listingId, date).changes > 0;
+}
