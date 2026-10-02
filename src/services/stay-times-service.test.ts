@@ -252,6 +252,21 @@ describe('PUT — Folgetag-Block', () => {
     expect(getOverride('r1')).toMatchObject({ blockNextDay: false, blockState: null });
   });
 
+  it('Rücknahme per PUT false scheitert: Retry mit PUT false ruft Guesty erneut auf (block_state set-by-us bleibt führend)', async () => {
+    applyMock.mockResolvedValueOnce({ applied: true, method: 'listing-calendar', blockState: 'set-by-us' });
+    await put('r1', { blockNextDay: true });
+    applyMock.mockResolvedValueOnce({ applied: false, method: 'listing-calendar', reason: 'Guesty-Aufruf fehlgeschlagen: x', blockState: 'set-by-us', error: { message: 'x' } });
+    const failed = await put('r1', { blockNextDay: false });
+    expect(failed.blockError).toBeDefined();
+    expect(getOverride('r1')).toMatchObject({ blockNextDay: false, blockState: 'set-by-us' });
+    applyMock.mockResolvedValueOnce({ applied: true, method: 'listing-calendar', blockState: null });
+    const retry = await put('r1', { blockNextDay: false });
+    expect(applyMock).toHaveBeenCalledTimes(3);
+    expect(applyMock).toHaveBeenLastCalledWith(expect.objectContaining({ reservationId: 'r1' }), false, 'set-by-us');
+    expect(retry.nextDayBlock).toMatchObject({ applied: true, blockState: null });
+    expect(getOverride('r1')).toMatchObject({ blockNextDay: false, blockState: null });
+  });
+
   it('Guesty-Fehler: Override wird TROTZDEM gespeichert, Ergebnis trägt blockError', async () => {
     applyMock.mockResolvedValueOnce({ applied: false, method: 'listing-calendar', reason: 'Guesty-Aufruf fehlgeschlagen: x', blockState: null, error: { message: 'x', details: { a: 1 } } });
     const r = await put('r1', { plannedDeparture: '18:00', blockNextDay: true });

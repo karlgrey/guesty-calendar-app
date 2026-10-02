@@ -250,7 +250,9 @@ export async function setStayTimes(
   };
   // Nur bei ausdrücklichem blockNextDay und wenn sich dadurch etwas bei Guesty ändern kann
   // (anlegen, oder eine zuvor gesetzte Sperre aufheben) — sonst kein externer Aufruf.
-  if (input.blockNextDay !== undefined && (input.blockNextDay || previous?.blockNextDay)) {
+  // `set-by-us` zählt auch dann, wenn block_next_day schon 0 ist: nach einer gescheiterten
+  // Rücknahme (Upsert lief vor dem Guesty-Aufruf) muss der Retry per PUT false wieder greifen.
+  if (input.blockNextDay !== undefined && (input.blockNextDay || previous?.blockNextDay || prevState === 'set-by-us')) {
     const result = await applyNextDayBlock(blockTarget(r), input.blockNextDay, prevState);
     block = splitBlock(result);
     // Zustand nur bei erfolgreichem Aufruf fortschreiben (bei Fehler bleibt er für den Retry).
