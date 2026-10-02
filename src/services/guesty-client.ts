@@ -1056,6 +1056,27 @@ export class GuestyClient {
   }
 
   /**
+   * Listing-Kalender schreiben (#799): Tage blocken/freigeben, z. B. den Folgetag eines
+   * Late-Checkouts bei einer KANAL-Buchung (dort greift `lateCheckOut.blockDay` nicht).
+   * Gleicher Pfad wie `getCalendar` (`/availability-pricing/api/calendar/listings/{id}`), Methode PUT,
+   * Body `{startDate, endDate, status, note?}`; Datumsgrenzen inklusiv (Kalendertage). `note: ''`
+   * löscht die Notiz. Fehler: `request` wirft ExternalApiError mit dem Anbieter-Fehlertext in `details`.
+   */
+  async setListingCalendarStatus(listingId: string, fields: {
+    startDate: string;
+    endDate: string;
+    status: 'available' | 'unavailable';
+    note?: string;
+  }): Promise<any> {
+    const res = await this.request<any>(`/availability-pricing/api/calendar/listings/${listingId}`, {
+      method: 'PUT',
+      body: JSON.stringify(fields),
+    });
+    logger.info({ listingId, startDate: fields.startDate, endDate: fields.endDate, status: fields.status }, 'Updated Guesty listing calendar');
+    return res;
+  }
+
+  /**
    * Health check: verify API credentials and connectivity
    */
   async healthCheck(): Promise<boolean> {

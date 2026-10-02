@@ -11,6 +11,7 @@
       "smartTasksAirbnbProjectId": 37,
       "uiColor": "#FBF3E4",
       "vaultNote": "Gästekommunikation Farmhouse Prasser.md",
+      "blocksNextDayOnLateCheckout": true,
       "timezone": "Europe/Berlin",
       "currency": "EUR",
       "bookingRecipientEmail": "booking@farmhouse-prasser.de",

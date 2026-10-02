@@ -65,3 +65,23 @@ describe('GuestyClient.updateReservationGuests', () => {
     });
   });
 });
+
+// #799: Listing-Kalender schreiben (Folgetag-Block bei Kanalbuchungen)
+describe('GuestyClient.setListingCalendarStatus', () => {
+  it('PUTet {startDate,endDate,status,note} an den Listing-Kalender', async () => {
+    const { client, spy } = clientWithMockedRequest({ status: 200 });
+    await client.setListingCalendarStatus('L1', { startDate: '2026-12-03', endDate: '2026-12-03', status: 'unavailable', note: 'Late-Checkout r1' });
+    const [endpoint, options] = spy.mock.calls[0];
+    expect(endpoint).toBe('/availability-pricing/api/calendar/listings/L1');
+    expect(options.method).toBe('PUT');
+    expect(JSON.parse(options.body)).toEqual({ startDate: '2026-12-03', endDate: '2026-12-03', status: 'unavailable', note: 'Late-Checkout r1' });
+  });
+
+  it('ohne note wird kein note-Feld gesendet; leerer String bleibt (Notiz löschen)', async () => {
+    const { client, spy } = clientWithMockedRequest();
+    await client.setListingCalendarStatus('L1', { startDate: '2026-12-03', endDate: '2026-12-03', status: 'available' });
+    expect(JSON.parse(spy.mock.calls[0][1].body)).toEqual({ startDate: '2026-12-03', endDate: '2026-12-03', status: 'available' });
+    await client.setListingCalendarStatus('L1', { startDate: '2026-12-03', endDate: '2026-12-03', status: 'available', note: '' });
+    expect(JSON.parse(spy.mock.calls[1][1].body).note).toBe('');
+  });
+});
