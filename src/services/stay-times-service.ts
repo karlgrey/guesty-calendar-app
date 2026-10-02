@@ -59,6 +59,8 @@ export interface StayTimesView {
   reservationId: string;
   provider: string | null;
   propertySlug: string | null;
+  /** Objekt hat das Flag `blocksNextDayOnLateCheckout` (Admin zeigt dann die Checkbox) */
+  blocksNextDay: boolean;
   checkIn: string;
   checkOut: string;
   status: string;
@@ -156,6 +158,7 @@ export function getStayTimes(reservationId: string): StayTimesView | null {
     reservationId: r.reservation_id,
     provider: property?.provider ?? null,
     propertySlug: property?.slug ?? null,
+    blocksNextDay: !!property?.blocksNextDayOnLateCheckout,
     checkIn: day(r.check_in_localized, r.check_in),
     checkOut: day(r.check_out_localized, r.check_out),
     status: r.status,
