@@ -1006,6 +1006,56 @@ export class GuestyClient {
   }
 
   /**
+   * Reservierungsdaten ändern (#792): `PUT /reservations-v3/{id}/dates`
+   * (Guesty-Doku 02.10.2026: PUT, nicht PATCH). Alle Felder optional; Datumsfelder
+   * `*Localized` im Format YYYY-MM-DD, Uhrzeiten HH:mm. `earlyCheckIn`/`lateCheckOut`
+   * (blockDay = Folge-/Vortag blocken, addAdditionalFee = Gebühr berechnen).
+   * Datumsänderungen lösen bei Guesty immer eine Neuberechnung aus.
+   * Fehler: `request` wirft ExternalApiError mit dem Anbieter-Fehlertext in `details`.
+   */
+  async updateReservationDates(reservationId: string, fields: {
+    checkInDateLocalized?: string;
+    checkOutDateLocalized?: string;
+    plannedArrival?: string;
+    plannedDeparture?: string;
+    earlyCheckIn?: { blockDay: boolean; addAdditionalFee: boolean };
+    lateCheckOut?: { blockDay: boolean; addAdditionalFee: boolean };
+    ignoreCalendar?: boolean;
+    ignoreTerms?: boolean;
+    ignoreBlocks?: boolean;
+    applyRecalculation?: boolean;
+  }): Promise<any> {
+    const res = await this.request<any>(`/reservations-v3/${reservationId}/dates`, {
+      method: 'PUT',
+      body: JSON.stringify(fields),
+    });
+    logger.info({ reservationId, fields: Object.keys(fields) }, 'Updated Guesty reservation dates');
+    return res;
+  }
+
+  /**
+   * Gästezahl ändern (#792): `PUT /reservations-v3/{id}/guests` (Guesty-Doku
+   * 02.10.2026). `guestsCount` Pflicht; `numberOfGuests` (Aufschlüsselung)
+   * optional, verlangt dann `numberOfAdults`.
+   */
+  async updateReservationGuests(reservationId: string, fields: {
+    guestsCount: number;
+    numberOfGuests?: {
+      numberOfAdults: number;
+      numberOfChildren?: number;
+      numberOfInfants?: number;
+      numberOfPets?: number;
+    };
+  }): Promise<any> {
+    const res = await this.request<any>(`/reservations-v3/${reservationId}/guests`, {
+      method: 'PUT',
+      body: JSON.stringify(fields),
+    });
+    logger.info({ reservationId, guestsCount: fields.guestsCount }, 'Updated Guesty reservation guests');
+    return res;
+  }
+
+  /**
    * Health check: verify API credentials and connectivity
    */
   async healthCheck(): Promise<boolean> {
