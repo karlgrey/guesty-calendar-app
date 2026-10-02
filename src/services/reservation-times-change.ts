@@ -38,6 +38,9 @@ const NOTIFY_STATUSES = ['confirmed', 'reserved'];
 const day = (localized: string | null, raw: string): string => (localized || raw).split('T')[0];
 const time = (t: string | null): string | null => (t ? t.slice(0, 5) : null);
 
+/** Listing-Standardzeiten (HH:MM oder HH:MM:SS); null/leer = unbekannt. */
+export interface ListingDefaultTimes { checkIn: string | null; checkOut: string | null }
+
 function todayBerlin(): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Berlin' }).format(new Date());
 }
@@ -46,6 +49,7 @@ export function detectTimesChange(
   before: TimesSnapshot | null,
   after: TimesSnapshot,
   today: string = todayBerlin(),
+  defaults: ListingDefaultTimes | null = null,
 ): TimesChange | null {
   if (!before) return null;
   if (!NOTIFY_STATUSES.includes(after.status)) return null;
@@ -53,13 +57,27 @@ export function detectTimesChange(
   // Late-Checkout wird während des Aufenthalts zugesagt, der Check-in liegt dann schon zurück.
   if (day(after.check_out_localized, after.check_out) < today) return null;
 
-  const pairs: Array<[TimesField, string | null, string | null]> = [
+  // Fix #793 (Fehlalarm AVOW 02.10.2026): ein fehlender planned_*-Wert (NULL/leer) ist semantisch
+  // die Listing-Standardzeit (der PATCH-Spiegel schreibt z. B. 08:00/12:00 in eine NULL-Zeile,
+  // Guesty hat nichts geändert). Beide Seiten vor dem Vergleich normalisieren. Ohne bekannten
+  // Standard bleibt NULL -> Wert konservativ stumm.
+  const planned = (field: 'planned_arrival' | 'planned_departure', def: string | null): [TimesField, string | null, string | null] | null => {
+    const b = time(before[field]);
+    const a = time(after[field]);
+    if (!def) return !b && a ? null : [field, b, a];
+    return [field, b ?? def, a ?? def];
+  };
+
+  const pairs: Array<[TimesField, string | null, string | null] | null> = [
     ['check_in', day(before.check_in_localized, before.check_in), day(after.check_in_localized, after.check_in)],
     ['check_out', day(before.check_out_localized, before.check_out), day(after.check_out_localized, after.check_out)],
-    ['planned_arrival', time(before.planned_arrival), time(after.planned_arrival)],
-    ['planned_departure', time(before.planned_departure), time(after.planned_departure)],
+    planned('planned_arrival', time(defaults?.checkIn ?? null)),
+    planned('planned_departure', time(defaults?.checkOut ?? null)),
   ];
-  const changes = pairs.filter(([, from, to]) => from !== to).map(([field, from, to]) => ({ field, from, to }));
+  const changes = pairs
+    .filter((p): p is [TimesField, string | null, string | null] => p !== null)
+    .filter(([, from, to]) => from !== to)
+    .map(([field, from, to]) => ({ field, from, to }));
   if (changes.length === 0) return null;
   return { reservationId: after.reservation_id, listingId: after.listing_id, changes, before, after };
 }
