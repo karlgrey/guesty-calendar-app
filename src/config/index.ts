@@ -167,6 +167,13 @@ const configSchema = z.object({
   // (nur Log-Zeile) — Dev/Test schreiben nie ins echte Outbox. JID = Putzcrew (Wanja).
   waOutboxDir: z.string().optional().transform((v) => (v && v.trim() ? v.trim() : undefined)),
   waWanjaJid: z.string().default('380509566925@s.whatsapp.net'),
+  // #799: Wanja-WhatsApp bei Zeit-Änderungen ist seit Entscheid Micha 02.10.2026 AUS (die Crew
+  // sieht den Kalender-Marker). Nur mit TIMES_CHANGE_WHATSAPP=1 (true/yes) wieder an.
+  timesChangeWhatsapp: z.string().optional().transform((val) => {
+    if (!val) return false;
+    const lower = String(val).trim().toLowerCase();
+    return lower === 'true' || lower === '1' || lower === 'yes';
+  }),
 });
 
 /**
@@ -237,6 +244,7 @@ function parseConfig() {
     smartTasksApiUrl: process.env.SMARTTASKS_API_URL,
     waOutboxDir: process.env.WA_OUTBOX_DIR,
     waWanjaJid: process.env.WA_WANJA_JID || undefined,
+    timesChangeWhatsapp: process.env.TIMES_CHANGE_WHATSAPP,
   };
 
   try {
