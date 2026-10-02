@@ -22,6 +22,11 @@ vi.mock('../repositories/reservation-repository.js', () => ({
   getCancelledReservationIds: (...args: unknown[]) => getCancelledReservationIdsMock(...args),
 }));
 
+const getOverridesForReservationsMock = vi.fn();
+vi.mock('../repositories/stay-time-override-repository.js', () => ({
+  getOverridesForReservations: (...args: unknown[]) => getOverridesForReservationsMock(...args),
+}));
+
 const getListingByIdMock = vi.fn();
 vi.mock('../repositories/listings-repository.js', () => ({
   getListingById: (...args: unknown[]) => getListingByIdMock(...args),
@@ -48,6 +53,7 @@ import { toGoogleEventId } from '../services/google-event-id.js';
 import { blockEventId } from '../services/google-calendar-blocks.js';
 import type { Reservation } from '../types/models.js';
 import type { PropertyConfig } from '../config/properties.js';
+import type { StayTimeOverride } from '../repositories/stay-time-override-repository.js';
 
 function mkReservation(over: Partial<Reservation> = {}): Reservation {
   return {
@@ -111,6 +117,7 @@ describe('syncGoogleCalendarForProperty — Storno löscht das Google-Event (#66
   beforeEach(() => {
     vi.clearAllMocks();
     getListingByIdMock.mockReturnValue(null);
+    getOverridesForReservationsMock.mockReturnValue(new Map());
     getReservationsByPeriodMock.mockReturnValue([]);
     getAvailabilityMock.mockReturnValue([]);
     upsertEventMock.mockResolvedValue('updated');
@@ -244,5 +251,90 @@ describe('buildCalendarEvent — Zeit-Marker (#793)', () => {
     const e = buildCalendarEvent(mkReservation({ planned_departure: '18:00' }), 'Farmhouse', undefined, undefined);
     expect(e.summary).toBe('Darleen (4N, 2 Gäste)');
     expect(e.description).toContain('bis 18:00 Uhr');
+  });
+});
+
+// #799: Zeit-Abweichungen aus unserer DB (Override vor Provider), plattformneutral
+const ov = (o: Partial<StayTimeOverride> = {}): StayTimeOverride => ({
+  reservationId: 'res-1', plannedArrival: null, plannedDeparture: null, blockNextDay: false, note: null,
+  source: 'agent', createdAt: 'x', updatedAt: 'x', ...o,
+});
+
+describe('buildCalendarEvent — Override (#799)', () => {
+  it('Guesty-Reservierung: Late-Checkout-Marker aus dem Override', () => {
+    const e = buildCalendarEvent(mkReservation({ source: 'manual', platform: 'direct' }), 'Farmhouse', '08:00', '12:00', ov({ plannedDeparture: '18:00' }));
+    expect(e.summary).toBe('Darleen (4N, 2 Gäste) ⏰ Late-Checkout 18:00');
+    expect(e.description).toContain('bis 18:00 Uhr (statt 12:00)');
+  });
+
+  it('Hostex-Reservierung (planned_* null): Marker aus dem Override', () => {
+    const e = buildCalendarEvent(mkReservation({ source: 'airbnb', platform: 'hostex', planned_arrival: null, planned_departure: null }), 'Bootshaus', '15:00', '12:00', ov({ plannedArrival: '13:00', plannedDeparture: '14:00' }));
+    expect(e.summary).toBe('Darleen (4N, 2 Gäste) ⏰ Check-in 13:00 · ⏰ Late-Checkout 14:00');
+  });
+
+  it('Override gewinnt über den Provider-Wert', () => {
+    const e = buildCalendarEvent(mkReservation({ planned_departure: '15:00' }), 'Farmhouse', '08:00', '12:00', ov({ plannedDeparture: '18:00' }));
+    expect(e.summary).toContain('⏰ Late-Checkout 18:00');
+  });
+
+  it('Override-Feld null -> Provider-Wert gilt', () => {
+    const e = buildCalendarEvent(mkReservation({ planned_departure: '15:00' }), 'Farmhouse', '08:00', '12:00', ov({ plannedArrival: '07:00' }));
+    expect(e.summary).toBe('Darleen (4N, 2 Gäste) ⏰ Check-in 07:00 · ⏰ Late-Checkout 15:00');
+  });
+
+  it('Override gleich Standard -> kein Marker', () => {
+    const e = buildCalendarEvent(mkReservation({ planned_departure: '15:00' }), 'Farmhouse', '08:00', '12:00', ov({ plannedDeparture: '12:00' }));
+    expect(e.summary).toBe('Darleen (4N, 2 Gäste)');
+  });
+});
+
+describe('syncGoogleCalendarForProperty — Overrides mit EINEM Query (#799)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getListingByIdMock.mockReturnValue({ check_in_time: '15:00:00', check_out_time: '12:00:00' });
+    getCancelledReservationIdsMock.mockReturnValue([]);
+    getAvailabilityMock.mockReturnValue([]);
+    upsertEventMock.mockResolvedValue('updated');
+    listEventsMock.mockResolvedValue([]);
+  });
+
+  it('lädt Overrides einmal für alle Reservierungen und nutzt sie im Event', async () => {
+    getReservationsByPeriodMock.mockImplementation((_l: string, _d: number, kind: string) =>
+      kind === 'future' ? [mkReservation({ reservation_id: 'a' }), mkReservation({ reservation_id: 'b' })] : []);
+    getOverridesForReservationsMock.mockReturnValue(new Map([['b', ov({ reservationId: 'b', plannedDeparture: '17:00' })]]));
+
+    await syncGoogleCalendarForProperty(airbnbMailProperty());
+
+    expect(getOverridesForReservationsMock).toHaveBeenCalledTimes(1);
+    expect(getOverridesForReservationsMock).toHaveBeenCalledWith(['a', 'b']);
+    const events = Object.fromEntries(upsertEventMock.mock.calls
+      .filter((c) => c[1] === toGoogleEventId('a') || c[1] === toGoogleEventId('b'))
+      .map((c) => [c[1], c[2].summary]));
+    expect(events[toGoogleEventId('a')]).toBe('Darleen (4N, 2 Gäste)');
+    expect(events[toGoogleEventId('b')]).toContain('⏰ Late-Checkout 17:00');
+  });
+
+  it('Override-Lookup scheitert -> Sync läuft mit Provider-Werten weiter (non-fatal)', async () => {
+    getReservationsByPeriodMock.mockImplementation((_l: string, _d: number, kind: string) =>
+      kind === 'future' ? [mkReservation({ reservation_id: 'a', planned_departure: '16:00' })] : []);
+    getOverridesForReservationsMock.mockImplementation(() => { throw new Error('no such table'); });
+
+    const result = await syncGoogleCalendarForProperty(airbnbMailProperty());
+
+    expect(result.success).toBe(true);
+    expect(upsertEventMock.mock.calls.some((c) => String(c[2]?.summary).includes('Late-Checkout 16:00'))).toBe(true);
+  });
+
+  it('Override-Late-Checkout markiert den 1-Nacht-Folgetag-Block als Reinigung', async () => {
+    getReservationsByPeriodMock.mockImplementation((_l: string, _d: number, kind: string) =>
+      kind === 'future' ? [mkReservation({ reservation_id: 'a' })] : []);
+    getOverridesForReservationsMock.mockReturnValue(new Map([['a', ov({ reservationId: 'a', plannedDeparture: '18:00' })]]));
+    getAvailabilityMock.mockReturnValue([{ date: '2026-08-05', status: 'blocked', block_type: 'manual' }]);
+
+    await syncGoogleCalendarForProperty(airbnbMailProperty());
+
+    const blockCall = upsertEventMock.mock.calls.find((c) => c[1] === blockEventId('listing-firenze', '2026-08-05'));
+    expect(blockCall).toBeTruthy();
+    expect(blockCall![2].summary).toMatch(/Reinigung|Late/i);
   });
 });
