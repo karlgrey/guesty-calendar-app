@@ -790,6 +790,17 @@ der einfach nie wieder erfolgreich pollt (Florence stand so 10 Wochen unbemerkt 
 - Google OAuth 2.0 via Passport.js (`src/config/auth.ts`)
 - Email whitelist: `ADMIN_ALLOWED_EMAILS` env var
 - Session-based with secure cookies (24h lifetime)
+- **Härtung nach Phishing-Vorfall (#765/#767, 10/2026):** `POST /auth/login` hat ein
+  Rate-Limit (`src/middleware/login-rate-limit.ts`, express-rate-limit: 10 Versuche je
+  Client-IP in 15 min, jeder POST zählt, danach 429 + Log `Login rate limit exceeded`);
+  Fehlversuche loggen `Login failed` mit IP und E-Mail. `/sync/*` (ETL-Trigger, inkl.
+  `GET /sync/status`) steht hinter `requireAgentKeyOrSession` (Agent-Key ODER
+  Admin-Session, sonst 401 JSON) — das Admin-UI nutzt `/admin/sync/*`. Der
+  Guesty-Token-Cache `data/.guesty-token-cache.json` wird mit 0600 geschrieben und beim
+  Laden auf 0600 gezogen; `deploy.sh`/`claude-deploy` setzen `calendar.db.bak-*` auf 640 (Live-DB
+  bleibt 644: claude@labs liest sie read-only für Skill anfragen-beantworten). Caddy soll `X-Agent-Key` aus dem Access-Log filtern (Caddyfile `format filter`,
+  sudo → Micha; ob das live ist, steht im Task #767, nicht hier).
+  Agent-Keys rotieren: `tools/rotate-agent-keys.sh` in TheBrain2.
 
 ### Error Handling
 Custom error classes in `src/utils/errors.ts`: `ConfigError`, `DatabaseError`, `ExternalApiError`, `ValidationError`, `NotFoundError`, `CacheMissError`. All extend `AppError` with structured Pino logging.
