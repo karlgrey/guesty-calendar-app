@@ -57,8 +57,29 @@ export interface ReservationView {
 }
 
 export interface UpdateReservationResult extends ReservationView {
-  /** Gesamtsumme laut Guesty nach der Änderung (Kontrollwert, wie beim Anlegen). */
+  /** Gesamtsumme laut Guesty nach der Änderung (Kontrollwert, wie beim Anlegen). Fehlt bei `stale`. */
   actualTotal?: number;
+  /**
+   * true, wenn Guesty nach dem Update (und kurzem Poll) noch den alten Stand liefert:
+   * die Mutation ist angenommen, die Antwort zeigt aber NICHT den neuen Zustand —
+   * `GET …/:id` nachziehen. Lokal wird dann nichts gespiegelt (ETL zieht nach).
+   */
+  stale?: boolean;
+}
+
+/** Poll nach dem Update (Guesty verarbeitet u. U. asynchron, vgl. Create-Retry). */
+export interface UpdatePollOptions { pollAttempts?: number; pollDelayMs?: number }
+const DEFAULT_POLL: Required<UpdatePollOptions> = { pollAttempts: 5, pollDelayMs: 2000 };
+
+/**
+ * Spiegelt der Guesty-Read die angefragten Werte? Verglichen werden nur Felder,
+ * die der GET sicher liefert (Daten, Gästezahl) — Zeiten/Blöcke nicht.
+ */
+function reflectsInput(r: any, input: UpdateReservationInput): boolean {
+  if (input.checkIn !== undefined && r?.checkInDateLocalized !== input.checkIn) return false;
+  if (input.checkOut !== undefined && r?.checkOutDateLocalized !== input.checkOut) return false;
+  if (input.guestsCount !== undefined && r?.guestsCount !== input.guestsCount) return false;
+  return true;
 }
 
 /** Shape von `GET /api/agent/reservations/:id` (auch Basis der PATCH-Antwort). */
@@ -127,7 +148,11 @@ function validateBody(body: unknown): UpdateReservationInput {
   return input;
 }
 
-export async function updateReservation(reservationId: string, body: unknown): Promise<UpdateReservationResult> {
+export async function updateReservation(
+  reservationId: string,
+  body: unknown,
+  opts: UpdatePollOptions = {},
+): Promise<UpdateReservationResult> {
   const input = validateBody(body);
 
   const current = await guestyClient.getReservation(reservationId);
@@ -172,9 +197,24 @@ export async function updateReservation(reservationId: string, body: unknown): P
   }
   logger.info({ reservationId, fields: Object.keys(body as object) }, 'Reservation updated via agent API');
 
-  // Guesty ist durch — frisch lesen und lokal nachziehen (best effort: ein Problem
-  // hier darf die Antwort nicht zum Fehler machen, der ETL zieht ohnehin nach).
-  const fresh = await guestyClient.getReservation(reservationId);
+  // Guesty ist durch — frisch lesen. Der Read direkt nach dem PUT kann noch den
+  // alten Stand liefern (Guesty asynchron, wie beim Create): kurz pollen, bis
+  // Daten/Gästezahl angekommen sind; bleibt es alt, ehrlich `stale: true`
+  // antworten statt alte Werte als Erfolg auszugeben (Review-Gate #792).
+  const { pollAttempts, pollDelayMs } = { ...DEFAULT_POLL, ...opts };
+  let fresh = await guestyClient.getReservation(reservationId);
+  for (let attempt = 1; !reflectsInput(fresh, input) && attempt < pollAttempts; attempt++) {
+    logger.warn({ reservationId, attempt, pollAttempts }, 'Guesty liefert nach dem Update noch den alten Stand, warte');
+    await new Promise((res) => setTimeout(res, pollDelayMs));
+    fresh = await guestyClient.getReservation(reservationId);
+  }
+  if (!reflectsInput(fresh, input)) {
+    logger.warn({ reservationId, pollAttempts }, 'Guesty-Reservierung nach Update weiterhin alt — Antwort stale, kein lokales Spiegeln');
+    return { ...toReservationView(fresh, reservationId), stale: true };
+  }
+
+  // Lokal nachziehen (best effort: ein Problem hier darf die Antwort nicht zum
+  // Fehler machen, der ETL zieht ohnehin nach).
   let actualTotal: number | undefined;
   try {
     if (listingId) {

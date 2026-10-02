@@ -20,6 +20,7 @@ import { googleCalendarClient } from './google-calendar-client.js';
 import { toGoogleEventId } from './google-event-id.js';
 import { ValidationError, ConflictError } from '../utils/errors.js';
 import logger from '../utils/logger.js';
+import { fingerprintGuest } from '../utils/guest-fingerprint.js';
 
 export interface CreateOfferInput {
   propertySlug: string;
@@ -207,6 +208,14 @@ export async function mirrorReservationLocally(
   fresh?: any,
 ): Promise<number | undefined> {
   const r = fresh ?? await getReservationWithRetry(reservationId);
+  const guestName = fresh?.guest?.fullName ?? `${input.guest.firstName} ${input.guest.lastName}`.trim();
+  // Fingerprint wie der ETL-Mapper (reservation-mapper.ts) — der Upsert ersetzt
+  // internal_guest_id ohne COALESCE; `null` würde bis zum nächsten ETL den
+  // Repeat-Customer-Schlüssel einer bestehenden Zeile löschen (Review-Gate #792).
+  let internalGuestId: string | null = null;
+  try { internalGuestId = fingerprintGuest(guestName).id; } catch (error) {
+    logger.warn({ error, guestName }, 'fingerprintGuest threw, internal_guest_id bleibt null');
+  }
   const nights = Math.max(
     1,
     Math.round((new Date(input.checkOut).getTime() - new Date(input.checkIn).getTime()) / (24 * 60 * 60 * 1000)),
@@ -219,8 +228,9 @@ export async function mirrorReservationLocally(
     check_in_localized: r?.checkInDateLocalized ?? input.checkIn,
     check_out_localized: r?.checkOutDateLocalized ?? input.checkOut,
     nights_count: nights,
-    guest_id: r?.guestId ?? null,
-    guest_name: fresh?.guest?.fullName ?? `${input.guest.firstName} ${input.guest.lastName}`.trim(),
+    // GET /reservations/:id liefert den Gast als `guest._id`, nicht immer als `guestId` (#557)
+    guest_id: r?.guestId ?? r?.guest?._id ?? null,
+    guest_name: guestName,
     guests_count: input.guestsCount,
     adults_count: input.guestsCount,
     children_count: null,
@@ -239,8 +249,8 @@ export async function mirrorReservationLocally(
     created_at_guesty: r?.createdAt ?? null,
     reserved_at: r?.reservedAt ?? new Date().toISOString(),
     last_synced_at: new Date().toISOString(),
-    internal_guest_id: null,
-    guest_company: null,
+    internal_guest_id: internalGuestId,
+    guest_company: null, // COALESCE im Upsert: Bestand bleibt (#729)
   });
   // Gastpreis inkl. Steuern (Guesty: hostPayout = subTotal + totalTaxes bei Direktbuchung)
   const m = r?.money;
