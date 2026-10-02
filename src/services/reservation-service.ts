@@ -187,12 +187,26 @@ async function getReservationWithRetry(reservationId: string, attempts = 6, dela
   throw lastErr;
 }
 
-async function mirrorReservationLocally(
+/** Minimaler Fallback-Datensatz fürs lokale Spiegeln (Create-Input oder Stand vor einem Update). */
+export interface MirrorFallback {
+  checkIn: string;
+  checkOut: string;
+  guestsCount: number;
+  guest: { firstName: string; lastName: string };
+}
+
+/**
+ * Spiegelt die Guesty-Reservierung lokal. `fresh` = bereits gelesene Guesty-Antwort
+ * (#792: Update-Service liest einmal nach der Mutation und reicht sie durch);
+ * ohne `fresh` wird mit Retry gelesen (Create ist asynchron).
+ */
+export async function mirrorReservationLocally(
   reservationId: string,
   listingId: string,
-  input: CreateOfferInput,
+  input: MirrorFallback,
+  fresh?: any,
 ): Promise<number | undefined> {
-  const r = await getReservationWithRetry(reservationId);
+  const r = fresh ?? await getReservationWithRetry(reservationId);
   const nights = Math.max(
     1,
     Math.round((new Date(input.checkOut).getTime() - new Date(input.checkIn).getTime()) / (24 * 60 * 60 * 1000)),
@@ -206,17 +220,17 @@ async function mirrorReservationLocally(
     check_out_localized: r?.checkOutDateLocalized ?? input.checkOut,
     nights_count: nights,
     guest_id: r?.guestId ?? null,
-    guest_name: `${input.guest.firstName} ${input.guest.lastName}`,
+    guest_name: fresh?.guest?.fullName ?? `${input.guest.firstName} ${input.guest.lastName}`.trim(),
     guests_count: input.guestsCount,
     adults_count: input.guestsCount,
     children_count: null,
     infants_count: null,
     status: r?.status ?? 'reserved',
     confirmation_code: r?.confirmationCode ?? null,
-    source: 'manual',
+    source: r?.source ?? 'manual',
     platform: 'direct',
-    planned_arrival: null,
-    planned_departure: null,
+    planned_arrival: r?.plannedArrival ?? null,
+    planned_departure: r?.plannedDeparture ?? null,
     currency: r?.money?.currency ?? 'EUR',
     total_price: r?.money?.totalPrice ?? r?.money?.subTotalPrice ?? null,
     host_payout: r?.money?.hostPayout ?? null,

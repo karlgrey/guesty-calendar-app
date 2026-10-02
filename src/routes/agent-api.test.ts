@@ -23,6 +23,13 @@ vi.mock('../services/reservation-service.js', () => ({
     previousStatus: 'reserved', newStatus: 'closed', unchanged: false, googleEventDeleted: true,
   }),
 }));
+// #792: PATCH /reservations/:id — Service gemockt (Logik in reservation-update-service.test.ts),
+// toReservationView bleibt echt.
+const updateReservationMock = vi.fn();
+vi.mock('../services/reservation-update-service.js', async (importOriginal) => {
+  const mod: any = await importOriginal();
+  return { ...mod, updateReservation: (...args: unknown[]) => updateReservationMock(...args) };
+});
 vi.mock('../services/document-service.js', () => ({
   createOrGetDocument: vi.fn().mockResolvedValue({
     document: { documentNumber: 'A-2026-0042' }, pdf: Buffer.from('%PDF-fake'), isNew: false,
@@ -160,6 +167,39 @@ describe('agent-api', () => {
     const r = await fetch(`${base}/api/agent/reservations/res-1`, { headers: KEY });
     expect(r.status).toBe(200);
     expect(await r.json()).toMatchObject({ status: 'reserved' });
+  });
+
+  it('GET /reservations/:id → plannedArrival/plannedDeparture/source (#792)', async () => {
+    const { guestyClient } = await import('../services/guesty-client.js');
+    (guestyClient.getReservation as any).mockResolvedValueOnce({
+      _id: 'res-1', status: 'confirmed', source: 'manual', plannedArrival: '15:00', plannedDeparture: '11:00',
+    });
+    const r = await fetch(`${base}/api/agent/reservations/res-1`, { headers: KEY });
+    expect(await r.json()).toMatchObject({ source: 'manual', plannedArrival: '15:00', plannedDeparture: '11:00' });
+  });
+
+  it('PATCH /reservations/:id → 200 mit Service-Ergebnis, Body durchgereicht (#792)', async () => {
+    updateReservationMock.mockResolvedValueOnce({ id: 'res-1', checkIn: '2026-11-30', actualTotal: 3456.1 });
+    const body = { checkIn: '2026-11-30', checkOut: '2026-12-02', guestsCount: 6 };
+    const r = await fetch(`${base}/api/agent/reservations/res-1`, { method: 'PATCH', headers: KEY, body: JSON.stringify(body) });
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({ actualTotal: 3456.1 });
+    expect(updateReservationMock).toHaveBeenCalledWith('res-1', body);
+  });
+
+  it('PATCH /reservations/:id → 400/409 aus dem Service werden durchgereicht (#792)', async () => {
+    const { ValidationError, ConflictError } = await import('../utils/errors.js');
+    updateReservationMock.mockRejectedValueOnce(new ValidationError('Body ist leer — erlaubt: checkIn'));
+    let r = await fetch(`${base}/api/agent/reservations/res-1`, { method: 'PATCH', headers: KEY, body: '{}' });
+    expect(r.status).toBe(400);
+    updateReservationMock.mockRejectedValueOnce(new ConflictError('im Ursprungskanal ändern'));
+    r = await fetch(`${base}/api/agent/reservations/res-1`, { method: 'PATCH', headers: KEY, body: '{"guestsCount":3}' });
+    expect(r.status).toBe(409);
+  });
+
+  it('PATCH /reservations/:id → 401 ohne Key (#792)', async () => {
+    const r = await fetch(`${base}/api/agent/reservations/res-1`, { method: 'PATCH', body: '{}', headers: { 'Content-Type': 'application/json' } });
+    expect(r.status).toBe(401);
   });
 
   it('GET /reservations/:id → guestId aus guest._id (#557)', async () => {

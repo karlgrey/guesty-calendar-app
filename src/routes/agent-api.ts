@@ -19,6 +19,7 @@ import {
 import type { CanceledBy } from '../services/guesty-client.js';
 import { GUESTY_CANCELLATION_REASONS, isGuestyCancellationReason } from '../services/guesty-cancellation.js';
 import { guestyClient } from '../services/guesty-client.js';
+import { updateReservation, toReservationView } from '../services/reservation-update-service.js';
 import { updateGuestCompanyByGuestId } from '../repositories/reservation-repository.js';
 import { getThreadsUpdatedSince, getThreadById, getMessagesByThread } from '../repositories/message-repository.js';
 import { getAwaitingDrafts, getAutoSendStats } from '../repositories/draft-repository.js';
@@ -61,14 +62,16 @@ router.post('/reservations', async (req, res) => {
 router.get('/reservations/:id', async (req, res) => {
   try {
     const r = await guestyClient.getReservation(req.params.id);
-    res.json({
-      id: r?._id ?? req.params.id,
-      status: r?.status ?? null,
-      checkIn: r?.checkInDateLocalized ?? null,
-      checkOut: r?.checkOutDateLocalized ?? null,
-      guestsCount: r?.guestsCount ?? null,
-      guestId: r?.guest?._id ?? r?.guestId ?? null,
-    });
+    res.json(toReservationView(r, req.params.id));
+  } catch (err) { handleError(res, err); }
+});
+
+// Reservierung ändern (#792): Daten, Gästezahl, geplante Zeiten, Early-Check-in/
+// Late-Checkout. Nur Direktbuchungen im Status reserved/confirmed — Logik und
+// Guards im Service.
+router.patch('/reservations/:id', async (req, res) => {
+  try {
+    res.json(await updateReservation(req.params.id, req.body));
   } catch (err) { handleError(res, err); }
 });
 
