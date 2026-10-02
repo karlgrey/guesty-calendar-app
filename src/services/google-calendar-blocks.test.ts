@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildBlockSpans, buildBlockEvent, blockEventId, blockLabel } from './google-calendar-blocks.js';
+import { buildBlockSpans, buildBlockEvent, blockEventId, blockLabel, lateCheckoutDates, CLEANING_AFTER_LATE_CHECKOUT_LABEL } from './google-calendar-blocks.js';
 
 describe('buildBlockSpans', () => {
   it('groups consecutive blocked days into spans (end exclusive)', () => {
@@ -72,5 +72,42 @@ describe('blockEventId', () => {
   it('is stable and namespaced', () => {
     expect(blockEventId('12659677', '2026-06-04')).toBe(blockEventId('12659677', '2026-06-04'));
     expect(blockEventId('12659677', '2026-06-04')).not.toBe(blockEventId('12659677', '2026-06-05'));
+  });
+});
+
+describe('Folgetag-Block nach Late-Checkout (#793)', () => {
+  const late = new Set(['2026-08-05']);
+  const oneNight = { startDate: '2026-08-05', endExclusive: '2026-08-06', blockType: 'manual' };
+
+  it('1-Nacht-Block am Check-out-Tag einer Late-Checkout-Reservierung -> "Reinigung nach Late-Checkout"', () => {
+    const ev = buildBlockEvent(oneNight, 'Farmhouse', 'guesty', late);
+    expect(ev.summary).toBe(CLEANING_AFTER_LATE_CHECKOUT_LABEL);
+    expect(ev.extendedProperties?.private?.kind).toBe('owner-block'); // Cleanup-Schlüssel bleibt
+    expect(ev.start).toEqual({ date: '2026-08-05' });
+  });
+
+  it('gleicher Block ohne Late-Checkout-Tag: generisches Label', () => {
+    expect(buildBlockEvent(oneNight, 'Farmhouse', 'guesty', new Set()).summary).toBe('Manuell blockiert');
+    expect(buildBlockEvent(oneNight, 'Farmhouse', 'guesty').summary).toBe('Manuell blockiert');
+  });
+
+  it('mehrtägiger Block bleibt generisch, auch wenn er am Late-Checkout-Tag beginnt', () => {
+    const multi = { ...oneNight, endExclusive: '2026-08-08' };
+    expect(buildBlockEvent(multi, 'Farmhouse', 'guesty', late).summary).toBe('Manuell blockiert');
+  });
+
+  it('Block an anderem Tag bleibt generisch', () => {
+    expect(buildBlockEvent({ ...oneNight, startDate: '2026-08-06', endExclusive: '2026-08-07' }, 'F', 'guesty', late).summary).toBe('Manuell blockiert');
+  });
+
+  it('lateCheckoutDates: nur planned_departure > Standard zählt', () => {
+    const rs = [
+      { check_out: '2026-08-05', check_out_localized: '2026-08-05', planned_departure: '18:00' },
+      { check_out: '2026-08-09', check_out_localized: null, planned_departure: '12:00' },
+      { check_out: '2026-08-12T10:00:00Z', check_out_localized: null, planned_departure: '20:00:00' },
+      { check_out: '2026-08-15', check_out_localized: '2026-08-15', planned_departure: null },
+    ];
+    expect([...lateCheckoutDates(rs, '12:00')].sort()).toEqual(['2026-08-05', '2026-08-12']);
+    expect(lateCheckoutDates(rs, undefined).size).toBe(0);
   });
 });

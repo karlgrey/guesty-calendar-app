@@ -161,6 +161,12 @@ const configSchema = z.object({
   // siehe promise-task-service.ts.
   smartTasksApiKey: z.string().optional(),
   smartTasksApiUrl: z.string().url().default('https://tasks.remoterepublic.com/api'),
+
+  // WhatsApp-Outbox (#793): Zeit-Änderungen (Late-Checkout, früher Check-in, Datum) gehen als
+  // JSON-Datei in das Outbox-Verzeichnis der WhatsApp-Bridge. OHNE WA_OUTBOX_DIR kein Versand
+  // (nur Log-Zeile) — Dev/Test schreiben nie ins echte Outbox. JID = Putzcrew (Wanja).
+  waOutboxDir: z.string().optional().transform((v) => (v && v.trim() ? v.trim() : undefined)),
+  waWanjaJid: z.string().default('380509566925@s.whatsapp.net'),
 });
 
 /**
@@ -229,6 +235,8 @@ function parseConfig() {
     draftStaleHours: process.env.DRAFT_STALE_HOURS,
     smartTasksApiKey: process.env.SMARTTASKS_API_KEY,
     smartTasksApiUrl: process.env.SMARTTASKS_API_URL,
+    waOutboxDir: process.env.WA_OUTBOX_DIR,
+    waWanjaJid: process.env.WA_WANJA_JID || undefined,
   };
 
   try {

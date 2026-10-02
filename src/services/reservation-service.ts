@@ -15,6 +15,7 @@ import { DEFAULT_CANCELLATION_REASON } from './guesty-cancellation.js';
 import { createOrGetDocument } from './document-service.js';
 import { areDatesAvailable } from '../repositories/availability-repository.js';
 import { upsertReservation, applyCancellationLocally } from '../repositories/reservation-repository.js';
+import { upsertReservationsTrackingTimes } from './reservation-times-notifier.js';
 import { getPropertyBySlug, getPropertyByGuestyId } from '../config/properties.js';
 import { googleCalendarClient } from './google-calendar-client.js';
 import { toGoogleEventId } from './google-event-id.js';
@@ -220,7 +221,9 @@ export async function mirrorReservationLocally(
     1,
     Math.round((new Date(input.checkOut).getTime() - new Date(input.checkIn).getTime()) / (24 * 60 * 60 * 1000)),
   );
-  upsertReservation({
+  // #793: über den Tracker schreiben — der Spiegel legt Zeit-Änderungen vor dem nächsten
+  // ETL ab, ohne Erkennung hier sähe der ETL nie eine Differenz (Wanja-WhatsApp).
+  upsertReservationsTrackingTimes([{
     reservation_id: reservationId,
     listing_id: listingId,
     check_in: r?.checkIn ?? input.checkIn,
@@ -251,7 +254,7 @@ export async function mirrorReservationLocally(
     last_synced_at: new Date().toISOString(),
     internal_guest_id: internalGuestId,
     guest_company: null, // COALESCE im Upsert: Bestand bleibt (#729)
-  });
+  }], (rows) => { upsertReservation(rows[0]); return 1; });
   // Gastpreis inkl. Steuern (Guesty: hostPayout = subTotal + totalTaxes bei Direktbuchung)
   const m = r?.money;
   if (!m) return undefined;
