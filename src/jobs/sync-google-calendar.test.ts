@@ -199,3 +199,50 @@ describe('syncGoogleCalendarForProperty — Storno löscht das Google-Event (#66
     expect(deleteEventMock).not.toHaveBeenCalled();
   });
 });
+
+describe('buildCalendarEvent — Zeit-Marker (#793)', () => {
+  it('ohne planned-Zeiten: Titel/Beschreibung wie bisher', () => {
+    const e = buildCalendarEvent(mkReservation(), 'Farmhouse', '16:00', '12:00');
+    expect(e.summary).toBe('Darleen (4N, 2 Gäste)');
+    expect(e.description).toContain('Check-in: ');
+    expect(e.description).toContain('ab 16:00 Uhr');
+    expect(e.description).toContain('bis 12:00 Uhr');
+    expect(e.description).not.toContain('statt');
+  });
+
+  it('planned == Listing-Standard: kein Marker (auch bei HH:MM:SS)', () => {
+    const e = buildCalendarEvent(mkReservation({ planned_arrival: '16:00:00', planned_departure: '12:00' }), 'Farmhouse', '16:00', '12:00');
+    expect(e.summary).toBe('Darleen (4N, 2 Gäste)');
+  });
+
+  it('Late-Checkout: Marker im Titel, tatsächliche Zeit in der Beschreibung, weiterhin ganztägig', () => {
+    const e = buildCalendarEvent(mkReservation({ planned_departure: '18:00' }), 'Farmhouse', '16:00', '12:00');
+    expect(e.summary).toBe('Darleen (4N, 2 Gäste) ⏰ Late-Checkout 18:00');
+    expect(e.description).toContain('bis 18:00 Uhr (statt 12:00)');
+    expect(e.start).toEqual({ date: '2026-08-01' });
+    expect(e.end).toEqual({ date: '2026-08-06' });
+  });
+
+  it('früher Check-in: Marker "⏰ Check-in 14:00"', () => {
+    const e = buildCalendarEvent(mkReservation({ planned_arrival: '14:00' }), 'U19', '16:00', '12:00');
+    expect(e.summary).toBe('Darleen (4N, 2 Gäste) ⏰ Check-in 14:00');
+    expect(e.description).toContain('ab 14:00 Uhr (statt 16:00)');
+  });
+
+  it('früherer Check-out heißt nicht Late-Checkout', () => {
+    const e = buildCalendarEvent(mkReservation({ planned_departure: '10:00' }), 'Farmhouse', '16:00', '12:00');
+    expect(e.summary).toContain('⏰ Check-out 10:00');
+    expect(e.summary).not.toContain('Late');
+  });
+
+  it('beide Abweichungen -> beide Marker', () => {
+    const e = buildCalendarEvent(mkReservation({ planned_arrival: '14:00', planned_departure: '18:00' }), 'Farmhouse', '16:00', '12:00');
+    expect(e.summary).toBe('Darleen (4N, 2 Gäste) ⏰ Check-in 14:00 · ⏰ Late-Checkout 18:00');
+  });
+
+  it('ohne bekannten Listing-Standard: kein Marker (nichts, wogegen man abweicht)', () => {
+    const e = buildCalendarEvent(mkReservation({ planned_departure: '18:00' }), 'Farmhouse', undefined, undefined);
+    expect(e.summary).toBe('Darleen (4N, 2 Gäste)');
+    expect(e.description).toContain('bis 18:00 Uhr');
+  });
+});

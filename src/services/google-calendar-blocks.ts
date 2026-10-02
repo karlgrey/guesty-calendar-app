@@ -58,12 +58,42 @@ export function blockEventId(listingId: string, startDate: string): string {
   return toGoogleEventId(`blk-${listingId}-${startDate}`);
 }
 
+export const CLEANING_AFTER_LATE_CHECKOUT_LABEL = 'Reinigung nach Late-Checkout';
+
+/**
+ * Check-out-Tage mit Late-Checkout (#793): `planned_departure` später als der Listing-
+ * Standard. Guesty legt bei `lateCheckOut.blockDay` den Folgetag-Block auf genau diesen
+ * Tag (Nacht des Check-out-Datums); lokal ist der Grund NICHT gespeichert (nur
+ * `block_type` + `block_ref`), die Erkennung ist daher eine Heuristik: 1-Nacht-Block ohne
+ * Reservierung, der am Check-out-Tag einer Late-Checkout-Reservierung beginnt.
+ */
+export function lateCheckoutDates(
+  reservations: Array<{ status?: string; check_out: string; check_out_localized: string | null; planned_departure: string | null }>,
+  defaultCheckOut: string | undefined,
+): Set<string> {
+  const out = new Set<string>();
+  const std = defaultCheckOut?.slice(0, 5);
+  if (!std) return out;
+  for (const r of reservations) {
+    const dep = r.planned_departure?.slice(0, 5);
+    if (dep && dep > std) out.add((r.check_out_localized || r.check_out).split('T')[0]);
+  }
+  return out;
+}
+
 /** Build an all-day Google Calendar event for a blocked span. */
-export function buildBlockEvent(span: BlockSpan, propertyName: string, provider: string): calendar_v3.Schema$Event {
+export function buildBlockEvent(
+  span: BlockSpan,
+  propertyName: string,
+  provider: string,
+  lateCheckoutDays?: Set<string>,
+): calendar_v3.Schema$Event {
   const nights = nightsBetween(span.startDate, span.endExclusive);
   const source = PROVIDER_LABELS[provider] ?? provider;
+  const isCleaning =
+    !!lateCheckoutDays?.has(span.startDate) && nights === 1 && span.blockType !== 'reservation';
   return {
-    summary: blockLabel(span.blockType, provider),
+    summary: isCleaning ? CLEANING_AFTER_LATE_CHECKOUT_LABEL : blockLabel(span.blockType, provider),
     description: `Quelle: ${source} · ${nights} ${nights === 1 ? 'Nacht' : 'Nächte'} · ${ddmm(span.startDate)}–${ddmm(span.endExclusive)}`,
     location: propertyName,
     start: { date: span.startDate },

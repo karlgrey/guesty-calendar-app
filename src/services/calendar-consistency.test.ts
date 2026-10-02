@@ -259,3 +259,20 @@ describe('diffCalendarEvents — F6: dateTime-Event mit bekannter erwarteter ID'
     expect(diff.missing).toEqual([]);
   });
 });
+
+describe('diffCalendarEvents — Zeit-Marker und Reinigungs-Block (#793)', () => {
+  it('Marker im Titel ist keine Abweichung (verglichen wird Identität + Datum, nicht der Titel)', () => {
+    const exp = reservation({ eventId: 'ev-late', start: '2026-10-04', endExclusive: '2026-10-07' });
+    const act = googleAllDay('ev-late', '2026-10-04', '2026-10-07', { summary: 'Gast (2N, 6 Gäste) ⏰ Late-Checkout 18:00' });
+    expect(diffWide([exp], [act])).toEqual({ missing: [], extra: [], mismatched: [] });
+  });
+
+  it('Reinigungs-Block am Folgetag (erwarteter Block aus availability) ist keine Abweichung', () => {
+    const exp = block({ eventId: 'ev-clean', start: '2026-10-07', endExclusive: '2026-10-08' });
+    const act = googleAllDay('ev-clean', '2026-10-07', '2026-10-08', {
+      summary: 'Reinigung nach Late-Checkout',
+      extendedProperties: { private: { kind: 'owner-block' } },
+    });
+    expect(diffWide([exp], [act])).toEqual({ missing: [], extra: [], mismatched: [] });
+  });
+});

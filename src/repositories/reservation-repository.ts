@@ -65,8 +65,11 @@ export function upsertReservation(
         confirmation_code = excluded.confirmation_code,
         source = excluded.source,
         platform = excluded.platform,
-        planned_arrival = excluded.planned_arrival,
-        planned_departure = excluded.planned_departure,
+        -- #793: geplante Zeiten (Late-Checkout/früher Check-in, per PATCH #792 gesetzt) nie mit
+        -- NULL löschen — liefert das Kalender-Payload sie nicht mit, würde der ETL die Marker
+        -- (Google-Kalender, Wanja-Nachricht) stündlich wieder wegräumen.
+        planned_arrival = COALESCE(excluded.planned_arrival, reservations.planned_arrival),
+        planned_departure = COALESCE(excluded.planned_departure, reservations.planned_departure),
         currency = excluded.currency,
         total_price = excluded.total_price,
         host_payout = excluded.host_payout,
@@ -139,8 +142,11 @@ export function upsertReservationBatch(
         confirmation_code = excluded.confirmation_code,
         source = excluded.source,
         platform = excluded.platform,
-        planned_arrival = excluded.planned_arrival,
-        planned_departure = excluded.planned_departure,
+        -- #793: geplante Zeiten (Late-Checkout/früher Check-in, per PATCH #792 gesetzt) nie mit
+        -- NULL löschen — liefert das Kalender-Payload sie nicht mit, würde der ETL die Marker
+        -- (Google-Kalender, Wanja-Nachricht) stündlich wieder wegräumen.
+        planned_arrival = COALESCE(excluded.planned_arrival, reservations.planned_arrival),
+        planned_departure = COALESCE(excluded.planned_departure, reservations.planned_departure),
         currency = excluded.currency,
         total_price = excluded.total_price,
         host_payout = excluded.host_payout,

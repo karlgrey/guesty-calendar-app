@@ -11,10 +11,10 @@ import {
   getAvailabilityDateRange,
 } from '../repositories/availability-repository.js';
 import {
-  upsertReservationBatch,
   deleteOldReservations,
   deleteStaleReservationsInRange,
 } from '../repositories/reservation-repository.js';
+import { upsertReservationsTrackingTimes } from '../services/reservation-times-notifier.js';
 import { mapAvailabilityBatch } from '../mappers/availability-mapper.js';
 import { extractReservationsFromCalendar } from '../mappers/reservation-mapper.js';
 import { config } from '../config/index.js';
@@ -176,7 +176,7 @@ export async function syncAvailability(listingId: string, force: boolean = false
 
     // Batch upsert to database (uses transaction for performance)
     const upsertedCount = upsertAvailabilityBatch(availabilities);
-    const upsertedReservationsCount = reservations.length > 0 ? upsertReservationBatch(reservations) : 0;
+    const upsertedReservationsCount = reservations.length > 0 ? upsertReservationsTrackingTimes(reservations) : 0;
 
     // Delete stale/cancelled reservations that are no longer in the API response
     // This ensures cancelled reservations are removed from the database
@@ -295,7 +295,7 @@ export async function syncAvailabilityChunked(
           const reservations = extractReservationsFromCalendar(guestyCalendar, lastSyncedAt);
 
           const upsertedCount = upsertAvailabilityBatch(availabilities);
-          const upsertedReservationsCount = reservations.length > 0 ? upsertReservationBatch(reservations) : 0;
+          const upsertedReservationsCount = reservations.length > 0 ? upsertReservationsTrackingTimes(reservations) : 0;
 
           // Track reservation IDs from all chunks
           for (const reservation of reservations) {

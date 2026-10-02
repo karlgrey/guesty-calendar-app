@@ -12,7 +12,7 @@ import { getListingId, type PropertyConfig } from '../config/properties.js';
 import type { Reservation } from '../types/models.js';
 import logger from '../utils/logger.js';
 import { getAvailability } from '../repositories/availability-repository.js';
-import { buildBlockSpans, buildBlockEvent, blockEventId } from '../services/google-calendar-blocks.js';
+import { buildBlockSpans, buildBlockEvent, blockEventId, lateCheckoutDates } from '../services/google-calendar-blocks.js';
 import { addOneDay } from '../utils/date.js';
 
 export interface GoogleCalendarSyncResult {
@@ -58,8 +58,25 @@ export function reservationEventSpan(
   return { start, endExclusive: addOneDay(checkOut) };
 }
 
+const hhmm = (t: string | null | undefined): string | null => (t ? t.slice(0, 5) : null);
+
+/**
+ * Abweichung der geplanten Zeit vom Listing-Standard (#793). Ohne bekannten Standard
+ * gibt es nichts, wogegen man abweichen könnte -> kein Marker (die Zeit steht dann nur
+ * in der Beschreibung).
+ */
+function timeDeviation(planned: string | null | undefined, standard: string | undefined): { actual: string; standard: string } | null {
+  const p = hhmm(planned);
+  const d = hhmm(standard);
+  return p && d && p !== d ? { actual: p, standard: d } : null;
+}
+
 /**
  * Build a Google Calendar event from a reservation
+ *
+ * #793: weicht `planned_arrival`/`planned_departure` vom Listing-Standard ab, trägt der
+ * Titel einen Marker (`⏰ Late-Checkout 18:00` / `⏰ Check-in 14:00`) und die Beschreibung
+ * die tatsächlichen Zeiten. Das Event bleibt ganztägig (Dauer-Logik unverändert).
  */
 export function buildCalendarEvent(
   reservation: Reservation,
@@ -76,17 +93,26 @@ export function buildCalendarEvent(
   const checkOut = (reservation.check_out_localized || reservation.check_out).split('T')[0];
   const { start: checkIn, endExclusive: endDate } = reservationEventSpan(reservation);
 
+  const arrival = timeDeviation(reservation.planned_arrival, checkInTime);
+  const departure = timeDeviation(reservation.planned_departure, checkOutTime);
+  const effIn = hhmm(reservation.planned_arrival) ?? checkInTime;
+  const effOut = hhmm(reservation.planned_departure) ?? checkOutTime;
+
+  const markers: string[] = [];
+  if (arrival) markers.push(`⏰ Check-in ${arrival.actual}`);
+  if (departure) markers.push(departure.actual > departure.standard ? `⏰ Late-Checkout ${departure.actual}` : `⏰ Check-out ${departure.actual}`);
+
   const descLines = [
     `Status: ${status}`,
-    `Check-in: ${formatDateDE(checkIn)}${checkInTime ? ' ab ' + checkInTime + ' Uhr' : ''}`,
-    `Check-out: ${formatDateDE(checkOut)}${checkOutTime ? ' bis ' + checkOutTime + ' Uhr' : ''}`,
+    `Check-in: ${formatDateDE(checkIn)}${effIn ? ' ab ' + effIn + ' Uhr' : ''}${arrival ? ` (statt ${arrival.standard})` : ''}`,
+    `Check-out: ${formatDateDE(checkOut)}${effOut ? ' bis ' + effOut + ' Uhr' : ''}${departure ? ` (statt ${departure.standard})` : ''}`,
     `Nächte: ${nights}`,
     `Gäste: ${guests}`,
     `Quelle: ${source}`,
   ];
 
   return {
-    summary: `${guestName} (${nights}N, ${guests} Gäste)`,
+    summary: `${guestName} (${nights}N, ${guests} Gäste)${markers.length ? ' ' + markers.join(' · ') : ''}`,
     description: descLines.join('\n'),
     location: propertyName,
     start: { date: checkIn },
@@ -191,12 +217,13 @@ export async function syncGoogleCalendarForProperty(
     const spans = buildBlockSpans(
       availability.map((a) => ({ date: a.date, status: a.status, block_type: a.block_type }))
     );
+    const lateDays = lateCheckoutDates(activeReservations, checkOutTime);
     const desiredBlockIds = new Set(spans.map((s) => blockEventId(listingId, s.startDate)));
 
     let blockEventsUpserted = 0;
     for (const span of spans) {
       try {
-        await googleCalendarClient.upsertEvent(calendarId, blockEventId(listingId, span.startDate), buildBlockEvent(span, name, property.provider));
+        await googleCalendarClient.upsertEvent(calendarId, blockEventId(listingId, span.startDate), buildBlockEvent(span, name, property.provider, lateDays));
         blockEventsUpserted++;
         await new Promise((resolve) => setTimeout(resolve, 200));
       } catch (error) {
