@@ -121,6 +121,16 @@ vi.mock('../repositories/reservation-repository.js', () => ({
   updateGuestCompanyByGuestId: vi.fn().mockReturnValue(2),
 }));
 
+// #799: Zeit-Abweichungen — Service gemockt (Logik in stay-times-service.test.ts)
+const getStayTimesMock = vi.fn();
+const setStayTimesMock = vi.fn();
+const deleteStayTimesMock = vi.fn();
+vi.mock('../services/stay-times-service.js', () => ({
+  getStayTimes: (...a: unknown[]) => getStayTimesMock(...a),
+  setStayTimes: (...a: unknown[]) => setStayTimesMock(...a),
+  deleteStayTimes: (...a: unknown[]) => deleteStayTimesMock(...a),
+}));
+
 // #725: Hostex Owner-Blocks — Client mocken, echte properties.json (Slug
 // bootshaus-alte-oder, hostexPropertyId '12659677') wie bei /reservations.
 const getAvailabilitiesMock = vi.fn();
@@ -818,6 +828,87 @@ describe('agent-api', () => {
         headers: { 'Content-Type': 'application/json' },
       });
       expect(r.status).toBe(401);
+    });
+  });
+
+  describe('Zeit-Abweichungen /reservations/:id/times (#799)', () => {
+    const times = { effectiveDeparture: '18:00', override: { plannedDeparture: '18:00' } };
+    beforeEach(() => { getStayTimesMock.mockReset(); setStayTimesMock.mockReset(); deleteStayTimesMock.mockReset(); });
+
+    it('GET /reservations/:id enthält times (lokale Zeile) bzw. null', async () => {
+      getStayTimesMock.mockReturnValueOnce({ times });
+      let r = await fetch(`${base}/api/agent/reservations/res-1`, { headers: KEY });
+      expect(await r.json()).toMatchObject({ status: 'reserved', times });
+      getStayTimesMock.mockReturnValueOnce(null);
+      r = await fetch(`${base}/api/agent/reservations/res-1`, { headers: KEY });
+      expect((await r.json()).times).toBeNull();
+    });
+
+    it('GET /reservations/:id: Lookup-Fehler ist non-fatal (times null)', async () => {
+      getStayTimesMock.mockImplementationOnce(() => { throw new Error('db'); });
+      const r = await fetch(`${base}/api/agent/reservations/res-1`, { headers: KEY });
+      expect(r.status).toBe(200);
+      expect((await r.json()).times).toBeNull();
+    });
+
+    it('GET /reservations/:id/times -> 200 / 404', async () => {
+      getStayTimesMock.mockReturnValueOnce({ reservationId: 'res-1', times });
+      let r = await fetch(`${base}/api/agent/reservations/res-1/times`, { headers: KEY });
+      expect(r.status).toBe(200);
+      expect(await r.json()).toMatchObject({ reservationId: 'res-1' });
+      getStayTimesMock.mockReturnValueOnce(null);
+      r = await fetch(`${base}/api/agent/reservations/nix/times`, { headers: KEY });
+      expect(r.status).toBe(404);
+    });
+
+    it('PUT -> 200, Body und source agent durchgereicht', async () => {
+      setStayTimesMock.mockResolvedValueOnce({ ok: true, reservationId: 'res-1', times, nextDayBlock: { applied: false, method: 'none' }, calendarSynced: true });
+      const body = { plannedDeparture: '18:00', blockNextDay: true };
+      const r = await fetch(`${base}/api/agent/reservations/res-1/times`, { method: 'PUT', headers: KEY, body: JSON.stringify(body) });
+      expect(r.status).toBe(200);
+      expect(await r.json()).toMatchObject({ ok: true, calendarSynced: true });
+      expect(setStayTimesMock).toHaveBeenCalledWith('res-1', body, 'agent');
+    });
+
+    it('PUT -> 400/404/409 aus dem Service werden durchgereicht', async () => {
+      const { ValidationError, NotFoundError, ConflictError } = await import('../utils/errors.js');
+      for (const [err, status] of [[new ValidationError('x'), 400], [new NotFoundError('x'), 404], [new ConflictError('x'), 409]] as const) {
+        setStayTimesMock.mockRejectedValueOnce(err);
+        const r = await fetch(`${base}/api/agent/reservations/res-1/times`, { method: 'PUT', headers: KEY, body: '{}' });
+        expect(r.status).toBe(status);
+      }
+    });
+
+    it('PUT mit Guesty-Block-Fehler -> 409 mit error/details, Override-Stand im Body', async () => {
+      setStayTimesMock.mockResolvedValueOnce({
+        ok: true, reservationId: 'res-1', times, calendarSynced: true,
+        nextDayBlock: { applied: false, method: 'listing-calendar', reason: 'Guesty-Aufruf fehlgeschlagen: x' },
+        blockError: { message: 'Guesty API error', details: { m: 'dates blocked' } },
+      });
+      const r = await fetch(`${base}/api/agent/reservations/res-1/times`, { method: 'PUT', headers: KEY, body: '{"blockNextDay":true}' });
+      expect(r.status).toBe(409);
+      expect(await r.json()).toMatchObject({
+        error: expect.stringContaining('Guesty API error'), details: { m: 'dates blocked' },
+        times, nextDayBlock: { applied: false, method: 'listing-calendar' },
+      });
+    });
+
+    it('DELETE -> 200 / 404', async () => {
+      deleteStayTimesMock.mockResolvedValueOnce({ ok: true, reservationId: 'res-1', times: { override: null }, nextDayBlock: { applied: true, method: 'reservation' }, calendarSynced: true });
+      let r = await fetch(`${base}/api/agent/reservations/res-1/times`, { method: 'DELETE', headers: KEY });
+      expect(r.status).toBe(200);
+      expect(deleteStayTimesMock).toHaveBeenCalledWith('res-1');
+      const { NotFoundError } = await import('../utils/errors.js');
+      deleteStayTimesMock.mockRejectedValueOnce(new NotFoundError('keine'));
+      r = await fetch(`${base}/api/agent/reservations/res-1/times`, { method: 'DELETE', headers: KEY });
+      expect(r.status).toBe(404);
+    });
+
+    it('401 ohne Key', async () => {
+      for (const method of ['GET', 'PUT', 'DELETE']) {
+        const r = await fetch(`${base}/api/agent/reservations/res-1/times`, { method, headers: { 'Content-Type': 'application/json' } });
+        expect(r.status).toBe(401);
+      }
     });
   });
 });
