@@ -4,9 +4,9 @@ import Database from 'better-sqlite3';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { setDatabase, resetDatabase } from '../db/index.js';
+import { setDatabase, resetDatabase, executeSchema, runMigrations } from '../db/index.js';
 import {
-  upsertOverride, getOverride, deleteOverride, getOverridesForReservations,
+  upsertOverride, getOverride, deleteOverride, getOverridesForReservations, setBlockState,
 } from './stay-time-override-repository.js';
 
 let db: Database.Database;
@@ -14,11 +14,24 @@ const migrationsDir = join(dirname(fileURLToPath(import.meta.url)), '../db/migra
 beforeEach(() => {
   db = new Database(':memory:');
   db.exec(readFileSync(join(migrationsDir, '035_add_stay_time_overrides.sql'), 'utf-8'));
+  db.exec(readFileSync(join(migrationsDir, '036_add_stay_time_override_block_state.sql'), 'utf-8'));
   setDatabase(db);
 });
 afterEach(() => { resetDatabase(); db.close(); });
 
 describe('stay-time-override-repository', () => {
+  it('Migration 036: block_state ist standardmäßig null; setBlockState schreibt/löscht, Upsert lässt ihn stehen', () => {
+    upsertOverride({ reservationId: 'r1', plannedDeparture: '18:00', source: 'agent' });
+    expect(getOverride('r1')!.blockState).toBeNull();
+    expect(setBlockState('r1', 'set-by-us')).toBe(true);
+    upsertOverride({ reservationId: 'r1', note: 'x', source: 'admin' });
+    expect(getOverride('r1')!.blockState).toBe('set-by-us');
+    expect(getOverridesForReservations(['r1']).get('r1')!.blockState).toBe('set-by-us');
+    setBlockState('r1', null);
+    expect(getOverride('r1')!.blockState).toBeNull();
+    expect(setBlockState('nix', 'already-blocked')).toBe(false);
+  });
+
   it('legt einen Override an und liest ihn', () => {
     upsertOverride({ reservationId: 'r1', plannedDeparture: '18:00', blockNextDay: true, note: 'Chat', source: 'agent' });
     const o = getOverride('r1')!;
@@ -78,5 +91,19 @@ describe('stay-time-override-repository', () => {
     const ids = Array.from({ length: 2500 }, (_, i) => `r${i}`);
     upsertOverride({ reservationId: 'r2000', plannedArrival: '13:00', source: 'agent' });
     expect(getOverridesForReservations(ids).size).toBe(1);
+  });
+});
+
+describe('Migration 036 im Runner', () => {
+  it('runMigrations legt block_state an', () => {
+    const d = new Database(':memory:');
+    setDatabase(d);
+    executeSchema();
+    runMigrations();
+    const cols = (d.prepare('PRAGMA table_info(stay_time_overrides)').all() as Array<{ name: string }>).map((c) => c.name);
+    expect(cols).toContain('block_state');
+    expect(d.prepare("SELECT 1 FROM migrations WHERE filename = '036_add_stay_time_override_block_state.sql'").get()).toBeTruthy();
+    resetDatabase();
+    d.close();
   });
 });

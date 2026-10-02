@@ -1,5 +1,5 @@
 // #799: Ende-zu-Ende über die Route: echter Service + In-Memory-DB + echte properties.json,
-// gemockt sind nur Guesty-Client, updateReservation-Pfad und der Google-Kalender-Sync.
+// gemockt sind nur Guesty-Client (getCalendar/Listing-Kalender-PUT), updateReservation (darf nie aufgerufen werden) und der Google-Kalender-Sync.
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import express from 'express';
 import type { Server } from 'http';
@@ -15,8 +15,9 @@ vi.mock('../config/index.js', async (importOriginal) => {
   return { ...mod, config: { ...mod.config, agentApiKey: 'k'.repeat(40), agentApiKeySet: ['k'.repeat(40)] } };
 });
 const setCalMock = vi.fn();
+const getCalMock = vi.fn();
 vi.mock('../services/guesty-client.js', () => ({
-  guestyClient: { getReservation: vi.fn().mockResolvedValue({ _id: 'x', status: 'confirmed' }), setListingCalendarStatus: (...a: unknown[]) => setCalMock(...a) },
+  guestyClient: { getReservation: vi.fn().mockResolvedValue({ _id: 'x', status: 'confirmed' }), setListingCalendarStatus: (...a: unknown[]) => setCalMock(...a), getCalendar: (...a: unknown[]) => getCalMock(...a) },
 }));
 const updateReservationMock = vi.fn();
 vi.mock('../services/reservation-update-service.js', async (orig) => ({
@@ -27,6 +28,7 @@ const syncMock = vi.fn();
 vi.mock('../jobs/sync-google-calendar.js', () => ({ syncGoogleCalendarForProperty: (...a: unknown[]) => syncMock(...a) }));
 
 import agentApiRoutes from './agent-api.js';
+import { resetCalendarSyncGuard } from '../services/stay-times-service.js';
 import { getOverride } from '../repositories/stay-time-override-repository.js';
 import { ExternalApiError } from '../utils/errors.js';
 
@@ -58,45 +60,65 @@ function insertRes(id: string, listing: string, over: Record<string, unknown> = 
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resetCalendarSyncGuard();
   db = new Database(':memory:');
   db.exec(`CREATE TABLE listings (id TEXT PRIMARY KEY, check_in_time TEXT, check_out_time TEXT, taxes TEXT NOT NULL DEFAULT '[]', active INTEGER NOT NULL DEFAULT 1);
     INSERT INTO listings (id, check_in_time, check_out_time) VALUES ('${FARMHOUSE_LISTING}','08:00:00','12:00:00'), ('12659677','15:00:00','12:00:00');`);
-  for (const m of ['002_add_reservations_table.sql', '012_add_guest_fingerprint.sql', '035_add_stay_time_overrides.sql']) {
+  for (const m of ['002_add_reservations_table.sql', '012_add_guest_fingerprint.sql', '035_add_stay_time_overrides.sql', '036_add_stay_time_override_block_state.sql']) {
     db.exec(readFileSync(join(migrationsDir, m), 'utf-8'));
   }
   setDatabase(db);
   syncMock.mockResolvedValue({ success: true, eventsUpserted: 1, eventsDeleted: 0 });
   updateReservationMock.mockResolvedValue({});
   setCalMock.mockResolvedValue({});
+  getCalMock.mockResolvedValue([{ date: future(7), status: 'available' }]);
 });
 afterEach(() => { resetDatabase(); db.close(); });
 
 const put = (id: string, body: unknown) => fetch(`${base}/api/agent/reservations/${id}/times`, { method: 'PUT', headers: KEY, body: JSON.stringify(body) });
 
 describe('PUT/GET/DELETE /reservations/:id/times — Ende zu Ende (#799)', () => {
-  it('Farmhouse-Direktbuchung: Override + Block über updateReservation (blockDay), Kalender-Sync', async () => {
+  it('Farmhouse-Direktbuchung: Override + Block über Listing-Kalender (nie updateReservation), Sync fire-and-forget', async () => {
     insertRes('fh-direkt', FARMHOUSE_LISTING);
     const r = await put('fh-direkt', { plannedDeparture: '18:00', blockNextDay: true, note: 'Chat' });
     expect(r.status).toBe(200);
     const body = await r.json();
     expect(body).toMatchObject({
-      ok: true, reservationId: 'fh-direkt', calendarSynced: true,
-      nextDayBlock: { applied: true, method: 'reservation' },
-      times: { effectiveDeparture: '18:00', departureSource: 'override', override: { blockNextDay: true, source: 'agent' } },
+      ok: true, reservationId: 'fh-direkt', calendarSync: 'angestoßen',
+      nextDayBlock: { applied: true, method: 'listing-calendar', blockState: 'set-by-us' },
+      times: { effectiveDeparture: '18:00', departureSource: 'override', override: { blockNextDay: true, blockState: 'set-by-us', source: 'agent' } },
     });
-    expect(updateReservationMock).toHaveBeenCalledWith('fh-direkt', { lateCheckOut: { blockDay: true, addAdditionalFee: false } });
-    expect(setCalMock).not.toHaveBeenCalled();
-    expect(syncMock).toHaveBeenCalledTimes(1);
-  });
-
-  it('Farmhouse-Kanalbuchung (Airbnb): Block über Listing-Kalender am Check-out-Tag', async () => {
-    insertRes('fh-airbnb', FARMHOUSE_LISTING, { source: 'airbnb2', platform: 'airbnb2' });
-    const r = await put('fh-airbnb', { plannedDeparture: '17:00', blockNextDay: true });
-    expect((await r.json()).nextDayBlock).toEqual({ applied: true, method: 'listing-calendar' });
+    expect(body).not.toHaveProperty('calendarSynced');
     expect(setCalMock).toHaveBeenCalledWith(FARMHOUSE_LISTING, {
-      startDate: future(7), endDate: future(7), status: 'unavailable', note: 'Late-Checkout fh-airbnb',
+      startDate: future(7), endDate: future(7), status: 'unavailable', note: 'Late-Checkout fh-direkt',
     });
     expect(updateReservationMock).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(syncMock).toHaveBeenCalledTimes(1));
+  });
+
+  it('PUT antwortet, obwohl der Kalender-Sync nie fertig wird', async () => {
+    insertRes('fh-direkt', FARMHOUSE_LISTING);
+    syncMock.mockReturnValue(new Promise(() => {}));
+    const r = await put('fh-direkt', { plannedDeparture: '18:00' });
+    expect(r.status).toBe(200);
+    expect((await r.json()).calendarSync).toBe('angestoßen');
+  });
+
+  it('Farmhouse-Kanalbuchung (Airbnb): gleicher Pfad; Tag mit pt-Block -> already-blocked, kein Schreibaufruf', async () => {
+    insertRes('fh-airbnb', FARMHOUSE_LISTING, { source: '', platform: 'airbnb2' });
+    getCalMock.mockResolvedValue([{ date: future(7), status: 'unavailable', blockRefs: [{ type: 'pt' }] }]);
+    const r = await put('fh-airbnb', { plannedDeparture: '17:00', blockNextDay: true });
+    expect(r.status).toBe(200);
+    expect((await r.json()).nextDayBlock).toEqual({ applied: false, method: 'none', reason: 'Folgetag bereits geblockt (pt)', blockState: 'already-blocked' });
+    expect(setCalMock).not.toHaveBeenCalled();
+    expect(getOverride('fh-airbnb')).toMatchObject({ plannedDeparture: '17:00', blockNextDay: true, blockState: 'already-blocked' });
+    // Rücknahme per DELETE: already-blocked -> kein Guesty-Aufruf, 200
+    getCalMock.mockClear();
+    const d = await fetch(`${base}/api/agent/reservations/fh-airbnb/times`, { method: 'DELETE', headers: KEY });
+    expect(d.status).toBe(200);
+    expect(getCalMock).not.toHaveBeenCalled();
+    expect(setCalMock).not.toHaveBeenCalled();
+    expect(getOverride('fh-airbnb')).toBeNull();
   });
 
   it('Hostex-Objekt: Override gespeichert, KEIN Guesty-Aufruf, auch bei blockNextDay true', async () => {
@@ -104,10 +126,11 @@ describe('PUT/GET/DELETE /reservations/:id/times — Ende zu Ende (#799)', () =>
     const r = await put('hx-1', { plannedArrival: '13:00', plannedDeparture: '14:00', blockNextDay: true });
     expect(r.status).toBe(200);
     const body = await r.json();
-    expect(body.nextDayBlock).toEqual({ applied: false, method: 'none', reason: 'Objekt blockt keinen Folgetag' });
+    expect(body.nextDayBlock).toEqual({ applied: false, method: 'none', reason: 'Objekt blockt keinen Folgetag', blockState: null });
     expect(body.times).toMatchObject({ effectiveArrival: '13:00', effectiveDeparture: '14:00' });
     expect(updateReservationMock).not.toHaveBeenCalled();
     expect(setCalMock).not.toHaveBeenCalled();
+    expect(getCalMock).not.toHaveBeenCalled();
     expect(getOverride('hx-1')).toMatchObject({ plannedArrival: '13:00', blockNextDay: true });
   });
 
@@ -116,6 +139,7 @@ describe('PUT/GET/DELETE /reservations/:id/times — Ende zu Ende (#799)', () =>
     setCalMock.mockRejectedValueOnce(new ExternalApiError('Guesty API error', 400, 'guesty', { message: 'invalid range' }));
     const r = await put('fh-airbnb', { plannedDeparture: '17:00', blockNextDay: true });
     expect(r.status).toBe(409);
+    expect(getOverride('fh-airbnb')!.blockState).toBeNull();
     expect(await r.json()).toMatchObject({ details: { message: 'invalid range' }, nextDayBlock: { applied: false }, times: { effectiveDeparture: '17:00' } });
     expect(getOverride('fh-airbnb')).toMatchObject({ plannedDeparture: '17:00', blockNextDay: true });
   });
@@ -123,6 +147,7 @@ describe('PUT/GET/DELETE /reservations/:id/times — Ende zu Ende (#799)', () =>
   it('GET liefert effektive Zeiten ohne Guesty; DELETE nimmt Block zurück und löscht', async () => {
     insertRes('fh-airbnb', FARMHOUSE_LISTING, { source: 'airbnb2' });
     await put('fh-airbnb', { plannedDeparture: '17:00', blockNextDay: true });
+    getCalMock.mockResolvedValue([{ date: future(7), status: 'unavailable', note: 'Late-Checkout fh-airbnb', blockRefs: [{ type: 'm', note: 'Late-Checkout fh-airbnb' }] }]);
     let r = await fetch(`${base}/api/agent/reservations/fh-airbnb/times`, { headers: KEY });
     expect(await r.json()).toMatchObject({ provider: 'guesty', propertySlug: 'farmhouse', times: { effectiveDeparture: '17:00', listingDefaultDeparture: '12:00' } });
     r = await fetch(`${base}/api/agent/reservations/fh-airbnb/times`, { method: 'DELETE', headers: KEY });
@@ -131,6 +156,17 @@ describe('PUT/GET/DELETE /reservations/:id/times — Ende zu Ende (#799)', () =>
     expect(getOverride('fh-airbnb')).toBeNull();
     r = await fetch(`${base}/api/agent/reservations/fh-airbnb/times`, { method: 'DELETE', headers: KEY });
     expect(r.status).toBe(404);
+  });
+
+  it('DELETE nach set-by-us, aber Tag inzwischen pt: kein Schreibaufruf, Override gelöscht', async () => {
+    insertRes('fh-airbnb', FARMHOUSE_LISTING, { source: 'airbnb2' });
+    await put('fh-airbnb', { blockNextDay: true });
+    setCalMock.mockClear();
+    getCalMock.mockResolvedValue([{ date: future(7), status: 'unavailable', blockRefs: [{ type: 'pt' }] }]);
+    const r = await fetch(`${base}/api/agent/reservations/fh-airbnb/times`, { method: 'DELETE', headers: KEY });
+    expect(r.status).toBe(200);
+    expect(setCalMock).not.toHaveBeenCalled();
+    expect(getOverride('fh-airbnb')).toBeNull();
   });
 
   it('400 (unbekanntes Feld), 404 (unbekannte Reservierung), 409 (storniert / vergangen)', async () => {

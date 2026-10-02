@@ -862,11 +862,11 @@ describe('agent-api', () => {
     });
 
     it('PUT -> 200, Body und source agent durchgereicht', async () => {
-      setStayTimesMock.mockResolvedValueOnce({ ok: true, reservationId: 'res-1', times, nextDayBlock: { applied: false, method: 'none' }, calendarSynced: true });
+      setStayTimesMock.mockResolvedValueOnce({ ok: true, reservationId: 'res-1', times, nextDayBlock: { applied: false, method: 'none' }, calendarSync: 'angestoßen' });
       const body = { plannedDeparture: '18:00', blockNextDay: true };
       const r = await fetch(`${base}/api/agent/reservations/res-1/times`, { method: 'PUT', headers: KEY, body: JSON.stringify(body) });
       expect(r.status).toBe(200);
-      expect(await r.json()).toMatchObject({ ok: true, calendarSynced: true });
+      expect(await r.json()).toMatchObject({ ok: true, calendarSync: 'angestoßen' });
       expect(setStayTimesMock).toHaveBeenCalledWith('res-1', body, 'agent');
     });
 
@@ -881,7 +881,7 @@ describe('agent-api', () => {
 
     it('PUT mit Guesty-Block-Fehler -> 409 mit error/details, Override-Stand im Body', async () => {
       setStayTimesMock.mockResolvedValueOnce({
-        ok: true, reservationId: 'res-1', times, calendarSynced: true,
+        ok: true, reservationId: 'res-1', times, calendarSync: 'angestoßen',
         nextDayBlock: { applied: false, method: 'listing-calendar', reason: 'Guesty-Aufruf fehlgeschlagen: x' },
         blockError: { message: 'Guesty API error', details: { m: 'dates blocked' } },
       });
@@ -894,7 +894,7 @@ describe('agent-api', () => {
     });
 
     it('DELETE -> 200 / 404', async () => {
-      deleteStayTimesMock.mockResolvedValueOnce({ ok: true, reservationId: 'res-1', times: { override: null }, nextDayBlock: { applied: true, method: 'reservation' }, calendarSynced: true });
+      deleteStayTimesMock.mockResolvedValueOnce({ ok: true, reservationId: 'res-1', times: { override: null }, nextDayBlock: { applied: true, method: 'reservation' }, calendarSync: 'angestoßen' });
       let r = await fetch(`${base}/api/agent/reservations/res-1/times`, { method: 'DELETE', headers: KEY });
       expect(r.status).toBe(200);
       expect(deleteStayTimesMock).toHaveBeenCalledWith('res-1');

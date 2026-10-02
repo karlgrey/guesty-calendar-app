@@ -97,6 +97,8 @@ export interface GuestyCalendarDay {
   minNights: number;
   isBaseMinNights?: boolean;
   status: 'available' | 'unavailable';
+  /** Tagesnotiz (z. B. unser Late-Checkout-Block) */
+  note?: string;
 
   // Multi-unit properties
   allotment?: number;
@@ -124,7 +126,9 @@ export interface GuestyCalendarDay {
     listingId: string;
     startDate: string;
     endDate: string;
-    type: string;
+    type: string; // m = manuell, pt = Vorbereitungszeit, cio = Check-out-Block, ...
+    /** Notiz am Block (Listing-Kalender-PUT mit note) */
+    note?: string;
     reservationId?: string;
     reservation?: {
       _id: string;

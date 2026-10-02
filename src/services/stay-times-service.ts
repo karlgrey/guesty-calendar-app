@@ -2,16 +2,17 @@
  * Zeit-Abweichungen pro Aufenthalt (#799) — EIN Service für Agent-API und Admin-Formular.
  *
  * Zusagen (Chat/Mail, Guesty UND Hostex) leben in unserer DB (`stay_time_overrides`,
- * Migration 035); der Kalender-Sync (`sync-google-calendar.ts`) macht daraus den Marker für
- * die Putzcrew. Guesty wird nur für den Folgetag-Block geschrieben (`next-day-block.ts`,
- * nur Objekte mit `blocksNextDayOnLateCheckout`). Keine Gebühren, keine Datums-/Personen-
+ * Migration 035/036); der Kalender-Sync (`sync-google-calendar.ts`) macht daraus den Marker für
+ * die Putzcrew — fire-and-forget NACH der Antwort (der Sync des ganzen Objekts dauert Minuten).
+ * Guesty wird nur für den Folgetag-Block geschrieben (`next-day-block.ts`, Listing-Kalender,
+ * nur Objekte mit `blocksNextDayOnLateCheckout`, nur wenn der Tag frei ist). Keine Gebühren, keine Datums-/Personen-
  * änderung (dafür PATCH #792).
  */
-import { findPropertyByListingId } from '../config/properties.js';
+import { findPropertyByListingId, type PropertyConfig } from '../config/properties.js';
 import { getReservationById } from '../repositories/reservation-repository.js';
 import { getListingById } from '../repositories/listings-repository.js';
 import {
-  getOverride, upsertOverride, deleteOverride, type StayTimeOverride, type OverrideSource,
+  getOverride, upsertOverride, deleteOverride, setBlockState, type StayTimeOverride, type OverrideSource, type BlockState,
 } from '../repositories/stay-time-override-repository.js';
 import { effectiveTimes } from './effective-stay-times.js';
 import { applyNextDayBlock, type NextDayBlockResult } from './next-day-block.js';
@@ -38,6 +39,7 @@ export interface OverrideView {
   plannedArrival: string | null;
   plannedDeparture: string | null;
   blockNextDay: boolean;
+  blockState: BlockState | null;
   note: string | null;
   source: OverrideSource;
   updatedAt: string;
@@ -77,9 +79,8 @@ export interface StayTimesResult {
   reservationId: string;
   times: TimesView;
   nextDayBlock: Omit<NextDayBlockResult, 'error'>;
-  calendarSynced: boolean;
-  /** gesetzt, wenn der Kalender-Sync nicht lief/scheiterte */
-  calendarSync?: string;
+  /** Kalender-Sync läuft fire-and-forget NACH der Antwort: 'angestoßen' | 'kein Google-Kalender' | 'Override unverändert' */
+  calendarSync: string;
   /** Guesty-Fehler beim Folgetag-Block — Aufrufer macht daraus 409 (Override ist trotzdem gespeichert) */
   blockError?: { message: string; details?: unknown };
 }
@@ -118,7 +119,7 @@ function validate(body: unknown): StayTimesInput {
 function overrideView(o: StayTimeOverride | null): OverrideView | null {
   return o
     ? {
-        plannedArrival: o.plannedArrival, plannedDeparture: o.plannedDeparture, blockNextDay: o.blockNextDay,
+        plannedArrival: o.plannedArrival, plannedDeparture: o.plannedDeparture, blockNextDay: o.blockNextDay, blockState: o.blockState,
         note: o.note, source: o.source, updatedAt: o.updatedAt,
       }
     : null;
@@ -180,24 +181,46 @@ function requireEditable(reservationId: string, opts: StayTimesOptions): Reserva
   return r;
 }
 
-async function syncCalendar(r: Reservation): Promise<{ calendarSynced: boolean; calendarSync?: string }> {
-  const property = findPropertyByListingId(r.listing_id);
-  if (!property?.googleCalendar?.enabled) return { calendarSynced: false, calendarSync: 'Objekt ohne aktiven Google-Kalender' };
+// Fire-and-forget-Sync mit In-Memory-Guard je Objekt: Der Sync lädt Reservierungen/Overrides zu
+// Beginn — eine Änderung während eines laufenden Syncs würde sonst fehlen. Läuft schon einer,
+// wird ein Nachlauf vermerkt (genau ein weiterer Lauf, egal wie viele Anforderungen).
+const syncRunning = new Map<string, { again: boolean }>();
+
+/** nur für Tests */
+export function resetCalendarSyncGuard(): void { syncRunning.clear(); }
+
+async function runCalendarSync(property: PropertyConfig, reservationId: string): Promise<void> {
+  const state = syncRunning.get(property.slug);
+  if (state) { state.again = true; return; }
+  const cur = { again: false };
+  syncRunning.set(property.slug, cur);
   try {
-    const res = await syncGoogleCalendarForProperty(property);
-    if (res.success) return { calendarSynced: true };
-    logger.warn({ reservationId: r.reservation_id, error: res.error }, 'Kalender-Sync nach Zeit-Abweichung fehlgeschlagen (non-fatal)');
-  } catch (error) {
-    logger.warn({ error, reservationId: r.reservation_id }, 'Kalender-Sync nach Zeit-Abweichung geworfen (non-fatal)');
+    do {
+      cur.again = false;
+      try {
+        const res = await syncGoogleCalendarForProperty(property);
+        if (!res.success) logger.warn({ reservationId, error: res.error }, 'Kalender-Sync nach Zeit-Abweichung fehlgeschlagen (non-fatal)');
+      } catch (error) {
+        logger.warn({ error, reservationId }, 'Kalender-Sync nach Zeit-Abweichung geworfen (non-fatal)');
+      }
+    } while (cur.again);
+  } finally {
+    syncRunning.delete(property.slug);
   }
-  return { calendarSynced: false, calendarSync: 'nächster Lauf' };
+}
+
+/** Stößt den Sync an, ohne zu warten (Start nach dem aktuellen Tick, also nach dem Senden der Antwort). */
+function triggerCalendarSync(r: Reservation): string {
+  const property = findPropertyByListingId(r.listing_id);
+  if (!property?.googleCalendar?.enabled) return 'kein Google-Kalender';
+  setImmediate(() => { void runCalendarSync(property, r.reservation_id); });
+  return 'angestoßen';
 }
 
 function blockTarget(r: Reservation) {
   return {
     reservationId: r.reservation_id,
     listingId: r.listing_id,
-    source: r.source,
     checkOutDay: day(r.check_out_localized, r.check_out),
   };
 }
@@ -221,26 +244,32 @@ export async function setStayTimes(
   const saved = upsertOverride({ reservationId, ...input, source });
   logger.info({ reservationId, source, fields: Object.keys(input) }, 'Zeit-Abweichung gespeichert');
 
+  const prevState = previous?.blockState ?? null;
   let block: Pick<StayTimesResult, 'nextDayBlock' | 'blockError'> = {
-    nextDayBlock: { applied: false, method: 'none', reason: 'blockNextDay nicht angefragt' },
+    nextDayBlock: { applied: false, method: 'none', reason: 'blockNextDay nicht angefragt', blockState: prevState },
   };
   // Nur bei ausdrücklichem blockNextDay und wenn sich dadurch etwas bei Guesty ändern kann
   // (anlegen, oder eine zuvor gesetzte Sperre aufheben) — sonst kein externer Aufruf.
   if (input.blockNextDay !== undefined && (input.blockNextDay || previous?.blockNextDay)) {
-    block = splitBlock(await applyNextDayBlock(blockTarget(r), input.blockNextDay));
+    const result = await applyNextDayBlock(blockTarget(r), input.blockNextDay, prevState);
+    block = splitBlock(result);
+    // Zustand nur bei erfolgreichem Aufruf fortschreiben (bei Fehler bleibt er für den Retry).
+    if (!result.error && result.blockState !== prevState) {
+      setBlockState(reservationId, result.blockState);
+      saved.blockState = result.blockState;
+    }
   } else if (input.blockNextDay !== undefined) {
-    block = { nextDayBlock: { applied: false, method: 'none', reason: 'kein Folgetag-Block gesetzt' } };
+    block = { nextDayBlock: { applied: false, method: 'none', reason: 'kein Folgetag-Block gesetzt', blockState: prevState } };
   } else if (!findPropertyByListingId(r.listing_id)?.blocksNextDayOnLateCheckout) {
-    block = { nextDayBlock: { applied: false, method: 'none', reason: 'Objekt blockt keinen Folgetag' } };
+    block = { nextDayBlock: { applied: false, method: 'none', reason: 'Objekt blockt keinen Folgetag', blockState: null } };
   }
 
-  const cal = await syncCalendar(r);
   return {
     ok: true,
     reservationId,
     times: timesView(r, saved),
     ...block,
-    ...cal,
+    calendarSync: triggerCalendarSync(r),
   };
 }
 
@@ -251,17 +280,17 @@ export async function deleteStayTimes(reservationId: string, opts: StayTimesOpti
   if (!existing) throw new NotFoundError(`Keine Zeit-Abweichung für Reservierung ${reservationId}`);
 
   let block: Pick<StayTimesResult, 'nextDayBlock' | 'blockError'> = {
-    nextDayBlock: { applied: false, method: 'none', reason: 'kein Folgetag-Block gesetzt' },
+    nextDayBlock: { applied: false, method: 'none', reason: 'kein Folgetag-Block von uns gesetzt', blockState: null },
   };
-  if (existing.blockNextDay) {
-    block = splitBlock(await applyNextDayBlock(blockTarget(r), false));
+  // Nur zurücknehmen, was wir selbst geblockt haben (block_state), nicht schon `blockNextDay` allein.
+  if (existing.blockState === 'set-by-us') {
+    block = splitBlock(await applyNextDayBlock(blockTarget(r), false, existing.blockState));
     if (block.blockError) {
       logger.warn({ reservationId }, 'Folgetag-Block nicht aufgehoben — Override bleibt bestehen');
-      return { ok: true, reservationId, times: timesView(r, existing), ...block, calendarSynced: false, calendarSync: 'Override unverändert' };
+      return { ok: true, reservationId, times: timesView(r, existing), ...block, calendarSync: 'Override unverändert' };
     }
   }
   deleteOverride(reservationId);
   logger.info({ reservationId }, 'Zeit-Abweichung gelöscht');
-  const cal = await syncCalendar(r);
-  return { ok: true, reservationId, times: timesView(r, null), ...block, ...cal };
+  return { ok: true, reservationId, times: timesView(r, null), ...block, calendarSync: triggerCalendarSync(r) };
 }

@@ -9,11 +9,15 @@ import { getDatabase } from '../db/index.js';
 
 export type OverrideSource = 'agent' | 'admin' | 'etl';
 
+/** Migration 036: NULL | 'set-by-us' (wir haben geblockt) | 'already-blocked' (Tag war schon unavailable) */
+export type BlockState = 'set-by-us' | 'already-blocked';
+
 export interface StayTimeOverride {
   reservationId: string;
   plannedArrival: string | null;
   plannedDeparture: string | null;
   blockNextDay: boolean;
+  blockState: BlockState | null;
   note: string | null;
   source: OverrideSource;
   createdAt: string;
@@ -35,6 +39,7 @@ interface Row {
   planned_arrival: string | null;
   planned_departure: string | null;
   block_next_day: number;
+  block_state: BlockState | null;
   note: string | null;
   source: OverrideSource;
   created_at: string;
@@ -47,6 +52,7 @@ function toOverride(r: Row): StayTimeOverride {
     plannedArrival: r.planned_arrival,
     plannedDeparture: r.planned_departure,
     blockNextDay: r.block_next_day === 1,
+    blockState: r.block_state ?? null,
     note: r.note,
     source: r.source,
     createdAt: r.created_at,
@@ -93,6 +99,13 @@ export function upsertOverride(input: UpsertOverrideInput): StayTimeOverride {
   });
   tx();
   return getOverride(input.reservationId)!;
+}
+
+/** Block-Zustand setzen/zurücksetzen (null). true = Zeile existiert. */
+export function setBlockState(reservationId: string, state: BlockState | null): boolean {
+  return getDatabase()
+    .prepare("UPDATE stay_time_overrides SET block_state = ?, updated_at = datetime('now') WHERE reservation_id = ?")
+    .run(state, reservationId).changes > 0;
 }
 
 /** true = es gab einen Override (und er ist jetzt weg). */

@@ -20,7 +20,7 @@ function notice(q: TimesPanelQuery): string {
     return `<p class="subtitle" style="${style};border-left:4px solid var(--color-danger,#b3261e)">${esc(q.timeserr)}</p>`;
   }
   if (q.times === 'saved' || q.times === 'deleted') {
-    const cal = q.calsync === '0' ? ' Kalender wird beim nächsten Lauf aktualisiert.' : q.calsync === '1' ? ' Kalender aktualisiert.' : '';
+    const cal = q.calsync === '1' ? ' Kalender-Sync angestoßen (läuft im Hintergrund).' : '';
     return `<p class="subtitle" style="${style};border-left:4px solid var(--color-forest)">${q.times === 'saved' ? 'Zeit-Abweichung gespeichert.' : 'Zeit-Abweichung gelöscht.'}${esc(cal)}</p>`;
   }
   return '';
