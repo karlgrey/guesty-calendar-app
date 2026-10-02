@@ -21,16 +21,17 @@ vi.mock('../config/properties.js', () => ({
 }));
 
 import {
-  setStayTimes, deleteStayTimes, getStayTimes, STAY_TIMES_ALLOWED_FIELDS,
+  setStayTimes, deleteStayTimes, getStayTimes, STAY_TIMES_ALLOWED_FIELDS, resetCalendarSyncGuard,
 } from './stay-times-service.js';
-import { getOverride, upsertOverride } from '../repositories/stay-time-override-repository.js';
+import { getOverride, upsertOverride, setBlockState } from '../repositories/stay-time-override-repository.js';
 import { ValidationError, NotFoundError, ConflictError } from '../utils/errors.js';
 
 let db: Database.Database;
 const migrationsDir = join(dirname(fileURLToPath(import.meta.url)), '../db/migrations');
 const TODAY = '2026-10-02';
 
-beforeEach(() => {
+beforeEach(async () => {
+  await new Promise((r) => setTimeout(r, 5)); // ausstehende Fire-and-forget-Syncs des Vortests auslaufen lassen
   vi.clearAllMocks();
   db = new Database(':memory:');
   db.exec(`CREATE TABLE listings (id TEXT PRIMARY KEY, check_in_time TEXT, check_out_time TEXT, taxes TEXT NOT NULL DEFAULT '[]', active INTEGER NOT NULL DEFAULT 1);
@@ -38,8 +39,10 @@ beforeEach(() => {
   db.exec(readFileSync(join(migrationsDir, '002_add_reservations_table.sql'), 'utf-8'));
   db.exec(readFileSync(join(migrationsDir, '012_add_guest_fingerprint.sql'), 'utf-8'));
   db.exec(readFileSync(join(migrationsDir, '035_add_stay_time_overrides.sql'), 'utf-8'));
+  db.exec(readFileSync(join(migrationsDir, '036_add_stay_time_override_block_state.sql'), 'utf-8'));
+  resetCalendarSyncGuard();
   setDatabase(db);
-  applyMock.mockResolvedValue({ applied: false, method: 'none', reason: 'Objekt blockt keinen Folgetag' });
+  applyMock.mockResolvedValue({ applied: false, method: 'none', reason: 'Objekt blockt keinen Folgetag', blockState: null });
   syncMock.mockResolvedValue({ success: true, eventsUpserted: 1, eventsDeleted: 0 });
 });
 afterEach(() => { resetDatabase(); db.close(); });
@@ -53,6 +56,7 @@ function insertRes(id: string, over: Record<string, unknown> = {}) {
   db.prepare(`INSERT INTO reservations (reservation_id, listing_id, check_in, check_out, check_in_localized, check_out_localized, nights_count, status, source, platform, planned_arrival, planned_departure, last_synced_at)
     VALUES (@reservation_id, @listing_id, @check_in, @check_out, @check_in_localized, @check_out_localized, @nights_count, @status, @source, @platform, @planned_arrival, @planned_departure, 'x')`).run(r);
 }
+const tick = () => new Promise((r) => setTimeout(r, 5));
 const put = (id: string, body: unknown, source: 'agent' | 'admin' = 'agent') => setStayTimes(id, body, source, { today: TODAY });
 
 describe('Validierung', () => {
@@ -124,10 +128,11 @@ describe('PUT — Erfolg', () => {
     expect(r.times).toMatchObject({
       effectiveDeparture: '18:00', departureSource: 'override', effectiveArrival: '08:00', arrivalSource: 'default',
       listingDefaultDeparture: '12:00', listingDefaultArrival: '08:00',
-      override: { plannedDeparture: '18:00', plannedArrival: null, blockNextDay: false, note: 'per Chat zugesagt', source: 'agent' },
+      override: { plannedDeparture: '18:00', plannedArrival: null, blockNextDay: false, blockState: null, note: 'per Chat zugesagt', source: 'agent' },
     });
-    expect(r.nextDayBlock).toEqual({ applied: false, method: 'none', reason: 'blockNextDay nicht angefragt' });
-    expect(r.calendarSynced).toBe(true);
+    expect(r.nextDayBlock).toEqual({ applied: false, method: 'none', reason: 'blockNextDay nicht angefragt', blockState: null });
+    expect(r.calendarSync).toBe('angestoßen');
+    expect(r).not.toHaveProperty('calendarSynced');
     expect(getOverride('r1')!.source).toBe('agent');
   });
 
@@ -135,7 +140,7 @@ describe('PUT — Erfolg', () => {
     insertRes('rh', { listing_id: 'L-HX', source: 'airbnb', platform: 'hostex' });
     const r = await put('rh', { plannedArrival: '13:00' });
     expect(r.times).toMatchObject({ effectiveArrival: '13:00', arrivalSource: 'override', providerArrival: null });
-    expect(syncMock).toHaveBeenCalledWith(HOSTEX);
+    await vi.waitFor(() => expect(syncMock).toHaveBeenCalledWith(HOSTEX));
     expect(applyMock).not.toHaveBeenCalled();
   });
 
@@ -155,26 +160,55 @@ describe('PUT — Erfolg', () => {
     expect(r.times.departureSource).toBe('default');
   });
 
-  it('Kalender-Sync scheitert -> calendarSynced false, Override bleibt', async () => {
+  it('Kalender-Sync scheitert: Antwort trotzdem ok, Override bleibt', async () => {
     insertRes('r1');
     syncMock.mockResolvedValueOnce({ success: false, error: 'x' });
     const r = await put('r1', { plannedDeparture: '18:00' });
-    expect(r.calendarSynced).toBe(false);
-    expect(r.calendarSync).toBe('nächster Lauf');
+    expect(r.calendarSync).toBe('angestoßen');
+    await vi.waitFor(() => expect(syncMock).toHaveBeenCalledTimes(1));
     expect(getOverride('r1')).not.toBeNull();
   });
 
-  it('Kalender-Sync wirft -> non-fatal', async () => {
+  it('Kalender-Sync wirft -> non-fatal (kein unhandled rejection)', async () => {
     insertRes('r1');
     syncMock.mockRejectedValueOnce(new Error('boom'));
-    await expect(put('r1', { plannedDeparture: '18:00' })).resolves.toMatchObject({ calendarSynced: false });
+    await expect(put('r1', { plannedDeparture: '18:00' })).resolves.toMatchObject({ calendarSync: 'angestoßen' });
+    await tick();
   });
 
   it('Objekt ohne aktiven Google-Kalender: kein Sync-Aufruf', async () => {
     insertRes('r1', { listing_id: 'L-U19' });
     const r = await put('r1', { plannedDeparture: '18:00' });
+    await tick();
     expect(syncMock).not.toHaveBeenCalled();
-    expect(r.calendarSynced).toBe(false);
+    expect(r.calendarSync).toBe('kein Google-Kalender');
+  });
+
+  it('Fire-and-forget: Antwort kommt, ohne dass der Sync aufgelöst ist', async () => {
+    insertRes('r1');
+    syncMock.mockReturnValue(new Promise(() => {}));
+    const r = await Promise.race([
+      put('r1', { plannedDeparture: '18:00' }),
+      new Promise<never>((_, rej) => setTimeout(() => rej(new Error('PUT wartet auf den Sync')), 200)),
+    ]);
+    expect(r.calendarSync).toBe('angestoßen');
+    await vi.waitFor(() => expect(syncMock).toHaveBeenCalledTimes(1));
+  });
+
+  it('Guard: läuft schon ein Sync je Objekt, startet kein paralleler — genau ein Nachlauf', async () => {
+    insertRes('r1');
+    let release!: () => void;
+    syncMock.mockReturnValueOnce(new Promise((res) => { release = () => res({ success: true }); }));
+    await put('r1', { plannedDeparture: '18:00' });
+    await vi.waitFor(() => expect(syncMock).toHaveBeenCalledTimes(1));
+    await put('r1', { plannedDeparture: '19:00' });
+    await put('r1', { plannedDeparture: '20:00' });
+    await tick();
+    expect(syncMock).toHaveBeenCalledTimes(1); // nichts parallel
+    release();
+    await vi.waitFor(() => expect(syncMock).toHaveBeenCalledTimes(2)); // ein Nachlauf
+    await tick();
+    expect(syncMock).toHaveBeenCalledTimes(2);
   });
 });
 
@@ -182,11 +216,20 @@ describe('PUT — Folgetag-Block', () => {
   beforeEach(() => insertRes('r1'));
 
   it('blockNextDay true -> applyNextDayBlock(target, true) mit lokalen Daten', async () => {
-    applyMock.mockResolvedValueOnce({ applied: true, method: 'reservation' });
+    applyMock.mockResolvedValueOnce({ applied: true, method: 'listing-calendar', blockState: 'set-by-us' });
     const r = await put('r1', { plannedDeparture: '18:00', blockNextDay: true });
-    expect(applyMock).toHaveBeenCalledWith({ reservationId: 'r1', listingId: 'L-FH', source: 'manual', checkOutDay: '2026-12-03' }, true);
-    expect(r.nextDayBlock).toEqual({ applied: true, method: 'reservation' });
-    expect(getOverride('r1')!.blockNextDay).toBe(true);
+    expect(applyMock).toHaveBeenCalledWith({ reservationId: 'r1', listingId: 'L-FH', checkOutDay: '2026-12-03' }, true, null);
+    expect(r.nextDayBlock).toEqual({ applied: true, method: 'listing-calendar', blockState: 'set-by-us' });
+    expect(getOverride('r1')).toMatchObject({ blockNextDay: true, blockState: 'set-by-us' });
+    expect(r.times.override!.blockState).toBe('set-by-us');
+  });
+
+  it('Tag schon geblockt: Override trotzdem gespeichert, blockState already-blocked, kein Fehler', async () => {
+    applyMock.mockResolvedValueOnce({ applied: false, method: 'none', reason: 'Folgetag bereits geblockt (pt)', blockState: 'already-blocked' });
+    const r = await put('r1', { plannedDeparture: '18:00', blockNextDay: true });
+    expect(r.blockError).toBeUndefined();
+    expect(getOverride('r1')).toMatchObject({ plannedDeparture: '18:00', blockNextDay: true, blockState: 'already-blocked' });
+    expect(r.nextDayBlock).toMatchObject({ applied: false, blockState: 'already-blocked' });
   });
 
   it('ohne blockNextDay im Body: kein Block-Aufruf', async () => {
@@ -201,16 +244,33 @@ describe('PUT — Folgetag-Block', () => {
   });
 
   it('blockNextDay false nach vorherigem true: Rücknahme', async () => {
-    applyMock.mockResolvedValue({ applied: true, method: 'reservation' });
+    applyMock.mockResolvedValueOnce({ applied: true, method: 'listing-calendar', blockState: 'set-by-us' });
     await put('r1', { blockNextDay: true });
+    applyMock.mockResolvedValueOnce({ applied: true, method: 'listing-calendar', blockState: null });
     await put('r1', { blockNextDay: false });
-    expect(applyMock).toHaveBeenLastCalledWith(expect.objectContaining({ reservationId: 'r1' }), false);
+    expect(applyMock).toHaveBeenLastCalledWith(expect.objectContaining({ reservationId: 'r1' }), false, 'set-by-us');
+    expect(getOverride('r1')).toMatchObject({ blockNextDay: false, blockState: null });
+  });
+
+  it('Rücknahme per PUT false scheitert: Retry mit PUT false ruft Guesty erneut auf (block_state set-by-us bleibt führend)', async () => {
+    applyMock.mockResolvedValueOnce({ applied: true, method: 'listing-calendar', blockState: 'set-by-us' });
+    await put('r1', { blockNextDay: true });
+    applyMock.mockResolvedValueOnce({ applied: false, method: 'listing-calendar', reason: 'Guesty-Aufruf fehlgeschlagen: x', blockState: 'set-by-us', error: { message: 'x' } });
+    const failed = await put('r1', { blockNextDay: false });
+    expect(failed.blockError).toBeDefined();
+    expect(getOverride('r1')).toMatchObject({ blockNextDay: false, blockState: 'set-by-us' });
+    applyMock.mockResolvedValueOnce({ applied: true, method: 'listing-calendar', blockState: null });
+    const retry = await put('r1', { blockNextDay: false });
+    expect(applyMock).toHaveBeenCalledTimes(3);
+    expect(applyMock).toHaveBeenLastCalledWith(expect.objectContaining({ reservationId: 'r1' }), false, 'set-by-us');
+    expect(retry.nextDayBlock).toMatchObject({ applied: true, blockState: null });
+    expect(getOverride('r1')).toMatchObject({ blockNextDay: false, blockState: null });
   });
 
   it('Guesty-Fehler: Override wird TROTZDEM gespeichert, Ergebnis trägt blockError', async () => {
-    applyMock.mockResolvedValueOnce({ applied: false, method: 'listing-calendar', reason: 'Guesty-Aufruf fehlgeschlagen: x', error: { message: 'x', details: { a: 1 } } });
+    applyMock.mockResolvedValueOnce({ applied: false, method: 'listing-calendar', reason: 'Guesty-Aufruf fehlgeschlagen: x', blockState: null, error: { message: 'x', details: { a: 1 } } });
     const r = await put('r1', { plannedDeparture: '18:00', blockNextDay: true });
-    expect(getOverride('r1')).toMatchObject({ plannedDeparture: '18:00', blockNextDay: true });
+    expect(getOverride('r1')).toMatchObject({ plannedDeparture: '18:00', blockNextDay: true, blockState: null });
     expect(r.nextDayBlock).toMatchObject({ applied: false, method: 'listing-calendar', reason: expect.stringContaining('Guesty') });
     expect(r.blockError).toEqual({ message: 'x', details: { a: 1 } });
     expect(r.nextDayBlock).not.toHaveProperty('error');
@@ -218,15 +278,26 @@ describe('PUT — Folgetag-Block', () => {
 });
 
 describe('DELETE', () => {
-  it('löscht den Override und hebt gesetzten Block auf', async () => {
+  it('löscht den Override und hebt unseren gesetzten Block auf (set-by-us)', async () => {
     insertRes('r1');
     upsertOverride({ reservationId: 'r1', plannedDeparture: '18:00', blockNextDay: true, source: 'agent' });
-    applyMock.mockResolvedValueOnce({ applied: true, method: 'reservation' });
+    setBlockState('r1', 'set-by-us');
+    applyMock.mockResolvedValueOnce({ applied: true, method: 'listing-calendar', blockState: null });
     const r = await deleteStayTimes('r1', { today: TODAY });
-    expect(applyMock).toHaveBeenCalledWith(expect.objectContaining({ reservationId: 'r1' }), false);
+    expect(applyMock).toHaveBeenCalledWith(expect.objectContaining({ reservationId: 'r1' }), false, 'set-by-us');
     expect(getOverride('r1')).toBeNull();
-    expect(r).toMatchObject({ ok: true, reservationId: 'r1', nextDayBlock: { applied: true }, calendarSynced: true });
+    expect(r).toMatchObject({ ok: true, reservationId: 'r1', nextDayBlock: { applied: true }, calendarSync: 'angestoßen' });
     expect(r.times.override).toBeNull();
+  });
+
+  it('blockNextDay true, aber already-blocked: 200 ohne Guesty-Aufruf, Override gelöscht', async () => {
+    insertRes('r1');
+    upsertOverride({ reservationId: 'r1', plannedDeparture: '18:00', blockNextDay: true, source: 'agent' });
+    setBlockState('r1', 'already-blocked');
+    const r = await deleteStayTimes('r1', { today: TODAY });
+    expect(applyMock).not.toHaveBeenCalled();
+    expect(getOverride('r1')).toBeNull();
+    expect(r.ok).toBe(true);
   });
 
   it('ohne gesetzten Block: kein Guesty-Aufruf', async () => {
@@ -237,13 +308,17 @@ describe('DELETE', () => {
     expect(getOverride('r1')).toBeNull();
   });
 
-  it('Rücknahme des Blocks scheitert: Override bleibt (Retry möglich), blockError gesetzt', async () => {
+  it('Rücknahme des Blocks scheitert: Override bleibt (Retry möglich), blockError gesetzt, kein Sync', async () => {
     insertRes('r1');
     upsertOverride({ reservationId: 'r1', plannedDeparture: '18:00', blockNextDay: true, source: 'agent' });
-    applyMock.mockResolvedValueOnce({ applied: false, method: 'reservation', reason: 'Guesty-Aufruf fehlgeschlagen: x', error: { message: 'x' } });
+    setBlockState('r1', 'set-by-us');
+    applyMock.mockResolvedValueOnce({ applied: false, method: 'listing-calendar', reason: 'Guesty-Aufruf fehlgeschlagen: x', blockState: 'set-by-us', error: { message: 'x' } });
     const r = await deleteStayTimes('r1', { today: TODAY });
-    expect(getOverride('r1')).not.toBeNull();
+    expect(getOverride('r1')).toMatchObject({ blockState: 'set-by-us' });
     expect(r.blockError).toEqual({ message: 'x' });
+    expect(r.calendarSync).toBe('Override unverändert');
+    await tick();
+    expect(syncMock).not.toHaveBeenCalled();
   });
 });
 

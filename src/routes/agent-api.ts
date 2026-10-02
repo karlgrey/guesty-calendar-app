@@ -72,10 +72,10 @@ router.get('/reservations/:id', async (req, res) => {
   } catch (err) { handleError(res, err); }
 });
 
-// Zeit-Abweichungen plattformneutral (#799, Guesty + Hostex, Migration 035): Zusagen (Late-
+// Zeit-Abweichungen plattformneutral (#799, Guesty + Hostex, Migration 035/036): Zusagen (Late-
 // Checkout, früher Check-in, Folgetag-Block) leben in unserer DB; der Kalender-Marker für die
 // Putzcrew entsteht beim Kalender-Sync. Guesty wird nur für den Folgetag-Block geschrieben
-// (nur Objekte mit blocksNextDayOnLateCheckout). Logik: services/stay-times-service.ts.
+// (nur Objekte mit blocksNextDayOnLateCheckout, Listing-Kalender, nur wenn der Tag frei ist). Logik: services/stay-times-service.ts.
 function sendTimesResult(res: express.Response, result: StayTimesResult) {
   if (result.blockError) {
     // Override ist gespeichert (Marker wichtiger als Block) — aber Guesty hat den Block abgelehnt.

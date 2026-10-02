@@ -514,7 +514,7 @@ router.post('/:threadId/times', express.urlencoded({ extended: true }), async (r
       res.redirect(timesRedirect(thread.id, { timeserr: `Gespeichert, aber Folgetag-Block bei Guesty fehlgeschlagen: ${result.blockError.message}` }));
       return;
     }
-    res.redirect(timesRedirect(thread.id, { times: 'saved', calsync: result.calendarSynced ? '1' : '0' }));
+    res.redirect(timesRedirect(thread.id, { times: 'saved', calsync: result.calendarSync === 'angestoßen' ? '1' : '0' }));
   } catch (err) {
     res.redirect(timesRedirect(thread.id, { timeserr: timesErrorMessage(err) }));
   }
@@ -530,7 +530,7 @@ router.post('/:threadId/times/delete', async (req, res) => {
       res.redirect(timesRedirect(thread.id, { timeserr: `Folgetag-Block bei Guesty nicht aufgehoben (Abweichung bleibt bestehen): ${result.blockError.message}` }));
       return;
     }
-    res.redirect(timesRedirect(thread.id, { times: 'deleted', calsync: result.calendarSynced ? '1' : '0' }));
+    res.redirect(timesRedirect(thread.id, { times: 'deleted', calsync: result.calendarSync === 'angestoßen' ? '1' : '0' }));
   } catch (err) {
     res.redirect(timesRedirect(thread.id, { timeserr: timesErrorMessage(err) }));
   }

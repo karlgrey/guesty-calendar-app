@@ -77,8 +77,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   getThreadById.mockReturnValue(thread());
   getStayTimes.mockReturnValue(view());
-  setStayTimes.mockResolvedValue({ ok: true, calendarSynced: true, nextDayBlock: { applied: true, method: 'reservation' } });
-  deleteStayTimes.mockResolvedValue({ ok: true, calendarSynced: true });
+  setStayTimes.mockResolvedValue({ ok: true, calendarSync: 'angestoßen', nextDayBlock: { applied: true, method: 'reservation' } });
+  deleteStayTimes.mockResolvedValue({ ok: true, calendarSync: 'angestoßen' });
 });
 
 describe('GET /:threadId — Zeit-Abweichung', () => {
@@ -167,7 +167,7 @@ describe('POST /:threadId/times', () => {
   });
 
   it('Guesty-Block-Fehler -> Override gespeichert, Hinweis mit Grund', async () => {
-    setStayTimes.mockResolvedValueOnce({ ok: true, calendarSynced: true, blockError: { message: 'dates blocked' } });
+    setStayTimes.mockResolvedValueOnce({ ok: true, calendarSync: 'angestoßen', blockError: { message: 'dates blocked' } });
     const r = await post('times', { plannedDeparture: '18:00', blockNextDay: '1' });
     const loc = new URL(r.headers.get('location')!, 'http://x');
     expect(loc.searchParams.get('timeserr')).toMatch(/Gespeichert, aber Folgetag-Block.*dates blocked/);
