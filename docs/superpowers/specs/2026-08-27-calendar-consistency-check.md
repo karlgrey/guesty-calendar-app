@@ -42,7 +42,12 @@ Ablauf pro Property aus `getAllProperties()` mit `googleCalendar?.enabled && cal
    - `airbnb-mail`: `fetchAirbnbIcal(property.airbnbIcalUrl)` → `parseAirbnbIcal` →
      `buildAvailabilityRows` (bestehender Mapper) → booked-Intervalle
      (`block_type='reservation'`, `block_ref`=HM-Code → Event-ID wie ETL) und
-     blocked-Tage → `buildBlockSpans`.
+     blocked-Tage → `buildBlockSpans`. **Nachtrag #769 (06.10.2026):** die
+     Tageszeilen für die booked-Intervalle beginnen eine Nacht vor dem Fenster
+     (`from − 1`), damit am Check-out-Tag eines laufenden Aufenthalts (letzte
+     Nacht = gestern) das erwartete Event bis Check-out + 1 entsteht — sonst
+     falsches „extra“, weil das Google-Event den Abreisetag abdeckt. Block-Spans
+     weiter nur aus Zeilen ab `from` (Block-ID hängt am Span-Start).
    - **Event-Identität EXAKT wie der Sync:** Reservierungen
      `toGoogleEventId(reservation_id)` (dieselbe `reservation_id`-Quelle wie der
      jeweilige ETL-Pfad!), Blocks `blockEventId(getListingId(property), span.startDate)`.

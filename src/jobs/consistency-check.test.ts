@@ -78,6 +78,7 @@ import {
   runDailyConsistencyJob,
 } from './consistency-check.js';
 import type { PropertyConfig } from '../config/properties.js';
+import { toGoogleEventId } from '../services/google-event-id.js';
 
 function guestyProperty(overrides: Partial<PropertyConfig> = {}): PropertyConfig {
   return {
@@ -682,5 +683,139 @@ describe('runDailyConsistencyJob', () => {
     // Alert-würdiger Befund (silent-failure-Risiko genau das, wovor der
     // Check schützen soll).
     expect(sendEmailMock).toHaveBeenCalled();
+  });
+});
+
+// ─── #769: Abreisetag-Fenster (airbnb-mail) ─────────────────────────────────
+// Am Check-out-Tag liegt die letzte Nacht (Check-out − 1) vor dem Fensterstart
+// `from` = heute. Das Google-Event läuft bis einschließlich Check-out-Tag
+// (exklusives Ende = Check-out + 1) und schneidet das Fenster noch an genau
+// diesem Tag. Ohne Rückblick-Nacht entstand jedes Mal ein falsches "extra"
+// (Florenz 17.09., 22.09., 30.09., 04.10.2026). Codes/Namen anonymisiert.
+describe('#769 — Konsistenz-Check am Check-out-Tag (airbnb-mail)', () => {
+  function ics(events: Array<{ start: string; end: string; code?: string; block?: boolean }>): string {
+    const body = events
+      .map((e, i) =>
+        [
+          'BEGIN:VEVENT',
+          `DTSTART;VALUE=DATE:${e.start.replace(/-/g, '')}`,
+          `DTEND;VALUE=DATE:${e.end.replace(/-/g, '')}`,
+          `SUMMARY:${e.block ? 'Airbnb (Not available)' : 'Reserved'}`,
+          `UID:opaque-uid-769-${i}@airbnb.com`,
+          ...(e.code ? [`DESCRIPTION:Reservation URL: https://www.airbnb.com/hosting/reservations/details/${e.code}`] : []),
+          'END:VEVENT',
+        ].join('\n')
+      )
+      .join('\n');
+    return `BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//Airbnb Inc//Hosting Calendar 0.8.8//EN\nCALSCALE:GREGORIAN\n${body}\nEND:VCALENDAR\n`;
+  }
+
+  function googleAllDay(id: string, start: string, endExclusive: string, summary = 'Airbnb-Gast') {
+    return { id, summary, start: { date: start }, end: { date: endExclusive } };
+  }
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('Builder: Aufenthalt mit Check-out = from liefert ein erwartetes Event bis Check-out + 1 (Fall 25.–30.09., from=30.09.)', async () => {
+    fetchAirbnbIcalMock.mockResolvedValueOnce(ics([{ start: '2026-09-25', end: '2026-09-30', code: 'HMTESTOUT0930' }]));
+    getListingByIdMock.mockReturnValueOnce({ base_price: 150, min_nights: 2 });
+
+    const { events, sourceCounts } = await buildExpectedEventsForProperty(airbnbProperty(), '2026-09-30', '2026-10-28');
+
+    expect(sourceCounts.reservations).toBe(1);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'reservation',
+        eventId: toGoogleEventId('HMTESTOUT0930'),
+        reservationId: 'HMTESTOUT0930',
+        endExclusive: '2026-10-01',
+      })
+    );
+  });
+
+  it('Builder: Aufenthalt mit Check-out = from − 1 bleibt draußen (kein Rückblick über eine Nacht hinaus)', async () => {
+    fetchAirbnbIcalMock.mockResolvedValueOnce(ics([{ start: '2026-09-25', end: '2026-09-29', code: 'HMTESTOUT0929' }]));
+    getListingByIdMock.mockReturnValueOnce({ base_price: 150, min_nights: 2 });
+
+    const { events, sourceCounts } = await buildExpectedEventsForProperty(airbnbProperty(), '2026-09-30', '2026-10-28');
+
+    expect(sourceCounts.reservations).toBe(0);
+    expect(events).toEqual([]);
+  });
+
+  it('Builder: Block-Spans bleiben am Fensterstart verankert (Block über from hinweg behält Start = from)', async () => {
+    fetchAirbnbIcalMock.mockResolvedValueOnce(ics([{ start: '2026-09-28', end: '2026-10-03', block: true }]));
+    getListingByIdMock.mockReturnValueOnce({ base_price: 150, min_nights: 2 });
+
+    const { events, sourceCounts } = await buildExpectedEventsForProperty(airbnbProperty(), '2026-09-30', '2026-10-28');
+
+    expect(sourceCounts).toEqual({ reservations: 0, blockSpans: 1 });
+    expect(events).toContainEqual(
+      expect.objectContaining({ type: 'block', start: '2026-09-30', endExclusive: '2026-10-03' })
+    );
+  });
+
+  it('runConsistencyCheck: Abreisetag 30.09. (Aufenthalt 25.–30.09.) -> 0 Issues', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-30T08:00:00.000Z')); // 10:00 Europe/Rome
+    getAllPropertiesMock.mockReturnValue([airbnbProperty()]);
+    fetchAirbnbIcalMock.mockResolvedValueOnce(ics([{ start: '2026-09-25', end: '2026-09-30', code: 'HMTESTOUT0930' }]));
+    getListingByIdMock.mockReturnValue({ base_price: 150, min_nights: 2 });
+    listEventsMock.mockResolvedValueOnce([googleAllDay(toGoogleEventId('HMTESTOUT0930'), '2026-09-25', '2026-10-01')]);
+    getAvailabilityLastSyncedAtMock.mockReturnValue(null);
+
+    const report = await runConsistencyCheck(28);
+
+    expect(report.from).toBe('2026-09-30');
+    expect(report.properties[0].extra).toEqual([]);
+    expect(report.properties[0].missing).toEqual([]);
+    expect(report.properties[0].mismatched).toEqual([]);
+    expect(report.totalIssues).toBe(0);
+  });
+
+  it('runConsistencyCheck: Abreisetag 22.09. mit direkt folgender Anreise am selben Tag -> 0 Issues', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-22T08:00:00.000Z'));
+    getAllPropertiesMock.mockReturnValue([airbnbProperty()]);
+    fetchAirbnbIcalMock.mockResolvedValueOnce(
+      ics([
+        { start: '2026-09-17', end: '2026-09-22', code: 'HMTESTOUT0922' },
+        { start: '2026-09-22', end: '2026-09-25', code: 'HMTESTIN0922' },
+      ])
+    );
+    getListingByIdMock.mockReturnValue({ base_price: 150, min_nights: 2 });
+    listEventsMock.mockResolvedValueOnce([
+      googleAllDay(toGoogleEventId('HMTESTOUT0922'), '2026-09-17', '2026-09-23', 'Airbnb-Gast (aus Kalender)'),
+      googleAllDay(toGoogleEventId('HMTESTIN0922'), '2026-09-22', '2026-09-26'),
+    ]);
+    getAvailabilityLastSyncedAtMock.mockReturnValue(null);
+
+    const report = await runConsistencyCheck(28);
+
+    expect(report.totalIssues).toBe(0);
+  });
+
+  it('runConsistencyCheck: storniert (nicht mehr im iCal), Google-Event noch da -> weiterhin extra, auch am Abreisetag', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-04T08:00:00.000Z'));
+    getAllPropertiesMock.mockReturnValue([airbnbProperty()]);
+    fetchAirbnbIcalMock.mockResolvedValueOnce(ics([]));
+    getListingByIdMock.mockReturnValue({ base_price: 150, min_nights: 2 });
+    listEventsMock.mockResolvedValueOnce([
+      // Abreisetag eines stornierten Aufenthalts
+      googleAllDay(toGoogleEventId('HMTESTSTORNO1'), '2026-10-01', '2026-10-05'),
+      // künftiger stornierter Aufenthalt (Muster Storno ohne Kalenderbereinigung)
+      googleAllDay(toGoogleEventId('HMTESTSTORNO2'), '2026-10-06', '2026-10-12'),
+    ]);
+    getAvailabilityLastSyncedAtMock.mockReturnValue(null);
+
+    const report = await runConsistencyCheck(28);
+
+    expect(report.properties[0].extra.map((e) => e.googleEventId).sort()).toEqual(
+      [toGoogleEventId('HMTESTSTORNO1'), toGoogleEventId('HMTESTSTORNO2')].sort()
+    );
+    expect(report.totalIssues).toBe(2);
   });
 });
