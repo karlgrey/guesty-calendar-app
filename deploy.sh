@@ -7,6 +7,7 @@
 # lokal pushen → Server pullt → baut → startet neu → Health-Check.
 # Zusätzlich (App mit SQLite-Daten): DB-Backup vor dem Restart.
 # SQL-Migrationen (src/db/migrations) laufen beim App-Start automatisch.
+# Vor dem Build: Env-Check gegen .env.example (scripts/env-check.sh, #797).
 #
 #   ./deploy.sh
 #
@@ -53,6 +54,10 @@ cp -n data/calendar.db "data/calendar.db.bak-\$(date +%F)" || true
 # nicht in der Gruppe deploy ist — dann DB ebenfalls auf 640 ziehen.
 chmod 640 data/calendar.db.bak-* 2>/dev/null || true
 git pull --ff-only origin main
+# Env-Check (#797): Key-Namen aus .env.example (Vertrag, gerade gepullt) gegen .env.
+# Fehlt ein Pflicht-Key, bricht das Deploy hier ab — vor Build und Restart, die
+# laufende App bleibt auf dem alten Stand. Werte werden nie ausgegeben.
+sh scripts/env-check.sh .env.example .env
 npm ci --silent
 npm run build
 pm2 restart '$PM2_APP' --update-env
