@@ -260,7 +260,7 @@ CREATE TABLE message_drafts (
   status TEXT NOT NULL DEFAULT 'pending',       -- runtime: 'pending' | 'sending' | 'sent' | 'error' | 'discarded'
                                                 --   ('sending' = atomically claimed for send; see claimDraftForSending. Column is free-text TEXT — the migration comment predates the 'sending' state.)
   generated_by TEXT NOT NULL DEFAULT 'manual',  -- 'manual' | 'llm'
-  model TEXT,                                   -- e.g. 'claude-sonnet-4-6'; NULL for manual drafts
+  model TEXT,                                   -- e.g. 'claude-sonnet-5-5'; NULL for manual drafts
   send_attempts INTEGER NOT NULL DEFAULT 0,
   external_message_id TEXT,                     -- message_id returned by provider on successful send
   error TEXT,

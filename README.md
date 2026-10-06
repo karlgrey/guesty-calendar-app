@@ -26,7 +26,7 @@ An Airbnb-style booking interface for a single property, powered by the Guesty A
 
 ### Guest-Reply System (Hostex)
 - **Message Sync**: Fetches Hostex conversations per property and persists them in `message_threads` + `messages`
-- **AI Drafts**: Generates reply drafts via Claude (`claude-sonnet-4-6`) using Voice style and per-property facts from the knowledge vault; capped at 10 drafts per property per ETL run; only threads with guest activity in the last 72 hours
+- **AI Drafts**: Generates reply drafts via Claude (`claude-sonnet-5-5`) using Voice style and per-property facts from the knowledge vault; capped at 10 drafts per property per ETL run; only threads with guest activity in the last 72 hours
 - **Admin UI**: `/admin/messages` lists open threads and `/admin/messages/:threadId` shows history with editable draft, send/discard/regenerate/manual actions
 - **Feedback Loop**: "Passt nicht?" form records feedback and triggers an AI-proposed vault edit; `/admin/suggestions` lets you review, approve (writes + git-commits to vault), or discard
 

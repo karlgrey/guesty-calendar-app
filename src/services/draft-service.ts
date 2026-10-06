@@ -1,9 +1,10 @@
-import { callClaudeTool, type ClaudeToolDefinition } from './anthropic-client.js';
+import { callClaudeTool, SONNET_MODEL, type ClaudeToolDefinition } from './anthropic-client.js';
 import type { MessageThread, Message } from '../types/messages.js';
 import { LANGUAGE_LABEL, type SupportedLanguage } from '../utils/language-detect.js';
 import { buildTodayBlock } from './auto-send/today-facts.js';
 
-export const DRAFT_MODEL = 'claude-sonnet-5';
+/** #758: zentrale Sonnet-Konstante (claude-sonnet-5-5) aus anthropic-client. */
+export const DRAFT_MODEL = SONNET_MODEL;
 
 export const SUBMIT_REPLY_TOOL: ClaudeToolDefinition = {
   name: 'submit_reply',

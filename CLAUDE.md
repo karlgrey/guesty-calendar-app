@@ -263,8 +263,18 @@ erweitert auf Guesty-Properties (Farmhouse, U19) — Spec:
 - Liest Voice-Stil aus `prozesse/Gästekommunikation Grundsätze.md` und Objektfakten aus `prozesse/<vaultNote>` via `src/services/vault-knowledge.ts`
 - Wählt nur Threads, deren letzte Gastnachricht < 72h alt ist (`DRAFT_MAX_AGE_HOURS = 72`), noch kein `pending`-Entwurf existiert, und letzte Richtung `inbound` ist
 - Cap: maximal `DRAFT_GEN_CAP = 10` Entwürfe pro Property pro Run
-- Modell: `claude-sonnet-4-6` via Forced-Tool-Call (`submit_reply`); leere Antwort = kein Entwurf nötig
-- Speichert in `message_drafts` (`generated_by='llm'`, `model='claude-sonnet-4-6'`)
+- Modell: `claude-sonnet-5-5` (`SONNET_MODEL` in `anthropic-client.ts`), Schema `submit_reply` per Structured Outputs; leere Antwort = kein Entwurf nötig
+- Speichert in `message_drafts` (`generated_by='llm'`, `model='claude-sonnet-5-5'`)
+- **LLM-Aufrufe — harte Regel (#758, 06.10.2026):** jeder Anthropic-Aufruf läuft über
+  `callClaudeTool` (`src/services/anthropic-client.ts`, nie umgehen). Modell-Weiche dort:
+  Sonnet 5.5 → `thinking: { type: 'between_tools' }` (Sonnet 5.5 lehnt `disabled` mit 400 ab;
+  between_tools = kein Extended Thinking, nur bei Effort high oder niedriger, keine weiteren
+  Felder im `thinking`-Objekt) + Structured Outputs (`output_config.format`, Schema aus
+  `tool.input_schema` via `toStructuredOutputSchema`) statt erzwungenem Tool-Aufruf (Sonnet 5.5
+  lehnt `tool_choice` tool/any mit 400 ab). Ältere Modelle (Opus-5-Judge via `JUDGE_MODEL`) →
+  unverändert `thinking: { type: 'disabled' }` + erzwungener Tool-Aufruf. Antwort ohne gültiges
+  JSON-Objekt → Retry, danach Fehler; `stop_reason: refusal` → sofortiger Fehler. Jede Antwort
+  loggt `Anthropic response` mit `model` (tatsächlich antwortendes Modell) und `requestedModel`.
 - Beide Schritte laufen in `runHostexETL` (nach Reservierungen, vor Calendar) in separaten try/catch-Blöcken — **non-fatal**
 
 **Send** (`src/services/message-sender.ts`):
@@ -294,7 +304,7 @@ erweitert auf Guesty-Properties (Farmhouse, U19) — Spec:
 
 **Schnitt 3 — Feedback-Loop** (`src/services/suggestion-service.ts`, `src/services/vault-writer.ts`, `src/routes/suggestions.ts`):
 - Feedback (Kategorie: `ton`/`fakt`/`einmalig` + Freitext) landet in `draft_feedback`
-- Bei `ton`/`fakt`: LLM (`claude-sonnet-4-6`, Tool `propose_vault_edit`) schlägt einen Markdown-Bullet vor (target_heading + addition_text + rationale) → gespeichert in `vault_suggestions`
+- Bei `ton`/`fakt`: LLM (`claude-sonnet-5-5`, Schema `propose_vault_edit`) schlägt einen Markdown-Bullet vor (target_heading + addition_text + rationale) → gespeichert in `vault_suggestions`
 - `src/services/vault-writer.ts`: pfad-sicher (nur `prozesse/*.md`), hängt Text unter bestehende Überschrift an, git-committet via `execFileSync` (argv, kein Shell-Injection)
 - Freigabe auf `/admin/suggestions` ist das Kurations-Gate — kein Auto-Write
 
@@ -359,7 +369,7 @@ Doku `read_only`) — bleibt beim Copy-Paste-Flow. Spec:
   Threads ohne jede Nachricht werden NICHT ans LLM geschickt — automatisch `ok`
   (kein Anlass zur Sorge, kein API-Call).
 - **Generierung** (`src/services/review-draft-service.ts`, Tool `submit_review`,
-  Modell `claude-sonnet-5`): eigener Prompt-Baustein (nutzt NUR die Voice aus dem
+  Modell `claude-sonnet-5-5`): eigener Prompt-Baustein (nutzt NUR die Voice aus dem
   Vault, keine Objektfakten, keine Textbank) — schreibt 2–4 Sätze frei aus
   Gastname/Zeitraum/Objekt/Thread-Verlauf, spiegelt die Sprache des Gastes,
   kein Markdown, erfindet nichts über den Zustand der Unterkunft nach Abreise.
