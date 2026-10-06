@@ -277,15 +277,26 @@ async function buildAirbnbExpectedEvents(
   const basePrice = listing?.base_price ?? 0;
   const minNights = listing?.min_nights ?? 1;
 
+  // #769: Die Tageszeilen beginnen EINE Nacht vor dem Fenster (from − 1).
+  // Am Check-out-Tag liegt die letzte gebuchte Nacht (Check-out − 1) vor
+  // `from`; ohne diese Rückblick-Nacht fände der Diff für den laufenden
+  // Aufenthalt kein erwartetes Event, obwohl das Google-Event (exklusives
+  // Ende Check-out + 1) den Tag korrekt abdeckt -> falsches "extra" (Florenz
+  // 17.09./22.09./30.09./04.10.2026). Die Erwartung stammt weiter allein aus
+  // dem iCal: ein stornierter Aufenthalt fehlt dort und bleibt "extra".
+  // Block-Spans nutzen nur Zeilen ab `from` (Block-Event-ID hängt am
+  // Span-Start, der darf sich nicht verschieben).
+  const lookbackStart = addDays(from, -1);
   const rows = buildAvailabilityRows({
     listingId,
-    windowStart: from,
+    windowStart: lookbackStart,
     windowEnd: to,
     events,
     basePrice,
     defaultMinNights: minNights,
     lastSyncedAt: new Date().toISOString(),
   });
+  const windowRows = rows.filter((r) => r.date >= from);
 
   const bookedIntervals = groupBookedIntervals(rows.map((r) => ({ date: r.date, block_ref: r.block_ref })));
   const reservationEvents: ExpectedEvent[] = bookedIntervals
@@ -297,7 +308,7 @@ async function buildAirbnbExpectedEvents(
     })
     .filter((e) => overlapsWindow(e.start, e.endExclusive, from, to));
 
-  const spans = buildBlockSpans(rows.map((r) => ({ date: r.date, status: r.status, block_type: r.block_type })));
+  const spans = buildBlockSpans(windowRows.map((r) => ({ date: r.date, status: r.status, block_type: r.block_type })));
   const blockEvents: ExpectedEvent[] = spans
     .filter((s) => overlapsWindow(s.startDate, s.endExclusive, from, to))
     .map((s) => ({
