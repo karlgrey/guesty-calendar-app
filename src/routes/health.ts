@@ -6,6 +6,8 @@ import express from 'express';
 import { getDatabase, isDatabaseInitialized, getDatabaseStats } from '../db/index.js';
 import { config } from '../config/index.js';
 import logger from '../utils/logger.js';
+import { guestyClient } from '../services/guesty-client.js';
+import { getGuestyRequestDailyStats } from '../services/guesty-request-telemetry.js';
 
 const router = express.Router();
 
@@ -36,6 +38,19 @@ router.get('/detailed', (_req, res) => {
       dbStats = getDatabaseStats();
     }
 
+    // Guesty-API-Last (#772) — Fehler hier dürfen den Health-Check nie kippen
+    let guestyRequests: unknown;
+    try {
+      const last7Days = getGuestyRequestDailyStats(7);
+      guestyRequests = {
+        today: last7Days[0] ?? null,
+        last7Days,
+        rateLimit: guestyClient.getRateLimitInfo(),
+      };
+    } catch (error) {
+      guestyRequests = { error: error instanceof Error ? error.message : 'Unknown error' };
+    }
+
     res.json({
       status: 'ok',
       timestamp: new Date().toISOString(),
@@ -47,6 +62,7 @@ router.get('/detailed', (_req, res) => {
         initialized: isDbInitialized,
         stats: dbStats,
       },
+      guestyRequests,
       config: {
         propertyId: config.guestyPropertyId,
         currency: config.propertyCurrency,

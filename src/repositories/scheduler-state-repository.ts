@@ -37,3 +37,22 @@ export function setSchedulerState(key: string, value: string): void {
     throw new DatabaseError(`Failed to set scheduler state: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
+
+/**
+ * Löscht alle Keys mit `prefix`, deren Rest (Suffix) lexikografisch kleiner als
+ * `suffixBefore` ist (z. B. Prefix 'guesty_requests:' + Datum 'YYYY-MM-DD').
+ * Gibt die Anzahl gelöschter Zeilen zurück.
+ */
+export function deleteSchedulerStateKeysBefore(prefix: string, suffixBefore: string): number {
+  const db = getDatabase();
+  try {
+    const escaped = prefix.replace(/[\\%_]/g, (c) => `\\${c}`);
+    const result = db
+      .prepare(`DELETE FROM scheduler_state WHERE key LIKE ? ESCAPE '\\' AND key < ?`)
+      .run(`${escaped}%`, `${prefix}${suffixBefore}`);
+    return result.changes;
+  } catch (error) {
+    logger.error({ error, prefix, suffixBefore }, 'Failed to delete scheduler state keys');
+    throw new DatabaseError(`Failed to delete scheduler state keys: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}

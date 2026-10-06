@@ -91,6 +91,50 @@ export function categorizeGuestyEndpoint(endpoint: string): GuestyRequestCategor
 }
 
 /**
+ * Rate-Limits der Guesty Open API: 15/s, 120/min, 5000/h, max 15 parallel.
+ * Wir bleiben mit Puffer darunter. perMinute=100 gilt app-weit für ALLE
+ * Guesty-Calls (ETL inklusive) — vorher war nur 10/s modelliert, dadurch
+ * "Remaining Minute: 0" (#772).
+ */
+export const GUESTY_LIMITS = { perSecond: 10, maxConcurrent: 10, minTimeMs: 100, perMinute: 100 } as const;
+
+export interface GuestyLimits {
+  perSecond: number;
+  maxConcurrent: number;
+  minTimeMs: number;
+  perMinute: number;
+}
+
+/**
+ * Baut den Sekunden-Limiter (Kopf) und hängt per chain() einen Minuten-Limiter
+ * an: ein Job läuft erst, wenn beide Limiter freigeben.
+ */
+export function createGuestyLimiter(limits: GuestyLimits = GUESTY_LIMITS): Bottleneck {
+  const head = new Bottleneck({
+    reservoir: limits.perSecond,
+    reservoirRefreshAmount: limits.perSecond,
+    reservoirRefreshInterval: 1000,
+    maxConcurrent: limits.maxConcurrent,
+    minTime: limits.minTimeMs,
+  });
+  head.on('depleted', () => {
+    logger.debug('Rate limiter reservoir depleted, requests will be queued');
+  });
+
+  const minute = new Bottleneck({
+    reservoir: limits.perMinute,
+    reservoirRefreshAmount: limits.perMinute,
+    reservoirRefreshInterval: 60_000,
+  });
+  minute.on('depleted', () => {
+    logger.debug('Guesty minute reservoir depleted');
+  });
+
+  head.chain(minute);
+  return head;
+}
+
+/**
  * Guesty API Client with OAuth 2.0 authentication and rate limit handling
  */
 /** Längste Wartezeit, die der Token-Request bei 429 noch selbst aussitzt */
@@ -146,23 +190,12 @@ export class GuestyClient {
     // Load cached token on initialization
     this.loadCachedToken();
 
-    // Configure rate limiter
-    // Conservative limits: 10 req/sec (buffer below 15), 10 concurrent (buffer below 15)
-    this.limiter = new Bottleneck({
-      reservoir: 10, // Initial capacity
-      reservoirRefreshAmount: 10, // Refill amount
-      reservoirRefreshInterval: 1000, // Refill every 1 second (10 req/sec)
-      maxConcurrent: 10, // Max 10 concurrent requests (below 15 limit)
-      minTime: 100, // Minimum 100ms between requests (10 req/sec)
-    });
+    // Rate limiter: Sekunden-Limiter + Minuten-Reservoir (siehe createGuestyLimiter)
+    this.limiter = createGuestyLimiter();
 
     // Log rate limiter events
     this.limiter.on('failed', async (error, jobInfo) => {
       logger.warn({ error, jobInfo }, 'Request failed in rate limiter');
-    });
-
-    this.limiter.on('depleted', () => {
-      logger.debug('Rate limiter reservoir depleted, requests will be queued');
     });
   }
 

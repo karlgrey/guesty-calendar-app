@@ -25,6 +25,8 @@ import { setManualCategory } from '../repositories/message-repository.js';
 import { createOfferReservation } from '../services/reservation-service.js';
 import { AppError } from '../utils/errors.js';
 import { renderAdminNav } from './admin-layout.js';
+import { guestyClient } from '../services/guesty-client.js';
+import { getGuestyRequestDailyStats } from '../services/guesty-request-telemetry.js';
 
 const router = express.Router();
 
@@ -1694,6 +1696,12 @@ router.get('/system', (_req, res) => {
       </div>
     </div>
 
+    <!-- Guesty API Requests -->
+    <div class="section">
+      <h2>Guesty-API-Requests je Tag</h2>
+      <div id="guestyRequests">Loading...</div>
+    </div>
+
     <!-- ETL Scheduler -->
     <div class="section">
       <h2>ETL Scheduler</h2>
@@ -1779,6 +1787,34 @@ router.get('/system', (_req, res) => {
       set('syncAvailabilityBtn', 'Sync Availability Only');
     }
 
+    function renderGuestyRequests(gr) {
+      const el = document.getElementById('guestyRequests');
+      if (!gr || gr.error) {
+        el.textContent = 'Nicht verfügbar' + (gr && gr.error ? ': ' + gr.error : '');
+        return;
+      }
+      const rl = gr.rateLimit || {};
+      const remaining = rl.remainingPerMinute;
+      const rows = (gr.last7Days || []).map(d => \`
+        <tr>
+          <td>\${d.date}</td><td>\${d.total}</td><td>\${d.conversationList}</td><td>\${d.conversationPosts}</td>
+          <td>\${d.conversationGet}</td><td>\${d.other}</td><td>\${d.retries}</td><td>\${d.rateLimited429}</td>
+        </tr>\`).join('');
+      el.innerHTML = \`
+        <div class="grid" style="margin-bottom: 15px;">
+          <div class="card">
+            <h3>Remaining Minute</h3>
+            <div class="value">\${remaining === null || remaining === undefined ? 'N/A' : remaining}</div>
+            <div class="subvalue">Limit: \${rl.limitPerMinute ?? 'N/A'} / min</div>
+          </div>
+        </div>
+        <table>
+          <thead><tr><th>Datum</th><th>Gesamt</th><th>Liste</th><th>Posts</th><th>Einzelabruf</th><th>Sonstige</th><th>Retries</th><th>429</th></tr></thead>
+          <tbody>\${rows}</tbody>
+        </table>
+      \`;
+    }
+
     async function loadHealth() {
       try {
         const res = await fetch('/admin/health');
@@ -1845,6 +1881,8 @@ router.get('/system', (_req, res) => {
             </div>
           </div>
         \`;
+
+        renderGuestyRequests(data.guestyRequests);
       } catch (error) {
         showMessage('Failed to load health status: ' + error.message, 'error');
       }
@@ -1982,12 +2020,22 @@ router.get('/health', (_req, res) => {
     logger.error({ error }, 'Failed to check database initialization');
   }
 
+  // Guesty-API-Last (#772) — Fehler hier dürfen den Health-Endpunkt nie kippen
+  let guestyRequests: unknown;
+  try {
+    const last7Days = getGuestyRequestDailyStats(7);
+    guestyRequests = { today: last7Days[0] ?? null, last7Days, rateLimit: guestyClient.getRateLimitInfo() };
+  } catch (error) {
+    guestyRequests = { error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
     database: databaseInitialized ? 'Connected' : 'Not initialized',
     databaseInitialized,
     scheduler: schedulerStatus,
+    guestyRequests,
     config: {
       propertyId: config.guestyPropertyId,
       cacheAvailabilityTtl: config.cacheAvailabilityTtl,

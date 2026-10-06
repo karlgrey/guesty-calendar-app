@@ -8,6 +8,7 @@ import { toZonedTime } from 'date-fns-tz';
 import { getHours } from 'date-fns';
 import { runETLJob } from './etl-job.js';
 import { startMessageLoop, stopMessageLoop } from './message-loop.js';
+import { startGuestyTelemetryFlush } from '../services/guesty-request-telemetry.js';
 import { sendWeeklySummaryEmailForProperty, shouldSendWeeklyEmailForProperty } from './weekly-email.js';
 import { sendBiReportEmail, shouldSendBiReport } from './bi-email.js';
 import { syncAnalytics, shouldSyncAnalytics } from './sync-analytics.js';
@@ -515,6 +516,7 @@ export function startScheduler() {
 
   // Eigener Nachrichten-Takt (Spec 3.2) — unabhängig vom Stunden-ETL
   startMessageLoop(config.messageLoopMinutes);
+  startGuestyTelemetryFlush();
 
   // Calculate next run
   state.nextRun = new Date(Date.now() + intervalMs);
