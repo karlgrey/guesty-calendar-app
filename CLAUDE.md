@@ -97,7 +97,13 @@ Properties are defined in `data/properties.json` (validated with Zod on startup)
 - Scheduler tracks per-property state: `propertyWeeklyEmailSent: Map<string, Date>`
 
 ### Rate Limiting
-- 10 req/sec, 10 concurrent (below Guesty's 15/15 limits)
+- 10 req/sec, 10 concurrent (below Guesty's 15/15 limits) **plus 100 req/min** (Minuten-Reservoir per
+  Bottleneck `chain()`, app-weit für alle Guesty-Calls, #772 — Guesty erlaubt 120/min). Konstanten:
+  `GUESTY_LIMITS`/`createGuestyLimiter` in `guesty-client.ts`
+- **Telemetrie (#772):** `guestyClient.getRequestCounters()` zählt jeden HTTP-Versuch je Kategorie
+  (Liste, Posts, Einzelabruf, Sonstige, Retries, 429); `src/services/guesty-request-telemetry.ts` flusht
+  alle 5 min Tageswerte nach `scheduler_state` (`guesty_requests:YYYY-MM-DD`, Berlin-Datum, 30 Tage).
+  Anzeige: `/health/detailed` → `guestyRequests`, `/admin/system` → „Guesty-API-Requests je Tag"
 - Exponential backoff with jitter for 429 responses
 - OAuth retry: up to 5 attempts with backoff
 
@@ -242,12 +248,24 @@ erweitert auf Guesty-Properties (Farmhouse, U19) — Spec:
 `docs/superpowers/specs/2026-07-07-guesty-send-design.md`.
 
 **Schnitt 1 — Message Sync** (`src/jobs/hostex/sync-hostex-messages.ts` + `src/jobs/sync-guesty-messages.ts`):
-- **Inkrementell** (Button + stündlicher ETL): Hostex skippt Details, wenn das
+- **Inkrementell** (Button + Nachrichten-Loop): Hostex skippt Details, wenn das
   Listen-`last_message_at` ≤ lokalem `last_synced_at` (exakt); Guesty skippt Posts für
-  Conversations, die lokal bekannt, >30 Tage inaktiv UND deren Aufenthalt >14 Tage vorbei
-  ist (Liste hat KEINEN Aktivitäts-Zeitstempel, `state.read` ist bei uns immer unread,
-  Sortierung = `createdAt`). Täglicher Force-ETL (2 Uhr) = Deep-Sync über alles.
-  Guesty-Posts-Fetches laufen parallel (Bottleneck 10 in flight). Button-Sync: ~15 s.
+  Conversations, die lokal bekannt, >7 Tage inaktiv UND deren Aufenthalt >3 Tage vorbei
+  ist (#772, vorher 30/14; Liste hat KEINEN Aktivitäts-Zeitstempel, `state.read` ist bei
+  uns immer unread, Sortierung = `createdAt`, neueste vorn). Täglicher Force-ETL (2 Uhr) =
+  Deep-Sync über alles; der nicht-forcierte Stunden-ETL synct seit #772 KEINE Guesty-
+  Nachrichten mehr (das macht der Loop). Guesty-Posts-Fetches laufen parallel, der
+  Client-Limiter (10/s + 100/min) glättet den Burst. Button-Sync: ~15 s.
+- **Guesty-Liste inkrementell (#772, `fetchConversationsIncremental`):** der Loop blättert nur,
+  bis eine Seite Konversationen älter als das 7-Tage-Fenster enthält UND alle diese alten
+  lokal bekannt sind (unbekannte alte → weiterblättern), typisch 1–2 Seiten; ist eine Seite
+  NICHT absteigend nach `createdAt` sortiert, wird ohne Abbruch komplett geblättert (Warn-Log
+  „Seite nicht absteigend nach createdAt"). Bei Teil-Liste
+  (`partialList`) holt `syncGuestyMessagesForProperty` zusätzlich die Posts lokaler
+  Fenster-Threads, die nicht in der Liste stehen (`getGuestyThreadsForListing` +
+  `isLocalThreadInWindow`: `last_message_at` im Fenster oder Check-out aus `raw_meta.checkOuts`
+  bzw. `reservations.check_out` ≥ heute − 3 Tage). Log „Guesty messages: sync completed“
+  trägt `postsFetched`, `localWindowFetched`, `guestyRequests`.
 - **Guesty-Eigenheit:** an neue Anfragen hängt Guesty einen System-Post („New guest
   inquiry") ZEITLICH NACH der Gastnachricht — die „letzte Nachricht = inbound"-Queries
   ignorieren daher `direction='system'`.
@@ -482,10 +500,17 @@ Copy-Paste kann ein sicherer Entwurf automatisch rausgehen. Spec:
   sofort eine `wait`-Entscheidung, statt den Entwurf stillschweigend auf `auto` stehen
   zu lassen.
 - **Nachrichten-Loop** (`src/jobs/message-loop.ts`, `runMessageLoopOnce`, eigener Takt
-  `MESSAGE_LOOP_MINUTES` (5) unabhängig vom Stunden-ETL): Sync beider Provider →
-  Entwürfe → Gate. `messageSyncLock`/`acquireMessageSyncLock` verhindert überlappende Syncs
-  mit dem ETL (ETL wartet bis 60 s, manueller „Jetzt syncen"-Button und Webhook je 30 s).
-  Guesty-Conversation-Liste läuft mit `limit=100`. Start-Log: „💬 Nachrichten-Loop gestartet".
+  `MESSAGE_LOOP_MINUTES` (Default 30 seit #772, vorher 5) unabhängig vom Stunden-ETL):
+  **Webhook-first** — der Webhook trägt den Echtzeitpfad, der Loop ist Sicherheitsnetz.
+  Ablauf: Vormerkliste → Sync beider Provider → Entwürfe → Gate. `messageSyncLock`/
+  `acquireMessageSyncLock` verhindert überlappende Syncs mit dem ETL (ETL wartet bis 60 s,
+  manueller „Jetzt syncen"-Button 30 s, Webhook 120 s = `WEBHOOK_LOCK_WAIT_MS`). Verliert der
+  Webhook den Lock trotzdem, kommt die bereits geladene Konversation in die prozessweite
+  Vormerkliste (`addPendingGuestyConversation`, nur im Speicher); der nächste Loop-Lauf synct
+  sie zuerst (nur deren Posts, deep) und schließt sie im regulären Teil aus. Guesty-Liste
+  inkrementell (siehe Schnitt 1), `limit=100`. Log „message-loop: Lauf beendet“ mit
+  `listPages` und `guestyRequests` (prozessweite Zähler-Differenz). Start-Log:
+  „💬 Nachrichten-Loop gestartet".
 - **Guesty-Webhook** (`POST /api/webhooks/guesty`, `src/routes/webhooks-guesty.ts` +
   `src/services/guesty-webhook-signature.ts`): reagiert auf `reservation.messageReceived`
   in Echtzeit statt auf den nächsten Loop-Tick. Svix-Signatur-Prüfung, deshalb VOR
@@ -727,7 +752,7 @@ Copy-Paste kann ein sicherer Entwurf automatisch rausgehen. Spec:
   aufklappbares „Vorversion (Entwurf vom …) — automatisch neu generiert …“ unter dem Textarea
   (`renderStaleDraftWarning`/`renderPreviousDraftBody`, rein/exportiert wie `renderAutoBadge`).
 - **Env-Variablen:** `AUTO_SEND_MODE` (`off`|`shadow`|`live`, Default `off`),
-  `AUTO_SEND_DAILY_CAP` (Default 10), `MESSAGE_LOOP_MINUTES` (Default 5), `JUDGE_MODEL`
+  `AUTO_SEND_DAILY_CAP` (Default 10), `MESSAGE_LOOP_MINUTES` (Default 30, #772), `JUDGE_MODEL`
   (Default `claude-opus-5`), `GUESTY_WEBHOOK_SECRET` (aus `npm run webhook:register`),
   `SMARTTASKS_API_KEY`/`SMARTTASKS_API_URL` (#696, siehe „SmartTasks-Client" oben),
   `DRAFT_STALE_HOURS` (#699, Default 6).
@@ -940,7 +965,7 @@ Optional:
 - `DRAFT_MAX_AGE_HOURS` - Only draft threads with guest activity newer than this (default: 72 hours)
 - `AUTO_SEND_MODE` - `off`|`shadow`|`live`, Auto-Send-Gate (default: `off`), see Auto-Send-Gate section
 - `AUTO_SEND_DAILY_CAP` - Max automatisch versendete Entwürfe pro Kalendertag Europe/Berlin (default: 10)
-- `MESSAGE_LOOP_MINUTES` - Takt des eigenständigen Nachrichten-Loops (default: 5)
+- `MESSAGE_LOOP_MINUTES` - Takt des eigenständigen Nachrichten-Loops (default: 30; Sicherheitsnetz neben dem Webhook, #772)
 - `JUDGE_MODEL` - Modell für die Auto-Send-Prüfung (default: `claude-opus-5`)
 - `GUESTY_WEBHOOK_SECRET` - Svix-Secret des Guesty-Webhooks, aus `npm run webhook:register`
 - `WA_OUTBOX_DIR` - Outbox-Verzeichnis der WhatsApp-Bridge (auf labs); Zeit-Änderungen → Wanja (#793). **Leer/ungesetzt = kein Versand** (nur Log), Dev/Test immer leer lassen

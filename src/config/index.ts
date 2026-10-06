@@ -148,7 +148,8 @@ const configSchema = z.object({
   // Auto-Send-Gate (Spec 2026-09-19)
   autoSendMode: z.enum(['off', 'shadow', 'live']).default('off'),
   autoSendDailyCap: z.coerce.number().int().min(0).default(10),
-  messageLoopMinutes: z.coerce.number().int().min(1).default(5),
+  // #772 Webhook-first: der Loop ist nur noch Sicherheitsnetz (Default 30 statt 5 min)
+  messageLoopMinutes: z.coerce.number().int().min(1).default(30),
   guestyWebhookSecret: z.string().optional(),
   judgeModel: z.string().default('claude-opus-5'),
 

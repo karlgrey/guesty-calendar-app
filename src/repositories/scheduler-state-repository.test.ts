@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Database from 'better-sqlite3';
 import { setDatabase, resetDatabase } from '../db/index.js';
-import { getSchedulerState, setSchedulerState } from './scheduler-state-repository.js';
+import { getSchedulerState, setSchedulerState, deleteSchedulerStateKeysBefore } from './scheduler-state-repository.js';
 
 let db: Database.Database;
 
@@ -50,5 +50,20 @@ describe('setSchedulerState', () => {
 
     expect(getSchedulerState('dailyConsistencyCheckLastRunDay')).toBe('2026-09-10');
     expect(getSchedulerState('dailyForceSyncLastRunDay')).toBe('2026-09-09');
+  });
+});
+
+describe('deleteSchedulerStateKeysBefore', () => {
+  it('löscht nur Keys mit Prefix und kleinerem Suffix, andere bleiben', () => {
+    setSchedulerState('guesty_requests:2026-08-01', 'a');
+    setSchedulerState('guesty_requests:2026-09-05', 'b');
+    setSchedulerState('guesty_requests:2026-09-06', 'c');
+    setSchedulerState('other:2020-01-01', 'd');
+    const n = deleteSchedulerStateKeysBefore('guesty_requests:', '2026-09-06');
+    expect(n).toBe(2);
+    expect(getSchedulerState('guesty_requests:2026-08-01')).toBeNull();
+    expect(getSchedulerState('guesty_requests:2026-09-05')).toBeNull();
+    expect(getSchedulerState('guesty_requests:2026-09-06')).toBe('c');
+    expect(getSchedulerState('other:2020-01-01')).toBe('d');
   });
 });

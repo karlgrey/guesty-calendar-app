@@ -52,6 +52,89 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
+ * Request-Telemetrie (#772): prozessweite, monoton steigende Zähler je Kategorie.
+ * Jeder HTTP-Versuch zählt (auch Retries) — so zählt auch Guesty in den Analytics.
+ * Pro Lauf: Snapshot vorher/nachher + diffRequestCounters().
+ */
+export type GuestyRequestCategory = 'conversationList' | 'conversationPosts' | 'conversationGet' | 'other';
+
+export interface GuestyRequestCounters {
+  /** alle HTTP-Versuche gegen die Open API (ohne OAuth-Token-Endpunkt) */
+  total: number;
+  conversationList: number;
+  conversationPosts: number;
+  conversationGet: number;
+  other: number;
+  /** Wiederholungsversuche (Versuch 2..n, egal ob wegen 429 oder Netzfehler) */
+  retries: number;
+  /** Antworten mit Status 429 */
+  rateLimited429: number;
+}
+
+export function emptyRequestCounters(): GuestyRequestCounters {
+  return { total: 0, conversationList: 0, conversationPosts: 0, conversationGet: 0, other: 0, retries: 0, rateLimited429: 0 };
+}
+
+export function diffRequestCounters(after: GuestyRequestCounters, before: GuestyRequestCounters): GuestyRequestCounters {
+  const d = emptyRequestCounters();
+  for (const k of Object.keys(d) as (keyof GuestyRequestCounters)[]) d[k] = after[k] - before[k];
+  return d;
+}
+
+/** Ordnet einen Endpunkt (Pfad relativ zur Base-URL, ggf. mit Query) einer Kategorie zu. */
+export function categorizeGuestyEndpoint(endpoint: string): GuestyRequestCategory {
+  const path = endpoint.split('?')[0].replace(/\/$/, '');
+  if (path === '/communication/conversations') return 'conversationList';
+  if (/^\/communication\/conversations\/[^/]+\/posts$/.test(path)) return 'conversationPosts';
+  if (/^\/communication\/conversations\/[^/]+$/.test(path)) return 'conversationGet';
+  return 'other';
+}
+
+/**
+ * Rate-Limits der Guesty Open API: 15/s, 120/min, 5000/h, max 15 parallel.
+ * Wir bleiben mit Puffer darunter. perMinute=100 gilt app-weit für ALLE
+ * Guesty-Calls (ETL inklusive) — vorher war nur 10/s modelliert, dadurch
+ * "Remaining Minute: 0" (#772).
+ */
+export const GUESTY_LIMITS = { perSecond: 10, maxConcurrent: 10, minTimeMs: 100, perMinute: 100 } as const;
+
+export interface GuestyLimits {
+  perSecond: number;
+  maxConcurrent: number;
+  minTimeMs: number;
+  perMinute: number;
+}
+
+/**
+ * Baut den Sekunden-Limiter (Kopf) und hängt per chain() einen Minuten-Limiter
+ * an: ein Job läuft erst, wenn beide Limiter freigeben.
+ */
+export function createGuestyLimiter(limits: GuestyLimits = GUESTY_LIMITS): Bottleneck {
+  const head = new Bottleneck({
+    reservoir: limits.perSecond,
+    reservoirRefreshAmount: limits.perSecond,
+    reservoirRefreshInterval: 1000,
+    maxConcurrent: limits.maxConcurrent,
+    minTime: limits.minTimeMs,
+  });
+  head.on('depleted', () => {
+    logger.debug('Rate limiter reservoir depleted, requests will be queued');
+  });
+
+  const minute = new Bottleneck({
+    reservoir: limits.perMinute,
+    reservoirRefreshAmount: limits.perMinute,
+    reservoirRefreshInterval: 60_000,
+  });
+  minute.on('depleted', () => {
+    logger.debug('Guesty minute reservoir depleted');
+  });
+
+  head.chain(minute);
+  return head;
+}
+
+/**
  * Guesty API Client with OAuth 2.0 authentication and rate limit handling
  */
 /** Längste Wartezeit, die der Token-Request bei 429 noch selbst aussitzt */
@@ -76,6 +159,7 @@ export class GuestyClient {
   /** Bis wann keine Token-Requests gestellt werden (Fail fast, #767) */
   private tokenBlockedUntil = 0;
   private tokenBlockedReason = '';
+  private requestCounters: GuestyRequestCounters = emptyRequestCounters();
   private rateLimitInfo: RateLimitInfo = {
     limitPerSecond: null,
     remainingPerSecond: null,
@@ -106,23 +190,12 @@ export class GuestyClient {
     // Load cached token on initialization
     this.loadCachedToken();
 
-    // Configure rate limiter
-    // Conservative limits: 10 req/sec (buffer below 15), 10 concurrent (buffer below 15)
-    this.limiter = new Bottleneck({
-      reservoir: 10, // Initial capacity
-      reservoirRefreshAmount: 10, // Refill amount
-      reservoirRefreshInterval: 1000, // Refill every 1 second (10 req/sec)
-      maxConcurrent: 10, // Max 10 concurrent requests (below 15 limit)
-      minTime: 100, // Minimum 100ms between requests (10 req/sec)
-    });
+    // Rate limiter: Sekunden-Limiter + Minuten-Reservoir (siehe createGuestyLimiter)
+    this.limiter = createGuestyLimiter();
 
     // Log rate limiter events
     this.limiter.on('failed', async (error, jobInfo) => {
       logger.warn({ error, jobInfo }, 'Request failed in rate limiter');
-    });
-
-    this.limiter.on('depleted', () => {
-      logger.debug('Rate limiter reservoir depleted, requests will be queued');
     });
   }
 
@@ -376,6 +449,7 @@ export class GuestyClient {
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       const startTime = Date.now();
+      this.countRequest(endpoint, attempt);
 
       try {
         const response = await fetch(url, {
@@ -394,6 +468,7 @@ export class GuestyClient {
 
         // Handle 429 Rate Limit with retry
         if (response.status === 429) {
+          this.requestCounters.rateLimited429++;
           const retryAfterHeader = response.headers.get('Retry-After');
           let delayMs: number;
 
@@ -499,6 +574,18 @@ export class GuestyClient {
    */
   getRateLimitInfo(): RateLimitInfo {
     return { ...this.rateLimitInfo };
+  }
+
+  /** Telemetrie (#772): Kopie der prozessweiten Zähler (Snapshot für Lauf-Differenzen). */
+  getRequestCounters(): GuestyRequestCounters {
+    return { ...this.requestCounters };
+  }
+
+  private countRequest(endpoint: string, attempt: number): void {
+    const c = this.requestCounters;
+    c.total++;
+    c[categorizeGuestyEndpoint(endpoint)]++;
+    if (attempt > 0) c.retries++;
   }
 
   /**

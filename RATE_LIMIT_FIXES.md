@@ -124,6 +124,27 @@ To verify fixes are working:
 - `docs/GUESTY_API_ANALYSIS.md` - Added rate limiting section
 - `package.json` - Added `bottleneck` dependency
 
+## Update 10/2026 (#772): Nachrichten-Loop als Lastquelle
+
+**Befund:** Seit dem Nachrichten-Loop (20.09.2026, Takt 5 min) zeigte die Guesty-Open-API-Analytics
+~30.000 Requests/Tag (378k von 413k in 30 Tagen auf `/communication/…`) und „Remaining Minute: 0“.
+Ursachen: je Lauf die komplette Konversationsliste, Posts aller Threads im 30/14-Tage-Fenster per
+Promise.all, zusätzlich ein voller Listendurchlauf je Property im Stunden-ETL; der Limiter kannte
+nur das Sekunden-Limit.
+
+**Fixes:**
+1. **Minuten-Reservoir:** `createGuestyLimiter` hängt per Bottleneck `chain()` einen Limiter mit
+   100 req/min an den Sekunden-Limiter (10/s, 10 parallel) — app-weit.
+2. **Telemetrie:** Request-Zähler je Kategorie (Liste, Posts, Einzelabruf, Sonstige, Retries, 429)
+   im Client, je Lauf im Log, Tageswerte in `scheduler_state`, sichtbar auf `/health/detailed`
+   und `/admin/system`.
+3. **Webhook-first:** `MESSAGE_LOOP_MINUTES` Default 30, Webhook-Lock-Wartezeit 120 s,
+   Vormerkliste bei Lock-Verlust.
+4. **Inkrementelle Liste + kleine Fenster (7 Tage Aktivität / 3 Tage Check-out-Karenz),** Rest nur
+   im nächtlichen Deep-Sync; Stunden-ETL ohne Guesty-Nachrichten-Sync.
+
+**Ziel:** < 3.000 Requests/Tag aus `/communication/…`, kein „Remaining Minute: 0“.
+
 ## Benefits
 
 1. **Automatic recovery** from rate limit errors

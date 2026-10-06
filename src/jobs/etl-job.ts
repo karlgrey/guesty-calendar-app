@@ -266,8 +266,11 @@ export async function runETLJobForProperty(
     const inquiriesResult = await syncInquiries(guestyPropertyId!);
 
     // Step 4 (non-fatal): conversations → message_threads/messages + AI drafts.
-    // Nachrichten-Sync + Draft-Gen laufen jetzt primär im 5-Minuten-Loop (message-loop.ts);
-    // der Lock verhindert, dass ETL und Loop gleichzeitig dieselben Threads bearbeiten. Statt
+    // Nachrichten-Sync + Draft-Gen laufen primär im Nachrichten-Loop (message-loop.ts, wird in
+    // scheduler.ts immer gestartet); der nicht-forcierte Stunden-ETL synct deshalb KEINE
+    // Nachrichten mehr (je Property ein voller Listendurchlauf, #772) — nur der forcierte
+    // 2-Uhr-Lauf macht den Deep-Sync. Der Lock verhindert,
+    // dass ETL und Loop gleichzeitig dieselben Threads bearbeiten. Statt
     // sofort aufzugeben, wartet die ETL bis zu 60s auf den Lock — sonst könnte der tägliche
     // 2-Uhr-Deep-Sync (force=true, einziger Lauf des Tages) ausfallen, nur weil der Loop gerade
     // eine minutenlange LLM-Draft-Gen laufen hat.
@@ -279,8 +282,12 @@ export async function runETLJobForProperty(
     } else {
       try {
         try {
-          // force (täglicher 2-Uhr-Lauf) = deep: alle Posts neu; sonst inkrementell.
-          await syncGuestyMessagesForProperty(property, undefined, { deep: force });
+          if (force) {
+            // täglicher 2-Uhr-Lauf = deep: alle Posts neu.
+            await syncGuestyMessagesForProperty(property, undefined, { deep: true });
+          } else {
+            logger.info({ propertySlug: slug }, 'ETL: Nachrichten-Sync übernimmt der Loop');
+          }
         } catch (error) {
           logger.error({ error, propertySlug: slug }, 'Guesty: message sync error (non-fatal)');
         }

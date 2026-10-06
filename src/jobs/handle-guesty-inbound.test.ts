@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { vi } from 'vitest';
-import { handleGuestyInbound, type InboundDeps } from './handle-guesty-inbound.js';
-import { messageSyncLock, resetMessageSyncLockForTests } from './message-loop.js';
+import { handleGuestyInbound, WEBHOOK_LOCK_WAIT_MS, type InboundDeps } from './handle-guesty-inbound.js';
+import { messageSyncLock, resetMessageSyncLockForTests, resetPendingGuestyConversationsForTests, takePendingGuestyConversations, pendingGuestyConversationCount } from './message-loop.js';
 import type { PropertyConfig } from '../config/properties.js';
 
 const props = [{ slug: 'farmhouse', provider: 'guesty', guestyPropertyId: 'G1' }, { slug: 'u19', provider: 'guesty', guestyPropertyId: 'G2' }] as PropertyConfig[];
@@ -11,7 +11,7 @@ function deps(over: Partial<InboundDeps> = {}): InboundDeps {
 }
 
 describe('handleGuestyInbound', () => {
-  beforeEach(() => resetMessageSyncLockForTests());
+  beforeEach(() => { resetMessageSyncLockForTests(); resetPendingGuestyConversationsForTests(); });
 
   // Fix-Runde 1 (Important #1): das Payload wird NIE direkt persistiert (Spec 3.1) — die
   // Konversation kommt immer per getConversation, selbst wenn das Payload schon Listing-Info
@@ -39,10 +39,23 @@ describe('handleGuestyInbound', () => {
       messageSyncLock.tryAcquire('etl');
       const d = deps();
       const resultPromise = handleGuestyInbound({ event: 'x', conversation: { _id: 'c1' }, message: { type: 'fromGuest' } }, d);
-      await vi.advanceTimersByTimeAsync(31_000);
+      await vi.advanceTimersByTimeAsync(WEBHOOK_LOCK_WAIT_MS + 1_000);
       await expect(resultPromise).resolves.toBeUndefined();
       expect(d.syncGuesty).not.toHaveBeenCalled();
       expect(messageSyncLock.holder).toBe('etl');
+    });
+
+    it('Lock-Wartezeit 120 s; bei Verlust wird die geladene conv vorgemerkt', async () => {
+      expect(WEBHOOK_LOCK_WAIT_MS).toBe(120_000);
+      messageSyncLock.tryAcquire('message-loop');
+      const d = deps();
+      const resultPromise = handleGuestyInbound({ event: 'x', conversation: { _id: 'c1' }, message: { type: 'fromGuest' } }, d);
+      await vi.advanceTimersByTimeAsync(WEBHOOK_LOCK_WAIT_MS + 1_000);
+      await resultPromise;
+      expect(d.syncGuesty).not.toHaveBeenCalled();
+      expect(d.generateDrafts).not.toHaveBeenCalled();
+      expect(pendingGuestyConversationCount()).toBe(1);
+      expect(takePendingGuestyConversations()).toEqual([conv]);
     });
 
     it('syncGuesty wirft → Lock wird trotzdem freigegeben', async () => {
