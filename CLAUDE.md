@@ -258,7 +258,9 @@ erweitert auf Guesty-Properties (Farmhouse, U19) — Spec:
   Client-Limiter (10/s + 100/min) glättet den Burst. Button-Sync: ~15 s.
 - **Guesty-Liste inkrementell (#772, `fetchConversationsIncremental`):** der Loop blättert nur,
   bis eine Seite Konversationen älter als das 7-Tage-Fenster enthält UND alle diese alten
-  lokal bekannt sind (unbekannte alte → weiterblättern), typisch 1–2 Seiten. Bei Teil-Liste
+  lokal bekannt sind (unbekannte alte → weiterblättern), typisch 1–2 Seiten; ist eine Seite
+  NICHT absteigend nach `createdAt` sortiert, wird ohne Abbruch komplett geblättert (Warn-Log
+  „Seite nicht absteigend nach createdAt"). Bei Teil-Liste
   (`partialList`) holt `syncGuestyMessagesForProperty` zusätzlich die Posts lokaler
   Fenster-Threads, die nicht in der Liste stehen (`getGuestyThreadsForListing` +
   `isLocalThreadInWindow`: `last_message_at` im Fenster oder Check-out aus `raw_meta.checkOuts`

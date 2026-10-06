@@ -112,11 +112,22 @@ export async function fetchConversationsIncremental(
     });
     all.push(...conversations);
     if (!nextCursor || conversations.length === 0) return { conversations: all, pages: page, complete: true };
+    const times = conversations
+      .map((c) => (c?.createdAt ? Date.parse(c.createdAt) : NaN))
+      .filter((t) => !Number.isNaN(t));
+    // Schutz (Prüfer #772): die Abbruchregel setzt „neueste vorn" voraus — die Sortierung ist
+    // nicht per Parameter erzwingbar (Spike 19.09.2026). Ist die Seite nicht absteigend sortiert,
+    // nie abbrechen (sonst bliebe die Teil-Liste bei den ältesten Konversationen hängen und der
+    // Poll sähe neue Konversationen nie), sondern zu Ende blättern wie der Deep-Sync.
+    const descending = times.every((t, i) => i === 0 || t <= times[i - 1]);
+    if (!descending) {
+      logger.warn({ page }, 'Guesty conversations: Seite nicht absteigend nach createdAt — blättere komplett');
+    }
     const old = conversations.filter((c) => {
       const t = c?.createdAt ? Date.parse(c.createdAt) : NaN;
       return !Number.isNaN(t) && t < cutoff;
     });
-    if (old.length > 0 && old.every((c) => isKnown(c._id))) {
+    if (descending && old.length > 0 && old.every((c) => isKnown(c._id))) {
       return { conversations: all, pages: page, complete: false };
     }
     cursor = nextCursor;

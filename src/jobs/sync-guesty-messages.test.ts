@@ -133,6 +133,17 @@ describe('fetchConversationsIncremental', () => {
     expect(r.conversations).toHaveLength(4);
   });
 
+  it('Seite aufsteigend sortiert (älteste vorn) → kein Abbruch, blättert bis zum Ende', async () => {
+    // Prüfer #772: ohne garantierte Sortierung wäre „alte bekannt → stopp" auf Seite 1 falsch.
+    m.listConversations
+      .mockResolvedValueOnce(page([['o1', daysAgo(30)], ['o2', daysAgo(20)]], 'c2'))
+      .mockResolvedValueOnce(page([['n1', daysAgo(1)]]));
+    const r = await fetchConversationsIncremental({ isKnown: known(['o1', 'o2']), now: NOW });
+    expect(m.listConversations).toHaveBeenCalledTimes(2);
+    expect(r.complete).toBe(true);
+    expect(r.conversations.map((c) => c._id)).toEqual(['o1', 'o2', 'n1']);
+  });
+
   it('fehlendes/unparsebares createdAt zählt nicht als alt', async () => {
     m.listConversations
       .mockResolvedValueOnce(page([['a', undefined], ['b', 'kaputt']], 'c2'))
