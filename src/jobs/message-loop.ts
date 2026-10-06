@@ -3,7 +3,8 @@
 import { getAllProperties, type PropertyConfig } from '../config/properties.js';
 import { getHostexClient, type HostexConversationDetail } from '../services/hostex-client.js';
 import { syncHostexMessagesForProperty } from './hostex/sync-hostex-messages.js';
-import { syncGuestyMessagesForProperty, fetchAllConversations } from './sync-guesty-messages.js';
+import { syncGuestyMessagesForProperty, fetchConversationsIncremental } from './sync-guesty-messages.js';
+import { guestyClient, diffRequestCounters, type GuestyRequestCounters } from '../services/guesty-client.js';
 import { generateDraftsForProperty } from './generate-drafts.js';
 import logger from '../utils/logger.js';
 
@@ -56,12 +57,53 @@ export async function acquireMessageSyncLock(
   return true;
 }
 
+/**
+ * Vormerkliste (#772): Verliert der Webhook den Lock auch nach WEBHOOK_LOCK_WAIT_MS, ist die
+ * bereits geladene Konversation sonst verloren (die Teil-Liste des Polls sieht sie womöglich
+ * nicht mehr). Prozessweit; der nächste Loop-Lauf arbeitet sie nach dem Lock-Erwerb zuerst ab.
+ */
+const pendingGuestyConversations = new Map<string, any>();
+
+export function addPendingGuestyConversation(conv: any): void {
+  if (conv?._id) pendingGuestyConversations.set(conv._id, conv);
+}
+/** Gibt alle vorgemerkten Konversationen zurück und leert die Liste. */
+export function takePendingGuestyConversations(): any[] {
+  const all = [...pendingGuestyConversations.values()];
+  pendingGuestyConversations.clear();
+  return all;
+}
+export function pendingGuestyConversationCount(): number {
+  return pendingGuestyConversations.size;
+}
+export function resetPendingGuestyConversationsForTests(): void {
+  pendingGuestyConversations.clear();
+}
+
+const listingIdsOf = (conv: any): string[] =>
+  (conv?.meta?.reservations ?? []).map((r: any) => r?.listing?._id ?? r?.listingId).filter(Boolean);
+
+/** Passendes Guesty-Objekt zu einer Konversation per Listing-Id (Webhook + Vormerkliste). */
+export function findGuestyPropertyForConversation(conv: any, props: PropertyConfig[]): PropertyConfig | undefined {
+  const ids = listingIdsOf(conv);
+  return props.find((p) => p.provider === 'guesty' && p.guestyPropertyId && ids.includes(p.guestyPropertyId));
+}
+
+export interface GuestySyncOpts {
+  deep?: boolean;
+  partialList?: boolean;
+  /** Konversations-Ids, die in diesem Lauf schon gesynct wurden (Vormerkliste) — nicht nochmal holen. */
+  excludeConvIds?: Set<string>;
+}
+
 export interface MessageLoopDeps {
   getProperties: () => PropertyConfig[];
   syncHostex: (p: PropertyConfig, cache: Map<string, HostexConversationDetail>) => Promise<{ success: boolean; error?: string }>;
-  fetchGuestyConversations: () => Promise<any[]>;
-  syncGuesty: (p: PropertyConfig, convs: any[]) => Promise<{ success: boolean; error?: string }>;
+  fetchGuestyConversations: () => Promise<{ conversations: any[]; pages: number; complete: boolean }>;
+  syncGuesty: (p: PropertyConfig, convs: any[], opts: GuestySyncOpts) => Promise<{ success: boolean; error?: string }>;
   generateDrafts: (p: PropertyConfig) => Promise<unknown>;
+  /** Prozessweite Guesty-HTTP-Zähler (Telemetrie je Lauf). */
+  getRequestCounters?: () => GuestyRequestCounters;
 }
 
 const realDeps: MessageLoopDeps = {
@@ -69,9 +111,10 @@ const realDeps: MessageLoopDeps = {
   // Ein geteilter Detail-Cache pro Lauf über alle Hostex-Objekte hinweg (wie runMessageSync in
   // routes/messages.ts) — jede Conversation-Detail wird höchstens einmal je Lauf geholt.
   syncHostex: (p, cache) => syncHostexMessagesForProperty(p, getHostexClient(), undefined, cache, { deep: false }),
-  fetchGuestyConversations: fetchAllConversations,
-  syncGuesty: (p, convs) => syncGuestyMessagesForProperty(p, convs, { deep: false }),
+  fetchGuestyConversations: () => fetchConversationsIncremental(),
+  syncGuesty: (p, convs, opts) => syncGuestyMessagesForProperty(p, convs, opts),
   generateDrafts: (p) => generateDraftsForProperty(p),
+  getRequestCounters: () => guestyClient.getRequestCounters(),
 };
 
 export async function runMessageLoopOnce(
@@ -82,11 +125,39 @@ export async function runMessageLoopOnce(
     return { skipped: true, properties: 0 };
   }
   const start = Date.now();
+  const countersBefore = deps.getRequestCounters?.();
+  let listPages = 0;
   let count = 0;
   const hostexDetailCache = new Map<string, HostexConversationDetail>();
   try {
     const props = deps.getProperties().filter((p) => p.provider === 'hostex' || p.provider === 'guesty');
-    let guestyConvs: any[] | null = null;
+    let guestyList: { conversations: any[]; pages: number; complete: boolean } | null = null;
+
+    // Vormerkliste (Webhook hatte den Lock nicht) zuerst: nur deren Posts, keine Liste.
+    const alreadySynced = new Set<string>();
+    for (const conv of takePendingGuestyConversations()) {
+      const prop = findGuestyPropertyForConversation(conv, props);
+      if (!prop) {
+        logger.warn({ conversationId: conv?._id }, 'message-loop: vorgemerkte Konversation ohne passendes Objekt — verworfen');
+        continue;
+      }
+      try {
+        const r = await deps.syncGuesty(prop, [conv], { deep: true });
+        if (r.success) {
+          alreadySynced.add(conv._id);
+        } else {
+          addPendingGuestyConversation(conv);
+          logger.warn({ conversationId: conv._id, error: r.error }, 'message-loop: vorgemerkte Konversation fehlgeschlagen — wieder vorgemerkt');
+        }
+      } catch (err) {
+        addPendingGuestyConversation(conv);
+        logger.warn(
+          { conversationId: conv._id, err: err instanceof Error ? err.message : String(err) },
+          'message-loop: vorgemerkte Konversation fehlgeschlagen — wieder vorgemerkt',
+        );
+      }
+    }
+
     for (const p of props) {
       try {
         let synced = true;
@@ -97,8 +168,15 @@ export async function runMessageLoopOnce(
             logger.warn({ slug: p.slug, error: r.error }, 'message-loop: Sync fehlgeschlagen');
           }
         } else {
-          guestyConvs ??= await deps.fetchGuestyConversations();
-          const r = await deps.syncGuesty(p, guestyConvs);
+          if (!guestyList) {
+            guestyList = await deps.fetchGuestyConversations();
+            listPages = guestyList.pages;
+          }
+          const r = await deps.syncGuesty(p, guestyList.conversations, {
+            deep: false,
+            partialList: !guestyList.complete,
+            ...(alreadySynced.size > 0 ? { excludeConvIds: alreadySynced } : {}),
+          });
           if (!r.success) {
             synced = false;
             logger.warn({ slug: p.slug, error: r.error }, 'message-loop: Sync fehlgeschlagen');
@@ -118,7 +196,13 @@ export async function runMessageLoopOnce(
   } finally {
     messageSyncLock.release('message-loop');
   }
-  logger.info({ properties: count, durationMs: Date.now() - start }, 'message-loop: Lauf beendet');
+  // guestyRequests = prozessweite Differenz (enthält auch parallel laufende Guesty-Calls, z. B. Webhooks).
+  const guestyRequests =
+    countersBefore && deps.getRequestCounters ? diffRequestCounters(deps.getRequestCounters(), countersBefore) : undefined;
+  logger.info(
+    { properties: count, durationMs: Date.now() - start, listPages, guestyRequests },
+    'message-loop: Lauf beendet',
+  );
   return { skipped: false, properties: count };
 }
 

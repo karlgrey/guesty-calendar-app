@@ -7,7 +7,12 @@ import { getAllProperties, type PropertyConfig } from '../config/properties.js';
 import { guestyClient } from '../services/guesty-client.js';
 import { syncGuestyMessagesForProperty } from './sync-guesty-messages.js';
 import { generateDraftsForProperty } from './generate-drafts.js';
-import { acquireMessageSyncLock, messageSyncLock } from './message-loop.js';
+import {
+  acquireMessageSyncLock,
+  messageSyncLock,
+  addPendingGuestyConversation,
+  findGuestyPropertyForConversation,
+} from './message-loop.js';
 import type { GuestyMessageWebhook } from '../routes/webhooks-guesty.js';
 import logger from '../utils/logger.js';
 
@@ -23,18 +28,20 @@ const realDeps: InboundDeps = {
   syncGuesty: (p, convs) => syncGuestyMessagesForProperty(p, convs, { deep: true }),
   generateDrafts: (p, ids) => generateDraftsForProperty(p, undefined, { onlyThreadIds: ids }),
 };
-const listingIdsOf = (conv: any): string[] => (conv?.meta?.reservations ?? []).map((r: any) => r?.listing?._id ?? r?.listingId).filter(Boolean);
+/** Wartezeit auf den Nachrichten-Lock; der Loop-Lauf (Draft-Gen) kann Minuten dauern. */
+export const WEBHOOK_LOCK_WAIT_MS = 120_000;
 
 export async function handleGuestyInbound(payload: GuestyMessageWebhook, deps: InboundDeps = realDeps): Promise<void> {
   // Payload nie persistieren, Spec 3.1: die Konversation wird immer per API nachgeladen, damit
   // ein unvollständiges Webhook-Payload (fehlt z.B. meta.guest.fullName) nicht den bekannten
   // Gästenamen aus der DB überschreibt (Fix-Runde 1, Important #1).
   const conv = await deps.getConversation(payload.conversation._id);
-  const ids = listingIdsOf(conv);
-  const property = deps.getProperties().find((p) => p.provider === 'guesty' && p.guestyPropertyId && ids.includes(p.guestyPropertyId));
-  if (!property) { logger.warn({ conversationId: conv?._id, ids }, 'guesty-webhook: kein Objekt passt — Poll fängt es'); return; }
-  if (!(await acquireMessageSyncLock('webhook', 30_000))) {
-    logger.info({ conversationId: conv._id }, 'guesty-webhook: Lock belegt — Poll übernimmt');
+  const property = findGuestyPropertyForConversation(conv, deps.getProperties());
+  if (!property) { logger.warn({ conversationId: conv?._id }, 'guesty-webhook: kein Objekt passt — Poll fängt es'); return; }
+  if (!(await acquireMessageSyncLock('webhook', WEBHOOK_LOCK_WAIT_MS))) {
+    // Bereits geladene Konversation vormerken: der nächste Loop-Lauf synct sie zuerst (#772).
+    addPendingGuestyConversation(conv);
+    logger.info({ conversationId: conv._id }, 'guesty-webhook: Lock belegt — Konversation vorgemerkt, nächster Poll zuerst');
     return;
   }
   try {
