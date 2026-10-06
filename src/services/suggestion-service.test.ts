@@ -16,6 +16,7 @@ describe('generateSuggestion', () => {
     expect(arg.userMessage).toContain('erwähnt ungefragt das Bootshaus');
     expect(arg.userMessage).toContain('am Bootshaus');
     expect(arg.userMessage).toContain('## Anti-Pattern'); // file content included
+    expect(arg.model).toBe('claude-sonnet-5-5'); // #758: Dublette DRAFT_MODEL zusammengeführt
   });
 
   it('returns null on an empty/malformed proposal', async () => {

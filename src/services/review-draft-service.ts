@@ -9,9 +9,10 @@
  * instead of TO them, and grounded only in the stay + conversation — never a
  * textbank/template.
  */
-import { callClaudeTool, type ClaudeToolDefinition } from './anthropic-client.js';
+import { callClaudeTool, SONNET_MODEL, type ClaudeToolDefinition } from './anthropic-client.js';
 
-export const REVIEW_MODEL = 'claude-sonnet-5';
+/** #758: zentrale Sonnet-Konstante (claude-sonnet-5-5) aus anthropic-client. */
+export const REVIEW_MODEL = SONNET_MODEL;
 
 export const SUBMIT_REVIEW_TOOL: ClaudeToolDefinition = {
   name: 'submit_review',
