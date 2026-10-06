@@ -8,7 +8,7 @@ import { toZonedTime } from 'date-fns-tz';
 import { getHours } from 'date-fns';
 import { runETLJob } from './etl-job.js';
 import { startMessageLoop, stopMessageLoop } from './message-loop.js';
-import { startGuestyTelemetryFlush } from '../services/guesty-request-telemetry.js';
+import { startGuestyTelemetryFlush, stopGuestyTelemetryFlush, flushGuestyRequestTelemetry } from '../services/guesty-request-telemetry.js';
 import { sendWeeklySummaryEmailForProperty, shouldSendWeeklyEmailForProperty } from './weekly-email.js';
 import { sendBiReportEmail, shouldSendBiReport } from './bi-email.js';
 import { syncAnalytics, shouldSyncAnalytics } from './sync-analytics.js';
@@ -696,6 +696,8 @@ export function stopScheduler() {
   }
 
   stopMessageLoop();
+  stopGuestyTelemetryFlush();
+  flushGuestyRequestTelemetry(); // Rest seit dem letzten Intervall sichern (wirft nie)
 
   state.running = false;
   state.nextRun = null;
