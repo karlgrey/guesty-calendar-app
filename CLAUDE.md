@@ -1022,6 +1022,7 @@ main (default branch)
 - **Process**: PM2 (`guesty-calendar`), requires nvm sourcing for CLI commands
 - **Proxy**: Caddy with auto-SSL on port 3005
 - **Deploy**: `git pull && npm install && npm run build && pm2 restart guesty-calendar`
+- **Env-Check (#797)**: `deploy.sh` ruft nach `git pull` und vor dem Build `sh scripts/env-check.sh .env.example .env` auf — fehlt ein Key aus `.env.example` (Vertrag, nur Namen) in der Server-`.env`, bricht das Deploy ab. Neuer Key = Eintrag in `.env.example` (mit `# optional` direkt darüber, wenn der Code einen Default hat) **und** Wert in `/opt/guesty-calendar-app/.env` vor dem Deploy. Werte bleiben pro Maschine getrennt. Tests: `src/scripts/env-check.test.ts`.
 - **Logs**: `pm2 logs guesty-calendar --lines 50`
 - **Health**: `curl https://guesty.remoterepublic.com/health`
 
