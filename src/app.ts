@@ -98,7 +98,9 @@ export function createApp() {
   // Routes
   app.use('/health', healthRoutes);
   app.use('/sync', syncRoutes);
-  app.use('/debug', debugRoutes);
+  // #804: /debug liefert Guesty-Rohdaten und den Cache-Dump (inkl. quotes_cache) — nur mit
+  // Admin-Session; kein Frontend-Code ruft /debug auf.
+  app.use('/debug', requireAuth, debugRoutes);
 
   // Agent API (maschineller Zugang, Auth via X-Agent-Key in der Route selbst)
   app.use('/api/agent', agentApiRoutes);
