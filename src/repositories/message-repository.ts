@@ -430,18 +430,21 @@ export function getMessagesSince(sinceIso: string, limit = 500): MessageFeedRow[
     .all(sinceIso, limit) as MessageFeedRow[];
 }
 
-/** Lokaler Thread + Check-out der verknüpften Reservierung (für das lokale Aktivitätsfenster). */
-export type GuestyListingThreadRow = MessageThread & { reservation_check_out: string | null };
+/** Lokaler Thread + Check-in/Check-out der verknüpften Reservierung (für das lokale Aktivitätsfenster). */
+export type GuestyListingThreadRow = MessageThread & {
+  reservation_check_out: string | null;
+  reservation_check_in: string | null;
+};
 
 /**
- * Alle Guesty-Threads eines Listings inkl. Check-out der verknüpften Reservierung. Der Filter
+ * Alle Guesty-Threads eines Listings inkl. Check-in/Check-out der verknüpften Reservierung. Der Filter
  * auf das Aktivitätsfenster passiert in JS (isLocalThreadInWindow in sync-guesty-messages.ts).
  */
 export function getGuestyThreadsForListing(listingId: string): GuestyListingThreadRow[] {
   const db = getDatabase();
   return db
     .prepare(
-      `SELECT t.*, r.check_out AS reservation_check_out
+      `SELECT t.*, r.check_out AS reservation_check_out, r.check_in AS reservation_check_in
          FROM message_threads t
          LEFT JOIN reservations r ON r.reservation_id = t.reservation_id
         WHERE t.source = 'guesty' AND t.listing_id = ?`,

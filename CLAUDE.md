@@ -265,7 +265,18 @@ erweitert auf Guesty-Properties (Farmhouse, U19) — Spec:
   Fenster-Threads, die nicht in der Liste stehen (`getGuestyThreadsForListing` +
   `isLocalThreadInWindow`: `last_message_at` im Fenster oder Check-out aus `raw_meta.checkOuts`
   bzw. `reservations.check_out` ≥ heute − 3 Tage). Log „Guesty messages: sync completed“
-  trägt `postsFetched`, `localWindowFetched`, `guestyRequests`.
+  trägt `postsFetched`, `localWindowFetched`, `futureExcluded`, `checkinHorizonDays`, `guestyRequests`.
+- **Check-in-Horizont im Poll-Fenster (#857):** Zukunftsaufenthalte zählen nur noch mit
+  Check-in ≤ heute + 14 Tage (tagesgenau UTC, Env `GUESTY_POLL_CHECKIN_HORIZON_DAYS`, Default 14,
+  je Sync gelesen) ins 30-Minuten-Poll-Fenster — gilt für Listen-Gate
+  (`shouldDeepFetchConversation`/`conversationWindowVerdict`) und lokales Gate
+  (`isLocalThreadInWindow`/`localThreadWindowVerdict`, Check-in aus `raw_meta.stays` bzw.
+  `reservations.check_in`). Unbekannter Check-in (altes `raw_meta` nur mit `checkOuts`, ohne
+  Reservierungs-Join) zählt konservativ weiter; der Deep-Sync schreibt `raw_meta.stays` nach.
+  Aktivitätsfenster (7 Tage) und laufende Aufenthalte bleiben unberührt. Threads mit späterem
+  Check-in laufen über den Webhook `reservation.messageReceived` (Echtzeit) und den nächtlichen
+  Deep-Sync (2 Uhr). Log-Feld `futureExcluded` = Anzahl nur wegen des Horizonts ausgelassener
+  Threads (Liste + lokal).
 - **Guesty-Eigenheit:** an neue Anfragen hängt Guesty einen System-Post („New guest
   inquiry") ZEITLICH NACH der Gastnachricht — die „letzte Nachricht = inbound"-Queries
   ignorieren daher `direction='system'`.
