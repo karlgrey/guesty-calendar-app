@@ -233,6 +233,7 @@ sqlite3 data/calendar.db "SELECT date, status, price FROM availability LIMIT 10;
 
 **POST /sync/all** (optionally with `?force=true`)
 - Trigger manual sync of listing + availability
+- Auth: `X-Agent-Key` header or admin session (otherwise 401)
 
 **GET /health**
 - Health check endpoint
@@ -272,7 +273,7 @@ ETL job runs every **6 hours** (configurable):
 ```bash
 npm run sync              # Respects cache TTLs
 npm run sync:force        # Forces refresh
-curl -X POST http://localhost:3000/sync/all?force=true
+curl -X POST -H "X-Agent-Key: $AGENT_API_KEY" "http://localhost:3000/sync/all?force=true"
 ```
 
 ### Cache TTLs
@@ -303,7 +304,7 @@ curl -X POST http://localhost:3000/sync/all?force=true
 npm run sync:force
 
 # Or via API
-curl -X POST http://localhost:3000/sync/all?force=true
+curl -X POST -H "X-Agent-Key: $AGENT_API_KEY" "http://localhost:3000/sync/all?force=true"
 ```
 
 ### Database Locked

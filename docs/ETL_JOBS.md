@@ -217,6 +217,8 @@ npm run sync:force
 
 #### 2. HTTP Endpoints
 
+All `/sync/*` endpoints require an `X-Agent-Key` header (`$AGENT_API_KEY`) or an admin session (otherwise 401). The examples below omit the header for brevity; with curl: `-H "X-Agent-Key: $AGENT_API_KEY"`.
+
 **Sync All (Listing + Availability)**
 ```bash
 POST /sync/all
@@ -400,7 +402,7 @@ Force a fresh sync:
 ```bash
 npm run sync:force
 # OR
-curl -X POST http://localhost:3000/sync/all?force=true
+curl -X POST -H "X-Agent-Key: $AGENT_API_KEY" "http://localhost:3000/sync/all?force=true"
 ```
 
 ### API Errors

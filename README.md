@@ -186,10 +186,16 @@ See **[API Endpoints Documentation](docs/API_ENDPOINTS.md)** for detailed reques
 
 ### Data Sync (Admin)
 
+Auth: Agent-Key (`X-Agent-Key: $AGENT_API_KEY`) or admin session. Without either: `401 {"error":"Invalid agent key"}` (503 if no agent key is configured and no session exists).
+
 **POST /sync/all** - Sync listing + availability (add `?force=true`)
 **POST /sync/listing** - Sync listing only
 **POST /sync/availability** - Sync availability only
 **GET /sync/status** - Scheduler status
+
+### Debug (Admin session only)
+
+**GET /debug/** and **GET /debug/raw-listing** - Require an admin session (no agent-key access); without a session: redirect (302) to `/auth/login`.
 
 ### Guest-Reply Admin UI (auth-protected)
 

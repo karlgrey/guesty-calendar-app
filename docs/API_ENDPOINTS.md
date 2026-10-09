@@ -386,6 +386,12 @@ Quotes are cached for 1 hour (configurable via `CACHE_QUOTE_TTL`). The `cached` 
 
 These endpoints are for managing data synchronization.
 
+**Authentication:** All `/sync/*` endpoints require either a valid `X-Agent-Key` header (keys from `AGENT_API_KEY` / `AGENT_API_KEYS`) or a logged-in admin session. Without either: `401 {"error":"Invalid agent key"}`; `503` if no agent key is configured and no session exists. The admin UI uses `/admin/sync/*` (session).
+
+```bash
+curl -X POST -H "X-Agent-Key: $AGENT_API_KEY" http://localhost:3000/sync/all
+```
+
 ### Sync Data
 
 **POST /sync/all** - Sync listing and availability data
@@ -397,6 +403,10 @@ Add `?force=true` to ignore cache freshness.
 ### Get Sync Status
 
 **GET /sync/status** - Get scheduler status and job info
+
+### Debug
+
+**GET /debug/** and **GET /debug/raw-listing** - Admin session only (no agent-key access). Without a session: redirect (302) to `/auth/login`.
 
 ---
 

@@ -106,8 +106,10 @@ BOOKING_RECIPIENT_EMAIL=booking@farmhouse-prasser.de
 - `GET /health` - Health check
 
 ### Admin Endpoints
+Auth: Agent-Key (`X-Agent-Key`-Header) oder Admin-Session; ohne beides 401.
 - `POST /sync/all` - Manual sync (optional `?force=true`)
 - `GET /sync/status` - Sync scheduler status
+- `GET /debug/`, `GET /debug/raw-listing` - Debug-Ansichten (nur mit Admin-Session, sonst Redirect auf `/auth/login`)
 
 ## Recent Changes
 
