@@ -32,6 +32,9 @@ import {
   syncGuestyMessagesForProperty,
   INCREMENTAL_ACTIVE_WINDOW_DAYS,
   STAY_GRACE_DAYS,
+  POLL_CHECKIN_HORIZON_DAYS_DEFAULT,
+  getPollCheckinHorizonDays,
+  stayWindowVerdict,
 } from './sync-guesty-messages.js';
 import type { PropertyConfig } from '../config/properties.js';
 
@@ -39,8 +42,8 @@ const NOW = new Date('2026-07-07T12:00:00Z');
 const daysAgo = (d: number) => new Date(NOW.getTime() - d * 24 * 3600 * 1000).toISOString();
 const daysAhead = (d: number) => new Date(NOW.getTime() + d * 24 * 3600 * 1000).toISOString();
 
-function conv(checkOut?: string): any {
-  return { meta: { reservations: checkOut ? [{ checkOut }] : [] } };
+function conv(checkOut?: string, checkIn?: string): any {
+  return { meta: { reservations: checkOut ? [{ checkOut, ...(checkIn ? { checkIn } : {}) }] : [] } };
 }
 
 describe('Fensterkonstanten', () => {
@@ -93,6 +96,82 @@ describe('isLocalThreadInWindow', () => {
     expect(isLocalThreadInWindow(t(daysAgo(100), '{kaputt'), null, NOW)).toBe(false);
     expect(isLocalThreadInWindow(t(daysAgo(100), JSON.stringify({ checkOuts: [null, 5, 'x'] })), 'nope', NOW)).toBe(false);
     expect(isLocalThreadInWindow(t('kaputt'), null, NOW)).toBe(false);
+  });
+});
+
+describe('Poll-Fenster: Check-in-Horizont (#857)', () => {
+  const stale = { last_message_at: daysAgo(200) };
+  const t = (rawMeta: string | null, resIn?: string | null) => ({ last_message_at: daysAgo(200), raw_meta: rawMeta, reservation_check_in: resIn ?? null });
+
+  it('Default 14 Tage, per Env GUESTY_POLL_CHECKIN_HORIZON_DAYS überschreibbar, Müll → Default', () => {
+    expect(POLL_CHECKIN_HORIZON_DAYS_DEFAULT).toBe(14);
+    expect(getPollCheckinHorizonDays({})).toBe(14);
+    expect(getPollCheckinHorizonDays({ GUESTY_POLL_CHECKIN_HORIZON_DAYS: '30' })).toBe(30);
+    expect(getPollCheckinHorizonDays({ GUESTY_POLL_CHECKIN_HORIZON_DAYS: '0' })).toBe(0);
+    expect(getPollCheckinHorizonDays({ GUESTY_POLL_CHECKIN_HORIZON_DAYS: 'abc' })).toBe(14);
+    expect(getPollCheckinHorizonDays({ GUESTY_POLL_CHECKIN_HORIZON_DAYS: '-3' })).toBe(14);
+    expect(getPollCheckinHorizonDays({ GUESTY_POLL_CHECKIN_HORIZON_DAYS: '' })).toBe(14);
+  });
+
+  it('Liste: Check-in in 13/14 Tagen drin, 15 Tagen draußen', () => {
+    expect(shouldDeepFetchConversation(conv(daysAhead(20), daysAhead(13)), stale, NOW)).toBe(true);
+    expect(shouldDeepFetchConversation(conv(daysAhead(20), daysAhead(14)), stale, NOW)).toBe(true);
+    expect(shouldDeepFetchConversation(conv(daysAhead(20), daysAhead(15)), stale, NOW)).toBe(false);
+  });
+
+  it('Check-in als reines Datum: Tag 14 drin, Tag 15 draußen', () => {
+    // NOW = 2026-07-07T12:00Z → +14 Tage = 2026-07-21
+    expect(shouldDeepFetchConversation(conv('2026-07-25', '2026-07-21'), stale, NOW)).toBe(true);
+    expect(shouldDeepFetchConversation(conv('2026-07-25', '2026-07-22'), stale, NOW)).toBe(false);
+  });
+
+  it('laufender Aufenthalt (Check-in vorbei) und unbekannter Check-in bleiben drin', () => {
+    expect(shouldDeepFetchConversation(conv(daysAhead(3), daysAgo(4)), stale, NOW)).toBe(true);
+    expect(shouldDeepFetchConversation(conv(daysAhead(60)), stale, NOW)).toBe(true);
+  });
+
+  it('Aktivitätsfenster schlägt den Horizont (aktiver Thread mit fernem Check-in wird geholt)', () => {
+    expect(shouldDeepFetchConversation(conv(daysAhead(90), daysAhead(80)), { last_message_at: daysAgo(1) }, NOW)).toBe(true);
+  });
+
+  it('mehrere Reservierungen: eine im Horizont reicht', () => {
+    const c = { meta: { reservations: [{ checkIn: daysAhead(40), checkOut: daysAhead(45) }, { checkIn: daysAhead(10), checkOut: daysAhead(12) }] } };
+    expect(shouldDeepFetchConversation(c, stale, NOW)).toBe(true);
+  });
+
+  it('Horizont als Parameter (Env-Override wirkt)', () => {
+    expect(shouldDeepFetchConversation(conv(daysAhead(40), daysAhead(30)), stale, NOW, 30)).toBe(true);
+    expect(shouldDeepFetchConversation(conv(daysAhead(40), daysAhead(30)), stale, NOW, 14)).toBe(false);
+  });
+
+  it('lokal: raw_meta.stays mit Check-in 13/14/15 Tagen', () => {
+    const meta = (inD: number) => JSON.stringify({ checkOuts: [daysAhead(inD + 3)], stays: [{ checkIn: daysAhead(inD), checkOut: daysAhead(inD + 3) }] });
+    expect(isLocalThreadInWindow(t(meta(13)), null, NOW)).toBe(true);
+    expect(isLocalThreadInWindow(t(meta(14)), null, NOW)).toBe(true);
+    expect(isLocalThreadInWindow(t(meta(15)), null, NOW)).toBe(false);
+  });
+
+  it('lokal: Check-in der verknüpften Reservierung (reservations.check_in) zählt', () => {
+    expect(isLocalThreadInWindow(t(null, daysAhead(13)), daysAhead(16), NOW)).toBe(true);
+    expect(isLocalThreadInWindow(t(null, daysAhead(15)), daysAhead(18), NOW)).toBe(false);
+  });
+
+  it('lokal: altes raw_meta.checkOuts = Check-out der Reservierung → Check-in aus reservations.check_in gilt', () => {
+    const meta = JSON.stringify({ checkOuts: [daysAhead(33)] });
+    expect(isLocalThreadInWindow(t(meta, daysAhead(30).slice(0, 10)), daysAhead(33).slice(0, 10), NOW)).toBe(false);
+    expect(isLocalThreadInWindow(t(meta, daysAhead(12).slice(0, 10)), daysAhead(33).slice(0, 10), NOW)).toBe(true);
+  });
+
+  it('lokal: altes raw_meta nur mit checkOuts (Check-in unbekannt) bleibt konservativ drin', () => {
+    expect(isLocalThreadInWindow(t(JSON.stringify({ checkOuts: [daysAhead(60)] })), null, NOW)).toBe(true);
+  });
+
+  it('stayWindowVerdict unterscheidet active / stay / future / out', () => {
+    expect(stayWindowVerdict(daysAgo(1), [], NOW)).toBe('active');
+    expect(stayWindowVerdict(daysAgo(100), [{ checkIn: daysAhead(5), checkOut: daysAhead(8) }], NOW)).toBe('stay');
+    expect(stayWindowVerdict(daysAgo(100), [{ checkIn: daysAhead(30), checkOut: daysAhead(33) }], NOW)).toBe('future');
+    expect(stayWindowVerdict(daysAgo(100), [{ checkIn: daysAgo(20), checkOut: daysAgo(10) }], NOW)).toBe('out');
+    expect(stayWindowVerdict(daysAgo(100), [], NOW)).toBe('out');
   });
 });
 
@@ -224,8 +303,8 @@ function insThread(id: string, last: string, over: Record<string, any> = {}) {
     id, listing_id: 'G1', channel: 'airbnb', guest_name: 'Gast', first: last, last, res: 'R-' + id, status: 'confirmed', raw: null, ...over,
   });
 }
-const apiConv = (id: string, createdAt: string, checkOut?: string) => ({
-  _id: id, createdAt, meta: { guest: { fullName: 'Neu' }, reservations: [{ _id: 'R' + id, listing: { _id: 'G1' }, source: 'airbnb2', status: 'confirmed', ...(checkOut ? { checkOut } : {}) }] },
+const apiConv = (id: string, createdAt: string, checkOut?: string, checkIn?: string) => ({
+  _id: id, createdAt, meta: { guest: { fullName: 'Neu' }, reservations: [{ _id: 'R' + id, listing: { _id: 'G1' }, source: 'airbnb2', status: 'confirmed', ...(checkOut ? { checkOut } : {}), ...(checkIn ? { checkIn } : {}) }] },
 });
 const post = (id: string, at: string) => ({ _id: id, createdAt: at, sentBy: 'guest', body: 'GEHEIMER TEXT', module: { type: 'airbnb2' } });
 
@@ -303,5 +382,50 @@ describe('syncGuestyMessagesForProperty', () => {
     expect(call![0]).toMatchObject({ postsFetched: 2, localWindowFetched: 1 });
     expect(call![0].guestyRequests).toMatchObject({ total: 2, conversationPosts: 2 });
     expect(JSON.stringify(m.info.mock.calls)).not.toContain('GEHEIMER TEXT');
+  });
+  it('schreibt stays (Check-in/Check-out je Reservierung) ins raw_meta', async () => {
+    const c: any = apiConv('c1', daysAgo(1), daysAhead(25), daysAhead(20));
+    m.listConversationPosts.mockResolvedValue([]);
+    await syncGuestyMessagesForProperty(prop, [c], { deep: true });
+    const raw = JSON.parse((db.prepare(`SELECT raw_meta FROM message_threads WHERE id='guesty:c1'`).get() as any).raw_meta);
+    expect(raw.stays).toEqual([{ checkIn: daysAhead(20), checkOut: daysAhead(25) }]);
+    expect(raw.checkOuts).toEqual([daysAhead(25)]);
+  });
+
+  it('Zukunfts-Threads jenseits des Horizonts: nicht geholt, gezählt in futureExcluded (Liste + lokal)', async () => {
+    insThread('guesty:farList', daysAgo(100));
+    insThread('guesty:nearList', daysAgo(100));
+    insThread('guesty:farLocal', daysAgo(100), { raw: JSON.stringify({ checkOuts: [daysAhead(33)], stays: [{ checkIn: daysAhead(30), checkOut: daysAhead(33) }] }) });
+    insThread('guesty:nearLocal', daysAgo(100), { raw: JSON.stringify({ checkOuts: [daysAhead(13)], stays: [{ checkIn: daysAhead(10), checkOut: daysAhead(13) }] }) });
+    m.listConversationPosts.mockResolvedValue([]);
+    const list = [apiConv('farList', daysAgo(60), daysAhead(50), daysAhead(45)), apiConv('nearList', daysAgo(60), daysAhead(16), daysAhead(14))];
+    const res = await syncGuestyMessagesForProperty(prop, list, { deep: false, partialList: true });
+    expect(m.listConversationPosts.mock.calls.map((c) => c[0]).sort()).toEqual(['nearList', 'nearLocal']);
+    expect(res.futureExcluded).toBe(2);
+    const call = m.info.mock.calls.find((c) => c[1] === 'Guesty messages: sync completed');
+    expect(call![0]).toMatchObject({ futureExcluded: 2, checkinHorizonDays: 14 });
+  });
+
+  it('Env GUESTY_POLL_CHECKIN_HORIZON_DAYS erweitert den Horizont', async () => {
+    const before = process.env.GUESTY_POLL_CHECKIN_HORIZON_DAYS;
+    process.env.GUESTY_POLL_CHECKIN_HORIZON_DAYS = '60';
+    try {
+      insThread('guesty:farList', daysAgo(100));
+      m.listConversationPosts.mockResolvedValue([]);
+      const res = await syncGuestyMessagesForProperty(prop, [apiConv('farList', daysAgo(60), daysAhead(50), daysAhead(45))], { deep: false });
+      expect(m.listConversationPosts.mock.calls.map((c) => c[0])).toEqual(['farList']);
+      expect(res.futureExcluded).toBe(0);
+    } finally {
+      if (before === undefined) delete process.env.GUESTY_POLL_CHECKIN_HORIZON_DAYS;
+      else process.env.GUESTY_POLL_CHECKIN_HORIZON_DAYS = before;
+    }
+  });
+
+  it('deep=true holt auch Zukunfts-Threads jenseits des Horizonts (nächtlicher Deep-Sync)', async () => {
+    insThread('guesty:farList', daysAgo(100));
+    m.listConversationPosts.mockResolvedValue([]);
+    const res = await syncGuestyMessagesForProperty(prop, [apiConv('farList', daysAgo(60), daysAhead(50), daysAhead(45))], { deep: true });
+    expect(m.listConversationPosts.mock.calls.map((c) => c[0])).toEqual(['farList']);
+    expect(res.futureExcluded).toBe(0);
   });
 });

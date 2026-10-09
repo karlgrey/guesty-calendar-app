@@ -35,6 +35,8 @@ export interface GuestyMessageSyncResult {
   postsFetched?: number;
   /** Davon Threads aus dem lokalen Fenster (nicht in der Teil-Liste). */
   localWindowFetched?: number;
+  /** Zukunfts-Threads, die nur wegen des Check-in-Horizonts nicht gepollt wurden (#857; Liste + lokal). */
+  futureExcluded?: number;
   /** Prozessweite Zähler-Differenz über die Dauer dieses Aufrufs (enthält parallele Calls anderer Jobs). */
   guestyRequests?: GuestyRequestCounters;
   durationMs: number;
@@ -144,60 +146,153 @@ export async function fetchConversationsIncremental(
  * state.read is useless for us — the Guesty inbox is never opened, everything
  * stays unread; the list sorts by createdAt, not activity). Signals:
  * unknown locally (must fetch) · local thread active within
- * INCREMENTAL_ACTIVE_WINDOW_DAYS · any reservation whose stay is upcoming or
- * ended less than STAY_GRACE_DAYS ago (guest messages cluster around the
- * stay). Everything else is skipped; the daily FORCED ETL (deep=true) does a
- * full pass and catches the rare late message on a long-finished stay.
+ * INCREMENTAL_ACTIVE_WINDOW_DAYS · any reservation whose stay is running, ended
+ * less than STAY_GRACE_DAYS ago, or starts within the check-in horizon
+ * (GUESTY_POLL_CHECKIN_HORIZON_DAYS, default 14, #857). Everything else is
+ * skipped; the daily FORCED ETL (deep=true) does a full pass and catches the
+ * rare late message on a long-finished stay or a far-future booking.
  *
- * Kleine Fenster (#772): der Webhook ist der Primärweg, der Poll nur Sicherheitsnetz.
+ * Kleine Fenster (#772/#857): der Webhook ist der Primärweg, der Poll nur Sicherheitsnetz.
  * Threads außerhalb dieser Fenster holt nur der nächtliche Deep-Sync.
  */
 export const INCREMENTAL_ACTIVE_WINDOW_DAYS = 7;
 export const STAY_GRACE_DAYS = 3;
+/** Zukunftsaufenthalte zählen nur mit Check-in ≤ heute + N Tage ins Poll-Fenster (#857). */
+export const POLL_CHECKIN_HORIZON_DAYS_DEFAULT = 14;
+
+const DAY_MS = 24 * 3600 * 1000;
+
+/** Env GUESTY_POLL_CHECKIN_HORIZON_DAYS (ganze Zahl ≥ 0), sonst Default 14. Wird je Sync-Aufruf gelesen. */
+export function getPollCheckinHorizonDays(env: Record<string, string | undefined> = process.env): number {
+  const raw = env.GUESTY_POLL_CHECKIN_HORIZON_DAYS?.trim();
+  if (!raw || !/^\d+$/.test(raw)) return POLL_CHECKIN_HORIZON_DAYS_DEFAULT;
+  return Number(raw);
+}
+
+/** Ein Aufenthalt; checkIn null = unbekannt (dann konservativ wie vor #857: zählt, solange Check-out im Fenster). */
+export interface StayDates {
+  checkIn: string | null;
+  checkOut: string | null;
+}
+
+/**
+ * Fensterentscheidung für einen Thread:
+ * - 'active': last_message_at im Aktivitätsfenster
+ * - 'stay':   ein Aufenthalt mit Check-out ≥ heute − STAY_GRACE_DAYS und Check-in im Horizont
+ *             (oder unbekannt)
+ * - 'future': nur wegen des Check-in-Horizonts draußen (vor #857 wäre er geholt worden) — gezählt
+ *             als futureExcluded
+ * - 'out':    sonst
+ * Horizont tagesgenau (UTC): Check-in < Tagesbeginn(now) + (horizonDays + 1) Tage, d. h. Check-in
+ * „in 14 Tagen" (auch als reines Datum) ist drin, „in 15 Tagen" draußen.
+ */
+export function stayWindowVerdict(
+  lastMessageAt: string,
+  stays: StayDates[],
+  now: Date = new Date(),
+  horizonDays: number = POLL_CHECKIN_HORIZON_DAYS_DEFAULT,
+): 'active' | 'stay' | 'future' | 'out' {
+  if (Date.parse(lastMessageAt) > now.getTime() - INCREMENTAL_ACTIVE_WINDOW_DAYS * DAY_MS) return 'active';
+  const graceCutoff = now.getTime() - STAY_GRACE_DAYS * DAY_MS;
+  const startOfDay = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const horizonEnd = startOfDay + (horizonDays + 1) * DAY_MS;
+  let future = false;
+  for (const stay of stays) {
+    const checkOut = typeof stay.checkOut === 'string' ? Date.parse(stay.checkOut) : NaN;
+    if (Number.isNaN(checkOut) || checkOut < graceCutoff) continue;
+    const checkIn = typeof stay.checkIn === 'string' ? Date.parse(stay.checkIn) : NaN;
+    if (Number.isNaN(checkIn) || checkIn < horizonEnd) return 'stay';
+    future = true;
+  }
+  return future ? 'future' : 'out';
+}
+
+function staysFromConversation(conv: any): StayDates[] {
+  return (conv?.meta?.reservations ?? []).map((r: any) => ({
+    checkIn: typeof r?.checkIn === 'string' ? r.checkIn : null,
+    checkOut: typeof r?.checkOut === 'string' ? r.checkOut : null,
+  }));
+}
+
+/** Verdict für eine Konversation aus der (Teil-)Liste; unbekannte Konversationen sind immer 'active'. */
+export function conversationWindowVerdict(
+  conv: any,
+  localThread: { last_message_at: string } | null,
+  now: Date = new Date(),
+  horizonDays: number = POLL_CHECKIN_HORIZON_DAYS_DEFAULT,
+): 'active' | 'stay' | 'future' | 'out' {
+  if (!localThread) return 'active';
+  return stayWindowVerdict(localThread.last_message_at, staysFromConversation(conv), now, horizonDays);
+}
 
 export function shouldDeepFetchConversation(
   conv: any,
   localThread: { last_message_at: string } | null,
   now: Date = new Date(),
+  horizonDays: number = POLL_CHECKIN_HORIZON_DAYS_DEFAULT,
 ): boolean {
-  if (!localThread) return true;
-  const activeCutoff = now.getTime() - INCREMENTAL_ACTIVE_WINDOW_DAYS * 24 * 3600 * 1000;
-  if (Date.parse(localThread.last_message_at) > activeCutoff) return true;
-  const graceCutoff = now.getTime() - STAY_GRACE_DAYS * 24 * 3600 * 1000;
-  for (const r of conv?.meta?.reservations ?? []) {
-    const checkOut = r?.checkOut ? Date.parse(r.checkOut) : NaN;
-    if (!Number.isNaN(checkOut) && checkOut >= graceCutoff) return true;
-  }
-  return false;
+  const v = conversationWindowVerdict(conv, localThread, now, horizonDays);
+  return v === 'active' || v === 'stay';
 }
 
 /**
- * Lokale Variante des Gates für Threads, die NICHT in der (Teil-)Liste stehen: Aktivitätsfenster
- * über last_message_at ODER ein bekannter Check-out (raw_meta.checkOuts bzw. Reservierung)
- * ≥ now − STAY_GRACE_DAYS (künftige Aufenthalte zählen also).
+ * Aufenthalte eines lokalen Threads: verknüpfte Reservierung (reservations.check_in/check_out),
+ * raw_meta.stays (seit #857) bzw. — bei älterem raw_meta — raw_meta.checkOuts mit unbekanntem Check-in.
  */
-export function isLocalThreadInWindow(
-  thread: { last_message_at: string; raw_meta: string | null },
+function staysFromLocalThread(
+  thread: { raw_meta: string | null; reservation_check_in?: string | null },
   reservationCheckOut: string | null,
-  now: Date = new Date(),
-): boolean {
-  const activeCutoff = now.getTime() - INCREMENTAL_ACTIVE_WINDOW_DAYS * 24 * 3600 * 1000;
-  if (Date.parse(thread.last_message_at) > activeCutoff) return true;
-  const graceCutoff = now.getTime() - STAY_GRACE_DAYS * 24 * 3600 * 1000;
-  const candidates: unknown[] = [reservationCheckOut];
+): StayDates[] {
+  const stays: StayDates[] = [{ checkIn: thread.reservation_check_in ?? null, checkOut: reservationCheckOut }];
   if (thread.raw_meta) {
     try {
       const meta = JSON.parse(thread.raw_meta);
-      if (Array.isArray(meta?.checkOuts)) candidates.push(...meta.checkOuts);
+      if (Array.isArray(meta?.stays)) {
+        for (const st of meta.stays) {
+          stays.push({
+            checkIn: typeof st?.checkIn === 'string' ? st.checkIn : null,
+            checkOut: typeof st?.checkOut === 'string' ? st.checkOut : null,
+          });
+        }
+      } else if (Array.isArray(meta?.checkOuts)) {
+        // Altes raw_meta (vor #857) ohne Check-in: gleicher Check-out-Tag wie die verknüpfte
+        // Reservierung → derselbe Aufenthalt, deren Check-in gilt (sonst bleibt er unbekannt).
+        const resDay = typeof reservationCheckOut === 'string' ? reservationCheckOut.slice(0, 10) : null;
+        for (const c of meta.checkOuts) {
+          if (typeof c !== 'string') continue;
+          if (thread.reservation_check_in && resDay && c.slice(0, 10) === resDay) continue;
+          stays.push({ checkIn: null, checkOut: c });
+        }
+      }
     } catch {
       /* kaputtes raw_meta → ignorieren */
     }
   }
-  return candidates.some((c) => {
-    if (typeof c !== 'string') return false;
-    const t = Date.parse(c);
-    return !Number.isNaN(t) && t >= graceCutoff;
-  });
+  return stays;
+}
+
+export function localThreadWindowVerdict(
+  thread: { last_message_at: string; raw_meta: string | null; reservation_check_in?: string | null },
+  reservationCheckOut: string | null,
+  now: Date = new Date(),
+  horizonDays: number = POLL_CHECKIN_HORIZON_DAYS_DEFAULT,
+): 'active' | 'stay' | 'future' | 'out' {
+  return stayWindowVerdict(thread.last_message_at, staysFromLocalThread(thread, reservationCheckOut), now, horizonDays);
+}
+
+/**
+ * Lokale Variante des Gates für Threads, die NICHT in der (Teil-)Liste stehen: Aktivitätsfenster
+ * über last_message_at ODER ein bekannter Aufenthalt (raw_meta.stays/checkOuts bzw. Reservierung)
+ * mit Check-out ≥ now − STAY_GRACE_DAYS und Check-in im Horizont (#857; unbekannter Check-in zählt).
+ */
+export function isLocalThreadInWindow(
+  thread: { last_message_at: string; raw_meta: string | null; reservation_check_in?: string | null },
+  reservationCheckOut: string | null,
+  now: Date = new Date(),
+  horizonDays: number = POLL_CHECKIN_HORIZON_DAYS_DEFAULT,
+): boolean {
+  const v = localThreadWindowVerdict(thread, reservationCheckOut, now, horizonDays);
+  return v === 'active' || v === 'stay';
 }
 
 interface PostFetchTarget {
@@ -254,6 +349,10 @@ function targetFromConversation(conv: any, listingId: string): PostFetchTarget {
   const checkOuts = reservations
     .map((r: any) => r?.checkOut)
     .filter((c: unknown): c is string => typeof c === 'string' && c.length > 0);
+  // #857: Check-in je Aufenthalt, damit das lokale Poll-Fenster den Check-in-Horizont prüfen kann.
+  const stays = reservations
+    .filter((r: any) => typeof r?.checkOut === 'string' && r.checkOut.length > 0)
+    .map((r: any) => ({ checkIn: typeof r?.checkIn === 'string' && r.checkIn.length > 0 ? r.checkIn : null, checkOut: r.checkOut }));
   return {
     convId: conv._id,
     guestName: conv.meta?.guest?.fullName ?? null,
@@ -276,6 +375,7 @@ function targetFromConversation(conv: any, listingId: string): PostFetchTarget {
         state: conv.state,
         guestIsReturning: conv.meta?.guest?.isReturning,
         checkOuts,
+        stays,
       }),
       // Date bounds — fall back to conv.createdAt
       fallbackFirst: conv.createdAt,
@@ -362,9 +462,16 @@ export async function syncGuestyMessagesForProperty(
 
     // Incremental gate (skip unchanged), then fetch all post lists CONCURRENTLY. Der Client-
     // Limiter (10/s + 100/min) glättet den Burst.
+    const horizonDays = getPollCheckinHorizonDays();
+    const nowDate = new Date();
+    let futureExcluded = 0;
     const toFetch = opts.deep
       ? propertyConvs
-      : propertyConvs.filter((conv) => shouldDeepFetchConversation(conv, getThreadById(`guesty:${conv._id}`)));
+      : propertyConvs.filter((conv) => {
+          const v = conversationWindowVerdict(conv, getThreadById(`guesty:${conv._id}`), nowDate, horizonDays);
+          if (v === 'future') futureExcluded++;
+          return v === 'active' || v === 'stay';
+        });
     const skippedUnchanged = propertyConvs.length - toFetch.length;
 
     const targets: PostFetchTarget[] = toFetch.map((conv) => targetFromConversation(conv, listingId));
@@ -373,10 +480,11 @@ export async function syncGuestyMessagesForProperty(
     let localWindowFetched = 0;
     if (!opts.deep && opts.partialList) {
       const inList = new Set(propertyConvs.map((c) => `guesty:${c._id}`));
-      const nowDate = new Date();
       for (const row of getGuestyThreadsForListing(listingId)) {
         if (inList.has(row.id) || excluded?.has(row.id.replace(/^guesty:/, ''))) continue;
-        if (!isLocalThreadInWindow(row, row.reservation_check_out, nowDate)) continue;
+        const v = localThreadWindowVerdict(row, row.reservation_check_out, nowDate, horizonDays);
+        if (v === 'future') futureExcluded++;
+        if (v !== 'active' && v !== 'stay') continue;
         targets.push(targetFromLocalRow(row));
         localWindowFetched++;
       }
@@ -402,6 +510,8 @@ export async function syncGuestyMessagesForProperty(
         postsUpserted,
         postsFetched,
         localWindowFetched,
+        futureExcluded,
+        checkinHorizonDays: horizonDays,
         partialList: !!opts.partialList,
         // Prozessweite Differenz — enthält auch parallel laufende andere Guesty-Calls.
         guestyRequests,
@@ -418,6 +528,7 @@ export async function syncGuestyMessagesForProperty(
       skippedUnchanged,
       postsFetched,
       localWindowFetched,
+      futureExcluded,
       guestyRequests,
       durationMs: duration,
     };
