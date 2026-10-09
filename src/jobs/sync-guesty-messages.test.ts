@@ -156,6 +156,12 @@ describe('Poll-Fenster: Check-in-Horizont (#857)', () => {
     expect(isLocalThreadInWindow(t(null, daysAhead(15)), daysAhead(18), NOW)).toBe(false);
   });
 
+  it('lokal: altes raw_meta.checkOuts = Check-out der Reservierung → Check-in aus reservations.check_in gilt', () => {
+    const meta = JSON.stringify({ checkOuts: [daysAhead(33)] });
+    expect(isLocalThreadInWindow(t(meta, daysAhead(30).slice(0, 10)), daysAhead(33).slice(0, 10), NOW)).toBe(false);
+    expect(isLocalThreadInWindow(t(meta, daysAhead(12).slice(0, 10)), daysAhead(33).slice(0, 10), NOW)).toBe(true);
+  });
+
   it('lokal: altes raw_meta nur mit checkOuts (Check-in unbekannt) bleibt konservativ drin', () => {
     expect(isLocalThreadInWindow(t(JSON.stringify({ checkOuts: [daysAhead(60)] })), null, NOW)).toBe(true);
   });

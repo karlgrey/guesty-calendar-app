@@ -271,8 +271,9 @@ erweitert auf Guesty-Properties (Farmhouse, U19) — Spec:
   je Sync gelesen) ins 30-Minuten-Poll-Fenster — gilt für Listen-Gate
   (`shouldDeepFetchConversation`/`conversationWindowVerdict`) und lokales Gate
   (`isLocalThreadInWindow`/`localThreadWindowVerdict`, Check-in aus `raw_meta.stays` bzw.
-  `reservations.check_in`). Unbekannter Check-in (altes `raw_meta` nur mit `checkOuts`, ohne
-  Reservierungs-Join) zählt konservativ weiter; der Deep-Sync schreibt `raw_meta.stays` nach.
+  `reservations.check_in`; ein alter `raw_meta.checkOuts`-Eintrag mit demselben Check-out-Tag wie
+  die verknüpfte Reservierung übernimmt deren Check-in). Unbekannter Check-in zählt konservativ
+  weiter; der Deep-Sync schreibt `raw_meta.stays` nach.
   Aktivitätsfenster (7 Tage) und laufende Aufenthalte bleiben unberührt. Threads mit späterem
   Check-in laufen über den Webhook `reservation.messageReceived` (Echtzeit) und den nächtlichen
   Deep-Sync (2 Uhr). Log-Feld `futureExcluded` = Anzahl nur wegen des Horizonts ausgelassener

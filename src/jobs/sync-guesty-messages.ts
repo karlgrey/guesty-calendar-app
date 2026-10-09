@@ -255,7 +255,14 @@ function staysFromLocalThread(
           });
         }
       } else if (Array.isArray(meta?.checkOuts)) {
-        for (const c of meta.checkOuts) stays.push({ checkIn: null, checkOut: typeof c === 'string' ? c : null });
+        // Altes raw_meta (vor #857) ohne Check-in: gleicher Check-out-Tag wie die verknüpfte
+        // Reservierung → derselbe Aufenthalt, deren Check-in gilt (sonst bleibt er unbekannt).
+        const resDay = typeof reservationCheckOut === 'string' ? reservationCheckOut.slice(0, 10) : null;
+        for (const c of meta.checkOuts) {
+          if (typeof c !== 'string') continue;
+          if (thread.reservation_check_in && resDay && c.slice(0, 10) === resDay) continue;
+          stays.push({ checkIn: null, checkOut: c });
+        }
       }
     } catch {
       /* kaputtes raw_meta → ignorieren */
