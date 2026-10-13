@@ -341,7 +341,7 @@ All environment variables with defaults:
 # Server
 NODE_ENV=development
 PORT=3000
-HOST=localhost
+HOST=127.0.0.1
 
 # Guesty OAuth
 GUESTY_CLIENT_ID=required

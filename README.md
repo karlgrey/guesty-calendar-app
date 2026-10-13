@@ -127,7 +127,8 @@ BOOKING_RECIPIENT_EMAIL=booking@example.com
 ```env
 # Server
 PORT=3000
-HOST=localhost
+# nur loopback; Caddy proxied dorthin (#879)
+HOST=127.0.0.1
 
 # Property
 PROPERTY_CURRENCY=EUR

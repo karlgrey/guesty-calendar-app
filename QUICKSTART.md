@@ -272,7 +272,7 @@ BOOKING_RECIPIENT_EMAIL       # Email for booking requests
 # Optional (with defaults)
 NODE_ENV=development          # development | production
 PORT=3000                     # Server port
-HOST=localhost                # Server host
+HOST=127.0.0.1                # Server host (Default; nur Loopback, Caddy proxied, #879)
 PROPERTY_CURRENCY=EUR         # Currency code
 PROPERTY_TIMEZONE=Europe/Berlin  # IANA timezone
 CACHE_LISTING_TTL=24          # Hours
