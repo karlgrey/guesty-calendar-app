@@ -26,7 +26,8 @@ const configSchema = z.object({
 
   // Server
   port: z.coerce.number().int().min(1).max(65535).default(3000),
-  host: z.string().default('localhost'),
+  // #879: Caddy ist einziger öffentlicher Eingang; HOST=0.0.0.0 nur bewusst setzen.
+  host: z.string().default('127.0.0.1'),
 
   // Guesty API
   guestyClientId: z.string().min(1, 'GUESTY_CLIENT_ID is required'),
