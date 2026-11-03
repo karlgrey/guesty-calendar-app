@@ -1,5 +1,5 @@
 export type FeedbackCategory = 'ton' | 'fakt' | 'einmalig';
-export type SuggestionStatus = 'pending' | 'approved' | 'discarded';
+export type SuggestionStatus = 'pending' | 'approved' | 'discarded' | 'revoked';
 
 export interface DraftFeedback {
   id: string;
@@ -22,5 +22,7 @@ export interface VaultSuggestion {
   applied_commit: string | null;
   created_at?: string;
   applied_at: string | null;
+  revoked_at?: string | null;
+  revoke_commit?: string | null;
 }
 export type NewSuggestion = Pick<VaultSuggestion, 'id' | 'feedback_id' | 'target_file' | 'target_heading' | 'addition_text' | 'rationale'>;
