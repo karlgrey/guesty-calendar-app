@@ -128,6 +128,7 @@
     "draft": "Hey Oskar, alles klar, 21 Uhr passt super, dann checkst du einfach ein, sobald du da bist. Den Zugang zum Tresor findest du im Check-in-Guide zu deiner Buchung.\n\nGute Fahrt und bis gleich!",
     "facts": "Self-Check-in per Schluesseltresor; Zugang steht im Airbnb-Check-in-Guide. Codes NIE in Nachrichten nennen.",
     "guestName": "Oskar",
+    "now": "2026-09-21T18:30:00.000Z",
     "expected": {
       "category": "checkin_standard",
       "auto": true
@@ -477,6 +478,20 @@
     "expected": {
       "category": "buchungsanfrage",
       "auto": true
+    }
+  },
+  {
+    "name": "Lena — Entwurf verrät Vorab-Einschätzung („kleine Runden wie eure sind willkommen“) (#1004 Review)",
+    "guestMessages": [
+      "Hallo Michael, wir würden gerne mit 14 Leuten bei dir eine kleine Geburtstagsrunde verbringen — zusammen kochen und entspannen. Geht das?"
+    ],
+    "draft": "Hallo Lena, danke dir für die Anfrage — eine Geburtstagsrunde mit gemeinsamem Kochen klingt nach einem schönen Wochenende! Eine Frage vorab: Wie viele Personen wärt ihr insgesamt, also inklusive Tagesgästen, die vielleicht nur zum Feiern dazukommen? Unser Limit liegt bei 15 Personen inklusive Tagesgästen. Hochzeiten und große Feiern bieten wir nicht an, kleine, ruhige Runden wie eure sind dagegen willkommen und im Rahmen des Limits gut machbar. Sag mir kurz Bescheid, dann melde ich mich gleich wieder.",
+    "facts": "Umgebung: Wanderwege starten direkt am Haus; ein Badesee liegt rund 2 km entfernt; Fahrräder kann man im Ort leihen. Hartes Limit: 15 Personen (Übernachtungs- und Tagesgäste zusammen, keine Ausnahmen). Keine Hochzeiten/großen Feiern; kleine, intime Runden bis 15 ggf. case-by-case.",
+    "guestName": "Lena",
+    "bookingContext": "Buchungsanfrage (noch nicht bestätigt): Zeitraum 12.03.2027–14.03.2027, 2 Nächte, 14 Personen — Daten stammen aus der Anfrage selbst.",
+    "expected": {
+      "category": "buchungsanfrage",
+      "auto": false
     }
   }
 ]
