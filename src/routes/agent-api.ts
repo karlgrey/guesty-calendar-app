@@ -34,6 +34,9 @@ import { config } from '../config/index.js';
 import logger from '../utils/logger.js';
 import { getHostexClient } from '../services/hostex-client.js';
 import { groupBlockedRanges } from '../services/availability-blocks.js';
+import { getSuggestionsByStatus } from '../repositories/feedback-repository.js';
+import { revokeVaultSuggestion } from '../services/vault-suggestion-service.js';
+import type { SuggestionStatus } from '../types/feedback.js';
 import { berlinCalendarDay } from '../services/auto-send/berlin-day.js';
 
 const router = express.Router();
@@ -648,5 +651,50 @@ async function handleAvailabilityMutation(req: express.Request, res: express.Res
 
 router.post('/availability/:slug/block', (req, res) => handleAvailabilityMutation(req, res, false));
 router.post('/availability/:slug/unblock', (req, res) => handleAvailabilityMutation(req, res, true));
+
+// ---------------------------------------------------------------------------
+// #969 Vault-Vorschläge: Liste + Rücknahme freigegebener Vorschläge
+// ---------------------------------------------------------------------------
+const SUGGESTION_STATUSES: readonly SuggestionStatus[] = ['pending', 'approved', 'revoked', 'discarded'];
+
+router.get('/vault-suggestions', (req, res) => {
+  try {
+    const raw = req.query.status;
+    const status = raw === undefined ? 'pending' : raw;
+    if (typeof status !== 'string' || !(SUGGESTION_STATUSES as readonly string[]).includes(status)) {
+      throw new ValidationError(`status muss einer von ${SUGGESTION_STATUSES.join('|')} sein`);
+    }
+    const suggestions = getSuggestionsByStatus(status as SuggestionStatus).map((s) => ({
+      id: s.id,
+      feedback_id: s.feedback_id,
+      target_file: s.target_file,
+      target_heading: s.target_heading,
+      addition_text: s.addition_text,
+      rationale: s.rationale,
+      status: s.status,
+      applied_commit: s.applied_commit,
+      applied_at: s.applied_at,
+      revoked_at: s.revoked_at ?? null,
+      revoke_commit: s.revoke_commit ?? null,
+      created_at: s.created_at ?? null,
+    }));
+    res.json({ suggestions });
+  } catch (err) { handleError(res, err); }
+});
+
+router.post('/vault-suggestions/:id/revoke', (req, res) => {
+  try {
+    const result = revokeVaultSuggestion(req.params.id);
+    if (!result.ok) { res.status(result.status).json({ error: result.error }); return; }
+    res.json({
+      id: result.suggestion.id,
+      status: result.suggestion.status,
+      revoke_commit: result.suggestion.revoke_commit ?? null,
+      removed: result.removed ?? false,
+      pushed: result.pushed,
+      alreadyRevoked: result.alreadyRevoked ?? false,
+    });
+  } catch (err) { handleError(res, err); }
+});
 
 export default router;

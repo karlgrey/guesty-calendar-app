@@ -337,6 +337,9 @@ erweitert auf Guesty-Properties (Farmhouse, U19) — Spec:
 - Bei `ton`/`fakt`: LLM (`claude-sonnet-5-5`, Schema `propose_vault_edit`) schlägt einen Markdown-Bullet vor (target_heading + addition_text + rationale) → gespeichert in `vault_suggestions`
 - `src/services/vault-writer.ts`: pfad-sicher (nur `prozesse/*.md`), hängt Text unter bestehende Überschrift an, git-committet via `execFileSync` (argv, kein Shell-Injection)
 - Freigabe auf `/admin/suggestions` ist das Kurations-Gate — kein Auto-Write
+- **Rücknahme (#969):** `src/services/vault-suggestion-service.ts` (`approveVaultSuggestion`/`revokeVaultSuggestion`, gemeinsamer Weg für Admin-UI und Agent-API). Freigegebene Vorschläge (`approved`) werden über `revokeSuggestion` (vault-writer) zurückgezogen: Zeile(n) unter der Überschrift entfernen, Commit `Vault-Update zurückgezogen (<heading>)`, danach `syncVault()` (non-fatal). Status `revoked` (+ `revoked_at`, `revoke_commit`; Migration 038); Re-Approve aus `revoked` erlaubt. Idempotent: Zeile schon weg → kein Commit; zweiter Revoke → `alreadyRevoked`. Auch `applySuggestion` committet nichts, wenn die Zeile schon da ist.
+- Admin-UI: `/admin/suggestions?status=pending|approved|revoked|discarded` (Default pending), Button „Zurückziehen" (POST `/:id/revoke`, mit Bestätigung) bzw. „Erneut freigeben"
+- Agent-API (`X-Agent-Key`): `GET /api/agent/vault-suggestions?status=…` (Default pending, ungültig → 400) und `POST /api/agent/vault-suggestions/:id/revoke` → `{ id, status, revoke_commit, removed, pushed, alreadyRevoked }` (404/409/502 als `{ error }`)
 
 **Konfiguration:**
 - `VAULT_PATH` — absoluter Pfad zum Deploy-Vault (brainstem-gaeste, generiert aus TheBrain2); ohne diesen Wert sind Entwürfe und Feedback-Loop deaktiviert
@@ -353,9 +356,12 @@ mitziehen, sonst bricht der Rückfluss (laut, mit „bitte manuell ingesten"):
    `data/properties.json` = Dateiname der Master-Seite in `wiki/prozesse/`.
 2. **Git-Autor:** Feedback-Commits laufen als **"Remote Republic Bot"** — daran erkennt
    sync sie (`git config user.name` im Vault-Repo auf dem Server).
-3. **Edit-Muster:** `vault-writer.ts` hängt ausschließlich Zeilen unter eine bestehende
-   `##`-Überschrift an (append-only). Ersetzen/Löschen würde der Struktur-Replay
-   ablehnen.
+3. **Edit-Muster:** Die Freigabe hängt ausschließlich Zeilen unter eine bestehende
+   `##`-Überschrift an (append-only). Die Rücknahme (#969) entfernt genau die
+   `addition_text`-Zeile(n) unter dieser Überschrift, Commit-Message
+   `Vault-Update zurückgezogen (<heading>)` — `TheBrain2/tools/sync.py` erkennt diese
+   Commits am Präfix und replayt sie als Löschung. Sonstige Löschungen/Ersetzungen
+   lehnt der Struktur-Replay weiterhin ab.
 Spec: `TheBrain2/docs/superpowers/specs/2026-07-06-brainstem-sync-design.md`.
 
 **Server-Setup:** → siehe `docs/vault-deployment.md`

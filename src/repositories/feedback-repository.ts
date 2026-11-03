@@ -1,6 +1,6 @@
 // src/repositories/feedback-repository.ts
 import { getDatabase } from '../db/index.js';
-import type { NewFeedback, VaultSuggestion, NewSuggestion } from '../types/feedback.js';
+import type { NewFeedback, VaultSuggestion, NewSuggestion, SuggestionStatus } from '../types/feedback.js';
 
 export function createFeedback(f: NewFeedback): void {
   const db = getDatabase();
@@ -37,11 +37,31 @@ export function countPendingSuggestions(): number {
 export function markSuggestionApplied(id: string, commit: string | null): void {
   const db = getDatabase();
   db.prepare(
-    `UPDATE vault_suggestions SET status = 'approved', applied_commit = ?, applied_at = datetime('now') WHERE id = ?`,
+    `UPDATE vault_suggestions SET status = 'approved', applied_commit = ?, applied_at = datetime('now'), revoked_at = NULL, revoke_commit = NULL WHERE id = ?`,
   ).run(commit, id);
 }
 
 export function discardSuggestion(id: string): void {
   const db = getDatabase();
   db.prepare(`UPDATE vault_suggestions SET status = 'discarded' WHERE id = ?`).run(id);
+}
+
+/**
+ * Vorschläge nach Status. pending: älteste zuerst (Abarbeitungs-Reihenfolge);
+ * approved/revoked/discarded: neueste zuerst (nach applied_at/revoked_at, sonst created_at).
+ */
+export function getSuggestionsByStatus(status: SuggestionStatus): VaultSuggestion[] {
+  const db = getDatabase();
+  const order = status === 'pending' ? 'created_at ASC'
+    : status === 'approved' ? 'COALESCE(applied_at, created_at) DESC'
+    : status === 'revoked' ? 'COALESCE(revoked_at, created_at) DESC'
+    : 'created_at DESC';
+  return db.prepare(`SELECT * FROM vault_suggestions WHERE status = ? ORDER BY ${order}, rowid DESC`).all(status) as VaultSuggestion[];
+}
+
+export function markSuggestionRevoked(id: string, commit: string | null): void {
+  const db = getDatabase();
+  db.prepare(
+    `UPDATE vault_suggestions SET status = 'revoked', revoked_at = datetime('now'), revoke_commit = ? WHERE id = ?`,
+  ).run(commit, id);
 }
