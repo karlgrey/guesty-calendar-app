@@ -673,6 +673,7 @@ router.post('/:threadId/regenerate', async (req, res, next) => {
     if (!voice || !facts) { res.status(400).send('Kein Vault-Wissen verfügbar (VAULT_PATH/vaultNote prüfen)'); return; }
 
     const messages = getMessagesByThread(thread.id);
+    const openBookingRequest = findOpenBookingRequest(messages, thread.reservation_status);
     const result = await generateDraftForThread({
       thread, messages, voice, facts,
       bookingContext: buildBookingContext(thread),
@@ -682,7 +683,8 @@ router.post('/:threadId/regenerate', async (req, res, next) => {
       // einer noch offenen Anfrage (findOpenBookingRequest, siehe generate-drafts.ts). Task-
       // Anlage/Frist laufen hier NICHT (kein Gate-Aufruf auf diesem Pfad, wie bisher — Micha
       // prüft den Entwurf ohnehin von Hand).
-      isBookingRequest: findOpenBookingRequest(messages, thread.reservation_status) !== null,
+      isBookingRequest: openBookingRequest !== null,
+      requestKind: openBookingRequest?.requestKind ?? null, // #1004
     });
     let redirectSuffix = '';
     if (result.kind === 'text') {

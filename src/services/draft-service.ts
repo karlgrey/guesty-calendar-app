@@ -2,6 +2,7 @@ import { callClaudeTool, SONNET_MODEL, type ClaudeToolDefinition } from './anthr
 import type { MessageThread, Message } from '../types/messages.js';
 import { LANGUAGE_LABEL, type SupportedLanguage } from '../utils/language-detect.js';
 import { buildTodayBlock } from './auto-send/today-facts.js';
+import type { BookingRequestKind } from './booking-request.js';
 
 /** #758: zentrale Sonnet-Konstante (claude-sonnet-5-5) aus anthropic-client. */
 export const DRAFT_MODEL = SONNET_MODEL;
@@ -61,6 +62,10 @@ export interface DraftInput {
   // Buchungsanfrage-Prompt-Block (Rückfrage statt normaler Antwort). Optional, damit
   // bestehende Aufrufer/Tests ohne dieses Feld weiterlaufen (dann der normale Prompt).
   isBookingRequest?: boolean;
+  // #1004 (Fall #1002): Art der offenen Buchungsanfrage aus findOpenBookingRequest — benennt im
+  // Buchungsanfrage-Block Inquiry vs. Request-to-Book und wählt den Schlusssatz. Optional
+  // (null/fehlend = unbekannt); nur wirksam zusammen mit isBookingRequest.
+  requestKind?: BookingRequestKind | null;
   // #698 (Fall Lorenzo U19): Zeitpunkt der Entwurfs-Generierung für den HEUTE-Fakt
   // (today-facts.ts) — optional, Default new Date() in generateDraftForThread/buildSystemPrompt,
   // damit bestehende Aufrufer/Tests ohne dieses Feld weiterlaufen. In Tests injizierbar, damit
@@ -134,27 +139,66 @@ function buildThreadFactsBlock(thread: Pick<MessageThread, 'channel' | 'reservat
 }
 
 // #697 (Fall Anika Farmhouse, 20.09.2026): eigener Prompt-Block für Airbnb-Buchungsanfragen
-// (Inquiry/Request-to-Book) — die Antwort ist NUR eine Rückfrage, nie eine Zusage/Bestätigung.
-// Der frühere Vorfall: der Entwurf gab die interne Prüfbedingung "passt Zweck und Personenzahl"
-// wörtlich an den Gast weiter UND bestätigte direkt, statt gezielt nachzufragen. Bewusst OHNE
-// die konkreten Objektregeln (Limit, ausgeschlossene Event-Arten) hier zu duplizieren — die
-// stehen im OBJEKTWISSEN (Vault), der Block weist nur an, WIE damit umzugehen ist.
-function buildBookingRequestBlock(): string {
+// (Inquiry/Request-to-Book) — nie eine Zusage/Bestätigung, keine internen Prüfbedingungen an
+// den Gast. Bewusst OHNE die konkreten Objektregeln (Limit, ausgeschlossene Event-Arten) hier zu
+// duplizieren — die stehen im OBJEKTWISSEN (Vault), der Block weist nur an, WIE damit umzugehen ist.
+// #1004 (Fall #1002, 02.11.2026, Micha: „inquisitorische Frage nach dem Anlass muss weg"): die
+// frühere Pflichtstruktur (Dank → Rückfrage Anlass/Personenzahl/Ablauf → Limit → „Bestätigung
+// folgt") ist ersetzt. Der Entwurf stellte im Fall #1002 keine Frage, schloss aber trotzdem mit
+// „Sobald ich deine Antworten habe …" (Struktur-Punkt 4 ohne Punkt 2). Neu: Art der Anfrage als
+// Fakt (requestKind aus findOpenBookingRequest), auf den Inhalt eingehen, höchstens EINE gezielte
+// Rückfrage und nur bei Hausregel-Bezug, Schlusssatz je Art, Verbot des Verweises auf nicht
+// gestellte Fragen. Schlusssatz bewusst mit dem Substantiv „Bestätigung" — die Verbformen
+// (bestätigt/bestätige/angenommen) stoppt der mechanische Check confirmation_words.
+const REQUEST_KIND_LABEL: Record<BookingRequestKind, string> = {
+  request_to_book:
+    'Request-to-Book) — der Gast hat bereits eine verbindliche Buchungsanfrage gestellt; Micha nimmt sie an oder lehnt sie ab',
+  inquiry:
+    'Inquiry) — der Gast hat bisher nur angefragt bzw. eine Frage gestellt, noch KEINE verbindliche Buchungsanfrage',
+};
+
+function buildBookingClosingRule(requestKind: BookingRequestKind | null): string {
+  if (requestKind === 'request_to_book') {
+    return '4. Schlusssatz: kündige an, dass die Bestätigung in Kürze kommt — sinngemäß „die Bestätigung kommt in ' +
+      'Kürze" (Substantiv „Bestätigung", NICHT „bestätigt/bestätige ich/angenommen"; keine Zusage, dass die Buchung ' +
+      'angenommen ist). Hast du die eine Rückfrage aus Punkt 2 gestellt, ersetzt ein kurzer Bezug darauf diesen Satz ' +
+      '(z. B. „Sag mir kurz Bescheid, dann melde ich mich gleich wieder.").';
+  }
+  if (requestKind === 'inquiry') {
+    return '4. Schlusssatz: lade den Gast ein, die Buchungsanfrage zu stellen — sinngemäß „Wenn es für euch passt, ' +
+      'stell gern die Buchungsanfrage." (ohne die Plattform zu nennen). Hast du die eine Rückfrage aus Punkt 2 ' +
+      'gestellt, kommt die Einladung nach der Frage.';
+  }
+  return '4. Schlusssatz: freundlich und offen, ohne Zusage und ohne Ankündigung einer Bestätigung.';
+}
+
+function buildBookingRequestBlock(requestKind: BookingRequestKind | null): string {
+  const kindLabel = requestKind ? REQUEST_KIND_LABEL[requestKind] : 'Inquiry oder Request-to-Book)';
   return [
     '### BUCHUNGSANFRAGE — Sonderregeln für DIESE Antwort (haben Vorrang vor allgemeinen Regeln unten) ###',
-    'Diese Nachricht ist eine Airbnb-Buchungsanfrage (Inquiry oder Request-to-Book). Deine Antwort ist AUSSCHLIESSLICH ' +
-      'eine Rückfrage — KEINE Zusage, KEINE Bestätigung, KEIN Angebot, KEIN Preis, KEIN Hold. Die Entscheidung ' +
-      '(Annehmen/Ablehnen) trifft Micha ausschließlich in Airbnb, NACHDEM der Gast auf deine Rückfrage geantwortet hat.',
+    `Dies ist eine Airbnb-Buchungsanfrage (${kindLabel}.`,
+    'Die Entscheidung (Annehmen/Ablehnen) trifft ausschließlich Micha. Deine Antwort enthält deshalb KEINE Zusage ' +
+      'und KEINE Bestätigung als Fakt, KEIN Angebot, KEIN Preis, KEIN Hold.',
     'Baue die Antwort so auf:',
-    '1. Kurzer Dank für die Anfrage.',
-    '2. Gezielte Rückfrage(n) zu dem, was aus dem bisherigen Verlauf noch NICHT hervorgeht: Anlass/Art des Events, ' +
-      'Personenzahl INKLUSIVE Tagesgästen, grober Ablauf (ruhige Runde oder Feier).',
-    '3. Nenne das Personenlimit und die laut OBJEKTWISSEN ausgeschlossenen Event-Arten (z. B. Hochzeiten, große ' +
-      'Feiern) als reinen FAKT — NIEMALS als interne Prüfbedingung wie "passt das für uns" oder "steht einer ' +
-      'Bestätigung nichts im Weg". Formuliere unsichere Punkte immer als Frage an den Gast, nie als Aussage über den ' +
-      'Ausgang der Prüfung.',
-    '4. Hinweis, dass die endgültige Bestätigung noch separat folgt — OHNE die Plattform beim Namen zu nennen ' +
-      '(Voice-Regel Micha 21.09.2026: Airbnb, Guesty o. ä. nie im Text an den Gast; "über Airbnb bestätigen" ist tabu).',
+    '1. Kurzer Dank für die Anfrage. Geh auf den INHALT der Gastnachricht ein: spiegle die Vorfreude bzw. das, was ' +
+      'der Gast über sich und seinen Aufenthalt erzählt, und beantworte seine Fragen (z. B. Tipps zur Umgebung, ' +
+      'Ausstattung) aus dem OBJEKTWISSEN — fehlt ein Fakt, bleib allgemein.',
+    '2. KEINE Routine-Rückfrage nach Anlass, Ablauf oder Personenzahl. Nur wenn die Gastnachricht SELBST einen ' +
+      'Hausregel-Punkt aus dem OBJEKTWISSEN berührt — eine Feier, einen Geburtstag, eine Hochzeit oder ein Event, ' +
+      'oder eine Personenzahl über dem Limit des Objekts (Tagesgäste mitgezählt) —, stellst du GENAU EINE gezielte ' +
+      'Rückfrage zu diesem Punkt (bei Feier/Event: wie viele Personen insgesamt dabei sind, INKLUSIVE Tagesgästen) ' +
+      'und nennst das Personenlimit und die laut OBJEKTWISSEN ausgeschlossenen Event-Arten als reinen FAKT. Diese ' +
+      'Tagesgäste-Frage ist erlaubt, obwohl die Plattform die Personenzahl kennt — Tagesgäste kennt sie nicht. ' +
+      'Berührt die Nachricht keinen Hausregel-Punkt (z. B. Freundesgruppe, Familienurlaub, ruhiges Wochenende ' +
+      'innerhalb des Limits), stellst du KEINE Rückfrage.',
+    '3. Interne Prüfbedingungen NIEMALS als Aussage ("passt das für uns", "steht einer Bestätigung nichts im Weg", ' +
+      '"eine Runde wie eure ist willkommen/passt gut") — ' +
+      'Unsicheres nur als Frage an den Gast, nie als Aussage über den Ausgang der Prüfung.',
+    buildBookingClosingRule(requestKind),
+    'Verboten: auf „deine Antworten“, „deine Rückmeldung“ oder sonstige ausstehende Fragen verweisen (z. B. „Sobald ' +
+      'ich deine Antworten habe …"), wenn du in DIESER Antwort keine Frage gestellt hast. Die Plattform nie beim ' +
+      'Namen nennen (Voice-Regel Micha 21.09.2026: Airbnb, Guesty o. ä. nie im Text an den Gast; "über Airbnb ' +
+      'bestätigen" ist tabu).',
     '### ENDE BUCHUNGSANFRAGE-REGELN ###',
   ].join('\n');
 }
@@ -177,6 +221,9 @@ export function buildSystemPrompt(
   // dump-draft-prompt.ts (#440-Abnahme-Werkzeug) ruft buildSystemPrompt ohne dieses Argument
   // weiterhin unverändert lauffähig auf.
   now: Date = new Date(),
+  // #1004: Art der offenen Buchungsanfrage (findOpenBookingRequest) — nur wirksam mit
+  // isBookingRequest; null = unbekannt (generischer Kontext, kein artspezifischer Schlusssatz).
+  requestKind: BookingRequestKind | null = null,
 ): string {
   const lines = [
     buildThreadFactsBlock(thread),
@@ -189,7 +236,7 @@ export function buildSystemPrompt(
     // versandt. Direkt nach ANTWORTSPRACHE, vor Voice/Objektwissen — als harter Fakt.
     buildTodayBlock(now, bookingContext),
   ];
-  if (isBookingRequest) lines.push(buildBookingRequestBlock());
+  if (isBookingRequest) lines.push(buildBookingRequestBlock(requestKind));
   lines.push(
     'Du entwirfst eine Antwort auf eine Gastnachricht für eine Ferienunterkunft, in Michas Stimme.',
     'Halte dich strikt an den folgenden Ton/Stil (Voice):',
@@ -300,6 +347,7 @@ export async function generateDraftForThread(
         input.languageRetry ?? false,
         input.isBookingRequest ?? false,
         input.now ?? new Date(),
+        input.requestKind ?? null,
       ),
       userMessage: buildConversation(input.messages, input.thread.guest_name),
       tool: SUBMIT_REPLY_TOOL,

@@ -307,6 +307,8 @@ describe('Buchungsanfrage-Erkennung vor dem Entwurf (#697)', () => {
     const d = deps({ getThreads: vi.fn().mockReturnValue([mkThread('hostex:a')]), getMessages: vi.fn().mockReturnValue(bookingMessages), generate });
     await generateDraftsForProperty(property, d);
     expect((generate as any).mock.calls[0][0].isBookingRequest).toBe(true);
+    // #1004: Art der Anfrage geht mit in den Prompt.
+    expect((generate as any).mock.calls[0][0].requestKind).toBe('request_to_book');
   });
 
   it('ohne System-Post → isBookingRequest=false', async () => {
@@ -314,6 +316,7 @@ describe('Buchungsanfrage-Erkennung vor dem Entwurf (#697)', () => {
     const d = deps({ getThreads: vi.fn().mockReturnValue([mkThread('hostex:a')]), getMessages: vi.fn().mockReturnValue([bookingMessages[0]]), generate });
     await generateDraftsForProperty(property, d);
     expect((generate as any).mock.calls[0][0].isBookingRequest).toBe(false);
+    expect((generate as any).mock.calls[0][0].requestKind).toBeNull();
   });
 });
 

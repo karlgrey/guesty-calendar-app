@@ -58,6 +58,7 @@ import { getPropertyForThread } from '../utils/thread-property.js';
 import { getPropertyBySlug } from '../config/properties.js';
 import { loadVoice, loadPropertyFacts } from '../services/vault-knowledge.js';
 import { buildBookingContext } from '../services/booking-context.js';
+import { findOpenBookingRequest, type BookingRequestKind } from '../services/booking-request.js';
 import {
   buildSystemPrompt, buildConversation, generateDraftForThread, DRAFT_MODEL, type DraftDeps,
 } from '../services/draft-service.js';
@@ -161,6 +162,17 @@ function messagesFromFixture(fixture: Fixture, threadId: string, source: 'guesty
   }));
 }
 
+// #1004: Buchungsanfrage-Erkennung wie im echten Generierungspfad (generate-drafts.ts,
+// stale-draft-regen.ts, routes/messages.ts) — ohne sie zeigte der Dump bei Buchungsanfragen
+// den normalen Prompt statt des Buchungsanfrage-Blocks. Fixtures lösen sie über eine
+// System-Nachricht „New guest reservation request …" bzw. „New guest inquiry" aus.
+interface BookingRequestInfo { isBookingRequest: boolean; requestKind: BookingRequestKind | null }
+
+function resolveBookingRequest(thread: MessageThread, messages: Message[]): BookingRequestInfo {
+  const open = findOpenBookingRequest(messages, thread.reservation_status);
+  return { isBookingRequest: open !== null, requestKind: open?.requestKind ?? null };
+}
+
 // --- Ausgabe ------------------------------------------------------------------------
 
 function printSection(title: string, body: string): void {
@@ -168,19 +180,22 @@ function printSection(title: string, body: string): void {
   console.log(body);
 }
 
-async function dumpDirect(thread: MessageThread, messages: Message[], voice: string, facts: string, bookingContext: string | null): Promise<void> {
-  const systemPrompt = buildSystemPrompt(voice, facts, bookingContext, thread);
+async function dumpDirect(thread: MessageThread, messages: Message[], voice: string, facts: string, bookingContext: string | null, br: BookingRequestInfo): Promise<void> {
+  const systemPrompt = buildSystemPrompt(
+    voice, facts, bookingContext, thread, undefined, undefined, br.isBookingRequest, undefined, br.requestKind,
+  );
   const userMessage = buildConversation(messages, thread.guest_name);
   printSection('THREAD-FAKTEN', JSON.stringify({
     id: thread.id, channel: thread.channel, reservation_status: thread.reservation_status,
     source: thread.source, guest_name: thread.guest_name,
+    isBookingRequest: br.isBookingRequest, requestKind: br.requestKind,
   }, null, 2));
   printSection('SYSTEM PROMPT (buildSystemPrompt — kein API-Call)', systemPrompt);
   printSection('USER MESSAGE (buildConversation)', userMessage);
   console.log(`\n(System-Prompt-Länge: ${systemPrompt.length} Zeichen, User-Message-Länge: ${userMessage.length} Zeichen)`);
 }
 
-async function dumpViaGenerate(thread: MessageThread, messages: Message[], voice: string, facts: string, bookingContext: string | null): Promise<void> {
+async function dumpViaGenerate(thread: MessageThread, messages: Message[], voice: string, facts: string, bookingContext: string | null, br: BookingRequestInfo): Promise<void> {
   let captured: CallClaudeToolInput | null = null;
   const deps: DraftDeps = {
     call: async (args: CallClaudeToolInput) => {
@@ -189,7 +204,7 @@ async function dumpViaGenerate(thread: MessageThread, messages: Message[], voice
     },
   };
 
-  const result = await generateDraftForThread({ thread, messages, voice, facts, bookingContext }, deps);
+  const result = await generateDraftForThread({ thread, messages, voice, facts, bookingContext, ...br }, deps);
 
   if (!captured) {
     console.error('FEHLER: deps.call wurde nicht aufgerufen — generateDraftForThread hat vorher abgebrochen.');
@@ -217,13 +232,14 @@ async function dumpLive(
   facts: string,
   bookingContext: string | null,
   runs: number,
+  br: BookingRequestInfo,
 ): Promise<void> {
   mkdirSync(RESULTS_DIR, { recursive: true });
   for (let run = 1; run <= runs; run++) {
     console.log(`\n--- Live-Lauf ${run}/${runs} für ${caseName} (echter API-Call, Modell ${DRAFT_MODEL}) ---`);
     let result;
     try {
-      result = await generateDraftForThread({ thread, messages, voice, facts, bookingContext }, { call: callClaudeTool });
+      result = await generateDraftForThread({ thread, messages, voice, facts, bookingContext, ...br }, { call: callClaudeTool });
     } catch (err) {
       // generateDraftForThread fängt API-Fehler normalerweise selbst ab (kind:'failed') —
       // dieser catch ist nur ein zusätzliches Netz, falls doch etwas durchschlägt.
@@ -238,6 +254,7 @@ async function dumpLive(
     const header = [
       `Fall: ${caseName}`,
       `Kanal: ${thread.channel} | Buchungsstatus (roh): ${thread.reservation_status ?? 'null'}`,
+      `Buchungsanfrage: ${br.isBookingRequest ? (br.requestKind ?? 'ja') : 'nein'}`,
       `Lauf: ${run}/${runs}`,
       `Modell: ${DRAFT_MODEL}`,
       `DraftResult.kind: ${result.kind}`,
@@ -332,12 +349,13 @@ async function main(): Promise<void> {
     return;
   }
 
+  const br = resolveBookingRequest(thread, messages);
   if (live) {
-    await dumpLive(caseName, thread, messages, voice, facts, bookingContext, runs);
+    await dumpLive(caseName, thread, messages, voice, facts, bookingContext, runs, br);
   } else if (viaGenerate) {
-    await dumpViaGenerate(thread, messages, voice, facts, bookingContext);
+    await dumpViaGenerate(thread, messages, voice, facts, bookingContext, br);
   } else {
-    await dumpDirect(thread, messages, voice, facts, bookingContext);
+    await dumpDirect(thread, messages, voice, facts, bookingContext, br);
   }
 }
 

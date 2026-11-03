@@ -1,0 +1,21 @@
+{
+  "caseId": "1004-R2-geburtstagsrunde",
+  "description": "#1004 (anonymisierter Fall Anika #697): Airbnb Request-to-Book, Geburtstagsrunde 14 P. — Muss: GENAU EINE Rückfrage zur Gesamtzahl inkl. Tagesgästen, Limit + ausgeschlossene Event-Arten als Fakt; Darf nicht: weitere Routine-Rückfragen (Anlass/Ablauf), Zusage, interne Prüfbedingung als Aussage, Plattform nennen.",
+  "propertySlug": "farmhouse",
+  "thread": {
+    "channel": "airbnb",
+    "reservation_status": "reserved",
+    "guest_name": "Lena"
+  },
+  "bookingContext": "Buchungsanfrage (noch nicht bestätigt): Zeitraum 12.03.2027–14.03.2027, 2 Nächte, 14 Personen — Daten stammen aus der Anfrage selbst.",
+  "messages": [
+    {
+      "direction": "inbound",
+      "body": "Hallo Michael, wir würden gerne mit 14 Leuten bei dir eine kleine Geburtstagsrunde verbringen — zusammen kochen und entspannen. Geht das?"
+    },
+    {
+      "direction": "system",
+      "body": "New guest reservation request HMTEST1005"
+    }
+  ]
+}

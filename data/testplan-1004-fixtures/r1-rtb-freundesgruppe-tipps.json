@@ -1,0 +1,21 @@
+{
+  "caseId": "1004-R1-freundesgruppe",
+  "description": "#1004 (anonymisierter Fall #1002): Airbnb Request-to-Book, Freundesgruppe 10 P., Tipps-Frage — Muss: auf Tipps eingehen (Objektwissen), Schluss „Bestätigung kommt in Kürze“; Darf nicht: Rückfrage nach Anlass/Ablauf/Personenzahl, Verweis auf „deine Antworten“, Plattform nennen, Zusage/Preis.",
+  "propertySlug": "farmhouse",
+  "thread": {
+    "channel": "airbnb",
+    "reservation_status": "reserved",
+    "guest_name": "Jonas"
+  },
+  "bookingContext": "Buchungsanfrage (noch nicht bestätigt): Zeitraum 06.05.2027–09.05.2027, 3 Nächte, 10 Personen — Daten stammen aus der Anfrage selbst.",
+  "messages": [
+    {
+      "direction": "inbound",
+      "body": "Hallo Michael, wir sind eine Gruppe von Freunden, die jedes Jahr ins Grüne fährt, und würden gerne bei dir im Haus bleiben. Wir würden auch gerne was in der Gegend unternehmen, wandern, Sport. Vielleicht hast du Tipps?"
+    },
+    {
+      "direction": "system",
+      "body": "New guest reservation request HMTEST1004"
+    }
+  ]
+}
