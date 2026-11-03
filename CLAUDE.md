@@ -833,6 +833,24 @@ der einfach nie wieder erfolgreich pollt (Florence stand so 10 Wochen unbemerkt 
 - Die BI-Report-Mail (`src/jobs/bi-email.ts` → `staleAirbnbMailSources` auf `BiReportModel`,
   gerendert in `src/services/bi-email-templates.ts`) zeigt eine Warnzeile, falls etwas stale ist
 
+### LLM-Alarm (#907)
+Stiller Ausfall der Anthropic-Anbindung (leeres Guthaben, ungültiger Key, Outage) soll nicht
+unbemerkt bleiben — KI-Entwürfe, Bewertungen und Vault-Vorschläge fielen sonst einfach aus.
+- `src/services/llm-alarm.ts` — reine Logik (`createLlmAlarmMonitor`, `classifyLlmError`)
+- `src/services/llm-alarm-mail.ts` — Mail (Resend) + Log + prozessweiter Singleton `llmAlarmMonitor`
+- Hook in `callClaudeTool` (`src/services/anthropic-client.ts`): meldet jeden Ausgang
+  (recordSuccess / recordFailure) an den Monitor
+- `src/jobs/llm-health-check.ts` — täglicher Mini-Aufruf (max_tokens 64) über `callClaudeTool`,
+  Scheduler-Lauf 07:00 Europe/Berlin (persistierter Tagesmarker `llm_health_check_last_run_day`);
+  Fehlschlag → **sofort** Alarm ohne Schwelle; ohne `ANTHROPIC_API_KEY` übersprungen
+- Schwelle: 3 aufeinanderfolgende alarmrelevante Fehler innerhalb von 30 Minuten. Zustand nur im
+  Prozessspeicher — ein Neustart beginnt bei null
+- Alarmrelevant: HTTP 401/402/403/429/5xx, 400 mit „credit balance“/`billing_error`,
+  Timeout/Verbindungsfehler. Nicht relevant: sonstige 4xx; refusal/max_tokens/ungültiges JSON
+  (die API hat geantwortet → zählt als Erfolg)
+- Ein Alarm pro Ausfall; Entwarnung-Mail beim nächsten erfolgreichen Aufruf
+- Empfänger: `LLM_ALARM_RECIPIENTS`, Fallback `CONSISTENCY_ALERT_RECIPIENTS`, sonst nur `logger.error`
+
 ### Authentication
 - Google OAuth 2.0 via Passport.js (`src/config/auth.ts`)
 - Email whitelist: `ADMIN_ALLOWED_EMAILS` env var
@@ -983,6 +1001,7 @@ Optional:
 - `WA_OUTBOX_DIR` - Outbox-Verzeichnis der WhatsApp-Bridge (auf labs); Zeit-Änderungen → Wanja (#793). **Leer/ungesetzt = kein Versand** (nur Log), Dev/Test immer leer lassen
 - `WA_WANJA_JID` - Empfänger-JID für die Zeit-Änderungs-Nachrichten (Default `380509566925@s.whatsapp.net`)
 - `TIMES_CHANGE_WHATSAPP` - `1`/`true`/`yes` schaltet die Wanja-WhatsApp bei Zeit-Änderungen wieder ein (Default AUS seit #799; Marker im Kalender ersetzt sie)
+- `LLM_ALARM_RECIPIENTS` - Komma-getrennte Empfänger der LLM-Alarm-/Entwarnungs-Mails (#907); leer → Fallback `CONSISTENCY_ALERT_RECIPIENTS`, sonst nur Log. Steht in `.env.example` bewusst als Pflicht-Key (leer erlaubt)
 - `DRAFT_STALE_HOURS` - Ab wann ein pending-KI-Entwurf beim Öffnen im Admin-UI still neu generiert wird (default: 6, siehe Auto-Send-Gate-Abschnitt „Stale-Draft-Regeneration")
 
 ## Guesty API Quirks

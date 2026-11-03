@@ -15,6 +15,7 @@ import { syncAnalytics, shouldSyncAnalytics } from './sync-analytics.js';
 import { syncGoogleCalendarForProperty } from './sync-google-calendar.js';
 import { checkAirbnbMailStaleness } from './airbnb-mail/check-staleness.js';
 import { runDailyConsistencyJob } from './consistency-check.js';
+import { runLlmHealthCheck } from './llm-health-check.js';
 import { todayInTimezone } from './airbnb-mail/reconcile-ical.js';
 import { getSchedulerState, setSchedulerState } from '../repositories/scheduler-state-repository.js';
 import { config } from '../config/index.js';
@@ -24,6 +25,7 @@ import logger from '../utils/logger.js';
 // Persistente Tagesmarker (überleben einen Prozess-Neustart, anders als die
 // RAM-only `state`-Felder unten) — Muster + Begründung: migration 026 / #603.
 const CONSISTENCY_CHECK_STATE_KEY = 'dailyConsistencyCheckLastRunDay';
+const LLM_HEALTH_CHECK_STATE_KEY = 'llm_health_check_last_run_day';
 const DAILY_FORCE_SYNC_STATE_KEY = 'dailyForceSyncLastRunDay';
 
 /**
@@ -58,6 +60,8 @@ interface SchedulerState {
   // Persistierter Tagesmarker (YYYY-MM-DD in config.propertyTimezone), aus der
   // DB geladen — Grundlage für die "schon heute gelaufen?"-Prüfung (#603).
   consistencyCheckLastRunDay: string | null;
+  llmHealthCheckIntervalId: NodeJS.Timeout | null;
+  llmHealthCheckLastRunDay: string | null;
   // Dito für den täglichen Force-Sync (#603, gleiches RAM-Marker-Muster).
   dailyForceSyncLastRunDay: string | null;
 }
@@ -88,6 +92,8 @@ const state: SchedulerState = {
   consistencyCheckIntervalId: null,
   lastConsistencyCheck: null,
   consistencyCheckLastRunDay: null,
+  llmHealthCheckIntervalId: null,
+  llmHealthCheckLastRunDay: null,
   dailyForceSyncLastRunDay: null,
 };
 
@@ -99,6 +105,7 @@ const state: SchedulerState = {
 export function resetSchedulerStateForTests(): void {
   state.lastConsistencyCheck = null;
   state.consistencyCheckLastRunDay = null;
+  state.llmHealthCheckLastRunDay = null;
   state.lastDailyForceSync = null;
   state.dailyForceSyncLastRunDay = null;
 }
@@ -350,6 +357,38 @@ async function checkAndLogAirbnbMailStaleness() {
     checkAirbnbMailStaleness();
   } catch (error) {
     logger.error({ error }, 'Error in airbnb-mail staleness check');
+  }
+}
+
+/**
+ * Täglicher LLM-Health-Check (#907): lädt den persistierten Tagesmarker.
+ */
+export function loadLlmHealthCheckState(): void {
+  state.llmHealthCheckLastRunDay = getSchedulerState(LLM_HEALTH_CHECK_STATE_KEY);
+}
+
+/** Läuft um 07:xx Europe/Berlin, einmal pro Tag (persistierter Marker). */
+export function shouldRunDailyLlmHealthCheck(): boolean {
+  const propertyTime = toZonedTime(new Date(), config.propertyTimezone);
+  if (getHours(propertyTime) !== 7) return false;
+
+  const today = todayInTimezone(config.propertyTimezone);
+  return state.llmHealthCheckLastRunDay !== today;
+}
+
+/** Führt den LLM-Health-Check aus (non-fatal, runLlmHealthCheck wirft nie). */
+export async function checkAndRunDailyLlmHealthCheck() {
+  try {
+    if (!shouldRunDailyLlmHealthCheck()) return;
+
+    logger.info('🩺 Daily LLM health check triggered');
+    await runLlmHealthCheck();
+
+    const today = todayInTimezone(config.propertyTimezone);
+    state.llmHealthCheckLastRunDay = today;
+    setSchedulerState(LLM_HEALTH_CHECK_STATE_KEY, today);
+  } catch (error) {
+    logger.error({ error }, '❌ Error in daily LLM health check');
   }
 }
 
@@ -644,6 +683,12 @@ export function startScheduler() {
 
   // Check every hour
   state.consistencyCheckIntervalId = setInterval(checkAndRunDailyConsistencyCheck, hourlyInterval);
+
+  // Daily LLM health check (runs every hour, executes at 07:00 Europe/Berlin, #907)
+  logger.info('🩺 Starting daily LLM health check scheduler (runs at 07:00 Europe/Berlin)');
+  loadLlmHealthCheckState();
+  checkAndRunDailyLlmHealthCheck();
+  state.llmHealthCheckIntervalId = setInterval(checkAndRunDailyLlmHealthCheck, hourlyInterval);
 }
 
 /**
@@ -693,6 +738,11 @@ export function stopScheduler() {
   if (state.consistencyCheckIntervalId) {
     clearInterval(state.consistencyCheckIntervalId);
     state.consistencyCheckIntervalId = null;
+  }
+
+  if (state.llmHealthCheckIntervalId) {
+    clearInterval(state.llmHealthCheckIntervalId);
+    state.llmHealthCheckIntervalId = null;
   }
 
   stopMessageLoop();
