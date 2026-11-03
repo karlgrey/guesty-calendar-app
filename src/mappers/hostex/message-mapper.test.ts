@@ -174,3 +174,29 @@ describe('hostex message mapper', () => {
     });
   });
 });
+
+// #976: offener Änderungsantrag landet in thread.raw_meta.pending_alteration.
+describe('pending_alteration in raw_meta (#976)', () => {
+  const card = {
+    id: 'c1', sender_role: 'system', display_type: 'ReservationAlteration', content: '',
+    created_at: '2026-11-01T10:00:00Z', attachment: { describe: 'Nov 20 ~ Nov 21 ・ 3 guests' },
+  };
+  const text = { id: 'm1', sender_role: 'guest', display_type: 'Text', content: 'Hallo', created_at: '2026-11-01T09:00:00Z' };
+  const mk = (messages: unknown[]) => ({
+    id: 'c-9', channel_type: 'airbnb', guest: { name: 'Anna', email: '' }, messages,
+  }) as unknown as HostexConversationDetail;
+
+  it('offene Karte → pending_alteration gesetzt, nur Text-Nachrichten persistiert', () => {
+    const { thread, messages } = mapHostexConversation(mk([card, text]), 'L', '2026-11-02T00:00:00Z');
+    const meta = JSON.parse(thread!.raw_meta!);
+    expect(meta.channel_type).toBe('airbnb');
+    expect(meta.pending_alteration).toEqual({ requestedAt: '2026-11-01T10:00:00Z', describe: 'Nov 20 ~ Nov 21 ・ 3 guests' });
+    expect(messages).toHaveLength(1);
+  });
+
+  it('danach „Alteration request accepted"-Box → null', () => {
+    const accepted = { id: 'b1', sender_role: 'system', display_type: 'Box', content: 'Alteration request accepted', created_at: '2026-11-01T12:00:00Z' };
+    const { thread } = mapHostexConversation(mk([accepted, card, text]), 'L', '2026-11-02T00:00:00Z');
+    expect(JSON.parse(thread!.raw_meta!).pending_alteration).toBeNull();
+  });
+});

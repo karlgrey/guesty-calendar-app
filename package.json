@@ -16,6 +16,7 @@
     "lint": "eslint src",
     "test": "vitest",
     "test:judge": "tsx src/scripts/test-judge-fixtures.ts",
+    "test:drafts": "tsx src/scripts/test-draft-fixtures.ts",
     "webhook:register": "tsx src/scripts/register-guesty-webhook.ts"
   },
   "keywords": [

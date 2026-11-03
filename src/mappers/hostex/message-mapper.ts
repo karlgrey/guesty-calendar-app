@@ -1,5 +1,6 @@
 // src/mappers/hostex/message-mapper.ts
 import type { HostexConversationDetail } from '../../services/hostex-client.js';
+import { detectPendingHostexAlteration, type HostexCardLike } from '../../services/alteration-request.js';
 import type { NewMessageThread, NewMessage, MessageChannel } from '../../types/messages.js';
 
 export function mapHostexDirection(senderRole: string): 'inbound' | 'outbound' | 'system' {
@@ -99,7 +100,12 @@ export function mapHostexConversation(
     conversion_category: null,
     classification_confidence: null,
     classification_keywords: null,
-    raw_meta: JSON.stringify({ channel_type: detail.channel_type }),
+    // #976: offener Änderungsantrag (ReservationAlteration-Karte ohne schließende Box) —
+    // HostexMessageRaw kennt `attachment` nicht, strukturell sonst kompatibel zu HostexCardLike.
+    raw_meta: JSON.stringify({
+      channel_type: detail.channel_type,
+      pending_alteration: detectPendingHostexAlteration(allMessages as unknown as HostexCardLike[]),
+    }),
     last_synced_at: now,
   };
 

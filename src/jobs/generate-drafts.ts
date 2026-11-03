@@ -1,3 +1,4 @@
+import { resolveAlterationSituation, withAlterationFact, type AlterationSituation } from '../services/alteration-request.js';
 import { randomUUID } from 'node:crypto';
 import { getThreadsNeedingDraft, getMessagesByThread, markThreadAiNoReply } from '../repositories/message-repository.js';
 import { createDraft, updateDraftBody } from '../repositories/draft-repository.js';
@@ -73,6 +74,8 @@ export interface DraftGenDeps {
     isBookingRequest?: boolean;
     // #1004: Art der Anfrage (Inquiry/Request-to-Book) für Kontext + Schlusssatz im Block.
     requestKind?: BookingRequestKind | null;
+    // #976: Änderungsantrag/-wunsch zu einer bestehenden Buchung.
+    alteration?: AlterationSituation | null;
   }) => Promise<DraftResult>;
   create: (d: NewDraft) => void;
   markNoReply: (threadId: string) => void;
@@ -83,6 +86,8 @@ export interface DraftGenDeps {
   // #695: Body-Update für den einen automatischen Neuversuch — derselbe Draft-Datensatz wird
   // überschrieben statt einen zweiten anzulegen.
   updateDraftBody: (id: string, body: string) => void;
+  // #976: Änderungs-Situation (optional; fehlt der Dep, gibt es keinen Änderungs-Block).
+  resolveAlteration?: (thread: MessageThread, messages: Message[], isBookingRequest: boolean) => AlterationSituation | null;
 }
 
 const realDeps: DraftGenDeps = {
@@ -96,6 +101,7 @@ const realDeps: DraftGenDeps = {
   buildBookingContext,
   gate: (i) => runAutoSendGate(i),
   updateDraftBody,
+  resolveAlteration: (thread, messages, isBookingRequest) => resolveAlterationSituation(thread, messages, { isBookingRequest }),
 };
 
 export async function generateDraftsForProperty(
@@ -139,21 +145,23 @@ export async function generateDraftsForProperty(
       const openBookingRequest = findOpenBookingRequest(messages, thread.reservation_status);
       const isBookingRequest = openBookingRequest !== null;
       const requestKind = openBookingRequest?.requestKind ?? null; // #1004
-      const result = await deps.generate({ thread, messages, voice, facts, bookingContext, guestLanguage, isBookingRequest, requestKind });
+      const alteration = deps.resolveAlteration?.(thread, messages, isBookingRequest) ?? null; // #976
+      const gateContext = withAlterationFact(bookingContext, alteration);
+      const result = await deps.generate({ thread, messages, voice, facts, bookingContext, guestLanguage, isBookingRequest, requestKind, alteration });
       if (result.kind === 'text') {
         const draftId = randomUUID();
         deps.create({ id: draftId, thread_id: thread.id, provider: target.source, body: result.body, generated_by: 'llm', model: DRAFT_MODEL });
         generated++;
         try {
-          const gateResult = await deps.gate({ draftId, body: result.body, thread, messages, voice, facts, bookingContext, property, guestLanguage });
+          const gateResult = await deps.gate({ draftId, body: result.body, thread, messages, voice, facts, bookingContext: gateContext, property, guestLanguage });
           if (isLanguageMismatchWait(gateResult)) {
             // #695 Spec Punkt 3: genau EIN automatischer Neuversuch mit expliziter Korrektur-
             // Anweisung — derselbe Draft-Datensatz wird überschrieben, nicht neu angelegt.
-            const retryResult = await deps.generate({ thread, messages, voice, facts, bookingContext, guestLanguage, languageRetry: true, isBookingRequest, requestKind });
+            const retryResult = await deps.generate({ thread, messages, voice, facts, bookingContext, guestLanguage, languageRetry: true, isBookingRequest, requestKind, alteration });
             if (retryResult.kind === 'text') {
               deps.updateDraftBody(draftId, retryResult.body);
               try {
-                await deps.gate({ draftId, body: retryResult.body, thread, messages, voice, facts, bookingContext, property, guestLanguage, attempt: 2 });
+                await deps.gate({ draftId, body: retryResult.body, thread, messages, voice, facts, bookingContext: gateContext, property, guestLanguage, attempt: 2 });
               } catch (gateErr) {
                 logger.warn({ threadId: thread.id, err: gateErr instanceof Error ? gateErr.message : String(gateErr) }, 'auto-send: Gate fehlgeschlagen (Neuversuch, Entwurf bleibt pending)');
               }
