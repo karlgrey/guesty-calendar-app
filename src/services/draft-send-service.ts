@@ -5,6 +5,8 @@ import { upsertMessage } from '../repositories/message-repository.js';
 
 export interface SendDraftDeps {
   sendReply: typeof sendReply; markDraftSent: typeof markDraftSent; markDraftError: typeof markDraftError; upsertMessage: typeof upsertMessage;
+  /** Injizierbarer Zeitgeber (Tests); Default `() => new Date()`. */
+  now?: () => Date;
 }
 const defaultDeps: SendDraftDeps = { sendReply, markDraftSent, markDraftError, upsertMessage };
 
@@ -23,7 +25,7 @@ export async function sendClaimedDraft(
     const outboundId = externalMessageId ? `${thread.source}:${externalMessageId}` : `sent:${draftId}`;
     deps.upsertMessage({
       id: outboundId, thread_id: thread.id, direction: 'outbound',
-      sent_at: new Date().toISOString(), from_name: 'host', from_address: null, to_address: null,
+      sent_at: (deps.now ?? (() => new Date()))().toISOString(), from_name: 'host', from_address: null, to_address: null,
       subject: null, body: bodyToSend, body_html: null, source: thread.source,
       raw_meta: JSON.stringify({ draftId, externalMessageId, sentBy }),
     });

@@ -8,6 +8,7 @@
  * See migration 014_add_messages_threads.sql.
  */
 
+import { dedupeOwnSendEchoes } from '../utils/own-send-dedupe.js';
 import { getDatabase } from '../db/index.js';
 import { DatabaseError } from '../utils/errors.js';
 import logger from '../utils/logger.js';
@@ -180,9 +181,11 @@ export function getThreadsByListing(
 
 export function getMessagesByThread(threadId: string): Message[] {
   const db = getDatabase();
-  return db
+  const rows = db
     .prepare(`SELECT * FROM messages WHERE thread_id = ? ORDER BY sent_at ASC`)
     .all(threadId) as Message[];
+  // #974: Sende-Zeile + Hostex-Echo (andere ID) zusammenfassen — rein lesend.
+  return dedupeOwnSendEchoes(rows);
 }
 
 export interface ThreadWithLastMessage extends MessageThread {

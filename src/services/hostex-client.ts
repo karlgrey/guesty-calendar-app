@@ -301,10 +301,16 @@ export class HostexClient {
    * POST /v3/conversations/:id — send a reply message to a guest
    */
   async sendMessage(conversationId: string, message: string): Promise<{ message_id: string }> {
-    const res = await this.call<{ message_id: string }>(
+    const res = await this.call<{ message_id?: string | number | null; id?: string | number | null }>(
       'POST', `/conversations/${conversationId}`, { message },
     );
-    return { message_id: res?.message_id ?? '' };
+    logger.info({ conversationId, response: res }, 'Hostex sendMessage response');
+    const raw = res?.message_id ?? res?.id ?? '';
+    const messageId = String(raw);
+    if (!messageId) {
+      logger.warn({ conversationId }, 'Hostex sendMessage: keine message_id in der Antwort — Echo-Dedupe läuft über Text+Zeitfenster');
+    }
+    return { message_id: messageId };
   }
 }
 
