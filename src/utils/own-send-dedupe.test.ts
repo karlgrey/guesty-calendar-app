@@ -124,3 +124,35 @@ describe('dedupeOwnSendEchoes', () => {
     expect(e.sent_at).toBe('2026-10-23T06:55:47+00:00');
   });
 });
+
+describe('dedupeOwnSendEchoes — Fehl-Dedupe-Risiko des 1-h-Fensters (Prüfer #974)', () => {
+  it('zwei legitime textgleiche Antworten 1 h auseinander (Sommerzeit-Versatz) bleiben beide, 1:1 zugeordnet', () => {
+    const out = dedupeOwnSendEchoes([
+      echo('hostex:e1', '2026-10-23T09:00:00+00:00', 'Ok'),
+      echo('hostex:e2', '2026-10-23T10:00:00+00:00', 'Ok'),
+      own('sent:d1', '2026-10-23T10:00:00.500Z', 'Ok', null, 'd1'),
+      own('sent:d2', '2026-10-23T11:00:00.500Z', 'Ok', null, 'd2'),
+    ]);
+    expect(out.map((m) => m.id)).toEqual(['hostex:e1', 'hostex:e2']);
+    expect(out.map((m) => m.sent_at)).toEqual(['2026-10-23T10:00:00.500Z', '2026-10-23T11:00:00.500Z']);
+  });
+
+  it('eigene Zeile + Echo + textgleiche Host-Nachricht 1 h später ohne eigene Zeile (z. B. Hostex-App) → nichts verschwindet', () => {
+    const out = dedupeOwnSendEchoes([
+      echo('hostex:e1', '2026-10-26T10:00:00+00:00', 'Ok'),
+      own('sent:d1', '2026-10-26T10:00:00.500Z', 'Ok'),
+      echo('hostex:e2', '2026-10-26T11:00:00+00:00', 'Ok'),
+    ]);
+    expect(out.map((m) => m.id)).toEqual(['hostex:e1', 'hostex:e2']);
+    expect(out[1].sent_at).toBe('2026-10-26T11:00:00+00:00');
+  });
+
+  it('Guest-Cursor unberührt: letzte Inbound-Zeile bleibt letzte Nachricht', () => {
+    const out = dedupeOwnSendEchoes([
+      echo('hostex:e1', '2026-10-23T05:55:47+00:00', 'Antwort'),
+      own('sent:d1', '2026-10-23T06:55:48.285Z', 'Antwort'),
+      msg({ id: 'hostex:g1', direction: 'inbound', sent_at: '2026-10-23T07:04:31+00:00', body: 'Danke' }),
+    ]);
+    expect(out.map((m) => m.id)).toEqual(['hostex:e1', 'hostex:g1']);
+  });
+});
