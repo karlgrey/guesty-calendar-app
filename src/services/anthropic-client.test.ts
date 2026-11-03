@@ -18,6 +18,12 @@ vi.mock('../utils/logger.js', () => ({
   default: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 
+// LLM-Alarm (#907): Monitor mocken — keine echten Alarm-Mails aus Tests.
+const { alarmMonitor } = vi.hoisted(() => ({
+  alarmMonitor: { recordSuccess: vi.fn(), recordFailure: vi.fn(), raiseHealthCheckFailure: vi.fn() },
+}));
+vi.mock('./llm-alarm-mail.js', () => ({ llmAlarmMonitor: alarmMonitor }));
+
 import logger from '../utils/logger.js';
 import { callClaudeTool, toStructuredOutputSchema, usesBetweenTools, SONNET_MODEL } from './anthropic-client.js';
 
@@ -99,6 +105,7 @@ describe('callClaudeTool (Legacy-Pfad, Modelle vor Sonnet 5.5)', () => {
       default: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() },
     }));
     vi.doMock('../config/index.js', () => ({ config: { anthropicApiKey: undefined } }));
+    vi.doMock('./llm-alarm-mail.js', () => ({ llmAlarmMonitor: alarmMonitor }));
     const { callClaudeTool: fresh } = await import('./anthropic-client.js');
     await expect(
       fresh({ systemPrompt: 's', userMessage: 'm', tool: dummyTool }),
@@ -343,5 +350,70 @@ describe('callClaudeTool (Sonnet 5.5, Structured Outputs)', () => {
       expect.objectContaining({ model: 'claude-opus-5', requestedModel: 'claude-opus-5' }),
       expect.any(String),
     );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// #907: LLM-Alarm — callClaudeTool meldet jeden Ausgang an den Monitor
+// ---------------------------------------------------------------------------
+
+describe('callClaudeTool → LLM-Alarm-Monitor (#907)', () => {
+  beforeEach(() => {
+    mockCreate.mockReset();
+    alarmMonitor.recordSuccess.mockClear();
+    alarmMonitor.recordFailure.mockClear();
+  });
+
+  it('erfolgreiche Antwort → recordSuccess, kein recordFailure', async () => {
+    mockCreate.mockResolvedValueOnce(soResponse({ category: 'INFO', confidence: 0.9, reasoning: 'x' }));
+    await callClaudeTool({ systemPrompt: 's', userMessage: 'm', tool: strictishTool });
+    expect(alarmMonitor.recordSuccess).toHaveBeenCalledTimes(1);
+    expect(alarmMonitor.recordFailure).not.toHaveBeenCalled();
+  });
+
+  it('Retry (429) mit anschließendem Erfolg zählt nur als Erfolg', async () => {
+    vi.useFakeTimers();
+    try {
+      mockCreate
+        .mockRejectedValueOnce(Object.assign(new Error('rate'), { status: 429 }))
+        .mockResolvedValueOnce(soResponse({ category: 'INFO', confidence: 0.9, reasoning: 'x' }));
+      const pending = callClaudeTool({ systemPrompt: 's', userMessage: 'm', tool: strictishTool });
+      await vi.runAllTimersAsync();
+      await pending;
+      expect(alarmMonitor.recordFailure).not.toHaveBeenCalled();
+      expect(alarmMonitor.recordSuccess).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('endgültiger Fehler nach allen Retries → genau EIN recordFailure mit dem Fehler', async () => {
+    vi.useFakeTimers();
+    try {
+      const serverErr = Object.assign(new Error('server error'), { status: 503 });
+      mockCreate.mockRejectedValue(serverErr);
+      const pending = callClaudeTool({ systemPrompt: 's', userMessage: 'm', tool: strictishTool });
+      pending.catch(() => undefined);
+      await vi.runAllTimersAsync();
+      await expect(pending).rejects.toThrow('server error');
+      expect(alarmMonitor.recordFailure).toHaveBeenCalledTimes(1);
+      expect(alarmMonitor.recordFailure).toHaveBeenCalledWith(serverErr);
+      expect(alarmMonitor.recordSuccess).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('nicht wiederholbarer Fehler (401) → sofort recordFailure', async () => {
+    const authErr = Object.assign(new Error('invalid x-api-key'), { status: 401 });
+    mockCreate.mockRejectedValueOnce(authErr);
+    await expect(callClaudeTool({ systemPrompt: 's', userMessage: 'm', tool: strictishTool })).rejects.toThrow('invalid x-api-key');
+    expect(alarmMonitor.recordFailure).toHaveBeenCalledWith(authErr);
+  });
+
+  it('refusal: API hat geantwortet → recordSuccess (kein Ausfall), Fehler wird trotzdem geworfen', async () => {
+    mockCreate.mockResolvedValueOnce({ model: 'claude-sonnet-5-5', stop_reason: 'refusal', content: [] });
+    await expect(callClaudeTool({ systemPrompt: 's', userMessage: 'm', tool: strictishTool })).rejects.toThrow(/abgelehnt/);
+    expect(alarmMonitor.recordSuccess).toHaveBeenCalledTimes(1);
   });
 });
