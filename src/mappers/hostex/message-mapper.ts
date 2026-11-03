@@ -1,6 +1,6 @@
 // src/mappers/hostex/message-mapper.ts
 import type { HostexConversationDetail } from '../../services/hostex-client.js';
-import { detectPendingHostexAlteration, type HostexCardLike } from '../../services/alteration-request.js';
+import { detectPendingHostexAlteration, type HostexCardLike } from './alteration-card.js';
 import type { NewMessageThread, NewMessage, MessageChannel } from '../../types/messages.js';
 
 export function mapHostexDirection(senderRole: string): 'inbound' | 'outbound' | 'system' {

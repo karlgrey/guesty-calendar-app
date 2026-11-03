@@ -29,60 +29,21 @@
  */
 import { getReservationById } from '../repositories/reservation-repository.js';
 import type { MessageThread, Message } from '../types/messages.js';
+import type { PendingAlteration } from '../mappers/hostex/alteration-card.js';
+
+// Reine Karten-Erkennung lebt DB-frei im Mapper-Ordner (Prüfer-Korrektur #976) und wird hier
+// für bestehende Aufrufer/Tests unverändert re-exportiert.
+export { detectPendingHostexAlteration, type HostexCardLike, type PendingAlteration } from '../mappers/hostex/alteration-card.js';
 
 export const PENDING_ALTERATION_MAX_AGE_DAYS = 7;
-
-export interface PendingAlteration {
-  /** created_at der Antrags-Karte (ISO, wie von Hostex geliefert). */
-  requestedAt: string;
-  /** Anzeigetext der Karte (z. B. „Nov 20 ~ Nov 21 ・ 3 guests") — nur Anzeige, keine Logik. */
-  describe: string | null;
-}
 
 export type AlterationSituation =
   | { kind: 'pending_request'; requestedAt: string; describe: string | null }
   | { kind: 'guest_reports_change'; detail: string };
 
-/** Minimale Form einer Hostex-Conversation-Nachricht inkl. System-Karten-Attachment. */
-export interface HostexCardLike {
-  display_type: string;
-  content?: string | null;
-  created_at?: string | null;
-  attachment?: { subject?: string | null; describe?: string | null } | null;
-}
-
 function ms(iso: string | null | undefined): number {
   if (!iso) return NaN;
   return Date.parse(iso);
-}
-
-function closesAlteration(m: HostexCardLike): boolean {
-  if (m.display_type !== 'Box') return false;
-  const c = (m.content ?? '').toLowerCase();
-  return c.includes('alteration') || c.includes('cancel');
-}
-
-/**
- * Offener Änderungsantrag = jüngste ReservationAlteration-Karte, nach der keine schließende Box
- * („Alteration request accepted", Storno o. ä.) kam. Reihenfolge der Eingabe egal (Hostex
- * liefert neueste zuerst) — entschieden wird über created_at.
- */
-export function detectPendingHostexAlteration(messages: readonly HostexCardLike[]): PendingAlteration | null {
-  let latestCard: HostexCardLike | null = null;
-  let latestClose = -Infinity;
-  for (const m of messages) {
-    const t = ms(m.created_at);
-    if (Number.isNaN(t)) continue;
-    if (m.display_type === 'ReservationAlteration') {
-      if (!latestCard || t > ms(latestCard.created_at)) latestCard = m;
-    } else if (closesAlteration(m)) {
-      if (t > latestClose) latestClose = t;
-    }
-  }
-  if (!latestCard) return null;
-  if (latestClose >= ms(latestCard.created_at)) return null;
-  const describe = latestCard.attachment?.describe?.trim() || null;
-  return { requestedAt: latestCard.created_at as string, describe };
 }
 
 /** Liest `pending_alteration` aus thread.raw_meta; verfällt nach maxAgeDays. Nie werfend. */
@@ -115,8 +76,12 @@ const ZU_FORMS: Record<string, number> = {
 };
 
 const NUM = `(\\d{1,2}|${Object.keys(NUMBER_WORDS).join('|')})`;
-const PERSON_NOUN = '(?:gäste|gästen|gast|personen|person|leute|leuten|erwachsene|erwachsenen|guests?|people|persons|adults?)';
+// Kinder zählen mit, damit eine Aufschlüsselung „2 Erwachsene und 2 Kinder" als Summe gegen die
+// Buchung geprüft werden kann (Prüfer-Korrektur #976: löste bei 4er-Buchung + „ändern" fälschlich aus).
+const PERSON_NOUN = '(?:gäste|gästen|gast|personen|person|leute|leuten|erwachsene|erwachsenen|kinder|kindern|kind|guests?|people|persons|adults?|children|child|kids?)';
 const DELTA = '(?:weitere|weiteren|zusätzliche|zusätzlichen|more|additional|extra)';
+// „statt 1 Person", „nicht zu dritt": die Zahl dahinter ist der ALTE/verneinte Wert, nicht der Wunsch.
+const OLD_MARK = '(?:statt|anstatt|anstelle\\s+von|nicht|instead\\s+of|not)';
 
 const CHANGE_CUE = /(vertan|versehen|versehentlich|falsch|änder|aender|anpass|korrigier|umbuch|statt|eigentlich|nachträglich|mistake|accident|wrong|chang|modif|instead|actually|update)/i;
 
@@ -125,21 +90,29 @@ function toNumber(token: string): number | null {
   return NUMBER_WORDS[token.toLowerCase()] ?? null;
 }
 
-/** Alle in der Nachricht genannten Gesamt-Personenzahlen (ohne „weitere …"). */
-function mentionedGuestCounts(text: string): { totals: number[]; delta: boolean } {
-  const totals: number[] = [];
+/**
+ * In der Nachricht genannte Gesamt-Personenzahlen (ohne „weitere …"), in Textreihenfolge.
+ * `oldValues`: Zahlen hinter „statt/nicht" (alter bzw. verneinter Wert).
+ */
+function mentionedGuestCounts(text: string): { totals: number[]; oldValues: number[]; delta: boolean } {
+  const found: { pos: number; n: number; old: boolean }[] = [];
   let delta = false;
   const deltaRe = new RegExp(`(?:${DELTA}\\s+${NUM}|${NUM}\\s+${DELTA})\\s+${PERSON_NOUN}`, 'gi');
   if (deltaRe.test(text)) delta = true;
-  const totalRe = new RegExp(`(^|[^\\p{L}\\d])${NUM}\\s+(${DELTA}\\s+)?${PERSON_NOUN}(?![\\p{L}])`, 'giu');
+  const totalRe = new RegExp(`(^|[^\\p{L}\\d])(${OLD_MARK}\\s+)?${NUM}\\s+(${DELTA}\\s+)?${PERSON_NOUN}(?![\\p{L}])`, 'giu');
   for (const m of text.matchAll(totalRe)) {
-    if (m[3]) { delta = true; continue; }
-    const n = toNumber(m[2]);
-    if (n != null) totals.push(n);
+    if (m[4]) { delta = true; continue; }
+    const n = toNumber(m[3]);
+    if (n != null) found.push({ pos: m.index ?? 0, n, old: !!m[2] });
   }
-  const zuRe = new RegExp(`\\bzu\\s+(${Object.keys(ZU_FORMS).join('|')})\\b`, 'giu');
-  for (const m of text.matchAll(zuRe)) totals.push(ZU_FORMS[m[1].toLowerCase()]);
-  return { totals, delta };
+  const zuRe = new RegExp(`(${OLD_MARK}\\s+)?\\bzu\\s+(${Object.keys(ZU_FORMS).join('|')})\\b`, 'giu');
+  for (const m of text.matchAll(zuRe)) found.push({ pos: m.index ?? 0, n: ZU_FORMS[m[2].toLowerCase()], old: !!m[1] });
+  found.sort((a, b) => a.pos - b.pos);
+  return {
+    totals: found.filter((f) => !f.old).map((f) => f.n),
+    oldValues: found.filter((f) => f.old).map((f) => f.n),
+    delta,
+  };
 }
 
 function dayMonth(iso: string | null): string | null {
@@ -148,10 +121,28 @@ function dayMonth(iso: string | null): string | null {
   return m ? `${Number(m[3])}.${Number(m[2])}` : null;
 }
 
+/** Alle Tag.Monat-Werte von Anreise bis Abreise (inklusiv; Tage im Aufenthalt sind keine Änderung). */
+function stayDayMonths(checkIn: string | null, checkOut: string | null): Set<string> {
+  const out = new Set<string>();
+  const a = checkIn ? Date.parse(`${checkIn.slice(0, 10)}T00:00:00Z`) : NaN;
+  const b = checkOut ? Date.parse(`${checkOut.slice(0, 10)}T00:00:00Z`) : NaN;
+  for (const v of [dayMonth(checkIn), dayMonth(checkOut)]) if (v) out.add(v);
+  if (Number.isNaN(a) || Number.isNaN(b) || b < a) return out;
+  for (let t = a, i = 0; t <= b && i < 60; t += 86_400_000, i++) {
+    const d = new Date(t);
+    out.add(`${d.getUTCDate()}.${d.getUTCMonth() + 1}`);
+  }
+  return out;
+}
+
 /**
  * Heuristik: liefert eine kurze Beschreibung des erkannten Änderungswunsches oder null.
  * Verlangt IMMER ein Änderungs-Signal, damit „wir sind 2 Erwachsene und 2 Kinder" bei einer
- * 4er-Buchung nicht auslöst.
+ * 4er-Buchung nicht auslöst. Personenzahl gilt als passend, wenn die ERSTE genannte Gesamtzahl
+ * der Buchung entspricht („wir sind 4 Personen, 2 Erwachsene und 2 Kinder") oder eine
+ * Aufschlüsselung in Summe passt („2 Erwachsene und 2 Kinder" bei 4). Zahlen hinter
+ * „statt/nicht" sind der alte Wert und zählen nicht als Wunsch. Datumsangaben innerhalb des
+ * Aufenthalts (Anreise…Abreise) sind keine Änderung; Uhrzeiten wie „15.30." (Monat > 12) auch nicht.
  */
 export function detectAlterationWish(
   text: string,
@@ -160,16 +151,22 @@ export function detectAlterationWish(
   if (!text || !CHANGE_CUE.test(text)) return null;
   const { totals, delta } = mentionedGuestCounts(text);
   if (delta) return 'Gast nennt zusätzliche Personen';
-  if (booking.guestsCount != null) {
-    const differing = totals.find((n) => n !== booking.guestsCount);
-    if (differing != null) {
-      return `Gast nennt ${differing} Personen, gebucht sind ${booking.guestsCount}`;
+  if (booking.guestsCount != null && totals.length > 0) {
+    const sum = totals.reduce((a, b) => a + b, 0);
+    const consistent = totals[0] === booking.guestsCount || (totals.length > 1 && sum === booking.guestsCount);
+    if (!consistent) {
+      const differing = totals.find((n) => n !== booking.guestsCount);
+      if (differing != null) {
+        return `Gast nennt ${differing} Personen, gebucht sind ${booking.guestsCount}`;
+      }
     }
   }
-  const booked = new Set([dayMonth(booking.checkIn), dayMonth(booking.checkOut)].filter(Boolean));
+  const booked = stayDayMonths(booking.checkIn, booking.checkOut);
   if (booked.size > 0) {
     for (const m of text.matchAll(/\b(\d{1,2})\.\s?(\d{1,2})\./g)) {
-      const dm = `${Number(m[1])}.${Number(m[2])}`;
+      const day = Number(m[1]); const month = Number(m[2]);
+      if (day < 1 || day > 31 || month < 1 || month > 12) continue;
+      const dm = `${day}.${month}`;
       if (!booked.has(dm)) return `Gast nennt Datum ${m[1]}.${m[2]}., abweichend von Anreise/Abreise`;
     }
   }

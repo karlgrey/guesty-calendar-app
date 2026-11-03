@@ -465,7 +465,8 @@ describe('buildSystemPrompt — Kürze-Regel und Änderungsantrag (#976)', () =>
     expect(p).toContain('### ÄNDERUNG DER BUCHUNG');
     expect(p).toContain('BEREITS einen Änderungsantrag gestellt');
     expect(p).toContain('„Nov 20 ~ Nov 21 ・ 3 guests"');
-    expect(p).toContain('ich nehme die Änderung auf drei Gäste an');
+    expect(p).toContain('ich nehme die Änderung an');
+    expect(p).not.toContain('drei Gäste');
     expect(p).toContain('VERBOTEN: den Gast auffordern oder anleiten, die Buchung selbst zu ändern');
     expect(p).toContain('Bettwäsche');
   });

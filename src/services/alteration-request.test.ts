@@ -109,6 +109,23 @@ describe('detectAlterationWish — Heuristik (#976)', () => {
   it('reiner Dank → null', () => {
     expect(detectAlterationWish('Vielen Dank für alles, war super!', b1)).toBeNull();
   });
+
+  // Prüfer-Korrekturen #976: Fehlalarme der ersten Fassung.
+  const b4 = { guestsCount: 4, checkIn: '2026-11-20', checkOut: '2026-11-22' };
+  it('Aufschlüsselung in Summe = Buchung → null, auch mit Änderungs-Signal zu anderem Thema', () => {
+    expect(detectAlterationWish('Können wir die Ankunftszeit ändern? Wir sind 2 Erwachsene und 2 Kinder.', b4)).toBeNull();
+    expect(detectAlterationWish('Wir sind 4 Personen, 2 Erwachsene und 2 Kinder — könnt ihr das Kinderbett anpassen?', b4)).toBeNull();
+  });
+  it('Zahl hinter „statt/nicht" ist der alte Wert', () => {
+    expect(detectAlterationWish('Statt 1 Person kommen wir jetzt zu dritt.', b1)).toContain('3 Personen');
+    expect(detectAlterationWish('Wir kommen zu zweit, nicht zu dritt — ändert sich am Preis etwas?', { ...b1, guestsCount: 2 })).toBeNull();
+    expect(detectAlterationWish('Wir sind jetzt 2 Personen statt 4 Personen, bitte ändern.', b4)).toContain('2 Personen');
+  });
+  it('Uhrzeit „15.30." und Tage innerhalb des Aufenthalts sind keine Datumsänderung', () => {
+    expect(detectAlterationWish('Wir kommen am 20.11. gegen 15.30. Könnt ihr den Check-in anpassen?', b4)).toBeNull();
+    expect(detectAlterationWish('Eigentlich wollte ich fragen, ob am 21.11. jemand da ist, um uns das Tor zu zeigen.', b4)).toBeNull();
+    expect(detectAlterationWish('Könnten wir statt am 22.11. erst am 23.11. abreisen?', b4)).toContain('23.11.');
+  });
 });
 
 function msg(direction: Message['direction'], body: string): Message {

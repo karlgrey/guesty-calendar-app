@@ -242,9 +242,13 @@ function buildAlterationBlock(s: AlterationSituation): string {
       '. Der Antrag liegt bei Micha zur Annahme — der Gast muss NICHTS mehr tun.'
     : `Die Gastnachricht meldet einen Änderungswunsch zur Buchung (${s.detail}). Meist hat der Gast die ` +
       'Änderung bereits beantragt; Micha kümmert sich darum — der Gast muss NICHTS weiter tun.';
+  // Prüfer-Korrektur #976: kein fester Beispielwert („drei Gäste") im Prompt — das Modell übernimmt
+  // Beispiele wörtlich, auch wenn der Antrag etwas anderes betrifft (Zeitraum, andere Zahl).
   const confirm = s.kind === 'pending_request'
-    ? 'sinngemäß „alles gut, ich nehme die Änderung auf drei Gäste an"'
-    : 'sinngemäß „kein Problem, ich kümmere mich um die Änderung auf drei Gäste"';
+    ? 'sinngemäß „alles gut, ich nehme die Änderung an" — benenne die Änderung höchstens so, wie der Gast sie ' +
+      'selbst genannt hat (z. B. die neue Personenzahl); nichts aus der Plattform-Anzeige dazuerfinden'
+    : 'sinngemäß „kein Problem, ich kümmere mich um die Änderung" — benenne die Änderung höchstens so, wie der ' +
+      'Gast sie selbst genannt hat';
   return [
     '### ÄNDERUNG DER BUCHUNG — Sonderregeln für DIESE Antwort (Vorrang vor allgemeinen Regeln unten) ###',
     situation,
