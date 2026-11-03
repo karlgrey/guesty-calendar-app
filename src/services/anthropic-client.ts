@@ -18,6 +18,8 @@
  *     Antwort ohne gültiges JSON-Objekt → Retry, danach harter Fehler.
  *   - Alle anderen Modelle (z. B. Opus-5-Judge via JUDGE_MODEL): unverändert
  *     `thinking: { type: 'disabled' }` + erzwungener Tool-Aufruf.
+ * LLM-Alarm (#907): jeder Ausgang geht an `llmAlarmMonitor` (llm-alarm-mail.ts) —
+ * Antwort erhalten → recordSuccess, endgültiger Fehler → recordFailure.
  * Harte Regel: Thinking bleibt bei jedem Aufruf so niedrig wie das Modell es
  * zulässt — nie umgehen. Jede Antwort loggt `response.model` (Nachweis).
  */
@@ -26,6 +28,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { config } from '../config/index.js';
 import { ConfigError } from '../utils/errors.js';
 import logger from '../utils/logger.js';
+import { llmAlarmMonitor } from './llm-alarm-mail.js';
 
 /** Einziger Ort für die Sonnet-Modell-ID der App (#758). */
 export const SONNET_MODEL = 'claude-sonnet-5-5';
@@ -197,6 +200,9 @@ export async function callClaudeTool({
         { model: response.model, requestedModel: model, tool: tool.name, stopReason: response.stop_reason },
         'Anthropic response',
       );
+      // LLM-Alarm (#907): API hat geantwortet → Entwarnung/Zähler-Reset, auch
+      // wenn die Antwort inhaltlich nicht verwertbar ist (refusal, max_tokens).
+      llmAlarmMonitor.recordSuccess();
       if (response.stop_reason === 'refusal') {
         const category = (response as { stop_details?: { category?: string | null } | null }).stop_details?.category ?? 'unbekannt';
         throw new Error(`Claude hat abgelehnt (stop_reason refusal, Kategorie ${category})`);
@@ -217,7 +223,12 @@ export async function callClaudeTool({
       }
       return block.input;
     } catch (err) {
-      if (!(isRetryable(err) || isRetryableOutput(err)) || attempt === MAX_RETRIES - 1) throw err;
+      if (!(isRetryable(err) || isRetryableOutput(err)) || attempt === MAX_RETRIES - 1) {
+        // LLM-Alarm (#907): nur der endgültige Ausgang zählt (ein Aufruf = ein
+        // Fehler); der Monitor entscheidet selbst, ob der Fehler alarmrelevant ist.
+        llmAlarmMonitor.recordFailure(err);
+        throw err;
+      }
       const delay = BASE_BACKOFF_MS * 2 ** attempt + Math.floor(Math.random() * 250);
       logger.warn(
         { attempt: attempt + 1, delay, error: err instanceof Error ? err.message : String(err) },

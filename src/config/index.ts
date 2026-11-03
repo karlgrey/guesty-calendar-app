@@ -74,6 +74,13 @@ const configSchema = z.object({
     val ? val.split(',').map((email) => email.trim()).filter((email) => email.length > 0) : []
   ),
 
+  // LLM-Alarm (#907): Empfänger der Alarm-/Entwarnungs-Mail bei Anthropic-
+  // Ausfall bzw. leerem Guthaben. Leer → Fallback CONSISTENCY_ALERT_RECIPIENTS,
+  // sonst nur logger.error.
+  llmAlarmRecipients: z.string().optional().transform((val) =>
+    val ? val.split(',').map((email) => email.trim()).filter((email) => email.length > 0) : []
+  ),
+
   // Property
   propertyCurrency: z.string().length(3).toUpperCase().default('EUR'),
   propertyTimezone: z.string().default('Europe/Berlin'),
@@ -203,6 +210,7 @@ function parseConfig() {
     airbnbMailPassword: process.env.AIRBNB_MAIL_PASSWORD,
     airbnbMailStalenessThresholdHours: process.env.AIRBNB_MAIL_STALENESS_THRESHOLD_HOURS,
     consistencyAlertRecipients: process.env.CONSISTENCY_ALERT_RECIPIENTS,
+    llmAlarmRecipients: process.env.LLM_ALARM_RECIPIENTS,
     propertyCurrency: process.env.PROPERTY_CURRENCY,
     propertyTimezone: process.env.PROPERTY_TIMEZONE,
     bookingRecipientEmail: process.env.BOOKING_RECIPIENT_EMAIL,

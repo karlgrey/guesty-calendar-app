@@ -21,6 +21,11 @@ vi.mock('./consistency-check.js', () => ({
 }));
 
 const runETLJobMock = vi.fn();
+const runLlmHealthCheckMock = vi.fn();
+vi.mock('./llm-health-check.js', () => ({
+  runLlmHealthCheck: (...args: unknown[]) => runLlmHealthCheckMock(...args),
+}));
+
 vi.mock('./etl-job.js', () => ({
   runETLJob: (...args: unknown[]) => runETLJobMock(...args),
 }));
@@ -66,6 +71,9 @@ import {
   shouldRunDailyForceSync,
   checkAndRunDailyForceSync,
   loadDailyForceSyncState,
+  shouldRunDailyLlmHealthCheck,
+  checkAndRunDailyLlmHealthCheck,
+  loadLlmHealthCheckState,
   resetSchedulerStateForTests,
 } from './scheduler.js';
 
@@ -73,6 +81,7 @@ beforeEach(() => {
   vi.useRealTimers();
   resetSchedulerStateForTests();
   runDailyConsistencyJobMock.mockReset().mockResolvedValue(undefined);
+  runLlmHealthCheckMock.mockReset().mockResolvedValue('ok');
   runETLJobMock.mockReset().mockResolvedValue({ success: true, listing: {}, availability: {}, duration: 1 });
   getSchedulerStateMock.mockReset().mockReturnValue(null);
   setSchedulerStateMock.mockReset();
@@ -240,6 +249,54 @@ describe('shouldRunDailyForceSync (Zeitzone Europe/Berlin, #603)', () => {
     // keinen zweiten Lauf mehr aus.
     expect(shouldRunDailyForceSync()).toBe(false);
 
+    vi.useRealTimers();
+  });
+});
+
+describe('Täglicher LLM-Health-Check (07:00 Europe/Berlin, #907)', () => {
+  it('läuft um 07:xx Berlin im Sommer (05:xx UTC), nicht um 06:xx oder 07:xx UTC', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-15T05:30:00.000Z'));
+    expect(shouldRunDailyLlmHealthCheck()).toBe(true);
+    vi.setSystemTime(new Date('2026-06-15T04:30:00.000Z'));
+    expect(shouldRunDailyLlmHealthCheck()).toBe(false);
+    vi.setSystemTime(new Date('2026-06-15T07:30:00.000Z'));
+    expect(shouldRunDailyLlmHealthCheck()).toBe(false);
+    vi.useRealTimers();
+  });
+
+  it('läuft und persistiert den Tagesmarker', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-10T05:30:00.000Z')); // 07:30 Berlin
+
+    await checkAndRunDailyLlmHealthCheck();
+
+    expect(runLlmHealthCheckMock).toHaveBeenCalledTimes(1);
+    expect(setSchedulerStateMock).toHaveBeenCalledWith('llm_health_check_last_run_day', '2026-09-10');
+    vi.useRealTimers();
+  });
+
+  it('Neustart-Simulation: Marker aus der DB verhindert zweiten Lauf am selben Tag', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-10T05:30:00.000Z'));
+    getSchedulerStateMock.mockReturnValue('2026-09-10');
+    resetSchedulerStateForTests();
+    loadLlmHealthCheckState();
+
+    await checkAndRunDailyLlmHealthCheck();
+
+    expect(runLlmHealthCheckMock).not.toHaveBeenCalled();
+    expect(setSchedulerStateMock).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('läuft am Folgetag wieder', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-09-11T05:30:00.000Z'));
+    getSchedulerStateMock.mockReturnValue('2026-09-10');
+    resetSchedulerStateForTests();
+    loadLlmHealthCheckState();
+    expect(shouldRunDailyLlmHealthCheck()).toBe(true);
     vi.useRealTimers();
   });
 });
