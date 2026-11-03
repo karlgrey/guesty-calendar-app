@@ -845,7 +845,7 @@ unbemerkt bleiben — KI-Entwürfe, Bewertungen und Vault-Vorschläge fielen son
   Fehlschlag → **sofort** Alarm ohne Schwelle; ohne `ANTHROPIC_API_KEY` übersprungen
 - Schwelle: 3 aufeinanderfolgende alarmrelevante Fehler innerhalb von 30 Minuten. Zustand nur im
   Prozessspeicher — ein Neustart beginnt bei null
-- Alarmrelevant: HTTP 401/402/403/429/5xx, 400 mit „credit balance“/`billing_error`,
+- Alarmrelevant: HTTP 401/402/403/404/429/5xx, 400 mit „credit balance“/`billing_error`,
   Timeout/Verbindungsfehler. Nicht relevant: sonstige 4xx; refusal/max_tokens/ungültiges JSON
   (die API hat geantwortet → zählt als Erfolg)
 - Ein Alarm pro Ausfall; Entwarnung-Mail beim nächsten erfolgreichen Aufruf
@@ -1001,7 +1001,7 @@ Optional:
 - `WA_OUTBOX_DIR` - Outbox-Verzeichnis der WhatsApp-Bridge (auf labs); Zeit-Änderungen → Wanja (#793). **Leer/ungesetzt = kein Versand** (nur Log), Dev/Test immer leer lassen
 - `WA_WANJA_JID` - Empfänger-JID für die Zeit-Änderungs-Nachrichten (Default `380509566925@s.whatsapp.net`)
 - `TIMES_CHANGE_WHATSAPP` - `1`/`true`/`yes` schaltet die Wanja-WhatsApp bei Zeit-Änderungen wieder ein (Default AUS seit #799; Marker im Kalender ersetzt sie)
-- `LLM_ALARM_RECIPIENTS` - Komma-getrennte Empfänger der LLM-Alarm-/Entwarnungs-Mails (#907); leer → Fallback `CONSISTENCY_ALERT_RECIPIENTS`, sonst nur Log. Steht in `.env.example` bewusst als Pflicht-Key (leer erlaubt)
+- `LLM_ALARM_RECIPIENTS` - Komma-getrennte Empfänger der LLM-Alarm-/Entwarnungs-Mails (#907); leer → Fallback `CONSISTENCY_ALERT_RECIPIENTS`, sonst nur Log. In `.env.example` `# optional` (Code hat Fallback) — auf dem Server trotzdem setzen, sonst landet der Alarm nur im Log
 - `DRAFT_STALE_HOURS` - Ab wann ein pending-KI-Entwurf beim Öffnen im Admin-UI still neu generiert wird (default: 6, siehe Auto-Send-Gate-Abschnitt „Stale-Draft-Regeneration")
 
 ## Guesty API Quirks

@@ -34,6 +34,7 @@ describe('classifyLlmError', () => {
     [401, 'authentication_error'],
     [402, 'billing_error'],
     [403, 'permission_error'],
+    [404, 'not_found_error'],
     [429, 'rate_limit_error'],
     [500, 'api_error'],
     [529, 'overloaded_error'],

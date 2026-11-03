@@ -91,6 +91,9 @@ export const llmAlarmMonitor = createLlmAlarmMonitor({
   threshold: LLM_ALARM_THRESHOLD,
   windowMs: LLM_ALARM_WINDOW_MINUTES * 60_000,
   onEvent: (event) => {
-    void handleLlmAlarmEvent(event);
+    // Nie eine unbehandelte Rejection aus dem LLM-Aufrufpfad (Prüfer #907).
+    handleLlmAlarmEvent(event).catch((error) => {
+      logger.error({ app: APP_NAME, kind: event.kind, error }, 'LLM-Alarm-Meldung fehlgeschlagen');
+    });
   },
 });

@@ -56,12 +56,15 @@ function errorMessage(err: unknown): string {
 }
 
 /**
- * Alarmrelevant: HTTP 401/402/403/429/5xx, 400 mit „credit balance“ bzw.
+ * Alarmrelevant: HTTP 401/402/403/404/429/5xx, 400 mit „credit balance“ bzw.
  * error.type `billing_error` (leeres Guthaben kommt bei Anthropic als 400
  * invalid_request_error „Your credit balance is too low …“), sowie
- * Verbindungsfehler/Timeouts (SDK: APIError ohne Status). Nicht relevant:
- * sonstige 4xx (Fehler im Request) und Fehler ohne HTTP-Bezug (Refusal,
- * Token-Limit, ungültiges JSON) — die API hat dort geantwortet.
+ * Verbindungsfehler/Timeouts (SDK: APIError ohne Status). 404 = Modell
+ * abgekündigt/für die Org nicht verfügbar (not_found_error „model: …“) —
+ * die App ruft nur /v1/messages, ein 404 trifft dann jeden Aufruf (Prüfer
+ * #907). Nicht relevant: sonstige 4xx (Fehler im Request) und Fehler ohne
+ * HTTP-Bezug (Refusal, Token-Limit, ungültiges JSON) — die API hat dort
+ * geantwortet.
  */
 export function classifyLlmError(err: unknown): LlmErrorClassification {
   const message = errorMessage(err);
@@ -77,6 +80,7 @@ export function classifyLlmError(err: unknown): LlmErrorClassification {
       status === 401 ||
       status === 402 ||
       status === 403 ||
+      status === 404 ||
       status === 429 ||
       (status >= 500 && status < 600) ||
       type === 'billing_error' ||
