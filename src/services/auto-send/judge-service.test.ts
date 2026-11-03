@@ -114,3 +114,17 @@ describe('judgeDraft', () => {
     expect(prompt).toContain('HEUTE: Montag, 21.09.2026');
   });
 });
+
+// #1004 (Fall #1002): Buchungsanfrage-Kriterium im Judge-Prompt — keine Pflicht-Rückfrage mehr,
+// stattdessen: keine Zusage/Preis/Plattform, kein Verweis auf nicht gestellte Fragen.
+describe('buildJudgeSystemPrompt — Buchungsanfrage-Kriterium (#1004)', () => {
+  it('verlangt keine reine Rückfrage mehr und prüft Zusage/Preis/Plattform/nicht gestellte Fragen', async () => {
+    const { buildJudgeSystemPrompt } = await import('./judge-prompt.js');
+    const p = buildJudgeSystemPrompt('V', 'F', null, new Date('2026-11-02T18:40:00.000Z'));
+    expect(p).not.toContain('REINE RÜCKFRAGE (Dank');
+    expect(p).toContain('Eine Rückfrage ist NICHT erforderlich');
+    expect(p).toContain('nennt KEINE Plattform');
+    expect(p).toContain('sobald ich deine Antworten habe');
+    expect(p).toContain('KEIN promises_action');
+  });
+});

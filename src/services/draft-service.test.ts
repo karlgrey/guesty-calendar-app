@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { generateDraftForThread } from './draft-service.js';
+import { generateDraftForThread, buildSystemPrompt } from './draft-service.js';
 import type { MessageThread, Message } from '../types/messages.js';
 
 function thread(): MessageThread {
@@ -109,17 +109,16 @@ describe('generateDraftForThread', () => {
   });
 });
 
-// #697 (Fall Anika Farmhouse): eigener Prompt-Block für Airbnb-Buchungsanfragen.
+// #697 (Fall Anika Farmhouse): eigener Prompt-Block für Airbnb-Buchungsanfragen — seit #1004
+// (Fall #1002) ohne Pflicht-Rückfrage, siehe Testblock am Dateiende.
 describe('generateDraftForThread — Buchungsanfrage-Block (#697)', () => {
   it('isBookingRequest=true fügt den Buchungsanfrage-Block VOR Voice/Objektwissen ein', async () => {
     const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'x' });
     await generateDraftForThread({ thread: thread(), messages, voice: 'v', facts: 'f', bookingContext: null, isBookingRequest: true }, { call });
     const prompt = call.mock.calls[0][0].systemPrompt;
     expect(prompt).toContain('BUCHUNGSANFRAGE — Sonderregeln');
-    expect(prompt).toContain('AUSSCHLIESSLICH');
-    expect(prompt).toContain('eine Rückfrage');
     expect(prompt).toContain('KEINE Zusage');
-    expect(prompt).toContain('Personenzahl INKLUSIVE Tagesgästen');
+    expect(prompt).toContain('INKLUSIVE Tagesgästen');
     expect(prompt.indexOf('BUCHUNGSANFRAGE')).toBeLessThan(prompt.indexOf('--- VOICE ---'));
   });
 
@@ -362,5 +361,73 @@ describe('generateDraftForThread — HEUTE-Fakt (#698)', () => {
     const prompt = call.mock.calls[0][0].systemPrompt;
     expect(prompt).toContain('HEUTE: Montag, 21.09.2026');
     expect(prompt).toContain('NIEMALS wörtlich spiegeln');
+  });
+});
+
+// #1004 (Fall #1002, Request-to-Book Freundesgruppe, 02.11.2026): der Buchungsanfrage-Block
+// schrieb bisher die Rückfrage nach Anlass/Personenzahl/Ablauf als Pflichtstruktur vor — der
+// Entwurf stellte keine Frage, schloss aber mit „Sobald ich deine Antworten habe …". Neu:
+// requestKind benennen, auf den Inhalt eingehen, Rückfrage nur bei Hausregel-Punkt, Schlusssatz
+// je Art. Vornamen der Fixtures anonymisiert.
+describe('buildSystemPrompt — Buchungsanfrage ohne Pflicht-Rückfrage (#1004)', () => {
+  const t = { channel: 'airbnb' as const, reservation_status: 'reserved' };
+  const NOW = new Date('2026-11-02T18:40:00.000Z');
+  const prompt = (kind: 'inquiry' | 'request_to_book' | null) =>
+    buildSystemPrompt('v', 'f', null, t, 'de', false, true, NOW, kind);
+
+  it('request_to_book: benennt die Art und verlangt den Schlusssatz „Bestätigung kommt in Kürze"', () => {
+    const p = prompt('request_to_book');
+    expect(p).toContain('Dies ist eine Airbnb-Buchungsanfrage (Request-to-Book)');
+    expect(p).toContain('die Bestätigung kommt in Kürze');
+    expect(p).not.toContain('stell gern die Buchungsanfrage');
+  });
+
+  it('inquiry: benennt die Art und lädt zur Buchungsanfrage ein', () => {
+    const p = prompt('inquiry');
+    expect(p).toContain('Dies ist eine Airbnb-Buchungsanfrage (Inquiry)');
+    expect(p).toContain('stell gern die Buchungsanfrage');
+    expect(p).not.toContain('die Bestätigung kommt in Kürze');
+  });
+
+  it('keine Anlass-Pflicht mehr: Routine-Rückfrage ausdrücklich verboten, Pflichtstruktur entfernt', () => {
+    const p = prompt('request_to_book');
+    expect(p).not.toContain('AUSSCHLIESSLICH eine Rückfrage');
+    expect(p).not.toContain('Anlass/Art des Events');
+    expect(p).toContain('KEINE Routine-Rückfrage nach Anlass, Ablauf oder Personenzahl');
+    expect(p).toContain('GENAU EINE gezielte Rückfrage');
+  });
+
+  it('verbietet den Verweis auf nicht gestellte Fragen und die Plattformnennung, weiterhin kein Preis/Angebot/Hold', () => {
+    const p = prompt('request_to_book');
+    expect(p).toContain('„deine Antworten“');
+    expect(p).toContain('KEIN Preis');
+    expect(p).toContain('KEIN Angebot');
+    expect(p).toContain('KEIN Hold');
+    expect(p).toContain('Plattform');
+  });
+
+  it('requestKind unbekannt (null): generischer Kontext, kein artspezifischer Schlusssatz', () => {
+    const p = prompt(null);
+    expect(p).toContain('Dies ist eine Airbnb-Buchungsanfrage (Inquiry oder Request-to-Book)');
+    expect(p).not.toContain('die Bestätigung kommt in Kürze');
+    expect(p).not.toContain('stell gern die Buchungsanfrage');
+  });
+
+  it('generateDraftForThread reicht requestKind aus DraftInput in den Prompt durch', async () => {
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'x' });
+    await generateDraftForThread(
+      { thread: thread(), messages, voice: 'v', facts: 'f', bookingContext: null, isBookingRequest: true, requestKind: 'request_to_book' },
+      { call },
+    );
+    expect(call.mock.calls[0][0].systemPrompt).toContain('(Request-to-Book)');
+  });
+
+  it('requestKind ohne isBookingRequest bleibt wirkungslos (kein Block)', async () => {
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'x' });
+    await generateDraftForThread(
+      { thread: thread(), messages, voice: 'v', facts: 'f', bookingContext: null, requestKind: 'inquiry' },
+      { call },
+    );
+    expect(call.mock.calls[0][0].systemPrompt).not.toContain('BUCHUNGSANFRAGE — Sonderregeln');
   });
 });

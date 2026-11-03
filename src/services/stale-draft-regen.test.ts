@@ -216,3 +216,24 @@ describe('regenerateStaleDraftIfNeeded', () => {
     expect(res.kind).toBe('regenerated');
   });
 });
+
+// #1004: der Stale-Regen-Pfad reicht wie generate-drafts.ts die Art der offenen Buchungsanfrage
+// (findOpenBookingRequest) an den Entwurf durch.
+describe('regenerateStaleDraftIfNeeded — requestKind (#1004)', () => {
+  it('offene Inquiry im Thread → isBookingRequest=true, requestKind=inquiry', async () => {
+    const d = deps({
+      getMessages: vi.fn().mockReturnValue([
+        mkMessage({ id: 's1', direction: 'system', body: 'New guest inquiry', from_name: null }),
+        mkMessage(),
+      ]),
+    });
+    await regenerateStaleDraftIfNeeded(mkThread(), d);
+    expect((d.generate as any).mock.calls[0][0]).toMatchObject({ isBookingRequest: true, requestKind: 'inquiry' });
+  });
+
+  it('ohne System-Post → requestKind=null', async () => {
+    const d = deps();
+    await regenerateStaleDraftIfNeeded(mkThread(), d);
+    expect((d.generate as any).mock.calls[0][0]).toMatchObject({ isBookingRequest: false, requestKind: null });
+  });
+});

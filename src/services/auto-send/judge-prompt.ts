@@ -58,8 +58,8 @@ export function buildJudgeSystemPrompt(
     '  „kann ich buchen", Verfügbarkeitsfrage, Gruppen-/Event-Anfrage — ODER eine Folgenachricht',
     '  zu einer NOCH OFFENEN (nicht bestätigten) Buchungsanfrage, auch wenn diese Folgenachricht',
     '  selbst nur Details zum Anlass/Event nennt. Die Annahme/Ablehnung der Buchung entscheidet',
-    '  IMMER Micha selbst in Airbnb, NIE der Entwurf — auch wenn der Entwurf selbst nur eine',
-    '  Rückfrage ohne Zusage ist.',
+    '  IMMER Micha selbst in Airbnb, NIE der Entwurf — auch wenn der Entwurf selbst keine Zusage',
+    '  enthält.',
     '- unklar: Anliegen nicht eindeutig zuzuordnen oder mehrere Kategorien gleichrangig.',
     '',
     'RISIKO-FLAGS (alle zutreffenden setzen):',
@@ -89,10 +89,18 @@ export function buildJudgeSystemPrompt(
     'confidence=hoch NUR, wenn: Kategorie eindeutig, keine Flags AUSSER ggf. promises_action, und jede Sachaussage im Entwurf ' +
       '(außer der Zusage selbst) einer Zeile im OBJEKTWISSEN/BUCHUNGSKONTEXT entspricht. Eine Handlungszusage (promises_action) ' +
       'braucht dafür KEINEN Beleg im Objektwissen — sie wird separat als Aufgabe nachgehalten, senkt confidence also nicht. ' +
-      'Bei buchungsanfrage bewertet confidence AUSSCHLIESSLICH, ob die REINE RÜCKFRAGE (Dank + Rückfragen + korrekt aus dem ' +
-      'OBJEKTWISSEN zitiertes Limit/ausgeschlossene Event-Arten, ohne Zusage) selbst fehlerfrei ist — dass die eigentliche ' +
-      'Buchungsentscheidung bei Micha bleibt, ist bereits durch die Kategorie selbst sichergestellt (buchungsanfrage ist nie ' +
-      'automatisch, Annahme/Ablehnung geht immer an Micha) und darf confidence NICHT zusätzlich senken.',
+      // #1004 (Fall #1002, 02.11.2026): früher „ist die Antwort eine REINE RÜCKFRAGE" — die
+      // Pflicht-Rückfrage nach Anlass/Ablauf ist abgeschafft, die Antwort geht auf den Inhalt ein.
+      'Bei buchungsanfrage bewertet confidence AUSSCHLIESSLICH, ob die Antwort selbst fehlerfrei ist: sie enthält KEINE ' +
+      'Zusage oder Bestätigung der Buchung als Fakt, KEINEN Preis, KEIN Angebot, nennt KEINE Plattform (Airbnb, Guesty ' +
+      'o. ä.) und verweist NICHT auf Antworten oder Rückfragen, die der Entwurf gar nicht gestellt hat (z. B. „sobald ich ' +
+      'deine Antworten habe" ohne eine Frage im Entwurf → confidence niedrig). Eine Rückfrage ist NICHT erforderlich: eine ' +
+      'Antwort, die auf die Gastnachricht eingeht, Fragen aus dem OBJEKTWISSEN beantwortet und ankündigt, dass die ' +
+      'Bestätigung in Kürze kommt (Request-to-Book) bzw. zur Buchungsanfrage einlädt (Inquiry), ist korrekt — diese ' +
+      'Ankündigung bzw. Einladung ist KEIN promises_action und keine Zusage. Sachaussagen (Tipps, Limit, ausgeschlossene ' +
+      'Event-Arten) müssen dem OBJEKTWISSEN entsprechen. Dass die eigentliche Buchungsentscheidung bei Micha bleibt, ist ' +
+      'bereits durch die Kategorie selbst sichergestellt (Annahme/Ablehnung geht immer an Micha) und darf confidence NICHT ' +
+      'zusätzlich senken.',
     // #698 (Fall Lorenzo U19, 20.09.2026): HEUTE-Fakt VOR VOICE — dasselbe Muster wie im
     // Entwurfs-Systemprompt (draft-service.ts), damit das Prüfmodell einen im Entwurf falsch
     // gespiegelten Wochentag/Tageszeitwunsch als contradicts_facts erkennen kann.

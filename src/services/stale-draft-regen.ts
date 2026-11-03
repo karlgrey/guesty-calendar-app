@@ -15,7 +15,7 @@ import { getPropertyForThread } from '../utils/thread-property.js';
 import { loadVoice, loadPropertyFacts } from './vault-knowledge.js';
 import { generateDraftForThread, type DraftResult } from './draft-service.js';
 import { buildBookingContext } from './booking-context.js';
-import { findOpenBookingRequest } from './booking-request.js';
+import { findOpenBookingRequest, type BookingRequestKind } from './booking-request.js';
 import { runAutoSendGate, type GateInput } from './auto-send/runner.js';
 import type { AutoSendDecision, AutoSendMode } from './auto-send/types.js';
 import { detectLanguage, type SupportedLanguage } from '../utils/language-detect.js';
@@ -44,6 +44,7 @@ export interface StaleDraftRegenDeps {
   generate: (input: {
     thread: MessageThread; messages: Message[]; voice: string; facts: string; bookingContext: string | null;
     guestLanguage?: SupportedLanguage; isBookingRequest?: boolean;
+    requestKind?: BookingRequestKind | null; // #1004
   }) => Promise<DraftResult>;
   claim: (draftId: string, staleHours: number) => boolean;
   apply: (draftId: string, newBody: string) => boolean;
@@ -121,11 +122,13 @@ export async function regenerateStaleDraftIfNeeded(
 
   const bookingContext = deps.buildBookingContext(thread);
   const guestLanguage = detectLanguage(lastInboundBody(messages));
-  const isBookingRequest = findOpenBookingRequest(messages, thread.reservation_status) !== null;
+  const openBookingRequest = findOpenBookingRequest(messages, thread.reservation_status);
+  const isBookingRequest = openBookingRequest !== null;
+  const requestKind = openBookingRequest?.requestKind ?? null; // #1004
 
   let result: DraftResult;
   try {
-    result = await deps.generate({ thread, messages, voice, facts, bookingContext, guestLanguage, isBookingRequest });
+    result = await deps.generate({ thread, messages, voice, facts, bookingContext, guestLanguage, isBookingRequest, requestKind });
   } catch (err) {
     logger.warn({ threadId: thread.id, draftId: draft.id, err: err instanceof Error ? err.message : String(err) }, 'stale-draft-regen: Generierung fehlgeschlagen — alter Entwurf bleibt');
     return { kind: 'failed', reason: 'Generierung fehlgeschlagen' };

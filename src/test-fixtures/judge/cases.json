@@ -128,6 +128,7 @@
     "draft": "Hey Oskar, alles klar, 21 Uhr passt super, dann checkst du einfach ein, sobald du da bist. Den Zugang zum Tresor findest du im Check-in-Guide zu deiner Buchung.\n\nGute Fahrt und bis gleich!",
     "facts": "Self-Check-in per Schluesseltresor; Zugang steht im Airbnb-Check-in-Guide. Codes NIE in Nachrichten nennen.",
     "guestName": "Oskar",
+    "now": "2026-09-21T18:30:00.000Z",
     "expected": {
       "category": "checkin_standard",
       "auto": true
@@ -435,6 +436,62 @@
     "expected": {
       "category": "dank_smalltalk",
       "auto": true
+    }
+  },
+  {
+    "name": "Jonas — Request-to-Book Freundesgruppe, Tipps ohne Rückfrage, Bestätigung in Kürze (#1004)",
+    "guestMessages": [
+      "Hallo Michael, wir sind eine Gruppe von Freunden, die jedes Jahr ins Grüne fährt, und würden gerne bei dir im Haus bleiben. Wir würden auch gerne was in der Gegend unternehmen, wandern, Sport. Vielleicht hast du Tipps?"
+    ],
+    "draft": "Hallo Jonas, danke dir für eure Anfrage — eine jährliche Tour mit Freunden ins Grüne klingt richtig schön! Zum Wandern könnt ihr direkt am Haus loslaufen, die Wege starten vor der Tür. Für Sport und Abkühlung liegt ein Badesee rund 2 km entfernt, und Fahrräder könnt ihr im Ort leihen. Die Bestätigung kommt in Kürze. Liebe Grüße, Micha",
+    "facts": "Umgebung: Wanderwege starten direkt am Haus; ein Badesee liegt rund 2 km entfernt; Fahrräder kann man im Ort leihen. Hartes Limit: 15 Personen (Übernachtungs- und Tagesgäste zusammen, keine Ausnahmen). Keine Hochzeiten/großen Feiern; kleine, intime Runden bis 15 ggf. case-by-case.",
+    "guestName": "Jonas",
+    "bookingContext": "Buchungsanfrage (noch nicht bestätigt): Zeitraum 06.05.2027–09.05.2027, 3 Nächte, 10 Personen — Daten stammen aus der Anfrage selbst.",
+    "expected": {
+      "category": "buchungsanfrage",
+      "auto": true
+    }
+  },
+  {
+    "name": "Jonas — Entwurf verweist auf nie gestellte Fragen („deine Antworten“) (#1004)",
+    "guestMessages": [
+      "Hallo Michael, wir sind eine Gruppe von Freunden, die jedes Jahr ins Grüne fährt, und würden gerne bei dir im Haus bleiben. Wir würden auch gerne was in der Gegend unternehmen, wandern, Sport. Vielleicht hast du Tipps?"
+    ],
+    "draft": "Hallo Jonas, danke dir für die Anfrage! Wandern könnt ihr direkt ab dem Haus, und ein Badesee liegt rund 2 km entfernt. Sobald ich deine Antworten habe, melde ich mich mit der Bestätigung. Liebe Grüße, Micha",
+    "facts": "Umgebung: Wanderwege starten direkt am Haus; ein Badesee liegt rund 2 km entfernt; Fahrräder kann man im Ort leihen. Hartes Limit: 15 Personen (Übernachtungs- und Tagesgäste zusammen, keine Ausnahmen). Keine Hochzeiten/großen Feiern; kleine, intime Runden bis 15 ggf. case-by-case.",
+    "guestName": "Jonas",
+    "bookingContext": "Buchungsanfrage (noch nicht bestätigt): Zeitraum 06.05.2027–09.05.2027, 3 Nächte, 10 Personen — Daten stammen aus der Anfrage selbst.",
+    "expected": {
+      "category": "buchungsanfrage",
+      "auto": false
+    }
+  },
+  {
+    "name": "Lena — Request-to-Book Geburtstagsrunde 14 P., genau eine Rückfrage inkl. Tagesgäste (#1004)",
+    "guestMessages": [
+      "Hallo Michael, wir würden gerne mit 14 Leuten bei dir eine kleine Geburtstagsrunde verbringen — zusammen kochen und entspannen. Geht das?"
+    ],
+    "draft": "Hallo Lena, danke dir für die Anfrage — eine Geburtstagsrunde mit gemeinsamem Kochen klingt nach einem schönen Wochenende! Eine Frage vorab: Wie viele Personen wärt ihr insgesamt, also inklusive Tagesgästen, die vielleicht nur zum Feiern dazukommen? Unser Limit liegt bei 15 Personen inklusive Tagesgästen, Hochzeiten und große Feiern bieten wir nicht an. Sag mir kurz Bescheid, dann melde ich mich gleich wieder.",
+    "facts": "Umgebung: Wanderwege starten direkt am Haus; ein Badesee liegt rund 2 km entfernt; Fahrräder kann man im Ort leihen. Hartes Limit: 15 Personen (Übernachtungs- und Tagesgäste zusammen, keine Ausnahmen). Keine Hochzeiten/großen Feiern; kleine, intime Runden bis 15 ggf. case-by-case.",
+    "guestName": "Lena",
+    "bookingContext": "Buchungsanfrage (noch nicht bestätigt): Zeitraum 12.03.2027–14.03.2027, 2 Nächte, 14 Personen — Daten stammen aus der Anfrage selbst.",
+    "expected": {
+      "category": "buchungsanfrage",
+      "auto": true
+    }
+  },
+  {
+    "name": "Lena — Entwurf verrät Vorab-Einschätzung („kleine Runden wie eure sind willkommen“) (#1004 Review)",
+    "guestMessages": [
+      "Hallo Michael, wir würden gerne mit 14 Leuten bei dir eine kleine Geburtstagsrunde verbringen — zusammen kochen und entspannen. Geht das?"
+    ],
+    "draft": "Hallo Lena, danke dir für die Anfrage — eine Geburtstagsrunde mit gemeinsamem Kochen klingt nach einem schönen Wochenende! Eine Frage vorab: Wie viele Personen wärt ihr insgesamt, also inklusive Tagesgästen, die vielleicht nur zum Feiern dazukommen? Unser Limit liegt bei 15 Personen inklusive Tagesgästen. Hochzeiten und große Feiern bieten wir nicht an, kleine, ruhige Runden wie eure sind dagegen willkommen und im Rahmen des Limits gut machbar. Sag mir kurz Bescheid, dann melde ich mich gleich wieder.",
+    "facts": "Umgebung: Wanderwege starten direkt am Haus; ein Badesee liegt rund 2 km entfernt; Fahrräder kann man im Ort leihen. Hartes Limit: 15 Personen (Übernachtungs- und Tagesgäste zusammen, keine Ausnahmen). Keine Hochzeiten/großen Feiern; kleine, intime Runden bis 15 ggf. case-by-case.",
+    "guestName": "Lena",
+    "bookingContext": "Buchungsanfrage (noch nicht bestätigt): Zeitraum 12.03.2027–14.03.2027, 2 Nächte, 14 Personen — Daten stammen aus der Anfrage selbst.",
+    "expected": {
+      "category": "buchungsanfrage",
+      "auto": false
     }
   }
 ]

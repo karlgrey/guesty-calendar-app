@@ -537,8 +537,10 @@ Copy-Paste kann ein sicherer Entwurf automatisch rausgehen. Spec:
   /api/agent/auto-send/stats?days=` (Auto-Send-Auswertung); `/threads` liefert zusätzlich
   `autoDecision` und `property.shortCode`.
 - **Testfixtures:** `npm run test:judge` (`src/scripts/test-judge-fixtures.ts`, Live-Lauf
-  gegen `JUDGE_MODEL`, 16 Fälle in `src/test-fixtures/judge/cases.json`) — **Pflicht vor
-  jeder Prompt-Änderung** an `judge-prompt.ts` (aktuell 16/16 grün).
+  gegen `JUDGE_MODEL`, 36 Fälle in `src/test-fixtures/judge/cases.json`) — **Pflicht vor
+  jeder Prompt-Änderung** an `judge-prompt.ts` (Stand #1004-Review, 03.11.2026: 36/36). Fixtures
+  mit Tageszeit-Bezug im Entwurf („21 Uhr … bis gleich", Oskar) tragen ein festes `now`, damit
+  der HEUTE-Fakt (#698) sie nicht abhängig von der Laufzeit kippen kann.
 - **Sprach-Pin (#695, 21.09.2026):** `src/utils/language-detect.ts` erkennt die Sprache der
   letzten Gastnachricht deterministisch (Stopwort-Heuristik DE/EN/IT/ES/FR, Fallback Deutsch;
   franc/tinyld scheiterten an Kurztexten wie „Danke, alles super!"). Die Sprache geht als harte
@@ -648,11 +650,26 @@ Copy-Paste kann ein sicherer Entwurf automatisch rausgehen. Spec:
     seit #702 auch, ob `draft-service.ts` den Buchungsanfrage-Prompt-Block bekommt
     (`generate-drafts.ts`, `/admin/messages/:threadId/regenerate`) — sonst hätte die
     Folgenachricht weiterhin den normalen Antwort-Prompt (ohne „keine Zusage"-Regel) bekommen.
-  - **Entwurfs-Prompt** (`draft-service.ts`, `buildBookingRequestBlock`, aktiv wenn
-    `isBookingRequest`, erkannt VOR dem Entwurf in `generate-drafts.ts`): Dank, gezielte
-    Rückfragen (Anlass, Personenzahl inkl. Tagesgäste, Ablauf), Limit/ausgeschlossene
-    Event-Arten aus dem OBJEKTWISSEN als Fakt nennen — kein Angebot, kein Preis, kein Hold,
-    keine Zusage, Hinweis auf Bestätigung über Airbnb. Neue, für ALLE Kategorien geltende
+  - **Entwurfs-Prompt** (`draft-service.ts`, `buildBookingRequestBlock(requestKind)`, aktiv wenn
+    `isBookingRequest`, erkannt VOR dem Entwurf in `generate-drafts.ts`/`stale-draft-regen.ts`/
+    `routes/messages.ts`; seit #1004, 03.11.2026, Fall Moritz FH, ohne Pflicht-Rückfrage):
+    benennt die Art als Fakt (`requestKind` aus `findOpenBookingRequest` → `DraftInput.requestKind`,
+    Inquiry vs. Request-to-Book), geht auf den Inhalt der Gastnachricht ein (Fragen/Tipps aus dem
+    OBJEKTWISSEN, Vorfreude spiegeln), KEINE Routine-Rückfrage nach Anlass/Ablauf/Personenzahl —
+    GENAU EINE gezielte Rückfrage nur, wenn die Nachricht selbst einen Hausregel-Punkt berührt
+    (Feier/Geburtstag/Hochzeit/Event oder Personenzahl über Limit; dann Gesamtzahl inkl.
+    Tagesgästen erfragen, Limit/ausgeschlossene Event-Arten als Fakt). Schlusssatz je Art:
+    `request_to_book` → „die Bestätigung kommt in Kürze" (Substantiv, nie „bestätigt/bestätige" —
+    das stoppt `confirmation_words`), `inquiry` → Einladung, die Buchungsanfrage zu stellen.
+    Verboten: Verweis auf „deine Antworten" ohne gestellte Frage, Plattform nennen, Angebot/Preis/
+    Hold/Zusage. Judge-Kriterium (`judge-prompt.ts`) entsprechend: keine Zusage/Preis/
+    Plattformnennung, kein Verweis auf nicht gestellte Fragen — eine Rückfrage ist nicht mehr
+    erforderlich, Auto-Send bleibt erlaubt. Abnahme-Fixtures `data/testplan-1004-fixtures/`
+    (`dump-draft-prompt.ts` erkennt Buchungsanfragen jetzt selbst über `findOpenBookingRequest`).
+    Judge-Fixtures „Jonas …" (Tipps ohne Rückfrage → auto; „deine Antworten" ohne Frage → wait)
+    und „Lena …" (genau eine Rückfrage → auto; Vorab-Einschätzung „kleine Runden wie eure sind
+    willkommen" → `internal_rule_leak`, wait — Review-Fixture gegen das beobachtete Restrisiko,
+    3 von 6 Live-Läufen enthielten solche Sätze). Neue, für ALLE Kategorien geltende
     Prompt-Regel (Entwurf UND Judge): interne Prüfbedingungen („passt Zweck und Personenzahl",
     „steht einer Bestätigung nichts im Weg") dürfen NIE als Aussage an den Gast gehen, nur als
     Frage — Judge-Risk-Flag `internal_rule_leak` fängt Verstöße ab. Mechanischer
