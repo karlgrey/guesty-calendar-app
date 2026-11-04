@@ -10,6 +10,8 @@ vi.mock('../repositories/message-repository.js', () => ({
     {
       id: 'hostex:a', listing_id: 'L1', source: 'hostex', channel: 'airbnb',
       guest_name: 'Anna', last_message_at: '2026-08-17 09:00',
+      // #976: offene Änderungsantrags-Karte (frisch, sonst verfällt sie nach 7 Tagen)
+      raw_meta: JSON.stringify({ pending_alteration: { requestedAt: new Date().toISOString(), describe: null } }),
     },
   ]),
   getThreadById: vi.fn().mockReturnValue(null),
@@ -61,7 +63,7 @@ vi.mock('../services/stale-draft-regen.js', () => ({
   regenerateStaleDraftIfNeeded: vi.fn().mockResolvedValue({ kind: 'skipped', reason: 'test' }),
 }));
 
-import messagesRoutes from './messages.js';
+import messagesRoutes, { renderAlterationHint } from './messages.js';
 
 let server: Server;
 let base: string;
@@ -116,5 +118,29 @@ describe('GET /admin/messages (Reiter Offen/Alle)', () => {
     const r = await fetch(`${base}/admin/messages?view=alle`);
     const html = await r.text();
     expect(html).toContain('/admin/messages/hostex%3Aa');
+  });
+});
+
+// #976: Änderungsantrag — Badge in der Threadliste (nur Plattform-Karte) + Hinweisbox im Detail.
+describe('Änderungsantrag (#976)', () => {
+  it('Threadliste zeigt das Badge „Änderungsantrag" bei pending_alteration in raw_meta', async () => {
+    const r = await fetch(`${base}/admin/messages`);
+    expect(await r.text()).toContain('Änderungsantrag');
+  });
+
+  it('renderAlterationHint: null → leer', () => {
+    expect(renderAlterationHint(null)).toBe('');
+  });
+
+  it('renderAlterationHint: pending_request → Admin-Hinweis, HTML-escaped', () => {
+    const html = renderAlterationHint({ kind: 'pending_request', requestedAt: '2026-11-01T10:00:00Z', describe: 'Nov 20 <b>3 guests' });
+    expect(html).toContain('Änderungsantrag in Airbnb annehmen');
+    expect(html).toContain('Nov 20 &lt;b&gt;3 guests');
+    expect(html).not.toContain('<b>');
+  });
+
+  it('renderAlterationHint: guest_reports_change → Erkennungs-Hinweis', () => {
+    const html = renderAlterationHint({ kind: 'guest_reports_change', detail: '4 Personen' });
+    expect(html).toContain('Änderungswunsch erkannt (4 Personen)');
   });
 });

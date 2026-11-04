@@ -330,3 +330,33 @@ describe('resolveDraftSource', () => {
     expect(resolveDraftSource({ provider: 'guesty' } as unknown as PropertyConfig)).toBeNull();
   });
 });
+
+// #976: Änderungs-Situation geht an generate() und (als Fakt-Zeile) an den Judge.
+describe('Änderungsantrag (#976)', () => {
+  const sit = { kind: 'pending_request' as const, requestedAt: '2026-11-01T10:00:00Z', describe: '3 guests' };
+
+  it('resolveAlteration liefert pending_request → generate bekommt alteration, gate bekommt bookingContext mit Zeile', async () => {
+    const generate = vi.fn().mockResolvedValue({ kind: 'text', body: 'R' });
+    const gate = vi.fn().mockResolvedValue({});
+    const resolveAlteration = vi.fn().mockReturnValue(sit);
+    const d = deps({
+      getThreads: vi.fn().mockReturnValue([mkThread('hostex:a')]),
+      buildBookingContext: vi.fn().mockReturnValue('Buchung X'),
+      generate, gate, resolveAlteration,
+    });
+    await generateDraftsForProperty(property, d);
+    expect(generate.mock.calls[0][0].alteration).toEqual(sit);
+    expect(generate.mock.calls[0][0].bookingContext).toBe('Buchung X');
+    expect(gate.mock.calls[0][0].bookingContext).toContain('Buchung X');
+    expect(gate.mock.calls[0][0].bookingContext).toContain('Offener Änderungsantrag');
+  });
+
+  it('ohne resolveAlteration-Dep → alteration null, bookingContext unverändert', async () => {
+    const generate = vi.fn().mockResolvedValue({ kind: 'text', body: 'R' });
+    const gate = vi.fn().mockResolvedValue({});
+    const d = deps({ getThreads: vi.fn().mockReturnValue([mkThread('hostex:a')]), buildBookingContext: vi.fn().mockReturnValue('Buchung X'), generate, gate });
+    await generateDraftsForProperty(property, d);
+    expect(generate.mock.calls[0][0].alteration).toBeNull();
+    expect(gate.mock.calls[0][0].bookingContext).toBe('Buchung X');
+  });
+});

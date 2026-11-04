@@ -18,6 +18,7 @@ import { loadVoice, loadPropertyFacts } from '../services/vault-knowledge.js';
 import { generateDraftForThread, DRAFT_MODEL } from '../services/draft-service.js';
 import { buildBookingContext } from '../services/booking-context.js';
 import { findOpenBookingRequest } from '../services/booking-request.js';
+import { resolveAlterationSituation, alterationAdminHint, pendingAlterationFromRawMeta, type AlterationSituation } from '../services/alteration-request.js';
 import { sendClaimedDraft } from '../services/draft-send-service.js';
 import { resolveOutboundModuleType } from '../services/guesty-channel.js';
 import { getHostexClient, type HostexConversationDetail } from '../services/hostex-client.js';
@@ -43,6 +44,14 @@ const router = express.Router();
 
 function esc(s: string | null | undefined): string {
   return String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
+}
+
+// #976: Hinweisbox über dem Verlauf, wenn ein Änderungsantrag/-wunsch zur Buchung vorliegt.
+export function renderAlterationHint(s: AlterationSituation | null): string {
+  if (!s) return '';
+  return `<p class="subtitle" style="background:var(--color-sand);padding:10px 14px;border-radius:8px;border-left:4px solid var(--color-amber)">
+    ${esc(alterationAdminHint(s))}
+  </p>`;
 }
 
 // ISO timestamp -> "2026-06-29 08:37" (trim seconds/timezone for readability).
@@ -216,6 +225,10 @@ router.get('/', (req, res) => {
         ? `<span class="badge" style="background:var(--color-amber);color:#fff;border:none">${d.generated_by === 'llm' ? 'KI-Entwurf' : 'Entwurf'} bereit</span>`
         : '';
       const autoBadge = d ? renderAutoBadge(d) : '';
+      // #976: nur die Plattform-Karte (keine Heuristik in der Liste).
+      const alterationBadge = pendingAlterationFromRawMeta(t.raw_meta)
+        ? '<span class="badge" style="background:var(--color-amber);color:#fff;border:none">Änderungsantrag</span>'
+        : '';
       const property = propertyForBadge(t);
       const code = property?.shortCode ?? property?.slug;
       // Objekt-Kürzel farbig (uiColor der Property), Zeile selbst bleibt neutral.
@@ -224,7 +237,7 @@ router.get('/', (req, res) => {
         : '';
       return `<li><a href="/admin/messages/${encodeURIComponent(t.id)}">
         <span class="thread-name">${name}</span>
-        <span class="thread-meta">${draftBadge}${autoBadge}${codeBadge}<span class="badge">${esc(t.channel)}</span><span>${esc(fmtDate(t.last_message_at))}</span></span>
+        <span class="thread-meta">${draftBadge}${autoBadge}${alterationBadge}${codeBadge}<span class="badge">${esc(t.channel)}</span><span>${esc(fmtDate(t.last_message_at))}</span></span>
       </a></li>`;
     })
     .join('');
@@ -475,9 +488,20 @@ router.get('/:threadId', async (req, res) => {
       logger.warn({ threadId: thread.id, err: err instanceof Error ? err.message : String(err) }, 'GET /:threadId: Zeit-Abweichung nicht ladbar');
     }
   }
+  // #976: Änderungsantrag/-wunsch (non-fatal).
+  let alterationHint = '';
+  try {
+    const sit = resolveAlterationSituation(thread, msgs, {
+      isBookingRequest: findOpenBookingRequest(msgs, thread.reservation_status) !== null,
+    });
+    alterationHint = renderAlterationHint(sit);
+  } catch (err) {
+    logger.warn({ threadId: thread.id, err: err instanceof Error ? err.message : String(err) }, 'GET /:threadId: Änderungs-Hinweis nicht ermittelbar');
+  }
   const body = `<a class="back-link" href="/admin/messages">&larr; Alle Nachrichten</a>
     <h1>${name}</h1>
     <p class="subtitle"><span class="badge">${esc(thread.channel)}</span>${property ? ` · <strong>${esc(property.name)}</strong>` : ''} · Provider: ${esc(thread.source)}</p>
+    ${alterationHint}
     <div class="section"><h3>Verlauf</h3>${history}</div>
     ${timesPanel}
     ${autoPanel}
@@ -685,6 +709,7 @@ router.post('/:threadId/regenerate', async (req, res, next) => {
       // prüft den Entwurf ohnehin von Hand).
       isBookingRequest: openBookingRequest !== null,
       requestKind: openBookingRequest?.requestKind ?? null, // #1004
+      alteration: resolveAlterationSituation(thread, messages, { isBookingRequest: openBookingRequest !== null }), // #976
     });
     let redirectSuffix = '';
     if (result.kind === 'text') {

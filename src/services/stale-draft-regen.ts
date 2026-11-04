@@ -14,6 +14,7 @@ import { getActiveDraftByThread, claimDraftRegeneration, applyDraftRegeneration 
 import { getPropertyForThread } from '../utils/thread-property.js';
 import { loadVoice, loadPropertyFacts } from './vault-knowledge.js';
 import { generateDraftForThread, type DraftResult } from './draft-service.js';
+import { resolveAlterationSituation, withAlterationFact, type AlterationSituation } from './alteration-request.js';
 import { buildBookingContext } from './booking-context.js';
 import { findOpenBookingRequest, type BookingRequestKind } from './booking-request.js';
 import { runAutoSendGate, type GateInput } from './auto-send/runner.js';
@@ -45,11 +46,14 @@ export interface StaleDraftRegenDeps {
     thread: MessageThread; messages: Message[]; voice: string; facts: string; bookingContext: string | null;
     guestLanguage?: SupportedLanguage; isBookingRequest?: boolean;
     requestKind?: BookingRequestKind | null; // #1004
+    alteration?: AlterationSituation | null; // #976
   }) => Promise<DraftResult>;
   claim: (draftId: string, staleHours: number) => boolean;
   apply: (draftId: string, newBody: string) => boolean;
   gate: (i: GateInput) => Promise<GateResult>;
   staleHours: number;
+  // #976: optional; fehlt der Dep, gibt es keinen Änderungs-Block.
+  resolveAlteration?: (thread: MessageThread, messages: Message[], isBookingRequest: boolean) => AlterationSituation | null;
 }
 
 const realDeps: StaleDraftRegenDeps = {
@@ -64,6 +68,7 @@ const realDeps: StaleDraftRegenDeps = {
   apply: applyDraftRegeneration,
   gate: (i) => runAutoSendGate(i),
   staleHours: config.draftStaleHours,
+  resolveAlteration: (thread, messages, isBookingRequest) => resolveAlterationSituation(thread, messages, { isBookingRequest }),
 };
 
 /**
@@ -125,10 +130,11 @@ export async function regenerateStaleDraftIfNeeded(
   const openBookingRequest = findOpenBookingRequest(messages, thread.reservation_status);
   const isBookingRequest = openBookingRequest !== null;
   const requestKind = openBookingRequest?.requestKind ?? null; // #1004
+  const alteration = deps.resolveAlteration?.(thread, messages, isBookingRequest) ?? null; // #976
 
   let result: DraftResult;
   try {
-    result = await deps.generate({ thread, messages, voice, facts, bookingContext, guestLanguage, isBookingRequest, requestKind });
+    result = await deps.generate({ thread, messages, voice, facts, bookingContext, guestLanguage, isBookingRequest, requestKind, alteration });
   } catch (err) {
     logger.warn({ threadId: thread.id, draftId: draft.id, err: err instanceof Error ? err.message : String(err) }, 'stale-draft-regen: Generierung fehlgeschlagen — alter Entwurf bleibt');
     return { kind: 'failed', reason: 'Generierung fehlgeschlagen' };
@@ -151,7 +157,7 @@ export async function regenerateStaleDraftIfNeeded(
   // unterdrückt: setAutoDecision setzt auto_* (inkl. auto_judged_at) neu, ein Gate-Fehler wird
   // nur geloggt, nicht geworfen — die Neugenerierung selbst ist bereits erfolgreich.
   try {
-    await deps.gate({ draftId: draft.id, body: result.body, thread, messages, voice, facts, bookingContext, property, guestLanguage });
+    await deps.gate({ draftId: draft.id, body: result.body, thread, messages, voice, facts, bookingContext: withAlterationFact(bookingContext, alteration), property, guestLanguage });
   } catch (err) {
     logger.warn({ threadId: thread.id, draftId: draft.id, err: err instanceof Error ? err.message : String(err) }, 'stale-draft-regen: Gate fehlgeschlagen (Entwurf bleibt pending)');
   }

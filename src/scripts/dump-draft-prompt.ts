@@ -49,6 +49,7 @@
  *   npx tsx src/scripts/dump-draft-prompt.ts --fixture data/testplan-440-fixtures/a1-catering-unconfirmed.json --live --runs 3
  *   npx tsx src/scripts/dump-draft-prompt.ts guesty:6a821b5faf709c0013b967fa --live --runs 3
  */
+import { resolveAlterationSituation, type AlterationSituation } from '../services/alteration-request.js';
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -98,6 +99,8 @@ interface Fixture {
   // deklarativ). null/weggelassen = kein Buchungskontext-Block (wie ein Thread ohne
   // reservation_id/inquiry_id-Link).
   bookingContext?: string | null;
+  // #976: Änderungsantrag/-wunsch direkt vorgeben (deklarativ, statt Karte/Heuristik nachzubauen).
+  alteration?: AlterationSituation | null;
   messages: FixtureMessage[];
 }
 
@@ -166,11 +169,17 @@ function messagesFromFixture(fixture: Fixture, threadId: string, source: 'guesty
 // stale-draft-regen.ts, routes/messages.ts) — ohne sie zeigte der Dump bei Buchungsanfragen
 // den normalen Prompt statt des Buchungsanfrage-Blocks. Fixtures lösen sie über eine
 // System-Nachricht „New guest reservation request …" bzw. „New guest inquiry" aus.
-interface BookingRequestInfo { isBookingRequest: boolean; requestKind: BookingRequestKind | null }
+interface BookingRequestInfo { isBookingRequest: boolean; requestKind: BookingRequestKind | null; alteration: AlterationSituation | null }
 
-function resolveBookingRequest(thread: MessageThread, messages: Message[]): BookingRequestInfo {
+// `fixtureAlteration`: im Fixture-Modus das Fixture-Feld (undefined = Fixture ohne Feld → null);
+// im DB-Thread-Modus nicht übergeben → resolveAlterationSituation (#976).
+function resolveBookingRequest(thread: MessageThread, messages: Message[], fixtureMode: boolean, fixtureAlteration?: AlterationSituation | null): BookingRequestInfo {
   const open = findOpenBookingRequest(messages, thread.reservation_status);
-  return { isBookingRequest: open !== null, requestKind: open?.requestKind ?? null };
+  const isBookingRequest = open !== null;
+  const alteration = fixtureMode
+    ? (fixtureAlteration ?? null)
+    : resolveAlterationSituation(thread, messages, { isBookingRequest });
+  return { isBookingRequest, requestKind: open?.requestKind ?? null, alteration };
 }
 
 // --- Ausgabe ------------------------------------------------------------------------
@@ -182,13 +191,13 @@ function printSection(title: string, body: string): void {
 
 async function dumpDirect(thread: MessageThread, messages: Message[], voice: string, facts: string, bookingContext: string | null, br: BookingRequestInfo): Promise<void> {
   const systemPrompt = buildSystemPrompt(
-    voice, facts, bookingContext, thread, undefined, undefined, br.isBookingRequest, undefined, br.requestKind,
+    voice, facts, bookingContext, thread, undefined, undefined, br.isBookingRequest, undefined, br.requestKind, br.alteration,
   );
   const userMessage = buildConversation(messages, thread.guest_name);
   printSection('THREAD-FAKTEN', JSON.stringify({
     id: thread.id, channel: thread.channel, reservation_status: thread.reservation_status,
     source: thread.source, guest_name: thread.guest_name,
-    isBookingRequest: br.isBookingRequest, requestKind: br.requestKind,
+    isBookingRequest: br.isBookingRequest, requestKind: br.requestKind, alteration: br.alteration,
   }, null, 2));
   printSection('SYSTEM PROMPT (buildSystemPrompt — kein API-Call)', systemPrompt);
   printSection('USER MESSAGE (buildConversation)', userMessage);
@@ -255,6 +264,7 @@ async function dumpLive(
       `Fall: ${caseName}`,
       `Kanal: ${thread.channel} | Buchungsstatus (roh): ${thread.reservation_status ?? 'null'}`,
       `Buchungsanfrage: ${br.isBookingRequest ? (br.requestKind ?? 'ja') : 'nein'}`,
+      `Änderung: ${br.alteration?.kind ?? 'nein'}`,
       `Lauf: ${run}/${runs}`,
       `Modell: ${DRAFT_MODEL}`,
       `DraftResult.kind: ${result.kind}`,
@@ -301,6 +311,7 @@ async function main(): Promise<void> {
   let facts: string | null;
   let bookingContext: string | null;
   let caseName: string;
+  let fixtureAlteration: AlterationSituation | null | undefined;
 
   if (fixturePath) {
     const fixture = loadFixture(fixturePath);
@@ -321,6 +332,7 @@ async function main(): Promise<void> {
     voice = loadVoice();
     facts = property.vaultNote ? loadPropertyFacts(property.vaultNote) : null;
     bookingContext = fixture.bookingContext ?? null;
+    fixtureAlteration = fixture.alteration;
     caseName = sanitizeCaseName(fixture.caseId);
     console.log(`Fixture: ${fixture.caseId} — ${fixture.description}`);
     console.log(`Property: ${property.name} (${property.slug}, ${property.provider})`);
@@ -349,7 +361,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const br = resolveBookingRequest(thread, messages);
+  const br = resolveBookingRequest(thread, messages, fixturePath !== null, fixtureAlteration);
   if (live) {
     await dumpLive(caseName, thread, messages, voice, facts, bookingContext, runs, br);
   } else if (viaGenerate) {

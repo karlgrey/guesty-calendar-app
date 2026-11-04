@@ -431,3 +431,61 @@ describe('buildSystemPrompt — Buchungsanfrage ohne Pflicht-Rückfrage (#1004)'
     expect(call.mock.calls[0][0].systemPrompt).not.toContain('BUCHUNGSANFRAGE — Sonderregeln');
   });
 });
+
+describe('buildSystemPrompt — Kürze-Regel und Änderungsantrag (#976)', () => {
+  const t = { channel: 'airbnb' as const, reservation_status: 'confirmed' };
+  const NOW = new Date('2026-10-26T09:00:00.000Z');
+  const pending = { kind: 'pending_request' as const, requestedAt: '2026-10-26T08:41:12+00:00', describe: 'Nov 20 ~ Nov 21 ・ 3 guests' };
+
+  it('Längenregel steht in JEDEM Prompt vor Voice, mit Ausnahmeliste', () => {
+    const p = buildSystemPrompt('VOICE', 'f', null, t, 'de', false, false, NOW);
+    expect(p).toContain('### LÄNGE DER ANTWORT');
+    expect(p).toContain('HÖCHSTENS 2–3 kurze Sätze');
+    expect(p).toContain('ca. 300 Zeichen');
+    expect(p).toContain('Angebot');
+    expect(p).toContain('Absage');
+    expect(p).toContain('Problemfall');
+    expect(p.indexOf('### LÄNGE DER ANTWORT')).toBeLessThan(p.indexOf('--- VOICE ---'));
+  });
+
+  it('Buchungskontext: keine ungefragte Wiederholung der Buchungsdaten mehr', () => {
+    const p = buildSystemPrompt('v', 'f', 'Bestätigte Buchung …', t, 'de', false, false, NOW);
+    expect(p).not.toContain('bei Bestätigungen den Zeitraum nennen');
+    expect(p).toContain('wiederhole sie auch nicht ungefragt');
+  });
+
+  it('Buchungsanfrage-Block bekommt den Längen-Zusatz für Tipps', () => {
+    const p = buildSystemPrompt('v', 'f', null, { channel: 'airbnb', reservation_status: 'reserved' }, 'de', false, true, NOW, 'request_to_book');
+    expect(p).toContain('höchstens 3–4 kurze Sätze');
+    expect(p).toContain('höchstens zwei, drei Tipps');
+  });
+
+  it('offener Änderungsantrag: Bestätigung statt Anleitung, Ausstattung verboten, describe als Anzeige', () => {
+    const p = buildSystemPrompt('v', 'f', null, t, 'de', false, false, NOW, null, pending);
+    expect(p).toContain('### ÄNDERUNG DER BUCHUNG');
+    expect(p).toContain('BEREITS einen Änderungsantrag gestellt');
+    expect(p).toContain('„Nov 20 ~ Nov 21 ・ 3 guests"');
+    expect(p).toContain('ich nehme die Änderung an');
+    expect(p).not.toContain('drei Gäste');
+    expect(p).toContain('VERBOTEN: den Gast auffordern oder anleiten, die Buchung selbst zu ändern');
+    expect(p).toContain('Bettwäsche');
+  });
+
+  it('Heuristik-Fall: kümmern statt annehmen, gleiches Verbot', () => {
+    const p = buildSystemPrompt('v', 'f', null, t, 'de', false, false, NOW, null, { kind: 'guest_reports_change', detail: 'Gast nennt 3 Personen, gebucht sind 1' });
+    expect(p).toContain('meldet einen Änderungswunsch zur Buchung (Gast nennt 3 Personen, gebucht sind 1)');
+    expect(p).toContain('ich kümmere mich um die Änderung');
+    expect(p).toContain('VERBOTEN');
+  });
+
+  it('kein Änderungs-Block ohne Situation oder bei Buchungsanfrage', () => {
+    expect(buildSystemPrompt('v', 'f', null, t, 'de', false, false, NOW)).not.toContain('ÄNDERUNG DER BUCHUNG');
+    expect(buildSystemPrompt('v', 'f', null, t, 'de', false, true, NOW, 'inquiry', pending)).not.toContain('ÄNDERUNG DER BUCHUNG');
+  });
+
+  it('generateDraftForThread reicht alteration aus DraftInput durch', async () => {
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'x' });
+    await generateDraftForThread({ thread: thread(), messages, voice: 'v', facts: 'f', bookingContext: null, alteration: pending }, { call });
+    expect(call.mock.calls[0][0].systemPrompt).toContain('### ÄNDERUNG DER BUCHUNG');
+  });
+});

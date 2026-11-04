@@ -3,6 +3,7 @@ import type { MessageThread, Message } from '../types/messages.js';
 import { LANGUAGE_LABEL, type SupportedLanguage } from '../utils/language-detect.js';
 import { buildTodayBlock } from './auto-send/today-facts.js';
 import type { BookingRequestKind } from './booking-request.js';
+import type { AlterationSituation } from './alteration-request.js';
 
 /** #758: zentrale Sonnet-Konstante (claude-sonnet-5-5) aus anthropic-client. */
 export const DRAFT_MODEL = SONNET_MODEL;
@@ -71,6 +72,10 @@ export interface DraftInput {
   // damit bestehende Aufrufer/Tests ohne dieses Feld weiterlaufen. In Tests injizierbar, damit
   // Datum/Wochentag deterministisch geprüft werden können.
   now?: Date;
+  // #976 (Fall Gast AS 20.–21.11.): offener Änderungsantrag (Hostex-Karte) bzw. per Heuristik
+  // erkannter Änderungswunsch — resolveAlterationSituation (alteration-request.ts). Optional,
+  // null/fehlend = kein Änderungs-Block.
+  alteration?: AlterationSituation | null;
 }
 export interface DraftDeps {
   call: typeof callClaudeTool;
@@ -195,11 +200,65 @@ function buildBookingRequestBlock(requestKind: BookingRequestKind | null): strin
       '"eine Runde wie eure ist willkommen/passt gut") — ' +
       'Unsicheres nur als Frage an den Gast, nie als Aussage über den Ausgang der Prüfung.',
     buildBookingClosingRule(requestKind),
+    // #976: Kürze-Regel gilt auch hier (#1004-Abnahme: Tipps-Antwort war zu lang).
+    'Länge: auch hier gilt die LÄNGE-Regel oben — insgesamt höchstens 3–4 kurze Sätze. Tipps-Fragen knapp ' +
+      'beantworten: eine kleine Auswahl (höchstens zwei, drei Tipps) in EINEM Satz, keine Liste, keine Beschreibungen.',
     'Verboten: auf „deine Antworten“, „deine Rückmeldung“ oder sonstige ausstehende Fragen verweisen (z. B. „Sobald ' +
       'ich deine Antworten habe …"), wenn du in DIESER Antwort keine Frage gestellt hast. Die Plattform nie beim ' +
       'Namen nennen (Voice-Regel Micha 21.09.2026: Airbnb, Guesty o. ä. nie im Text an den Gast; "über Airbnb ' +
       'bestätigen" ist tabu).',
     '### ENDE BUCHUNGSANFRAGE-REGELN ###',
+  ].join('\n');
+}
+
+// #976 (Micha 26.10.2026: „die Antworten sind alle immer etwas zu lang und ausschweifend"):
+// harte Längenregel als eigener Block VOR Voice/Objektwissen — die Wiki-Regel „Kürze zuerst"
+// (Grundsätze, Harte Ausgaberegeln) steht zwar im Vault, wurde aber von der Menge an
+// Objektwissen regelmäßig überstimmt (Bot zählte ungefragt Betten/Bad/Bettwäsche auf).
+// Ausnahmeliste explizit: nur Angebote, Absagen und Problemfälle dürfen länger sein.
+export const LENGTH_RULE_BLOCK = [
+  '### LÄNGE DER ANTWORT — harte Regel, gilt vor Voice und Objektwissen ###',
+  'Routine-Antworten (Frage beantwortet, Bestätigung, Dank, kleine Zusage) haben HÖCHSTENS 2–3 kurze Sätze, ' +
+    'ca. 300 Zeichen (ohne Anrede und Gruß). Was man am Handy nicht ohne Scrollen liest, ist zu lang.',
+  '- Beantworte NUR, was der Gast gefragt oder angesprochen hat. Mehrere Fragen: je Frage höchstens ein Satz.',
+  '- Wiederhole KEINE Fakten, die der Gast schon kennt: Buchungsdaten (Zeitraum, Nächte, Personenzahl) und ' +
+    'Inhalte der Inseratsbeschreibung (Betten, Bad, Ausstattung, Platz für X Gäste).',
+  '- KEINE unaufgeforderten Zusatzinfos, Hinweise, Regeln oder Ausstattungsaufzählungen (Bettwäsche, Handtücher, ' +
+    'Tor, Verkehr, Anreise …) — die stehen im Gäste-Handbuch.',
+  '- Länger werden darf eine Antwort NUR bei: (1) einem Angebot, (2) einer Absage/Ablehnung, (3) einem Problemfall ' +
+    '(Beschwerde, Schaden, Störung/Ausfall, Notfall).',
+  '### ENDE LÄNGE ###',
+].join('\n');
+
+// #976 (Fall Gast AS 20.–21.11.2026): Gast hat sich bei der Personenzahl vertan und die Änderung
+// schon beantragt — der Entwurf leitete ihn trotzdem an, die Buchung selbst anzupassen, und zählte
+// die Ausstattung auf. Situation kommt als Fakt aus alteration-request.ts (Hostex-Karte bzw.
+// Heuristik); der Block sagt nur, WIE zu antworten ist (Wiki: „Gast meldet Buchungsfehler /
+// Änderungsantrag läuft").
+function buildAlterationBlock(s: AlterationSituation): string {
+  const situation = s.kind === 'pending_request'
+    ? 'Der Gast hat für diese Buchung BEREITS einen Änderungsantrag gestellt' +
+      (s.describe ? ` (Anzeige der Plattform: „${s.describe}")` : '') +
+      '. Der Antrag liegt bei Micha zur Annahme — der Gast muss NICHTS mehr tun.'
+    : `Die Gastnachricht meldet einen Änderungswunsch zur Buchung (${s.detail}). Meist hat der Gast die ` +
+      'Änderung bereits beantragt; Micha kümmert sich darum — der Gast muss NICHTS weiter tun.';
+  // Prüfer-Korrektur #976: kein fester Beispielwert („drei Gäste") im Prompt — das Modell übernimmt
+  // Beispiele wörtlich, auch wenn der Antrag etwas anderes betrifft (Zeitraum, andere Zahl).
+  const confirm = s.kind === 'pending_request'
+    ? 'sinngemäß „alles gut, ich nehme die Änderung an" — benenne die Änderung höchstens so, wie der Gast sie ' +
+      'selbst genannt hat (z. B. die neue Personenzahl); nichts aus der Plattform-Anzeige dazuerfinden'
+    : 'sinngemäß „kein Problem, ich kümmere mich um die Änderung" — benenne die Änderung höchstens so, wie der ' +
+      'Gast sie selbst genannt hat';
+  return [
+    '### ÄNDERUNG DER BUCHUNG — Sonderregeln für DIESE Antwort (Vorrang vor allgemeinen Regeln unten) ###',
+    situation,
+    `Antworte mit einer kurzen Bestätigung in 1–2 Sätzen, ${confirm}.`,
+    'VERBOTEN: den Gast auffordern oder anleiten, die Buchung selbst zu ändern oder anzupassen (z. B. „pass die ' +
+      'Personenzahl direkt in der Buchung an", „kannst du direkt dort ändern"); Ausstattung, Betten, Bad, ' +
+      'Bettwäsche oder Platzangaben aufzählen; die Plattform beim Namen nennen.',
+    'Passt die neue Personenzahl bzw. der neue Zeitraum laut OBJEKTWISSEN offensichtlich NICHT (z. B. mehr Personen ' +
+      'als die Maximalbelegung), sage KEINE Annahme zu — schreibe nur kurz, dass du dich gleich meldest.',
+    '### ENDE ÄNDERUNG ###',
   ].join('\n');
 }
 
@@ -224,6 +283,9 @@ export function buildSystemPrompt(
   // #1004: Art der offenen Buchungsanfrage (findOpenBookingRequest) — nur wirksam mit
   // isBookingRequest; null = unbekannt (generischer Kontext, kein artspezifischer Schlusssatz).
   requestKind: BookingRequestKind | null = null,
+  // #976: Änderungsantrag/-wunsch (alteration-request.ts) — LETZTER optionaler Parameter,
+  // Signatur bleibt rückwärtskompatibel. Nie zusammen mit dem Buchungsanfrage-Block.
+  alteration: AlterationSituation | null = null,
 ): string {
   const lines = [
     buildThreadFactsBlock(thread),
@@ -235,8 +297,11 @@ export function buildSystemPrompt(
     // "have a wonderful Sunday" wurde deshalb erst montags mit gespiegeltem "schönen Sonntag"
     // versandt. Direkt nach ANTWORTSPRACHE, vor Voice/Objektwissen — als harter Fakt.
     buildTodayBlock(now, bookingContext),
+    // #976: Längenregel für ALLE Antworten (auch Buchungsanfragen, dort mit Tipps-Zusatz im Block).
+    LENGTH_RULE_BLOCK,
   ];
   if (isBookingRequest) lines.push(buildBookingRequestBlock(requestKind));
+  else if (alteration) lines.push(buildAlterationBlock(alteration));
   lines.push(
     'Du entwirfst eine Antwort auf eine Gastnachricht für eine Ferienunterkunft, in Michas Stimme.',
     'Halte dich strikt an den folgenden Ton/Stil (Voice):',
@@ -249,7 +314,10 @@ export function buildSystemPrompt(
       '--- BUCHUNGSKONTEXT (liegt der Plattform bereits vor) ---',
       bookingContext,
       '--- ENDE BUCHUNGSKONTEXT ---',
-      'Diese Buchungsdaten sind der Plattform bekannt — frage den Gast NIEMALS erneut nach Zeitraum, Nächten oder Personenzahl; beziehe dich stattdessen direkt darauf (z. B. bei Bestätigungen den Zeitraum nennen).'
+      // #976: früher „beziehe dich direkt darauf (z. B. bei Bestätigungen den Zeitraum nennen)" —
+      // widersprach der Kürze-Regel (keine Wiederholung von Buchungsdaten, die der Gast kennt).
+      'Diese Buchungsdaten sind der Plattform UND dem Gast bekannt — frage den Gast NIEMALS erneut nach Zeitraum, ' +
+        'Nächten oder Personenzahl und wiederhole sie auch nicht ungefragt; nenne sie nur, wenn der Gast danach fragt.'
     );
   }
   if (languageRetry) {
@@ -263,7 +331,7 @@ export function buildSystemPrompt(
     // #695: verweist auf die harte ANTWORTSPRACHE-Zeile oben statt eigener Prosa-Regel — die
     // Sprache ist ein Fakt, kein Stilhinweis, den Voice-Beispiele überstimmen dürfen.
     'Regeln: Kein Auto-Versand von Zugangscodes. Antworte AUSSCHLIESSLICH auf der oben festgelegten ' +
-      'ANTWORTSPRACHE — unabhängig von der Sprache der Voice-Beispiele, kein Sprachenmix. Kurz und konkret.',
+      'ANTWORTSPRACHE — unabhängig von der Sprache der Voice-Beispiele, kein Sprachenmix. Kurz und konkret (siehe LÄNGE-Regel oben).',
     // #698 (Fall Lorenzo U19, 20.09.2026): Tages-/Tageszeitwünsche des Gastes NICHT wörtlich
     // spiegeln — der Entwurf wird ggf. an einem anderen Tag/zu anderer Zeit gelesen (Vorfall:
     // Gast schrieb sonntags "have a wonderful Sunday", der Entwurf spiegelte "schönen Sonntag",
@@ -348,6 +416,7 @@ export async function generateDraftForThread(
         input.isBookingRequest ?? false,
         input.now ?? new Date(),
         input.requestKind ?? null,
+        input.alteration ?? null,
       ),
       userMessage: buildConversation(input.messages, input.thread.guest_name),
       tool: SUBMIT_REPLY_TOOL,

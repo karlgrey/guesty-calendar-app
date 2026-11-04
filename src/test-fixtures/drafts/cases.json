@@ -1,0 +1,134 @@
+[
+  {
+    "name": "Lea — Buchungsfehler, Änderungsantrag offen (#976)",
+    "description": "Gast hat sich bei der Personenzahl vertan; Hostex-Karte mit offenem Änderungsantrag liegt vor. Erwartet: kurze Bestätigung, keine Anleitung zum Selbst-Ändern, kein Objekt-Infodump.",
+    "propertySlug": "alte-schilderwerkstatt",
+    "thread": {
+      "channel": "airbnb",
+      "reservation_status": "confirmed",
+      "guest_name": "Lea"
+    },
+    "bookingContext": "Bestätigte Buchung (Status: confirmed): Zeitraum 20.11.2026–21.11.2026, 1 Nächte, 1 Personen, Konfirmationscode HMTEST976.",
+    "alteration": {
+      "kind": "pending_request",
+      "requestedAt": "2026-10-26T08:41:12+00:00",
+      "describe": "Nov 20 ~ Nov 21 ・ 3 guests"
+    },
+    "messages": [
+      {
+        "direction": "inbound",
+        "body": "Hallo Micha, ich hatte mich bei der Buchung vertan und wollte gerne für 3 Gäste buchen. Liebe Grüße Lea"
+      }
+    ],
+    "expect": {
+      "maxSentences": 3,
+      "mustContainAny": [
+        "änderung",
+        "nehme",
+        "angenommen",
+        "passt",
+        "kein problem",
+        "alles gut"
+      ],
+      "mustNotContain": [
+        "anpassen",
+        "direkt dort",
+        "selbst ändern",
+        "in der buchung an",
+        "in deiner buchung",
+        "bettwäsche",
+        "handtücher",
+        "schlafsofa"
+      ]
+    },
+    "now": "2026-10-26T09:00:00Z"
+  },
+  {
+    "name": "Lea — Buchungsfehler ohne Karte, Heuristik (#976)",
+    "description": "Wie Fall a), aber ohne Plattform-Karte; nur die Heuristik hat den Änderungswunsch erkannt.",
+    "propertySlug": "alte-schilderwerkstatt",
+    "thread": {
+      "channel": "airbnb",
+      "reservation_status": "confirmed",
+      "guest_name": "Lea"
+    },
+    "bookingContext": "Bestätigte Buchung (Status: confirmed): Zeitraum 20.11.2026–21.11.2026, 1 Nächte, 1 Personen, Konfirmationscode HMTEST976.",
+    "alteration": {
+      "kind": "guest_reports_change",
+      "detail": "Gast nennt 3 Personen, gebucht sind 1"
+    },
+    "messages": [
+      {
+        "direction": "inbound",
+        "body": "Hallo Micha, ich hatte mich bei der Buchung vertan und wollte gerne für 3 Gäste buchen. Liebe Grüße Lea"
+      }
+    ],
+    "expect": {
+      "maxSentences": 3,
+      "mustContainAny": [
+        "änderung",
+        "nehme",
+        "angenommen",
+        "passt",
+        "kein problem",
+        "alles gut"
+      ],
+      "mustNotContain": [
+        "anpassen",
+        "direkt dort",
+        "selbst ändern",
+        "in der buchung an",
+        "in deiner buchung",
+        "bettwäsche",
+        "handtücher",
+        "schlafsofa"
+      ]
+    },
+    "now": "2026-10-26T09:00:00Z"
+  },
+  {
+    "name": "Mira — reiner Dank ohne Frage (Negativtest)",
+    "description": "Reiner Dank nach dem Aufenthalt ohne Frage — es darf kein Entwurf entstehen.",
+    "propertySlug": "alte-schilderwerkstatt",
+    "thread": {
+      "channel": "airbnb",
+      "reservation_status": "confirmed",
+      "guest_name": "Mira"
+    },
+    "bookingContext": "Bestätigte Buchung (Status: confirmed): Zeitraum 10.10.2026–12.10.2026, 2 Nächte, 2 Personen, Konfirmationscode HMTEST976B.",
+    "alteration": null,
+    "messages": [
+      {
+        "direction": "inbound",
+        "body": "Vielen Dank für den schönen Aufenthalt, es war alles wunderbar! Liebe Grüße Mira"
+      }
+    ],
+    "expect": {
+      "noReply": true
+    },
+    "now": "2026-10-13T09:00:00Z"
+  },
+  {
+    "name": "Tom — Routinefrage kurz beantworten (#976)",
+    "description": "Einfache Sachfrage (Parkplatz) — Routine-Antwort soll 2–3 Sätze / ca. 300 Zeichen bleiben.",
+    "propertySlug": "farmhouse",
+    "thread": {
+      "channel": "airbnb",
+      "reservation_status": "confirmed",
+      "guest_name": "Tom"
+    },
+    "bookingContext": "Bestätigte Buchung (Status: confirmed): Zeitraum 20.11.2026–22.11.2026, 2 Nächte, 6 Personen, Konfirmationscode HMTEST976C.",
+    "alteration": null,
+    "messages": [
+      {
+        "direction": "inbound",
+        "body": "Hallo Micha, gibt es vor Ort einen Parkplatz für zwei Autos? Danke, Tom"
+      }
+    ],
+    "expect": {
+      "maxSentences": 3,
+      "maxChars": 350
+    },
+    "now": "2026-10-26T09:00:00Z"
+  }
+]

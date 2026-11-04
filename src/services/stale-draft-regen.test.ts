@@ -237,3 +237,26 @@ describe('regenerateStaleDraftIfNeeded — requestKind (#1004)', () => {
     expect((d.generate as any).mock.calls[0][0]).toMatchObject({ isBookingRequest: false, requestKind: null });
   });
 });
+
+// #976: Änderungs-Situation wie in generate-drafts.ts.
+describe('regenerateStaleDraftIfNeeded — Änderungsantrag (#976)', () => {
+  it('resolveAlteration → generate bekommt alteration, gate bekommt bookingContext mit Fakt-Zeile', async () => {
+    const sit = { kind: 'pending_request' as const, requestedAt: '2026-11-01T10:00:00Z', describe: null };
+    const d = deps({
+      buildBookingContext: vi.fn().mockReturnValue('Buchung X'),
+      resolveAlteration: vi.fn().mockReturnValue(sit),
+    });
+    await regenerateStaleDraftIfNeeded(mkThread(), d);
+    expect((d.generate as any).mock.calls[0][0].alteration).toEqual(sit);
+    expect((d.generate as any).mock.calls[0][0].bookingContext).toBe('Buchung X');
+    const gateCtx = (d.gate as any).mock.calls[0][0].bookingContext as string;
+    expect(gateCtx).toContain('Buchung X');
+    expect(gateCtx).toContain('Offener Änderungsantrag');
+  });
+
+  it('ohne Dep → alteration null', async () => {
+    const d = deps();
+    await regenerateStaleDraftIfNeeded(mkThread(), d);
+    expect((d.generate as any).mock.calls[0][0].alteration).toBeNull();
+  });
+});
