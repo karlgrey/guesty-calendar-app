@@ -489,3 +489,34 @@ describe('buildSystemPrompt — Kürze-Regel und Änderungsantrag (#976)', () =>
     expect(call.mock.calls[0][0].systemPrompt).toContain('### ÄNDERUNG DER BUCHUNG');
   });
 });
+
+describe('buildSystemPrompt — Website-Links nach bestätigter Buchung (#1027)', () => {
+  const NOW = new Date('2026-11-05T09:00:00.000Z');
+  const MARKER = 'Abschnitt ‚Links für Gäste‘';
+  const prompt = (channel: MessageThread['channel'], reservation_status: string | null) =>
+    buildSystemPrompt('v', 'f', null, { channel, reservation_status }, 'de', false, false, NOW);
+
+  it('airbnb + bestätigt (confirmed/reserved) → Link-Regel mit Tipps-Pflicht im Prompt', () => {
+    for (const status of ['confirmed', 'reserved']) {
+      const p = prompt('airbnb', status);
+      expect(p).toContain(MARKER);
+      expect(p).toContain('vollständige URL');
+      expect(p).toContain('ANTWORTSPRACHE (EN-Variante, wenn vorhanden)');
+      expect(p).toContain('nie nur den Link');
+    }
+  });
+
+  it('airbnb + nicht bestätigt (inquiry/null/storniert) → keine Link-Regel', () => {
+    for (const status of ['inquiry', null, 'canceled']) {
+      expect(prompt('airbnb', status)).not.toContain(MARKER);
+    }
+  });
+
+  it('direct_email + bestätigt → Link-Regel im Prompt', () => {
+    expect(prompt('direct_email', 'confirmed')).toContain(MARKER);
+  });
+
+  it('keine URLs im Code — Vault bleibt einzige Quelle (#440-Muster)', () => {
+    expect(prompt('airbnb', 'confirmed')).not.toMatch(/https?:\/\//);
+  });
+});

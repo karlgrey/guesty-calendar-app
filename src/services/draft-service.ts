@@ -119,10 +119,25 @@ const CHANNEL_LABELS: Record<MessageThread['channel'], string> = {
 const CONFIRMED_RESERVATION_STATUSES = new Set(['confirmed', 'reserved']);
 
 function resolveBookingStatusLabel(reservationStatus: string | null): string {
-  if (reservationStatus && CONFIRMED_RESERVATION_STATUSES.has(reservationStatus)) {
+  if (isConfirmedReservation(reservationStatus)) {
     return 'bestätigt';
   }
   return 'NICHT bestätigt (bzw. Status unbekannt — konservativ als unbestätigt behandeln)';
+}
+
+// #1027 (Micha 04.11.2026, Fall Moritz #1002): nach bestätigter Buchung dürfen Website-Links
+// (Aktivitäten, Catering, Teamevents, Hausordnung, Gäste-Handbuch) mitgegeben werden. Die URLs
+// stehen ausschließlich im Vault (Abschnitt „Links für Gäste" im Objekt-Playbook) — hier bewusst
+// KEINE URL (Vault = einzige Quelle, Muster #440). Vor bestätigter Buchung keine Zeile: dann greift
+// weiter das Airbnb-Link-Verbot im Vault.
+export const GUEST_LINKS_RULE =
+  'Fragt der Gast nach Umgebung/Aktivitäten, Verpflegung/Catering, Teamevents, Hausordnung oder dem ' +
+  'Gäste-Handbuch, nenne die vollständige URL aus dem Abschnitt ‚Links für Gäste‘ im Objektwissen in der ' +
+  'ANTWORTSPRACHE (EN-Variante, wenn vorhanden) UND gib ein bis zwei konkrete Tipps aus dem Objektwissen ' +
+  'dazu, nie nur den Link.';
+
+function isConfirmedReservation(reservationStatus: string | null): boolean {
+  return !!reservationStatus && CONFIRMED_RESERVATION_STATUSES.has(reservationStatus);
 }
 
 function buildThreadFactsBlock(thread: Pick<MessageThread, 'channel' | 'reservation_status'>): string {
@@ -354,6 +369,8 @@ export function buildSystemPrompt(
       'NIEMALS als Aussage oder Zusicherung an den Gast schreiben — formuliere sie stattdessen als ' +
       'offene Rückfrage an den Gast (z. B. statt "die Personenzahl passt" → "wie viele Personen ' +
       'wärt ihr insgesamt?").',
+    // #1027: nur bei bestätigter Buchung (siehe GUEST_LINKS_RULE).
+    ...(isConfirmedReservation(thread.reservation_status) ? [GUEST_LINKS_RULE] : []),
     'Gib die Antwort über das Tool submit_reply zurück: entweder reply (nur der Nachrichtentext, ' +
       'keine Anrede-Meta) mit no_reply_needed=false, oder no_reply_needed=true mit reason.'
   );
