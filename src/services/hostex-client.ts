@@ -42,7 +42,11 @@ export interface HostexConversation {
 
 export type HostexDisplayType = 'Text' | 'ReservationAlteration' | 'Box';
 
-/** System-Karten-Attachment (z. B. ReservationAlteration); bei Text-Nachrichten nicht vorhanden. */
+/**
+ * System-Karten-Attachment (z. B. ReservationAlteration); bei Text-Nachrichten `null`.
+ * Hostex liefert `price` als String ("243.36") und zusätzlich title/picture/url (Listing-Anriss,
+ * hier bewusst nicht typisiert) — Beleg: src/test-fixtures/hostex/conversations.json.
+ */
 export interface HostexMessageAttachment {
   subject?: string | null;
   describe?: string | null;

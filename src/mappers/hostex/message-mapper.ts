@@ -100,7 +100,7 @@ export function mapHostexConversation(
     conversion_category: null,
     classification_confidence: null,
     classification_keywords: null,
-    // #976: offener Änderungsantrag (ReservationAlteration-Karte ohne schließende Box) —
+    // #976: offener Änderungsantrag (ReservationAlteration-Karte ohne schließende Box).
     raw_meta: JSON.stringify({
       channel_type: detail.channel_type,
       pending_alteration: detectPendingHostexAlteration(allMessages),
