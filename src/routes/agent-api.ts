@@ -27,18 +27,23 @@ import { getAwaitingDrafts, getAutoSendStats, listAutoDecisionCases } from '../r
 import { autoDecisionOutcome, autoDecisionTexts } from '../services/auto-send/decision-case.js';
 import { propertyForBadge } from '../utils/thread-property.js';
 import { runConsistencyCheck, listOpenReservations } from '../jobs/consistency-check.js';
-import { getPropertyBySlug, getPropertySlugs, getListingId } from '../config/properties.js';
+import { getPropertyBySlug, getPropertySlugs, getListingId, getAllProperties } from '../config/properties.js';
 import type { PropertyConfig } from '../config/properties.js';
 import { listDocumentsForAgent, getDocumentById } from '../repositories/document-repository.js';
 import { AppError, ExternalApiError, NotFoundError, ValidationError } from '../utils/errors.js';
 import { config } from '../config/index.js';
 import logger from '../utils/logger.js';
+import { syncAvailability } from '../jobs/sync-availability.js';
+import { syncHostexProperty } from '../jobs/hostex/sync-properties.js';
+import { syncHostexReservations } from '../jobs/hostex/sync-reservations.js';
+import { syncHostexCalendar } from '../jobs/hostex/sync-calendar.js';
 import { getHostexClient } from '../services/hostex-client.js';
 import { groupBlockedRanges } from '../services/availability-blocks.js';
 import { getSuggestionsByStatus } from '../repositories/feedback-repository.js';
 import { revokeVaultSuggestion } from '../services/vault-suggestion-service.js';
 import type { SuggestionStatus } from '../types/feedback.js';
 import { berlinCalendarDay } from '../services/auto-send/berlin-day.js';
+import { getListingTextsForProperty } from '../services/listing-texts-service.js';
 
 const router = express.Router();
 router.use(requireAgentKey);
@@ -647,6 +652,27 @@ function hostexPropertySummary(property: PropertyConfig, hostexPropertyId: strin
   return { slug: property.slug, name: property.name, provider: property.provider, hostexPropertyId };
 }
 
+// ---------------------------------------------------------------------------
+// #1043 Öffentliche Listing-Texte (für #983 Telefonnummern-Check + Lint-Drift-Check)
+// Nur lesend. :id = property-Slug oder Guesty-/Hostex-Listing-ID.
+// ---------------------------------------------------------------------------
+router.get('/listings/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const property = getPropertyBySlug(id)
+      ?? getAllProperties().find((p) => p.guestyPropertyId === id || p.hostexPropertyId === id);
+    if (!property) throw new NotFoundError(`Unbekanntes Listing: ${id} (Slug: ${getPropertySlugs().join('|')})`);
+    const result = await getListingTextsForProperty(property);
+    res.json({
+      property: { slug: property.slug, name: property.name, provider: property.provider, listingId: getListingId(property) },
+      available: result.available,
+      publicDescription: result.texts?.publicDescription ?? null,
+      guestInstructions: result.texts?.guestInstructions ?? null,
+      ...(result.note ? { note: result.note } : {}),
+    });
+  } catch (err) { handleError(res, err); }
+});
+
 router.get('/availability/:slug', async (req, res) => {
   try {
     const property = getHostexProperty(req.params.slug);
@@ -694,6 +720,61 @@ async function handleAvailabilityMutation(req: express.Request, res: express.Res
 
 router.post('/availability/:slug/block', (req, res) => handleAvailabilityMutation(req, res, false));
 router.post('/availability/:slug/unblock', (req, res) => handleAvailabilityMutation(req, res, true));
+
+// #1055 Verfügbarkeits-Sync als Agent-Route (Fall Enpal #1039: cancel + neu anlegen ohne Warten auf den Stunden-ETL)
+router.post('/availability/:slug/sync', async (req, res) => {
+  try {
+    const slug = req.params.slug;
+    const property = getPropertyBySlug(slug);
+    if (!property) {
+      throw new NotFoundError(`Unbekanntes property: ${slug} (erlaubt: ${getPropertySlugs().join('|')})`);
+    }
+    const force = req.query.force === 'true';
+    const listingId = getListingId(property);
+
+    let success: boolean;
+    let skipped = false;
+    let result: unknown;
+
+    if (property.provider === 'guesty') {
+      const r = await syncAvailability(listingId, force);
+      success = r.success;
+      skipped = r.skipped ?? false;
+      result = r;
+    } else if (property.provider === 'hostex') {
+      // Wie runHostexETL, aber ohne Nachrichten/Drafts. force wird ignoriert:
+      // die Hostex-Schritte haben keinen Cache-Skip.
+      const p = await syncHostexProperty(property);
+      if (!p.success || !p.hostexProperty) {
+        success = false;
+        result = { listingId, property: p, reservations: null, calendar: null };
+      } else {
+        // Reservierungen zuerst: der Kalender-Sync liest die lokalen Reservierungen
+        // für die Overlap-Erkennung — sonst blockiert eine gerade stornierte Buchung weiter.
+        const resv = await syncHostexReservations(property);
+        const cal = await syncHostexCalendar(property, p.hostexProperty);
+        success = resv.success && cal.success;
+        result = { listingId, reservations: resv, calendar: cal, daysCount: cal.daysCount };
+      }
+    } else {
+      throw new ValidationError(
+        `property ${slug} hat Provider "${property.provider}" — Sync-Route gilt nur für guesty|hostex`,
+      );
+    }
+
+    logger.info({ slug, provider: property.provider, force, success }, 'Agent availability sync');
+
+    res.status(success ? 200 : 502).json({
+      success,
+      message: success
+        ? (skipped ? 'Availability cache is fresh, no sync needed' : 'Availability synced successfully')
+        : 'Availability sync failed',
+      property: { slug: property.slug, name: property.name, provider: property.provider, listingId },
+      force,
+      result,
+    });
+  } catch (err) { handleError(res, err); }
+});
 
 // ---------------------------------------------------------------------------
 // #969 Vault-Vorschläge: Liste + Rücknahme freigegebener Vorschläge

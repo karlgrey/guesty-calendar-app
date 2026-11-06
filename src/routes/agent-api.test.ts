@@ -92,7 +92,7 @@ vi.mock('../repositories/draft-repository.js', () => ({
   }, {
     // #697: Buchungsanfrage-Draft (Fall Anika) — auto_decision='auto', live gesendet, mit Frist.
     id: 'd2', thread_id: 'guesty:b', provider: 'guesty', status: 'sent', created_at: '2026-09-21 20:35:10',
-    reason: 'Rückfrage automatisch gesendet — Entscheidung in Airbnb nach Gast-Antwort',
+    reason: 'Antwort automatisch gesendet — Annahme/Ablehnung in Airbnb bei Micha',
     guest_name: 'Anika', listing_id: 'L1', source: 'guesty',
     last_guest_message: 'Ich würde gern für ein Event buchen.',
     smarttasks_task_id: 701, request_kind: 'request_to_book', platform_deadline_at: '2026-09-22T20:35:04.000Z',
@@ -145,8 +145,31 @@ const getHostexClientMock = vi.fn(() => ({
 vi.mock('../services/hostex-client.js', () => ({
   getHostexClient: (...args: unknown[]) => getHostexClientMock(...args),
 }));
+const getListingTextsMock = vi.fn();
+vi.mock('../services/listing-texts-service.js', () => ({
+  getListingTextsForProperty: (...args: unknown[]) => getListingTextsMock(...args),
+}));
+
+// #1055: Verfügbarkeits-Sync-Route — Jobs gemockt, Logik in den Job-Tests.
+const syncAvailabilityMock = vi.fn();
+vi.mock('../jobs/sync-availability.js', () => ({
+  syncAvailability: (...a: unknown[]) => syncAvailabilityMock(...a),
+}));
+const syncHostexPropertyMock = vi.fn();
+vi.mock('../jobs/hostex/sync-properties.js', () => ({
+  syncHostexProperty: (...a: unknown[]) => syncHostexPropertyMock(...a),
+}));
+const syncHostexReservationsMock = vi.fn();
+vi.mock('../jobs/hostex/sync-reservations.js', () => ({
+  syncHostexReservations: (...a: unknown[]) => syncHostexReservationsMock(...a),
+}));
+const syncHostexCalendarMock = vi.fn();
+vi.mock('../jobs/hostex/sync-calendar.js', () => ({
+  syncHostexCalendar: (...a: unknown[]) => syncHostexCalendarMock(...a),
+}));
 
 import agentApiRoutes from './agent-api.js';
+import { getPropertyBySlug, getListingId } from '../config/properties.js';
 
 let server: Server; let base: string;
 beforeAll(async () => {
@@ -659,7 +682,7 @@ describe('agent-api', () => {
       const d2 = body.drafts.find((d: any) => d.draftId === 'd2');
       expect(d2).toMatchObject({
         threadId: 'guesty:b', guestName: 'Anika',
-        reason: 'Rückfrage automatisch gesendet — Entscheidung in Airbnb nach Gast-Antwort',
+        reason: 'Antwort automatisch gesendet — Annahme/Ablehnung in Airbnb bei Micha',
         smartTasksTaskId: 701, requestKind: 'request_to_book', category: 'buchungsanfrage',
         autoDecision: 'auto', autoMode: 'live', platformDeadlineAt: '2026-09-22T20:35:04.000Z',
       });
@@ -964,6 +987,153 @@ describe('agent-api', () => {
         const r = await fetch(`${base}/api/agent/reservations/res-1/times`, { method, headers: { 'Content-Type': 'application/json' } });
         expect(r.status).toBe(401);
       }
+    });
+  });
+  describe('GET /listings/:id (#1043)', () => {
+    it('Guesty-Objekt per Slug: Texte + Gästeanleitungen', async () => {
+      getListingTextsMock.mockResolvedValueOnce({
+        available: true, source: 'guesty',
+        texts: {
+          publicDescription: { summary: 'S', space: 'Sp', access: null, neighborhood: null, transit: null, notes: null, interactionWithGuests: null, houseRules: 'HR' },
+          guestInstructions: { checkInNotes: 'N', checkOutInstructions: null },
+        },
+      });
+      const r = await fetch(`${base}/api/agent/listings/farmhouse`, { headers: KEY });
+      expect(r.status).toBe(200);
+      expect(await r.json()).toMatchObject({
+        property: { slug: 'farmhouse', provider: 'guesty' }, available: true,
+        publicDescription: { summary: 'S', houseRules: 'HR' },
+        guestInstructions: { checkInNotes: 'N' },
+      });
+    });
+
+    it('Hostex-Objekt: null + Hinweis', async () => {
+      getListingTextsMock.mockResolvedValueOnce({ available: false, source: 'hostex', texts: null, note: 'keine Beschreibungsfelder' });
+      const r = await fetch(`${base}/api/agent/listings/bootshaus-alte-oder`, { headers: KEY });
+      expect(r.status).toBe(200);
+      expect(await r.json()).toMatchObject({ available: false, publicDescription: null, guestInstructions: null, note: 'keine Beschreibungsfelder' });
+    });
+
+    it('404 bei unbekanntem Listing, 401 ohne Key', async () => {
+      let r = await fetch(`${base}/api/agent/listings/gibts-nicht`, { headers: KEY });
+      expect(r.status).toBe(404);
+      r = await fetch(`${base}/api/agent/listings/farmhouse`);
+      expect(r.status).toBe(401);
+    });
+  });
+  describe('POST /availability/:slug/sync (#1055)', () => {
+    const farmhouseListingId = getListingId(getPropertyBySlug('farmhouse')!);
+    const post = (slug: string, qs = '', headers: Record<string, string> = KEY) =>
+      fetch(`${base}/api/agent/availability/${slug}/sync${qs}`, { method: 'POST', headers });
+
+    beforeEach(() => {
+      syncAvailabilityMock.mockReset();
+      syncHostexPropertyMock.mockReset();
+      syncHostexReservationsMock.mockReset();
+      syncHostexCalendarMock.mockReset();
+    });
+
+    it('401 ohne Key', async () => {
+      const r = await post('farmhouse', '', { 'Content-Type': 'application/json' });
+      expect(r.status).toBe(401);
+      expect(syncAvailabilityMock).not.toHaveBeenCalled();
+    });
+
+    it('404 bei unbekanntem Slug', async () => {
+      const r = await post('gibts-nicht');
+      expect(r.status).toBe(404);
+      expect((await r.json()).error).toContain('Unbekanntes property: gibts-nicht');
+    });
+
+    it('guesty: ruft syncAvailability(listingId, false), 200', async () => {
+      syncAvailabilityMock.mockResolvedValueOnce({ success: true, skipped: false, daysCount: 365 });
+      const r = await post('farmhouse');
+      expect(r.status).toBe(200);
+      expect(syncAvailabilityMock).toHaveBeenCalledWith(farmhouseListingId, false);
+      expect(await r.json()).toMatchObject({
+        success: true,
+        message: 'Availability synced successfully',
+        property: { slug: 'farmhouse', provider: 'guesty', listingId: farmhouseListingId },
+        force: false,
+        result: { success: true, skipped: false, daysCount: 365 },
+      });
+    });
+
+    it('guesty: ?force=true wird durchgereicht', async () => {
+      syncAvailabilityMock.mockResolvedValueOnce({ success: true, skipped: false });
+      const r = await post('farmhouse', '?force=true');
+      expect(r.status).toBe(200);
+      expect(syncAvailabilityMock).toHaveBeenCalledWith(farmhouseListingId, true);
+      expect((await r.json()).force).toBe(true);
+    });
+
+    it('guesty: skipped → Cache-frisch-Message', async () => {
+      syncAvailabilityMock.mockResolvedValueOnce({ success: true, skipped: true });
+      const r = await post('farmhouse');
+      expect(r.status).toBe(200);
+      expect((await r.json()).message).toBe('Availability cache is fresh, no sync needed');
+    });
+
+    it('guesty: success false → 502 mit gleichem Body', async () => {
+      syncAvailabilityMock.mockResolvedValueOnce({ success: false, skipped: false, error: 'boom' });
+      const r = await post('farmhouse');
+      expect(r.status).toBe(502);
+      expect(await r.json()).toMatchObject({
+        success: false, message: 'Availability sync failed', result: { error: 'boom' },
+      });
+    });
+
+    it('guesty: geworfener Fehler → handleError (500)', async () => {
+      syncAvailabilityMock.mockRejectedValueOnce(new Error('kaputt'));
+      const r = await post('farmhouse');
+      expect(r.status).toBe(500);
+    });
+
+    it('hostex: property → reservations → calendar in Reihenfolge, 200, daysCount', async () => {
+      const order: string[] = [];
+      const hostexProperty = { id: '12659677' };
+      syncHostexPropertyMock.mockImplementationOnce(async () => { order.push('property'); return { success: true, hostexProperty }; });
+      syncHostexReservationsMock.mockImplementationOnce(async () => { order.push('reservations'); return { success: true, inquiriesCount: 0, confirmedCount: 2 }; });
+      syncHostexCalendarMock.mockImplementationOnce(async () => { order.push('calendar'); return { success: true, daysCount: 365 }; });
+      const r = await post('bootshaus-alte-oder', '?force=true');
+      expect(r.status).toBe(200);
+      expect(order).toEqual(['property', 'reservations', 'calendar']);
+      expect(syncHostexCalendarMock).toHaveBeenCalledWith(expect.objectContaining({ slug: 'bootshaus-alte-oder' }), hostexProperty);
+      const body = await r.json();
+      expect(body).toMatchObject({
+        success: true,
+        message: 'Availability synced successfully',
+        property: { slug: 'bootshaus-alte-oder', provider: 'hostex' },
+        result: { daysCount: 365 },
+      });
+      expect(syncAvailabilityMock).not.toHaveBeenCalled();
+    });
+
+    it('hostex: Kalender-Sync fehlgeschlagen → 502', async () => {
+      syncHostexPropertyMock.mockResolvedValueOnce({ success: true, hostexProperty: { id: '1' } });
+      syncHostexReservationsMock.mockResolvedValueOnce({ success: true });
+      syncHostexCalendarMock.mockResolvedValueOnce({ success: false, daysCount: 0, error: 'x' });
+      const r = await post('bootshaus-alte-oder');
+      expect(r.status).toBe(502);
+      expect((await r.json()).message).toBe('Availability sync failed');
+    });
+
+    it('hostex: property-sync fehlgeschlagen → 502, reservations/calendar nicht aufgerufen', async () => {
+      syncHostexPropertyMock.mockResolvedValueOnce({ success: false, error: 'nope' });
+      const r = await post('bootshaus-alte-oder');
+      expect(r.status).toBe(502);
+      expect(syncHostexReservationsMock).not.toHaveBeenCalled();
+      expect(syncHostexCalendarMock).not.toHaveBeenCalled();
+      expect(await r.json()).toMatchObject({
+        success: false,
+        result: { property: { success: false }, reservations: null, calendar: null },
+      });
+    });
+
+    it('airbnb-mail: 400', async () => {
+      const r = await post('firenze-loft');
+      expect(r.status).toBe(400);
+      expect((await r.json()).error).toContain('guesty|hostex');
     });
   });
 });

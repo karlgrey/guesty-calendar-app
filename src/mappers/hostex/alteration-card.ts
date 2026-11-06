@@ -3,6 +3,7 @@
 // Karten — ohne DB-Import, damit message-mapper.ts (Regel: Mapper sind pure functions) nicht
 // transitiv das Reservation-Repository zieht. Fachliche Einordnung und Heuristik:
 // src/services/alteration-request.ts (re-exportiert diese Typen/Funktion).
+import type { HostexMessageRaw, HostexMessageAttachment } from '../../services/hostex-client.js';
 
 export interface PendingAlteration {
   /** created_at der Antrags-Karte (ISO, wie von Hostex geliefert). */
@@ -12,12 +13,11 @@ export interface PendingAlteration {
 }
 
 /** Minimale Form einer Hostex-Conversation-Nachricht inkl. System-Karten-Attachment. */
-export interface HostexCardLike {
-  display_type: string;
+export type HostexCardLike = Pick<HostexMessageRaw, 'display_type'> & {
   content?: string | null;
   created_at?: string | null;
-  attachment?: { subject?: string | null; describe?: string | null } | null;
-}
+  attachment?: HostexMessageAttachment | null;
+};
 
 function ms(iso: string | null | undefined): number {
   if (!iso) return NaN;
