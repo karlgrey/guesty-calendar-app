@@ -63,9 +63,24 @@ export function discardDraft(id: string): void {
   db.prepare(`UPDATE message_drafts SET status = 'discarded' WHERE id = ?`).run(id);
 }
 
+/**
+ * Überschreibt body OHNE original_body zu setzen — nur für maschinelle Fassungen (Sprach-
+ * Neuversuch der Generierung, generate-drafts.ts). Michas Bearbeitungen laufen über
+ * saveEditedDraftBody.
+ */
 export function updateDraftBody(id: string, body: string): void {
   const db = getDatabase();
   db.prepare(`UPDATE message_drafts SET body = ? WHERE id = ?`).run(body, id);
+}
+
+/**
+ * #1062: Michas Bearbeitung vor dem Senden. Sichert beim ERSTEN Edit den bisherigen body als
+ * original_body (Migration 039); spätere Edits lassen original_body stehen (COALESCE).
+ */
+export function saveEditedDraftBody(id: string, body: string): void {
+  getDatabase()
+    .prepare(`UPDATE message_drafts SET original_body = COALESCE(original_body, body), body = ? WHERE id = ?`)
+    .run(body, id);
 }
 
 // --- Stale-Draft-Regeneration (Migration 032, #699) ---

@@ -20,15 +20,22 @@ describe('autoDecisionOutcome', () => {
 });
 
 describe('autoDecisionTexts', () => {
-  it('changed: Original überschrieben → draftText null, draftTextLost', () => {
-    expect(autoDecisionTexts('changed', 'Gesendet')).toEqual({ draftText: null, sentText: 'Gesendet', draftTextLost: true });
+  it('changed ohne original_body (vor Migration 039): draftText null, draftTextLost, kein diff', () => {
+    expect(autoDecisionTexts('changed', 'Gesendet')).toEqual({ draftText: null, sentText: 'Gesendet', draftTextLost: true, diff: null });
+    expect(autoDecisionTexts('changed', 'Gesendet', null)).toEqual({ draftText: null, sentText: 'Gesendet', draftTextLost: true, diff: null });
   });
-  it('unchanged / auto_sent: beide Texte = body', () => {
+  it('changed mit original_body (#1062): draftText = Original, sentText = body, Zeilen-Diff', () => {
+    expect(autoDecisionTexts('changed', 'Hallo\nneu', 'Hallo\nalt')).toEqual({
+      draftText: 'Hallo\nalt', sentText: 'Hallo\nneu', draftTextLost: false,
+      diff: '@@ -1,2 +1,2 @@\n Hallo\n-alt\n+neu',
+    });
+  });
+  it('unchanged / auto_sent: beide Texte = body, kein diff', () => {
     for (const o of ['unchanged', 'auto_sent'] as const)
-      expect(autoDecisionTexts(o, 'T')).toEqual({ draftText: 'T', sentText: 'T', draftTextLost: false });
+      expect(autoDecisionTexts(o, 'T', 'X')).toEqual({ draftText: 'T', sentText: 'T', draftTextLost: false, diff: null });
   });
   it('discarded / pending / sending / error: nur draftText', () => {
     for (const o of ['discarded', 'pending', 'sending', 'error'] as const)
-      expect(autoDecisionTexts(o, 'T')).toEqual({ draftText: 'T', sentText: null, draftTextLost: false });
+      expect(autoDecisionTexts(o, 'T')).toEqual({ draftText: 'T', sentText: null, draftTextLost: false, diff: null });
   });
 });

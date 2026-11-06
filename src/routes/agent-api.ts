@@ -548,9 +548,10 @@ router.get('/auto-send/stats', (req, res) => {
 });
 
 // #1044: Einzelfälle des Auto-Send-Gates (Schattenphase auswerten) — pro Entscheidung Outcome,
-// Texte und Feedback. Bei 'changed' ist der ursprüngliche Entwurfstext NICHT mehr verfügbar:
-// POST /admin/messages/drafts/:id/send überschreibt den body mit dem gesendeten Text
-// (draftText=null, draftTextLost=true; previous_body ist hier unbrauchbar).
+// Texte und Feedback. Bei 'changed' liefert original_body (#1062, Migration 039) den Entwurfstext
+// vor Michas Edit: draftText = original_body, sentText = body, diff = kompakter Zeilen-Diff.
+// Ohne original_body (vor Migration 039 gesendet) draftText=null, draftTextLost=true
+// (previous_body ist hier unbrauchbar — Vorversion einer automatischen Neugenerierung).
 router.get('/auto-send/decisions', (req, res) => {
   try {
     // Ungültige Zahlen → 400 (nicht still auf Default); days gekappt, sonst wirft
@@ -586,7 +587,7 @@ router.get('/auto-send/decisions', (req, res) => {
           createdAt: sqliteToIso(r.created_at),
           judgedAt: r.auto_judged_at ? sqliteToIso(r.auto_judged_at) : null,
           sentAt: r.sent_at ? sqliteToIso(r.sent_at) : null,
-          ...autoDecisionTexts(outcome, r.body),
+          ...autoDecisionTexts(outcome, r.body, r.original_body),
         };
       }),
     });

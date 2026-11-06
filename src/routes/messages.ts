@@ -7,7 +7,7 @@ import {
 } from '../repositories/message-repository.js';
 import {
   createDraft, getDraftById, getActiveDraftByThread, discardDraft,
-  claimDraftForSending, updateDraftBody, setSentBodyChanged,
+  claimDraftForSending, saveEditedDraftBody, setSentBodyChanged,
   getAutoSendStats, countAutoSentSince, listAutoDecisions, getLastSentDraftByThread,
   threadHasFailedSend, releaseAutoSendForThread,
 } from '../repositories/draft-repository.js';
@@ -594,11 +594,17 @@ router.post('/drafts/:draftId/send', express.urlencoded({ extended: true }), asy
       return;
     }
 
-    const edited = typeof req.body?.body === 'string' ? req.body.body.trim() : '';
-    if (edited && edited !== draft.body) updateDraftBody(draft.id, edited);
+    // Browser-Textareas liefern Zeilenumbrüche als CRLF, der LLM-Entwurf steht mit LF in der DB —
+    // ohne Normalisierung zählte jeder mehrzeilige Entwurf als „geändert" (#1062-Review: 54/54
+    // Schattenfälle changed, 0 unchanged, alle mit \r). Vergleich und Versand daher auf LF.
+    const normalize = (s: string) => s.replace(/\r\n?/g, '\n').trim();
+    const edited = typeof req.body?.body === 'string' ? normalize(req.body.body) : '';
+    const changed = edited !== '' && edited !== normalize(draft.body);
+    // #1062: saveEditedDraftBody sichert beim ersten Edit den Entwurfstext als original_body.
+    if (changed) saveEditedDraftBody(draft.id, edited);
     const bodyToSend = edited || draft.body;
 
-    setSentBodyChanged(draft.id, edited !== '' && edited !== draft.body);
+    setSentBodyChanged(draft.id, changed);
     const result = await sendClaimedDraft(draft.id, thread, bodyToSend, 'micha');
     if (result.ok) {
       res.redirect(`/admin/messages/${encodeURIComponent(thread.id)}`);
