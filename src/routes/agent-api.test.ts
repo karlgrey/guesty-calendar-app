@@ -83,6 +83,7 @@ vi.mock('../repositories/message-repository.js', () => ({
     { id: 'm2', thread_id: 'hostex:a', direction: 'outbound', sent_at: '2026-08-05T10:00:00.000Z', from_name: 'host', body: 'Antwort', source: 'hostex' },
   ]),
 }));
+const listAutoDecisionCasesMock = vi.fn();
 vi.mock('../repositories/draft-repository.js', () => ({
   getAwaitingDrafts: vi.fn().mockReturnValue([{
     id: 'd1', thread_id: 'hostex:a', provider: 'hostex', status: 'pending', created_at: '2026-09-19 12:00:00',
@@ -98,6 +99,8 @@ vi.mock('../repositories/draft-repository.js', () => ({
     auto_category: 'buchungsanfrage', auto_decision: 'auto', auto_mode: 'live',
   }]),
   getAutoSendStats: vi.fn().mockReturnValue({ autoSent: 2, waited: 3, shadowWouldAuto: 10, shadowUnchanged: 9, shadowChanged: 1, shadowDiscarded: 0 }),
+  // #1044: Einzelfälle des Gates
+  listAutoDecisionCases: (...args: unknown[]) => listAutoDecisionCasesMock(...args),
 }));
 const runConsistencyCheckMock = vi.fn();
 const listOpenReservationsMock = vi.fn();
@@ -704,6 +707,69 @@ describe('agent-api', () => {
     it('401 ohne Key', async () => {
       const r = await fetch(`${base}/api/agent/auto-send/stats`);
       expect(r.status).toBe(401);
+    });
+  });
+
+  describe('GET /auto-send/decisions (#1044)', () => {
+    const base_ = {
+      thread_id: 'hostex:a', provider: 'hostex', guest_name: 'Anna', listing_id: 'L1', source: 'hostex',
+      auto_category: 'dank_smalltalk', auto_decision: 'auto', auto_mode: 'shadow', auto_reason: 'ok',
+      auto_judge_reasoning: null, auto_flags: '["mech:url"]', auto_judged_at: '2026-10-05 10:00:05',
+      created_at: '2026-10-05 10:00:00', sent_at: null, sent_by: null, sent_body_changed: null,
+      status: 'pending', body: 'Entwurf', feedback_json: '[]',
+    };
+    beforeEach(() => {
+      listAutoDecisionCasesMock.mockReset();
+      listAutoDecisionCasesMock.mockReturnValue([
+        { ...base_, id: 'c1', status: 'sent', sent_by: 'micha', sent_body_changed: 1, body: 'Gesendet geändert',
+          sent_at: '2026-10-05 11:00:00',
+          feedback_json: '[{"category":"ton","note":"zu förmlich","createdAt":"2026-10-05 11:01:00"}]' },
+        { ...base_, id: 'c2', status: 'sent', sent_by: 'micha', sent_body_changed: 0, body: 'Unverändert', sent_at: '2026-10-05 11:00:00' },
+        { ...base_, id: 'c3', status: 'discarded', body: 'Verworfen', auto_flags: null, auto_judged_at: null },
+      ]);
+    });
+
+    it('liefert Einzelfälle mit Outcome und Texten', async () => {
+      const r = await fetch(`${base}/api/agent/auto-send/decisions?days=7`, { headers: KEY });
+      expect(r.status).toBe(200);
+      const body = await r.json();
+      expect(body).toMatchObject({ days: 7, decision: 'all', count: 3 });
+      const [c1, c2, c3] = body.decisions;
+      expect(c1).toMatchObject({
+        draftId: 'c1', threadId: 'hostex:a', provider: 'hostex', guestName: 'Anna', category: 'dank_smalltalk',
+        decision: 'auto', mode: 'shadow', reason: 'ok', judgeReasoning: null, flags: ['mech:url'],
+        outcome: 'changed', draftText: null, sentText: 'Gesendet geändert', draftTextLost: true,
+        createdAt: '2026-10-05T10:00:00.000Z', judgedAt: '2026-10-05T10:00:05.000Z', sentAt: '2026-10-05T11:00:00.000Z',
+      });
+      expect(c1.feedback).toEqual([{ category: 'ton', note: 'zu förmlich', createdAt: '2026-10-05T11:01:00.000Z' }]);
+      expect(c2).toMatchObject({ outcome: 'unchanged', draftText: 'Unverändert', sentText: 'Unverändert', draftTextLost: false, feedback: [] });
+      expect(c3).toMatchObject({ outcome: 'discarded', draftText: 'Verworfen', sentText: null, flags: [], judgedAt: null, sentAt: null });
+    });
+
+    it('reicht decision und limit ans Repository durch', async () => {
+      await fetch(`${base}/api/agent/auto-send/decisions?decision=auto&limit=5`, { headers: KEY });
+      expect(listAutoDecisionCasesMock).toHaveBeenCalledWith(expect.any(String), 'auto', 5);
+      await fetch(`${base}/api/agent/auto-send/decisions`, { headers: KEY });
+      expect(listAutoDecisionCasesMock).toHaveBeenLastCalledWith(expect.any(String), null, 200);
+    });
+
+    it('400 bei unbekanntem decision', async () => {
+      expect((await fetch(`${base}/api/agent/auto-send/decisions?decision=foo`, { headers: KEY })).status).toBe(400);
+    });
+
+    it('400 bei ungültigem days/limit, Kappung bei days=3650 und limit=500', async () => {
+      for (const q of ['days=abc', 'days=0', 'days=-5', 'limit=abc', 'limit=0']) {
+        expect((await fetch(`${base}/api/agent/auto-send/decisions?${q}`, { headers: KEY })).status, q).toBe(400);
+      }
+      // days=1e9 würde ohne Kappung Date#toISOString zum RangeError (500) bringen
+      const r = await fetch(`${base}/api/agent/auto-send/decisions?days=1000000000&limit=9999`, { headers: KEY });
+      expect(r.status).toBe(200);
+      expect((await r.json()).days).toBe(3650);
+      expect(listAutoDecisionCasesMock).toHaveBeenLastCalledWith(expect.any(String), null, 500);
+    });
+
+    it('401 ohne Key', async () => {
+      expect((await fetch(`${base}/api/agent/auto-send/decisions`)).status).toBe(401);
     });
   });
 

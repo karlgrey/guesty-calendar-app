@@ -352,6 +352,22 @@ export function listAutoDecisions(limit: number): Array<MessageDraft & { guest_n
   ).all(limit) as Array<MessageDraft & { guest_name: string | null }>;
 }
 
+// #1044: Einzelfälle des Auto-Send-Gates inkl. Thread-Feldern und Feedback (als JSON-Array-String).
+export interface AutoDecisionCaseRow extends MessageDraft {
+  guest_name: string | null; listing_id: string; source: string; feedback_json: string;
+}
+export function listAutoDecisionCases(sinceIso: string, decision: 'auto' | 'wait' | null, limit: number): AutoDecisionCaseRow[] {
+  return getDatabase().prepare(
+    `SELECT d.*, t.guest_name, t.listing_id, t.source,
+       (SELECT json_group_array(json_object('category', f.category, 'note', f.note, 'createdAt', f.created_at))
+          FROM draft_feedback f WHERE f.draft_id = d.id) AS feedback_json
+     FROM message_drafts d JOIN message_threads t ON t.id = d.thread_id
+     WHERE d.auto_decision IS NOT NULL AND datetime(d.created_at) >= datetime(@since)
+       AND (@decision IS NULL OR d.auto_decision = @decision)
+     ORDER BY d.created_at DESC LIMIT @limit`,
+  ).all({ since: sinceIso, decision, limit }) as AutoDecisionCaseRow[];
+}
+
 /** Zuletzt gesendeter Draft eines Threads — für das grüne Auto-Send-Badge, wenn es gerade keinen aktiven (pending) Draft gibt. */
 export function getLastSentDraftByThread(threadId: string): MessageDraft | null {
   const db = getDatabase();
