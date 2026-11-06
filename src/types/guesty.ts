@@ -60,7 +60,20 @@ export interface GuestyListing {
   publicDescription?: {
     summary?: string;
     space?: string;
+    access?: string;
+    neighborhood?: string;
+    transit?: string;
+    notes?: string;
+    interactionWithGuests?: string;
+    houseRules?: string;
   };
+
+  // Gästeanleitungen (#1043): checkInInstructions ist ein Objekt, checkOutInstructions ein String
+  checkInInstructions?: {
+    primaryCheckIn?: string;
+    notes?: string;
+  };
+  checkOutInstructions?: string;
 
   amenities?: string[];
   pictures?: Array<{

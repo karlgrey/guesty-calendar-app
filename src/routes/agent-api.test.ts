@@ -142,6 +142,10 @@ const getHostexClientMock = vi.fn(() => ({
 vi.mock('../services/hostex-client.js', () => ({
   getHostexClient: (...args: unknown[]) => getHostexClientMock(...args),
 }));
+const getListingTextsMock = vi.fn();
+vi.mock('../services/listing-texts-service.js', () => ({
+  getListingTextsForProperty: (...args: unknown[]) => getListingTextsMock(...args),
+}));
 
 import agentApiRoutes from './agent-api.js';
 
@@ -909,6 +913,38 @@ describe('agent-api', () => {
         const r = await fetch(`${base}/api/agent/reservations/res-1/times`, { method, headers: { 'Content-Type': 'application/json' } });
         expect(r.status).toBe(401);
       }
+    });
+  });
+  describe('GET /listings/:id (#1043)', () => {
+    it('Guesty-Objekt per Slug: Texte + Gästeanleitungen', async () => {
+      getListingTextsMock.mockResolvedValueOnce({
+        available: true, source: 'guesty',
+        texts: {
+          publicDescription: { summary: 'S', space: 'Sp', access: null, neighborhood: null, transit: null, notes: null, interactionWithGuests: null, houseRules: 'HR' },
+          guestInstructions: { checkInNotes: 'N', checkOutInstructions: null },
+        },
+      });
+      const r = await fetch(`${base}/api/agent/listings/farmhouse`, { headers: KEY });
+      expect(r.status).toBe(200);
+      expect(await r.json()).toMatchObject({
+        property: { slug: 'farmhouse', provider: 'guesty' }, available: true,
+        publicDescription: { summary: 'S', houseRules: 'HR' },
+        guestInstructions: { checkInNotes: 'N' },
+      });
+    });
+
+    it('Hostex-Objekt: null + Hinweis', async () => {
+      getListingTextsMock.mockResolvedValueOnce({ available: false, source: 'hostex', texts: null, note: 'keine Beschreibungsfelder' });
+      const r = await fetch(`${base}/api/agent/listings/bootshaus-alte-oder`, { headers: KEY });
+      expect(r.status).toBe(200);
+      expect(await r.json()).toMatchObject({ available: false, publicDescription: null, guestInstructions: null, note: 'keine Beschreibungsfelder' });
+    });
+
+    it('404 bei unbekanntem Listing, 401 ohne Key', async () => {
+      let r = await fetch(`${base}/api/agent/listings/gibts-nicht`, { headers: KEY });
+      expect(r.status).toBe(404);
+      r = await fetch(`${base}/api/agent/listings/farmhouse`);
+      expect(r.status).toBe(401);
     });
   });
 });
