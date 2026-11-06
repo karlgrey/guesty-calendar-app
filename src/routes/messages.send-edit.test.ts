@@ -133,4 +133,22 @@ describe('POST /admin/messages/drafts/:draftId/send — original_body (#1062)', 
     expect(updateDraftBody).not.toHaveBeenCalled();
     expect(setSentBodyChanged).toHaveBeenCalledWith('d1', false);
   });
+
+  // Browser-Textareas senden CRLF; der LLM-Entwurf liegt mit LF in der DB. Ohne Normalisierung
+  // wäre jeder mehrzeilige Entwurf „geändert" (vor dem Fix: 54/54 Schattenfälle changed, alle mit \r).
+  it('unveränderter mehrzeiliger Text mit CRLF aus der Textarea → kein Edit, Versand mit LF', async () => {
+    getDraftById.mockReturnValue(draft({ body: 'Hallo Anna,\nCheck-in ab 15 Uhr.\nMicha', generated_by: 'llm' }));
+    await send('Hallo Anna,\r\nCheck-in ab 15 Uhr.\r\nMicha');
+    expect(saveEditedDraftBody).not.toHaveBeenCalled();
+    expect(setSentBodyChanged).toHaveBeenCalledWith('d1', false);
+    expect(sendClaimedDraft).toHaveBeenCalledWith('d1', expect.anything(), 'Hallo Anna,\nCheck-in ab 15 Uhr.\nMicha', 'micha');
+  });
+
+  it('geänderter Text mit CRLF → original_body gesichert, gespeichert und gesendet wird LF', async () => {
+    getDraftById.mockReturnValue(draft({ body: 'Hallo Anna,\nCheck-in ab 15 Uhr.\nMicha', generated_by: 'llm' }));
+    await send('Hallo Anna,\r\nCheck-in ab 16 Uhr.\r\nMicha');
+    expect(saveEditedDraftBody).toHaveBeenCalledWith('d1', 'Hallo Anna,\nCheck-in ab 16 Uhr.\nMicha');
+    expect(setSentBodyChanged).toHaveBeenCalledWith('d1', true);
+    expect(sendClaimedDraft).toHaveBeenCalledWith('d1', expect.anything(), 'Hallo Anna,\nCheck-in ab 16 Uhr.\nMicha', 'micha');
+  });
 });
