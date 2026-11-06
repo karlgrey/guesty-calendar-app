@@ -23,7 +23,8 @@ import { updateReservation, toReservationView } from '../services/reservation-up
 import { setStayTimes, deleteStayTimes, getStayTimes, type StayTimesResult } from '../services/stay-times-service.js';
 import { updateGuestCompanyByGuestId } from '../repositories/reservation-repository.js';
 import { getThreadsUpdatedSince, getThreadById, getMessagesByThread } from '../repositories/message-repository.js';
-import { getAwaitingDrafts, getAutoSendStats } from '../repositories/draft-repository.js';
+import { getAwaitingDrafts, getAutoSendStats, listAutoDecisionCases } from '../repositories/draft-repository.js';
+import { autoDecisionOutcome, autoDecisionTexts } from '../services/auto-send/decision-case.js';
 import { propertyForBadge } from '../utils/thread-property.js';
 import { runConsistencyCheck, listOpenReservations } from '../jobs/consistency-check.js';
 import { getPropertyBySlug, getPropertySlugs, getListingId } from '../config/properties.js';
@@ -537,6 +538,48 @@ router.get('/auto-send/stats', (req, res) => {
       shadowChanged: n(s.shadowChanged),
       shadowDiscarded: n(s.shadowDiscarded),
       shadowUnchangedRate: denom ? Math.round((100 * n(s.shadowUnchanged)) / denom) : null,
+    });
+  } catch (err) { handleError(res, err); }
+});
+
+// #1044: Einzelfälle des Auto-Send-Gates (Schattenphase auswerten) — pro Entscheidung Outcome,
+// Texte und Feedback. Bei 'changed' ist der ursprüngliche Entwurfstext NICHT mehr verfügbar:
+// POST /admin/messages/drafts/:id/send überschreibt den body mit dem gesendeten Text
+// (draftText=null, draftTextLost=true; previous_body ist hier unbrauchbar).
+router.get('/auto-send/decisions', (req, res) => {
+  try {
+    const daysRaw = typeof req.query.days === 'string' ? Number(req.query.days) : NaN;
+    const days = Number.isFinite(daysRaw) && daysRaw > 0 ? daysRaw : 30;
+    const decision = typeof req.query.decision === 'string' ? req.query.decision : 'all';
+    if (decision !== 'auto' && decision !== 'wait' && decision !== 'all') {
+      throw new ValidationError(`Unbekannte decision: ${decision} (erlaubt: auto|wait|all)`);
+    }
+    const limitRaw = typeof req.query.limit === 'string' ? Number(req.query.limit) : NaN;
+    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(Math.floor(limitRaw), 500) : 200;
+    const since = new Date(Date.now() - days * 86400000).toISOString();
+    const parseArray = (json: string | null): unknown[] => {
+      try { const v = JSON.parse(json ?? '[]'); return Array.isArray(v) ? v : []; } catch { return []; }
+    };
+    const rows = listAutoDecisionCases(since, decision === 'all' ? null : decision, limit);
+    res.json({
+      days, decision, count: rows.length,
+      decisions: rows.map((r) => {
+        const outcome = autoDecisionOutcome(r);
+        return {
+          draftId: r.id, threadId: r.thread_id, provider: r.provider,
+          property: propertySummary(propertyForBadge({ source: r.source, listing_id: r.listing_id })),
+          guestName: r.guest_name, category: r.auto_category, decision: r.auto_decision, mode: r.auto_mode,
+          reason: r.auto_reason, judgeReasoning: r.auto_judge_reasoning ?? null,
+          flags: parseArray(r.auto_flags),
+          outcome,
+          feedback: (parseArray(r.feedback_json) as Array<{ category: string; note: string; createdAt: string }>)
+            .map((f) => ({ ...f, createdAt: sqliteToIso(f.createdAt) })),
+          createdAt: sqliteToIso(r.created_at),
+          judgedAt: r.auto_judged_at ? sqliteToIso(r.auto_judged_at) : null,
+          sentAt: r.sent_at ? sqliteToIso(r.sent_at) : null,
+          ...autoDecisionTexts(outcome, r.body),
+        };
+      }),
     });
   } catch (err) { handleError(res, err); }
 });
