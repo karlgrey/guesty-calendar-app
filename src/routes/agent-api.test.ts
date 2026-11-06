@@ -757,6 +757,17 @@ describe('agent-api', () => {
       expect((await fetch(`${base}/api/agent/auto-send/decisions?decision=foo`, { headers: KEY })).status).toBe(400);
     });
 
+    it('400 bei ungültigem days/limit, Kappung bei days=3650 und limit=500', async () => {
+      for (const q of ['days=abc', 'days=0', 'days=-5', 'limit=abc', 'limit=0']) {
+        expect((await fetch(`${base}/api/agent/auto-send/decisions?${q}`, { headers: KEY })).status, q).toBe(400);
+      }
+      // days=1e9 würde ohne Kappung Date#toISOString zum RangeError (500) bringen
+      const r = await fetch(`${base}/api/agent/auto-send/decisions?days=1000000000&limit=9999`, { headers: KEY });
+      expect(r.status).toBe(200);
+      expect((await r.json()).days).toBe(3650);
+      expect(listAutoDecisionCasesMock).toHaveBeenLastCalledWith(expect.any(String), null, 500);
+    });
+
     it('401 ohne Key', async () => {
       expect((await fetch(`${base}/api/agent/auto-send/decisions`)).status).toBe(401);
     });

@@ -553,14 +553,18 @@ router.get('/auto-send/stats', (req, res) => {
 // (draftText=null, draftTextLost=true; previous_body ist hier unbrauchbar).
 router.get('/auto-send/decisions', (req, res) => {
   try {
-    const daysRaw = typeof req.query.days === 'string' ? Number(req.query.days) : NaN;
-    const days = Number.isFinite(daysRaw) && daysRaw > 0 ? daysRaw : 30;
+    // Ungültige Zahlen → 400 (nicht still auf Default); days gekappt, sonst wirft
+    // Date#toISOString bei absurden Werten RangeError → 500.
+    const daysRaw = typeof req.query.days === 'string' ? Number(req.query.days) : 30;
+    if (!Number.isFinite(daysRaw) || daysRaw <= 0) throw new ValidationError(`Ungültiger days-Wert: ${req.query.days}`);
+    const days = Math.min(daysRaw, 3650);
     const decision = typeof req.query.decision === 'string' ? req.query.decision : 'all';
     if (decision !== 'auto' && decision !== 'wait' && decision !== 'all') {
       throw new ValidationError(`Unbekannte decision: ${decision} (erlaubt: auto|wait|all)`);
     }
-    const limitRaw = typeof req.query.limit === 'string' ? Number(req.query.limit) : NaN;
-    const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(Math.floor(limitRaw), 500) : 200;
+    const limitRaw = typeof req.query.limit === 'string' ? Number(req.query.limit) : 200;
+    if (!Number.isFinite(limitRaw) || limitRaw <= 0) throw new ValidationError(`Ungültiger limit-Wert: ${req.query.limit}`);
+    const limit = Math.min(Math.floor(limitRaw), 500);
     const since = new Date(Date.now() - days * 86400000).toISOString();
     const parseArray = (json: string | null): unknown[] => {
       try { const v = JSON.parse(json ?? '[]'); return Array.isArray(v) ? v : []; } catch { return []; }
