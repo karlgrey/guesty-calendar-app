@@ -73,6 +73,11 @@ describe('buildBookingTaskDescription', () => {
   it('kein Schatten-Hinweis im Live-Modus', () => {
     expect(buildBookingTaskDescription({ ...baseInput, mode: 'live' })).not.toContain('Schattenmodus');
   });
+  it('Texte seit #1004/#1008: „Automatische Antwort" statt „Rückfrage" (#1008)', () => {
+    const d = buildBookingTaskDescription({ ...baseInput, mode: 'live' });
+    expect(d).toContain('**Automatische Antwort:**');
+    expect(d).not.toContain('Automatische Rückfrage');
+  });
   it('Inquiry-Label bei requestKind=inquiry', () => {
     expect(buildBookingTaskDescription({ ...baseInput, requestKind: 'inquiry' })).toContain('Inquiry');
   });

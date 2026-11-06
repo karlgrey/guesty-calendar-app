@@ -83,10 +83,10 @@ export function buildBookingTaskDescription(i: BookingRequestTaskInput): string 
   const date = new Date().toISOString().slice(0, 10);
   const lines = [
     `Airbnb-Buchungsanfrage (${REQUEST_KIND_LABEL[i.requestKind]}, ${i.property.name}) — ` +
-      'die Annahme/Ablehnung entscheidest DU in Airbnb, nach der Gast-Antwort auf die automatische Rückfrage.',
+      'die Annahme/Ablehnung entscheidest DU in Airbnb — die Antwort an den Gast geht automatisch raus (seit #1004 meist ohne Rückfrage).',
   ];
   if (i.mode === 'shadow') {
-    lines.push('**Schattenmodus** — die Rückfrage wird (noch) nicht automatisch gesendet, nur beobachtet.');
+    lines.push('**Schattenmodus** — die Antwort wird (noch) nicht automatisch gesendet, nur beobachtet.');
   }
   lines.push(
     '',
@@ -96,7 +96,7 @@ export function buildBookingTaskDescription(i: BookingRequestTaskInput): string 
     '**Gastnachricht:**',
     quote(i.guestMessage),
     '',
-    '**Automatische Rückfrage:**',
+    '**Automatische Antwort:**',
     quote(i.draftBody),
     '',
     `**Thread:** ${adminUrl(i.threadId)}`,

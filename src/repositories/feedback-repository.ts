@@ -41,9 +41,10 @@ export function markSuggestionApplied(id: string, commit: string | null): void {
   ).run(commit, id);
 }
 
-export function discardSuggestion(id: string): void {
+/** Verwirft nur offene Vorschläge; true = verworfen, false = nicht pending/unbekannt (#1008). */
+export function discardSuggestion(id: string): boolean {
   const db = getDatabase();
-  db.prepare(`UPDATE vault_suggestions SET status = 'discarded' WHERE id = ?`).run(id);
+  return db.prepare(`UPDATE vault_suggestions SET status = 'discarded' WHERE id = ? AND status = 'pending'`).run(id).changes > 0;
 }
 
 /**

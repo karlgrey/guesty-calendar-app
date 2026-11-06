@@ -3,10 +3,12 @@ import express from 'express';
 import type { Server } from 'http';
 
 const getByStatus = vi.fn();
+const getById = vi.fn();
+const discardMock = vi.fn();
 vi.mock('../repositories/feedback-repository.js', () => ({
   getSuggestionsByStatus: (...a: unknown[]) => getByStatus(...a),
-  getSuggestionById: vi.fn(),
-  discardSuggestion: vi.fn(),
+  getSuggestionById: (...a: unknown[]) => getById(...a),
+  discardSuggestion: (...a: unknown[]) => discardMock(...a),
 }));
 const approveMock = vi.fn();
 const revokeMock = vi.fn();
@@ -75,5 +77,34 @@ describe('POST /admin/suggestions/:id/revoke', () => {
     revokeMock.mockReturnValueOnce({ ok: false, status: 409, error: 'nope' });
     const r = await fetch(`${base}/admin/suggestions/s1/revoke`, { method: 'POST', redirect: 'manual' });
     expect(r.status).toBe(409);
+  });
+});
+
+describe('POST /admin/suggestions/:id/discard', () => {
+  const post = () => fetch(`${base}/admin/suggestions/s1/discard`, { method: 'POST', redirect: 'manual' });
+
+  it('pending: verwirft und leitet auf die Liste um', async () => {
+    getById.mockReturnValue(s({ status: 'pending' }));
+    const r = await post();
+    expect(r.status).toBe(302);
+    expect(r.headers.get('location')).toBe('/admin/suggestions');
+    expect(discardMock).toHaveBeenCalledWith('s1');
+  });
+
+  it.each(['approved', 'revoked', 'discarded'])('%s: 409, nicht verworfen, Hinweis auf Revoke', async (status) => {
+    getById.mockReturnValue(s({ status }));
+    const r = await post();
+    expect(r.status).toBe(409);
+    const body = await r.text();
+    expect(body).toContain('Nur offene Vorschläge');
+    expect(body).toContain(`Status: ${status}`);
+    expect(body).toContain('/admin/suggestions/s1/revoke');
+    expect(discardMock).not.toHaveBeenCalled();
+  });
+
+  it('unbekannt: 404', async () => {
+    getById.mockReturnValue(undefined);
+    expect((await post()).status).toBe(404);
+    expect(discardMock).not.toHaveBeenCalled();
   });
 });

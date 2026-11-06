@@ -245,7 +245,7 @@ describe('runAutoSendGate: Buchungsanfrage (#697, Fall Anika)', () => {
     const r = await runAutoSendGate(bookingInput, d);
     expect(r.decision.decision).toBe('auto');
     expect(r.decision.category).toBe('buchungsanfrage');
-    expect(r.decision.reason).toBe('Buchungsanfrage: Rückfrage automatisch, Airbnb-Entscheidung bei Micha → Task #701, Frist Di 22:35');
+    expect(r.decision.reason).toBe('Buchungsanfrage: Antwort automatisch, Airbnb-Entscheidung bei Micha → Task #701, Frist Di 22:35');
     expect(persistBookingRequestMock).toHaveBeenCalledWith('d1', 'request_to_book', '2026-09-22T20:35:04.000Z');
     expect(resolveBookingRequestTaskMock).toHaveBeenCalledTimes(1);
     expect(resolveBookingRequestTaskMock.mock.calls[0][0]).toMatchObject({
