@@ -726,6 +726,9 @@ describe('agent-api', () => {
           feedback_json: '[{"category":"ton","note":"zu förmlich","createdAt":"2026-10-05 11:01:00"}]' },
         { ...base_, id: 'c2', status: 'sent', sent_by: 'micha', sent_body_changed: 0, body: 'Unverändert', sent_at: '2026-10-05 11:00:00' },
         { ...base_, id: 'c3', status: 'discarded', body: 'Verworfen', auto_flags: null, auto_judged_at: null },
+        // #1062: geänderter Fall MIT gesichertem Ursprungstext (Migration 039)
+        { ...base_, id: 'c4', status: 'sent', sent_by: 'micha', sent_body_changed: 1, sent_at: '2026-10-05 11:00:00',
+          original_body: 'Hallo Anna,\nCheck-in ab 15 Uhr.', body: 'Hallo Anna,\nCheck-in ab 16 Uhr.' },
       ]);
     });
 
@@ -733,8 +736,8 @@ describe('agent-api', () => {
       const r = await fetch(`${base}/api/agent/auto-send/decisions?days=7`, { headers: KEY });
       expect(r.status).toBe(200);
       const body = await r.json();
-      expect(body).toMatchObject({ days: 7, decision: 'all', count: 3 });
-      const [c1, c2, c3] = body.decisions;
+      expect(body).toMatchObject({ days: 7, decision: 'all', count: 4 });
+      const [c1, c2, c3, c4] = body.decisions;
       expect(c1).toMatchObject({
         draftId: 'c1', threadId: 'hostex:a', provider: 'hostex', guestName: 'Anna', category: 'dank_smalltalk',
         decision: 'auto', mode: 'shadow', reason: 'ok', judgeReasoning: null, flags: ['mech:url'],
@@ -744,6 +747,13 @@ describe('agent-api', () => {
       expect(c1.feedback).toEqual([{ category: 'ton', note: 'zu förmlich', createdAt: '2026-10-05T11:01:00.000Z' }]);
       expect(c2).toMatchObject({ outcome: 'unchanged', draftText: 'Unverändert', sentText: 'Unverändert', draftTextLost: false, feedback: [] });
       expect(c3).toMatchObject({ outcome: 'discarded', draftText: 'Verworfen', sentText: null, flags: [], judgedAt: null, sentAt: null });
+      expect(c1.diff).toBeNull();
+      expect(c2.diff).toBeNull();
+      // #1062: original_body → draftText + sentText + diff
+      expect(c4).toMatchObject({
+        outcome: 'changed', draftText: 'Hallo Anna,\nCheck-in ab 15 Uhr.', sentText: 'Hallo Anna,\nCheck-in ab 16 Uhr.',
+        draftTextLost: false, diff: '@@ -1,2 +1,2 @@\n Hallo Anna,\n-Check-in ab 15 Uhr.\n+Check-in ab 16 Uhr.',
+      });
     });
 
     it('reicht decision und limit ans Repository durch', async () => {

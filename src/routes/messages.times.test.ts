@@ -15,7 +15,7 @@ vi.mock('../repositories/message-repository.js', () => ({
 }));
 vi.mock('../repositories/draft-repository.js', () => ({
   createDraft: vi.fn(), getDraftById: vi.fn(), getActiveDraftByThread: vi.fn().mockReturnValue(null), discardDraft: vi.fn(),
-  claimDraftForSending: vi.fn(), updateDraftBody: vi.fn(), markDraftSent: vi.fn(), markDraftError: vi.fn(),
+  claimDraftForSending: vi.fn(), updateDraftBody: vi.fn(), saveEditedDraftBody: vi.fn(), markDraftSent: vi.fn(), markDraftError: vi.fn(),
   setSentBodyChanged: vi.fn(), getAutoSendStats: vi.fn(), countAutoSentSince: vi.fn().mockReturnValue(0),
   listAutoDecisions: vi.fn().mockReturnValue([]), getLastSentDraftByThread: vi.fn().mockReturnValue(null),
   threadHasFailedSend: vi.fn().mockReturnValue(false), releaseAutoSendForThread: vi.fn(),

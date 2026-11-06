@@ -36,6 +36,7 @@ vi.mock('../repositories/draft-repository.js', () => ({
   discardDraft: vi.fn(),
   claimDraftForSending: (...args: unknown[]) => claimDraftForSending(...args),
   updateDraftBody: vi.fn(),
+  saveEditedDraftBody: vi.fn(),
 }));
 
 vi.mock('../repositories/feedback-repository.js', () => ({

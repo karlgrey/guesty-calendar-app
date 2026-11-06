@@ -142,6 +142,9 @@ export interface MessageDraft {
   regen_attempted_at?: string | null;
   previous_body?: string | null;
   previous_body_at?: string | null;
+  // #1062 (Migration 039): Entwurfstext vor Michas erstem Edit beim Senden (nur einmal gesetzt).
+  // Optional wie oben (bestehende Test-Fixtures ohne dieses Feld bleiben gültig).
+  original_body?: string | null;
 }
 
 export type NewDraft = Pick<MessageDraft, 'id' | 'thread_id' | 'provider' | 'body' | 'generated_by'> & {

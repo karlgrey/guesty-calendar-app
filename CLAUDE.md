@@ -787,6 +787,15 @@ Copy-Paste kann ein sicherer Entwurf automatisch rausgehen. Spec:
   (Europe/Berlin, `formatBerlinDateTime` in `berlin-day.ts`); ist `previous_body` gesetzt, ein
   aufklappbares „Vorversion (Entwurf vom …) — automatisch neu generiert …“ unter dem Textarea
   (`renderStaleDraftWarning`/`renderPreviousDraftBody`, rein/exportiert wie `renderAutoBadge`).
+- **Ursprungstext bei Edit (#1062, Migration 039):** `message_drafts.original_body` hält den
+  Entwurfstext vor Michas ERSTEM Edit (`saveEditedDraftBody` im Send-Pfad
+  `POST /drafts/:draftId/send`, `COALESCE` → nur einmal gesetzt). `updateDraftBody` bleibt für
+  maschinelle Fassungen (Sprach-Neuversuch in `generate-drafts.ts`) und setzt `original_body`
+  NICHT. `GET /api/agent/auto-send/decisions` liefert bei `outcome=changed` dann
+  `draftText`=original_body, `sentText`=body und `diff` (kompakter unified Zeilen-Diff,
+  `src/utils/line-diff.ts`, 1 Kontextzeile, ohne Dependency); ohne original_body (vor 039
+  gesendet) weiter `draftTextLost=true`, `diff=null`. Nicht verwechseln mit `previous_body`
+  (Vorversion einer automatischen Neugenerierung, #699).
 - **Env-Variablen:** `AUTO_SEND_MODE` (`off`|`shadow`|`live`, Default `off`),
   `AUTO_SEND_DAILY_CAP` (Default 10), `MESSAGE_LOOP_MINUTES` (Default 30, #772), `JUDGE_MODEL`
   (Default `claude-opus-5`), `GUESTY_WEBHOOK_SECRET` (aus `npm run webhook:register`),

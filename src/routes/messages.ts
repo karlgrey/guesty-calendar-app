@@ -7,7 +7,7 @@ import {
 } from '../repositories/message-repository.js';
 import {
   createDraft, getDraftById, getActiveDraftByThread, discardDraft,
-  claimDraftForSending, updateDraftBody, setSentBodyChanged,
+  claimDraftForSending, saveEditedDraftBody, setSentBodyChanged,
   getAutoSendStats, countAutoSentSince, listAutoDecisions, getLastSentDraftByThread,
   threadHasFailedSend, releaseAutoSendForThread,
 } from '../repositories/draft-repository.js';
@@ -595,7 +595,8 @@ router.post('/drafts/:draftId/send', express.urlencoded({ extended: true }), asy
     }
 
     const edited = typeof req.body?.body === 'string' ? req.body.body.trim() : '';
-    if (edited && edited !== draft.body) updateDraftBody(draft.id, edited);
+    // #1062: saveEditedDraftBody sichert beim ersten Edit den Entwurfstext als original_body.
+    if (edited && edited !== draft.body) saveEditedDraftBody(draft.id, edited);
     const bodyToSend = edited || draft.body;
 
     setSentBodyChanged(draft.id, edited !== '' && edited !== draft.body);
