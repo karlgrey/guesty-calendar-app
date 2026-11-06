@@ -112,6 +112,11 @@ export class HostexClient {
    * Generic call that unwraps the Hostex envelope and applies retries.
    */
   private async call<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<T> {
+    return (await this.callEnvelope<T>(method, path, body)).data;
+  }
+
+  /** Wie `call`, liefert aber den vollständigen Envelope (request_id, error_msg, data). */
+  private async callEnvelope<T>(method: 'GET' | 'POST', path: string, body?: unknown): Promise<HostexEnvelope<T>> {
     const url = `${this.baseUrl}${path}`;
     const maxRetries = 5;
     let lastError: Error | null = null;
@@ -176,7 +181,7 @@ export class HostexClient {
             { path, request_id: envelope.request_id },
           );
         }
-        return envelope.data;
+        return envelope;
       } catch (error) {
         lastError = error as Error;
         // Network-level errors: retry with backoff if attempts remain
@@ -314,19 +319,42 @@ export class HostexClient {
 
   /**
    * POST /v3/conversations/:id — send a reply message to a guest
+   *
+   * Hostex-Doku (api-doc.hostex.io/reference/send-message, 06.11.2026): die
+   * 200-Antwort ist nur das CommonResponse-Envelope (request_id, error_code,
+   * error_msg) — OHNE `data`, "does not return a message ID". Die ID ist also
+   * regulär leer (#1061); der Dedupe läuft über Text+Zeitfenster. Die ID-Suche
+   * bleibt defensiv, falls Hostex das Feld später ergänzt. Reihenfolge fest:
+   * data.message_id, data.id, data.message.id, data.data.message_id.
    */
   async sendMessage(conversationId: string, message: string): Promise<{ message_id: string }> {
-    const res = await this.call<{ message_id?: string | number | null; id?: string | number | null }>(
+    const envelope = await this.callEnvelope<unknown>(
       'POST', `/conversations/${conversationId}`, { message },
     );
-    logger.info({ conversationId, response: res }, 'Hostex sendMessage response');
-    const raw = res?.message_id ?? res?.id ?? '';
-    const messageId = String(raw);
+    // Gesamtes Envelope loggen (gekürzt, ohne Nachrichtentext — der wird nie
+    // zurückgespiegelt, das Request-Body ist nicht Teil der Antwort).
+    let serialized = '';
+    try { serialized = JSON.stringify(envelope) ?? ''; } catch { serialized = '[nicht serialisierbar]'; }
+    logger.info(
+      { conversationId, response: serialized.slice(0, 500) },
+      'Hostex sendMessage response',
+    );
+    const messageId = extractMessageId(envelope?.data);
     if (!messageId) {
-      logger.warn({ conversationId }, 'Hostex sendMessage: keine message_id in der Antwort — Echo-Dedupe läuft über Text+Zeitfenster');
+      logger.warn({ conversationId }, 'Hostex sendMessage: keine message_id in der Antwort (Hostex liefert laut Doku keine) — Echo-Dedupe läuft über Text+Zeitfenster');
     }
     return { message_id: messageId };
   }
+}
+
+function extractMessageId(data: unknown): string {
+  const d = data as Record<string, any> | null | undefined;
+  if (!d || typeof d !== 'object') return '';
+  const candidates = [d.message_id, d.id, d.message?.id, d.data?.message_id];
+  for (const c of candidates) {
+    if ((typeof c === 'string' && c) || typeof c === 'number') return String(c);
+  }
+  return '';
 }
 
 /**
