@@ -40,12 +40,23 @@ export interface HostexConversation {
   last_message_at?: string | null;
 }
 
+export type HostexDisplayType = 'Text' | 'ReservationAlteration' | 'Box';
+
+/** System-Karten-Attachment (z. B. ReservationAlteration); bei Text-Nachrichten nicht vorhanden. */
+export interface HostexMessageAttachment {
+  subject?: string | null;
+  describe?: string | null;
+  price?: number | string | null;
+  currency?: string | null;
+}
+
 export interface HostexMessageRaw {
   id: string;
   sender_role: string;   // 'guest' | 'host'
-  display_type: string;  // 'Text' | 'Box' | 'ReservationAlteration'
+  display_type: HostexDisplayType;
   content: string;
   created_at: string;
+  attachment?: HostexMessageAttachment | null;
 }
 
 /** A reservation/inquiry activity on a conversation; carries the property attribution. */
