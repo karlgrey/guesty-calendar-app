@@ -307,9 +307,9 @@ export function getAwaitingDrafts(sinceIso: string, limit: number): AwaitingDraf
          WHEN d.status = 'sending' THEN 'Versand hängt — bitte manuell prüfen'
          WHEN d.auto_decision = 'auto' AND d.auto_mode = 'live' AND d.status = 'pending' THEN 'Auto-Send hängt — bitte manuell prüfen'
          WHEN d.auto_category = 'buchungsanfrage' AND d.auto_decision = 'auto' AND d.status = 'sent'
-           THEN 'Rückfrage automatisch gesendet — Entscheidung in Airbnb nach Gast-Antwort'
+           THEN 'Antwort automatisch gesendet — Annahme/Ablehnung in Airbnb bei Micha'
          WHEN d.auto_category = 'buchungsanfrage' AND d.auto_decision = 'auto' AND d.auto_mode = 'shadow'
-           THEN 'Rückfrage wäre automatisch gesendet worden (Schatten) — Entscheidung in Airbnb nach Gast-Antwort'
+           THEN 'Antwort wäre automatisch gesendet worden (Schatten) — Annahme/Ablehnung in Airbnb bei Micha'
          ELSE COALESCE(d.auto_reason, '')
        END AS reason,
        t.guest_name, t.listing_id, t.source,

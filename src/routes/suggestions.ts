@@ -104,6 +104,12 @@ router.post('/:id/discard', (req, res, next) => {
   try {
     const s = getSuggestionById(req.params.id);
     if (!s) { res.status(404).send('Vorschlag nicht gefunden'); return; }
+    if (s.status !== 'pending') {
+      res.status(409).send(
+        `Nur offene Vorschläge können verworfen werden (Status: ${esc(s.status)}). ` +
+        `Bereits übernommene Vorschläge über /admin/suggestions/${esc(s.id)}/revoke zurückziehen.`);
+      return;
+    }
     discardSuggestion(s.id);
     res.redirect('/admin/suggestions');
   } catch (e) { next(e); }

@@ -91,7 +91,7 @@ vi.mock('../repositories/draft-repository.js', () => ({
   }, {
     // #697: Buchungsanfrage-Draft (Fall Anika) — auto_decision='auto', live gesendet, mit Frist.
     id: 'd2', thread_id: 'guesty:b', provider: 'guesty', status: 'sent', created_at: '2026-09-21 20:35:10',
-    reason: 'Rückfrage automatisch gesendet — Entscheidung in Airbnb nach Gast-Antwort',
+    reason: 'Antwort automatisch gesendet — Annahme/Ablehnung in Airbnb bei Micha',
     guest_name: 'Anika', listing_id: 'L1', source: 'guesty',
     last_guest_message: 'Ich würde gern für ein Event buchen.',
     smarttasks_task_id: 701, request_kind: 'request_to_book', platform_deadline_at: '2026-09-22T20:35:04.000Z',
@@ -656,7 +656,7 @@ describe('agent-api', () => {
       const d2 = body.drafts.find((d: any) => d.draftId === 'd2');
       expect(d2).toMatchObject({
         threadId: 'guesty:b', guestName: 'Anika',
-        reason: 'Rückfrage automatisch gesendet — Entscheidung in Airbnb nach Gast-Antwort',
+        reason: 'Antwort automatisch gesendet — Annahme/Ablehnung in Airbnb bei Micha',
         smartTasksTaskId: 701, requestKind: 'request_to_book', category: 'buchungsanfrage',
         autoDecision: 'auto', autoMode: 'live', platformDeadlineAt: '2026-09-22T20:35:04.000Z',
       });

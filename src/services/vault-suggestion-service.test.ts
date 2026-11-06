@@ -98,9 +98,10 @@ describe('vault-suggestion-service', () => {
     expect(revokeVaultSuggestion('s1', deps())).toMatchObject({ ok: false, status: 409 });
     approveVaultSuggestion('s1', deps());
     expect(approveVaultSuggestion('s1', deps())).toMatchObject({ ok: false, status: 409 });
-    discardSuggestion('s1');
-    expect(approveVaultSuggestion('s1', deps())).toMatchObject({ ok: false, status: 409 });
-    expect(revokeVaultSuggestion('s1', deps())).toMatchObject({ ok: false, status: 409 });
+    createSuggestion({ id: 's2', feedback_id: 'fb', target_file: REL, target_heading: '## Anti-Pattern', addition_text: '- zwei', rationale: 'r' });
+    discardSuggestion('s2');
+    expect(approveVaultSuggestion('s2', deps())).toMatchObject({ ok: false, status: 409 });
+    expect(revokeVaultSuggestion('s2', deps())).toMatchObject({ ok: false, status: 409 });
   });
 
   it('alreadyRevoked: idempotent, kein Commit, kein Sync', () => {

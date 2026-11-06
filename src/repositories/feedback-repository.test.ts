@@ -58,6 +58,16 @@ describe('feedback-repository', () => {
     expect(getSuggestionById('s3')?.status).toBe('discarded');
   });
 
+  it('discardSuggestion lässt nicht-pending Vorschläge unberührt (false)', () => {
+    seedSuggestion('s3b');
+    markSuggestionApplied('s3b', 'abc');
+    expect(discardSuggestion('s3b')).toBe(false);
+    expect(getSuggestionById('s3b')?.status).toBe('approved');
+    seedSuggestion('s3c');
+    expect(discardSuggestion('s3c')).toBe(true);
+    expect(discardSuggestion('s3c')).toBe(false);
+  });
+
   it('markSuggestionRevoked setzt status/revoked_at/revoke_commit; Re-Approve räumt sie wieder', () => {
     seedSuggestion('s4');
     markSuggestionApplied('s4', 'aaa');

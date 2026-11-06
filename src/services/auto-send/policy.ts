@@ -87,7 +87,7 @@ function decideByGates(i: PolicyInput): AutoSendDecision {
     const deadlinePart = i.bookingTask.deadlineLabel ? `, Frist ${i.bookingTask.deadlineLabel}` : '';
     return {
       decision: 'auto',
-      reason: `Buchungsanfrage: Rückfrage automatisch, Airbnb-Entscheidung bei Micha → Task #${i.bookingTask.taskNumber}${deadlinePart}`,
+      reason: `Buchungsanfrage: Antwort automatisch, Airbnb-Entscheidung bei Micha → Task #${i.bookingTask.taskNumber}${deadlinePart}`,
       category, flags,
     };
   }

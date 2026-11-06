@@ -59,7 +59,7 @@ describe('getAwaitingDrafts: Buchungsanfrage erscheint immer bei auto_decision=a
     const rows = getAwaitingDrafts('2026-01-01T00:00:00.000Z', 10);
     const row = rows.find((r) => r.id === 'ba1');
     expect(row).toBeDefined();
-    expect(row!.reason).toBe('Rückfrage automatisch gesendet — Entscheidung in Airbnb nach Gast-Antwort');
+    expect(row!.reason).toBe('Antwort automatisch gesendet — Annahme/Ablehnung in Airbnb bei Micha');
     expect(row!.request_kind).toBe('request_to_book');
     expect(row!.platform_deadline_at).toBe('2026-09-22T20:35:04.000Z');
   });
@@ -71,7 +71,7 @@ describe('getAwaitingDrafts: Buchungsanfrage erscheint immer bei auto_decision=a
     const rows = getAwaitingDrafts('2026-01-01T00:00:00.000Z', 10);
     const row = rows.find((r) => r.id === 'ba2');
     expect(row).toBeDefined();
-    expect(row!.reason).toBe('Rückfrage wäre automatisch gesendet worden (Schatten) — Entscheidung in Airbnb nach Gast-Antwort');
+    expect(row!.reason).toBe('Antwort wäre automatisch gesendet worden (Schatten) — Annahme/Ablehnung in Airbnb bei Micha');
     expect(row!.auto_mode).toBe('shadow');
   });
 

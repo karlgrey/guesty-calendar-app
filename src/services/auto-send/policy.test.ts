@@ -128,11 +128,11 @@ describe('decide: Buchungsanfrage-Zweig (#697)', () => {
     const d = decide({ ...base, judge: bookingVerdict, bookingTask: { created: true, taskNumber: 701, deadlineLabel: 'Di 22:35' } });
     expect(d.decision).toBe('auto');
     expect(d.category).toBe('buchungsanfrage');
-    expect(d.reason).toBe('Buchungsanfrage: Rückfrage automatisch, Airbnb-Entscheidung bei Micha → Task #701, Frist Di 22:35');
+    expect(d.reason).toBe('Buchungsanfrage: Antwort automatisch, Airbnb-Entscheidung bei Micha → Task #701, Frist Di 22:35');
   });
   it('ohne deadlineLabel: Reason ohne Frist-Anhang', () => {
     const d = decide({ ...base, judge: bookingVerdict, bookingTask: { created: true, taskNumber: 701, deadlineLabel: null } });
-    expect(d.reason).toBe('Buchungsanfrage: Rückfrage automatisch, Airbnb-Entscheidung bei Micha → Task #701');
+    expect(d.reason).toBe('Buchungsanfrage: Antwort automatisch, Airbnb-Entscheidung bei Micha → Task #701');
   });
   it('Task-Anlage fehlgeschlagen → wait mit fester Fehlermeldung', () => {
     const d = decide({ ...base, judge: bookingVerdict, bookingTask: { created: false, taskNumber: null, deadlineLabel: null } });
