@@ -14,6 +14,7 @@ import { getReservationsByPeriod } from '../repositories/reservation-repository.
 import { calculateQuote, calculateQuoteWithGuesty } from '../services/pricing-calculator.js';
 import { getCachedQuote, saveQuoteToCache, cleanupExpiredQuotes } from '../repositories/quotes-repository.js';
 import { getPropertyBySlug, getListingId, type PropertyConfig } from '../config/properties.js';
+import { getListingTextsForProperty } from '../services/listing-texts-service.js';
 import { NotFoundError, ValidationError } from '../utils/errors.js';
 import logger from '../utils/logger.js';
 
@@ -92,7 +93,7 @@ router.get('/:slug', resolveProperty, (req: Request, res: Response, next: NextFu
  * GET /p/:slug/listing
  * Get listing information for a specific property
  */
-router.get('/:slug/listing', resolveProperty, (req: Request, res: Response, next: NextFunction) => {
+router.get('/:slug/listing', resolveProperty, async (req: Request, res: Response, next: NextFunction) => {
   try {
     const property = req.property!;
     const listing = getListingById(getListingId(property));
@@ -100,6 +101,10 @@ router.get('/:slug/listing', resolveProperty, (req: Request, res: Response, next
     if (!listing) {
       throw new NotFoundError('Listing not found. Please run data sync first.');
     }
+
+    // #1043: öffentliche Inserat-Texte (nur lesend, gecacht); null + Hinweis, wenn der
+    // Anbieter keine liefert (Hostex/airbnb-mail) oder der Abruf scheitert.
+    const textsResult = await getListingTextsForProperty(property);
 
     const response = {
       id: listing.id,
@@ -127,6 +132,8 @@ router.get('/:slug/listing', resolveProperty, (req: Request, res: Response, next
         checkInTime: listing.check_in_time,
         checkOutTime: listing.check_out_time,
       },
+      publicDescription: textsResult.texts?.publicDescription ?? null,
+      ...(textsResult.note ? { publicDescriptionNote: textsResult.note } : {}),
     };
 
     logger.debug({ propertySlug: property.slug, listingId: listing.id }, 'Listing data retrieved');

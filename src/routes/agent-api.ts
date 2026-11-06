@@ -26,7 +26,7 @@ import { getThreadsUpdatedSince, getThreadById, getMessagesByThread } from '../r
 import { getAwaitingDrafts, getAutoSendStats } from '../repositories/draft-repository.js';
 import { propertyForBadge } from '../utils/thread-property.js';
 import { runConsistencyCheck, listOpenReservations } from '../jobs/consistency-check.js';
-import { getPropertyBySlug, getPropertySlugs, getListingId } from '../config/properties.js';
+import { getPropertyBySlug, getPropertySlugs, getListingId, getAllProperties } from '../config/properties.js';
 import type { PropertyConfig } from '../config/properties.js';
 import { listDocumentsForAgent, getDocumentById } from '../repositories/document-repository.js';
 import { AppError, ExternalApiError, NotFoundError, ValidationError } from '../utils/errors.js';
@@ -38,6 +38,7 @@ import { getSuggestionsByStatus } from '../repositories/feedback-repository.js';
 import { revokeVaultSuggestion } from '../services/vault-suggestion-service.js';
 import type { SuggestionStatus } from '../types/feedback.js';
 import { berlinCalendarDay } from '../services/auto-send/berlin-day.js';
+import { getListingTextsForProperty } from '../services/listing-texts-service.js';
 
 const router = express.Router();
 router.use(requireAgentKey);
@@ -603,6 +604,27 @@ function validateAvailabilityRange(fromRaw: string, toRaw: string): { from: stri
 function hostexPropertySummary(property: PropertyConfig, hostexPropertyId: string) {
   return { slug: property.slug, name: property.name, provider: property.provider, hostexPropertyId };
 }
+
+// ---------------------------------------------------------------------------
+// #1043 Öffentliche Listing-Texte (für #983 Telefonnummern-Check + Lint-Drift-Check)
+// Nur lesend. :id = property-Slug oder Guesty-/Hostex-Listing-ID.
+// ---------------------------------------------------------------------------
+router.get('/listings/:id', async (req, res) => {
+  try {
+    const id = req.params.id;
+    const property = getPropertyBySlug(id)
+      ?? getAllProperties().find((p) => p.guestyPropertyId === id || p.hostexPropertyId === id);
+    if (!property) throw new NotFoundError(`Unbekanntes Listing: ${id} (Slug: ${getPropertySlugs().join('|')})`);
+    const result = await getListingTextsForProperty(property);
+    res.json({
+      property: { slug: property.slug, name: property.name, provider: property.provider, listingId: getListingId(property) },
+      available: result.available,
+      publicDescription: result.texts?.publicDescription ?? null,
+      guestInstructions: result.texts?.guestInstructions ?? null,
+      ...(result.note ? { note: result.note } : {}),
+    });
+  } catch (err) { handleError(res, err); }
+});
 
 router.get('/availability/:slug', async (req, res) => {
   try {
