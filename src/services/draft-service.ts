@@ -4,6 +4,8 @@ import { LANGUAGE_LABEL, type SupportedLanguage } from '../utils/language-detect
 import { buildTodayBlock } from './auto-send/today-facts.js';
 import type { BookingRequestKind } from './booking-request.js';
 import type { AlterationSituation } from './alteration-request.js';
+import { buildHostExamplesBlock, findHostExamples, type HostExample, type HostExampleQuery } from './host-examples.js';
+import logger from '../utils/logger.js';
 
 /** #758: zentrale Sonnet-Konstante (claude-sonnet-5-5) aus anthropic-client. */
 export const DRAFT_MODEL = SONNET_MODEL;
@@ -76,11 +78,53 @@ export interface DraftInput {
   // erkannter Änderungswunsch — resolveAlterationSituation (alteration-request.ts). Optional,
   // null/fehlend = kein Änderungs-Block.
   alteration?: AlterationSituation | null;
+  // #1082 Stufe 1: Few-shot „So schreibt Micha“ — explizit übergebene Beispiele (Tests, Abnahme-
+  // Werkzeug). Fehlt das Feld, holt generateDraftForThread sie über deps.findExamples.
+  hostExamples?: HostExample[];
 }
 export interface DraftDeps {
   call: typeof callClaudeTool;
+  // #1082: Finder für Host-Beispiele (host-examples.ts, DB). Optional: ohne Finder (Unit-Tests,
+  // Live-Fixture-Lauf test:drafts) gibt es keinen Beispiel-Block. Der Default-Pfad (Loop, Webhook,
+  // Neu-generieren, Stale-Regeneration) nutzt die echte DB-Abfrage.
+  findExamples?: (q: HostExampleQuery) => HostExample[];
 }
-const defaultDeps: DraftDeps = { call: callClaudeTool };
+const defaultDeps: DraftDeps = { call: callClaudeTool, findExamples: (q) => findHostExamples(q) };
+
+function lastInboundText(messages: Message[]): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].direction === 'inbound') return messages[i].body;
+  }
+  return '';
+}
+
+/** #1082: Beispiele aus dem Input oder über den Finder — nie fatal für den Entwurf. */
+function resolveHostExamples(input: DraftInput, deps: DraftDeps): HostExample[] {
+  if (input.hostExamples) return input.hostExamples;
+  if (!deps.findExamples) return [];
+  try {
+    const examples = deps.findExamples({
+      threadId: input.thread.id,
+      listingId: input.thread.listing_id,
+      source: input.thread.source,
+      guestLanguage: input.guestLanguage ?? 'de',
+      lastGuestMessage: lastInboundText(input.messages),
+      // Vor dem Entwurf kennt nur die Buchungsanfrage-Erkennung die spätere Judge-Kategorie.
+      judgeCategoryHint: input.isBookingRequest ? 'buchungsanfrage' : null,
+      conversionCategory: input.thread.conversion_category ?? null,
+    });
+    logger.info({
+      threadId: input.thread.id, hostExamples: examples.length,
+      sameObject: examples.filter((e) => e.sameObject).length,
+      situationMatch: examples.filter((e) => e.situationMatch).length,
+    }, 'draft: Host-Beispiele gewählt');
+    return examples;
+  } catch (err) {
+    logger.warn({ threadId: input.thread.id, err: err instanceof Error ? err.message : String(err) },
+      'draft: Host-Beispiele nicht ladbar — Entwurf ohne Few-shot');
+    return [];
+  }
+}
 
 // #440 Root-Cause-Fix: Der Prompt gab dem Modell VOICE+OBJEKTWISSEN bisher nur als flachen
 // Text-Dump, ohne je explizit zu sagen, auf welchem KANAL dieser Thread läuft oder ob die
@@ -301,6 +345,9 @@ export function buildSystemPrompt(
   // #976: Änderungsantrag/-wunsch (alteration-request.ts) — LETZTER optionaler Parameter,
   // Signatur bleibt rückwärtskompatibel. Nie zusammen mit dem Buchungsanfrage-Block.
   alteration: AlterationSituation | null = null,
+  // #1082: Few-shot-Beispiele „So schreibt Micha“ — LETZTER optionaler Parameter, leer = kein
+  // Block (Prompt bit-identisch zu vorher).
+  hostExamples: HostExample[] = [],
 ): string {
   const lines = [
     buildThreadFactsBlock(thread),
@@ -321,6 +368,12 @@ export function buildSystemPrompt(
     'Du entwirfst eine Antwort auf eine Gastnachricht für eine Ferienunterkunft, in Michas Stimme.',
     'Halte dich strikt an den folgenden Ton/Stil (Voice):',
     '--- VOICE ---', voice, '--- ENDE VOICE ---',
+  );
+  // #1082: direkt nach der Voice — Stil-Vorbild aus echten Texten statt nur Adjektiven; vor dem
+  // Objektwissen, damit die Faktensperre im Block unmittelbar vor der einzigen Faktenquelle steht.
+  const examplesBlock = buildHostExamplesBlock(hostExamples);
+  if (examplesBlock) lines.push(examplesBlock);
+  lines.push(
     'Nutze ausschließlich die folgenden Objektfakten. Erfinde nichts; fehlt ein Fakt, bleib allgemein.',
     '--- OBJEKTWISSEN ---', facts, '--- ENDE OBJEKTWISSEN ---',
   );
@@ -434,6 +487,7 @@ export async function generateDraftForThread(
         input.now ?? new Date(),
         input.requestKind ?? null,
         input.alteration ?? null,
+        resolveHostExamples(input, deps),
       ),
       userMessage: buildConversation(input.messages, input.thread.guest_name),
       tool: SUBMIT_REPLY_TOOL,

@@ -31,6 +31,8 @@
  *     exakten Payload (systemPrompt, userMessage, tool, model, maxTokens), den der
  *     echte Aufrufer an callClaudeTool übergeben würde. Ebenfalls kein echter
  *     API-Call (deps.call ist ein lokaler Stub, der eine feste Dummy-Antwort liefert).
+ *     Seit #1082 inkl. Block „SO SCHREIBT MICHA“ (Host-Beispiele aus der lokalen DB) —
+ *     der direkte Modus (ohne --via-generate) zeigt ihn NICHT.
  *
  *   Zusätzlich --live [--runs N] (Default N=3): läuft durch generateDraftForThread()
  *     mit dem ECHTEN deps.call (callClaudeTool, App-ANTHROPIC_API_KEY aus .env) —
@@ -64,6 +66,8 @@ import {
   buildSystemPrompt, buildConversation, generateDraftForThread, DRAFT_MODEL, type DraftDeps,
 } from '../services/draft-service.js';
 import { callClaudeTool, type CallClaudeToolInput } from '../services/anthropic-client.js';
+import { findHostExamples } from '../services/host-examples.js';
+import { detectLanguage } from '../utils/language-detect.js';
 import type { MessageThread, MessageChannel, Message, MessageDirection } from '../types/messages.js';
 
 const RESULTS_DIR = 'data/testplan-440-results';
@@ -182,6 +186,13 @@ function resolveBookingRequest(thread: MessageThread, messages: Message[], fixtu
   return { isBookingRequest, requestKind: open?.requestKind ?? null, alteration };
 }
 
+// #1082: Sprache der letzten Gastnachricht wie im echten Pfad (generate-drafts.ts) — sonst würden
+// die Host-Beispiele im Dump immer auf Deutsch gewählt.
+function lastGuestText(messages: Message[]): string {
+  for (let i = messages.length - 1; i >= 0; i--) if (messages[i].direction === 'inbound') return messages[i].body;
+  return '';
+}
+
 // --- Ausgabe ------------------------------------------------------------------------
 
 function printSection(title: string, body: string): void {
@@ -211,9 +222,11 @@ async function dumpViaGenerate(thread: MessageThread, messages: Message[], voice
       captured = args;
       return { no_reply_needed: false, reply: '[DRY-RUN — kein echter Modellaufruf, nur Payload-Capture]' };
     },
+    // #1082: wie im echten Betrieb — Host-Beispiele „So schreibt Micha“ aus der lokalen DB.
+    findExamples: (q) => findHostExamples(q),
   };
 
-  const result = await generateDraftForThread({ thread, messages, voice, facts, bookingContext, ...br }, deps);
+  const result = await generateDraftForThread({ thread, messages, voice, facts, bookingContext, ...br, guestLanguage: detectLanguage(lastGuestText(messages)) }, deps);
 
   if (!captured) {
     console.error('FEHLER: deps.call wurde nicht aufgerufen — generateDraftForThread hat vorher abgebrochen.');
@@ -248,7 +261,7 @@ async function dumpLive(
     console.log(`\n--- Live-Lauf ${run}/${runs} für ${caseName} (echter API-Call, Modell ${DRAFT_MODEL}) ---`);
     let result;
     try {
-      result = await generateDraftForThread({ thread, messages, voice, facts, bookingContext, ...br }, { call: callClaudeTool });
+      result = await generateDraftForThread({ thread, messages, voice, facts, bookingContext, ...br, guestLanguage: detectLanguage(lastGuestText(messages)) }, { call: callClaudeTool, findExamples: (q) => findHostExamples(q) });
     } catch (err) {
       // generateDraftForThread fängt API-Fehler normalerweise selbst ab (kind:'failed') —
       // dieser catch ist nur ein zusätzliches Netz, falls doch etwas durchschlägt.
