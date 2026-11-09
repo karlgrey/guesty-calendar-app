@@ -22,8 +22,10 @@ export function listHostExampleCandidates(opts: { sinceIso: string; limit: numbe
     `SELECT d.id AS draftId, d.thread_id AS threadId, t.listing_id AS listingId, t.source AS source,
        d.body AS body, d.sent_at AS sentAt, d.auto_category AS judgeCategory,
        t.conversion_category AS conversionCategory,
+       -- Prüfer #1082: "+m.direction" nimmt der Planer die Spalte als Index-Kandidat — sonst wählt er
+       -- idx_messages_direction (Scan aller inbound-Nachrichten je Draft) statt idx_messages_thread.
        (SELECT m.body FROM messages m
-         WHERE m.thread_id = d.thread_id AND m.direction = 'inbound'
+         WHERE m.thread_id = d.thread_id AND +m.direction = 'inbound'
            AND datetime(m.sent_at) <= datetime(d.created_at)
          ORDER BY datetime(m.sent_at) DESC LIMIT 1) AS guestMessage
      FROM message_drafts d JOIN message_threads t ON t.id = d.thread_id
