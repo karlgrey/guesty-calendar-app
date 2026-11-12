@@ -4,7 +4,7 @@
  * Generates PDF documents (quotes and invoices) from HTML templates using Puppeteer.
  */
 
-import puppeteer, { type Browser } from 'puppeteer';
+import puppeteer, { type Browser, type Page } from 'puppeteer';
 import Handlebars from 'handlebars';
 import fs from 'fs';
 import path from 'path';
@@ -262,6 +262,7 @@ export function documentToTemplateData(doc: Document, now: Date = new Date()): D
 
 class PDFGenerator {
   private browser: Browser | null = null;
+  private launching: Promise<Browser> | null = null;
   private templates: Map<DocumentType, Handlebars.TemplateDelegate> = new Map();
   private templatesDir: string;
 
@@ -270,22 +271,93 @@ class PDFGenerator {
   }
 
   /**
-   * Initialize browser instance (lazy loading)
+   * Initialize browser instance (lazy loading). Ein getrenntes Handle wird
+   * verworfen und der Browser neu gestartet.
    */
   private async getBrowser(): Promise<Browser> {
-    if (!this.browser) {
-      logger.debug('Launching Puppeteer browser');
-      this.browser = await puppeteer.launch({
-        headless: true,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-gpu',
-        ],
+    if (this.browser && !this.browser.connected) {
+      logger.warn('Puppeteer browser handle is disconnected, discarding');
+      this.browser = null;
+    }
+    if (this.browser) return this.browser;
+    // Parallele Aufrufer teilen sich EINEN Start (sonst verwaiste Chromium-Prozesse)
+    if (!this.launching) {
+      this.launching = this.launchBrowser().finally(() => {
+        this.launching = null;
       });
     }
-    return this.browser;
+    return this.launching;
+  }
+
+  private async launchBrowser(): Promise<Browser> {
+    logger.debug('Launching Puppeteer browser');
+    const browser = await puppeteer.launch({
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+      ],
+    });
+    browser.on('disconnected', () => {
+      logger.warn('Puppeteer browser disconnected');
+      // Nur das eigene Handle verwerfen (ein neuerer Browser bleibt unberuehrt)
+      if (this.browser === browser) {
+        this.browser = null;
+      }
+    });
+    this.browser = browser;
+    return browser;
+  }
+
+  /**
+   * Genau den gescheiterten Browser verwerfen (und best-effort schliessen),
+   * damit der naechste getBrowser()-Aufruf neu startet. Ein inzwischen von
+   * einem parallelen Aufruf gestarteter neuer Browser bleibt unberuehrt.
+   */
+  private async discardBrowser(failed: Browser): Promise<void> {
+    if (this.browser === failed) {
+      this.browser = null;
+    }
+    try {
+      await failed.close();
+    } catch {
+      // tot ist tot — ignorieren
+    }
+  }
+
+  /**
+   * Verbindungsfehler (Browser/Target gestorben) vs. fachlicher Fehler.
+   */
+  private isConnectionError(error: unknown): boolean {
+    if (!(error instanceof Error)) return false;
+    if (error.name === 'ConnectionClosedError' || error.name === 'TargetCloseError') return true;
+    return /Connection closed|Target closed/i.test(error.message);
+  }
+
+  /**
+   * Eine Seite anlegen, rendern, PDF ziehen; Seite immer schliessen.
+   */
+  private async renderPdf(html: string): Promise<Uint8Array> {
+    const browser = await this.getBrowser();
+    let page: Page | undefined;
+    try {
+      page = await browser.newPage();
+      await page.setContent(html, { waitUntil: 'networkidle0' });
+      return await page.pdf({
+        format: 'A4',
+        printBackground: true,
+        margin: { top: '0', right: '0', bottom: '0', left: '0' },
+      });
+    } catch (error) {
+      if (this.isConnectionError(error)) {
+        await this.discardBrowser(browser);
+      }
+      throw error;
+    } finally {
+      await page?.close().catch(() => {});
+    }
   }
 
   /**
@@ -334,43 +406,30 @@ class PDFGenerator {
       const templateData = documentToTemplateData(document);
       const html = template(templateData);
 
-      // Launch browser and create page
-      const browser = await this.getBrowser();
-      const page = await browser.newPage();
-
+      let pdfBuffer: Uint8Array;
       try {
-        // Set content
-        await page.setContent(html, {
-          waitUntil: 'networkidle0',
-        });
-
-        // Generate PDF
-        const pdfBuffer = await page.pdf({
-          format: 'A4',
-          printBackground: true,
-          margin: {
-            top: '0',
-            right: '0',
-            bottom: '0',
-            left: '0',
-          },
-        });
-
-        const duration = Date.now() - startTime;
-        logger.info(
-          {
-            documentNumber: document.documentNumber,
-            type: document.documentType,
-            duration,
-            size: pdfBuffer.length,
-          },
-          'PDF generated successfully'
+        pdfBuffer = await this.renderPdf(html);
+      } catch (error) {
+        if (!this.isConnectionError(error)) throw error;
+        logger.warn(
+          { error, documentNumber: document.documentNumber },
+          'PDF rendering hit a browser connection error, restarting browser and retrying once'
         );
-
-        return Buffer.from(pdfBuffer);
-      } finally {
-        await page.close();
+        pdfBuffer = await this.renderPdf(html);
       }
+
+      const duration = Date.now() - startTime;
+      logger.info(
+        {
+          documentNumber: document.documentNumber,
+          type: document.documentType,
+          duration,
+          size: pdfBuffer.length,
+        },
+        'PDF generated successfully'
+      );
+
+      return Buffer.from(pdfBuffer);
     } catch (error) {
       logger.error(
         {
