@@ -21,6 +21,8 @@ import type {
   HostexCalendarResponse,
   HostexPropertyAvailability,
   HostexAvailabilitiesData,
+  HostexListing,
+  HostexListingsData,
 } from '../types/hostex.js';
 
 // ── Conversation / Messaging types ───────────────────────────────────────────
@@ -203,6 +205,22 @@ export class HostexClient {
   async getProperties(): Promise<HostexProperty[]> {
     const data = await this.call<HostexPropertiesData>('GET', '/properties?limit=100');
     return data.properties;
+  }
+
+  /**
+   * GET /v3/listings — alle Kanal-Listings des Accounts inkl. Inseratstexten
+   * (`metadata.descriptions[]`, #983). Rein lesend; paginiert mit limit/offset.
+   */
+  async getListings(): Promise<HostexListing[]> {
+    const limit = 100;
+    const all: HostexListing[] = [];
+    for (let offset = 0; ; offset += limit) {
+      const data = await this.call<HostexListingsData>('GET', `/listings?limit=${limit}&offset=${offset}`);
+      const page = data.listings ?? [];
+      all.push(...page);
+      if (page.length < limit) break;
+    }
+    return all;
   }
 
   /**

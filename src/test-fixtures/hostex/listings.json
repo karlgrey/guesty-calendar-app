@@ -1,0 +1,74 @@
+{
+  "request_id": "RT-fixture",
+  "error_code": 200,
+  "error_msg": "Done.",
+  "data": {
+    "listings": [
+      {
+        "id": 2000001,
+        "listing_id": "1000000000000000001",
+        "channel_type": "airbnb",
+        "channel_account_id": 100001,
+        "origin_account_id": "000000001",
+        "url": null,
+        "title": "Alte Schilderwerkstatt (Fixture)",
+        "inventory": 1,
+        "shelf_status": "on",
+        "metadata": {
+          "feature": "",
+          "host_interaction": "some_interaction_enum_value",
+          "descriptions": [
+            {
+              "locale": "en",
+              "localized_language_name": "",
+              "title": "Alte Schilderwerkstatt (Fixture)",
+              "description": "Fixture description of the workshop.",
+              "about_your_house": "Fixture text about the space.",
+              "about_amenity": "",
+              "about_interaction": "",
+              "about_others": "",
+              "about_street": "",
+              "about_traffic": ""
+            }
+          ]
+        },
+        "created_at": "2026-05-13T10:00:00+00:00",
+        "updated_at": "2026-11-01T10:00:00+00:00"
+      },
+      {
+        "id": 2000002,
+        "listing_id": "1000000000000000002",
+        "channel_type": "airbnb",
+        "title": "Bootshaus (Fixture)",
+        "inventory": 1,
+        "shelf_status": "on",
+        "metadata": {
+          "feature": "",
+          "descriptions": [
+            {
+              "locale": "de",
+              "title": "Bootshaus (Fixture)",
+              "description": "Fixture-Beschreibung Bootshaus.",
+              "about_your_house": "Fixture-Text zur Unterkunft.",
+              "about_amenity": "",
+              "about_interaction": "",
+              "about_others": "",
+              "about_street": "",
+              "about_traffic": ""
+            }
+          ]
+        }
+      },
+      {
+        "id": 2000003,
+        "listing_id": "1000000000000000003",
+        "channel_type": "airbnb",
+        "title": "Nicht verknüpftes Listing (Fixture)",
+        "inventory": 1,
+        "shelf_status": "off",
+        "metadata": { "feature": "", "descriptions": [] }
+      }
+    ],
+    "total": 3
+  }
+}

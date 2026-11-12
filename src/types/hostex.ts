@@ -135,3 +135,36 @@ export interface HostexPropertyAvailability {
 }
 
 export interface HostexAvailabilitiesData { properties: HostexPropertyAvailability[] }
+
+/**
+ * Listing — from GET /v3/listings (#983, Inserats-Texte). Live geprüft 12.11.2026:
+ * Kanal-Listing (z. B. Airbnb) mit `metadata.descriptions[]` je Sprache. Hausregeln und
+ * Check-in-Anleitung liefert dieser Endpunkt NICHT. Verknüpfung zur Property über
+ * `listing_id` ↔ `HostexProperty.channels[].listing_id`. Nur die gelesenen Felder typisiert.
+ */
+export interface HostexListingDescription {
+  locale?: string | null;
+  localized_language_name?: string | null;
+  title?: string | null;
+  description?: string | null;
+  about_your_house?: string | null;
+  about_amenity?: string | null;
+  about_interaction?: string | null;
+  about_others?: string | null;
+  about_street?: string | null;
+  about_traffic?: string | null;
+}
+
+export interface HostexListing {
+  id: number;
+  listing_id: string;   // Kanal-Listing-ID (= HostexProperty.channels[].listing_id)
+  channel_type: string; // e.g. "airbnb"
+  title?: string | null;
+  shelf_status?: string | null; // "on" | "off"
+  metadata?: {
+    feature?: string | null;
+    descriptions?: HostexListingDescription[] | null;
+  } | null;
+}
+
+export interface HostexListingsData { listings: HostexListing[]; total?: number }

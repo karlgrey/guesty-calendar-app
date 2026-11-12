@@ -52,4 +52,22 @@ describe('GET /p/:slug/listing — publicDescription (#1043)', () => {
     expect(body.publicDescriptionNote).toBe('keine Beschreibungsfelder');
     expect(body.pricing.basePrice).toBe(100);
   });
+
+  it('Hostex: öffentliche Route gibt publicDescription aus, aber weder hostexTexts noch guestInstructions', async () => {
+    textsMock.mockResolvedValueOnce({
+      available: true, source: 'hostex',
+      texts: {
+        publicDescription: { summary: 'S', space: null, access: null, neighborhood: null, transit: null, notes: null, interactionWithGuests: null, houseRules: null },
+        guestInstructions: { checkInNotes: 'GEHEIM-CHECKIN', checkOutInstructions: 'GEHEIM-OUT' },
+        hostexTexts: { 'metadata.descriptions[0].about_amenity': 'GEHEIM-HOSTEX' },
+      },
+    });
+    const { status, body } = await getJson('/p/farmhouse/listing');
+    expect(status).toBe(200);
+    expect(body.publicDescription.summary).toBe('S');
+    const json = JSON.stringify(body);
+    for (const s of ['GEHEIM-CHECKIN', 'GEHEIM-OUT', 'GEHEIM-HOSTEX', 'hostexTexts', 'guestInstructions']) {
+      expect(json).not.toContain(s);
+    }
+  });
 });

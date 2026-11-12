@@ -1044,6 +1044,38 @@ describe('agent-api', () => {
       expect(await r.json()).toMatchObject({ available: false, publicDescription: null, guestInstructions: null, note: 'keine Beschreibungsfelder' });
     });
 
+    it('Hostex-Objekt mit Texten: available:true + hostexTexts unverändert', async () => {
+      const hostexTexts = { title: 'T', 'metadata.descriptions[0].about_amenity': 'A' };
+      getListingTextsMock.mockResolvedValueOnce({
+        available: true, source: 'hostex',
+        texts: {
+          publicDescription: { summary: 'S', space: null, access: null, neighborhood: null, transit: null, notes: null, interactionWithGuests: null, houseRules: null },
+          guestInstructions: { checkInNotes: null, checkOutInstructions: null },
+          hostexTexts,
+        },
+      });
+      const r = await fetch(`${base}/api/agent/listings/bootshaus-alte-oder`, { headers: KEY });
+      expect(r.status).toBe(200);
+      const body = await r.json();
+      expect(body).toMatchObject({ available: true, publicDescription: { summary: 'S' }, property: { provider: 'hostex' } });
+      expect(body.hostexTexts).toEqual(hostexTexts);
+    });
+
+    it.each(['farmhouse', 'u19'])('Guesty-Regression (%s): kein hostexTexts, exakte Schlüsselmenge', async (slug) => {
+      getListingTextsMock.mockResolvedValueOnce({
+        available: true, source: 'guesty',
+        texts: {
+          publicDescription: { summary: 'S', space: null, access: null, neighborhood: null, transit: null, notes: null, interactionWithGuests: null, houseRules: null },
+          guestInstructions: { checkInNotes: null, checkOutInstructions: null },
+        },
+      });
+      const r = await fetch(`${base}/api/agent/listings/${slug}`, { headers: KEY });
+      expect(r.status).toBe(200);
+      const body = await r.json();
+      expect(body).not.toHaveProperty('hostexTexts');
+      expect(Object.keys(body).sort()).toEqual(['available', 'guestInstructions', 'property', 'publicDescription']);
+    });
+
     it('404 bei unbekanntem Listing, 401 ohne Key', async () => {
       let r = await fetch(`${base}/api/agent/listings/gibts-nicht`, { headers: KEY });
       expect(r.status).toBe(404);
