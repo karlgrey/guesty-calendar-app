@@ -48,6 +48,9 @@ vi.mock('../services/guesty-client.js', () => ({
   guestyClient: {
     getReservation: vi.fn().mockResolvedValue({ _id: 'res-1', status: 'reserved' }),
     updateGuest: vi.fn().mockResolvedValue(undefined),
+    getListing: vi.fn(),
+    getListingFinancials: vi.fn(),
+    updateListingCleaningFee: vi.fn().mockResolvedValue(undefined),
     getGuest: vi.fn().mockResolvedValue({
       _id: 'guest-1', firstName: 'Lenia', lastName: 'K.', fullName: 'Lenia K.',
       email: 'l@example.com', phones: ['+49 30 1'], company: 'momox SE',
@@ -166,6 +169,12 @@ vi.mock('../jobs/hostex/sync-reservations.js', () => ({
 const syncHostexCalendarMock = vi.fn();
 vi.mock('../jobs/hostex/sync-calendar.js', () => ({
   syncHostexCalendar: (...a: unknown[]) => syncHostexCalendarMock(...a),
+}));
+
+// #1137: Cache-Auffrischung nach Reinigungsgebühr-Update — Job gemockt.
+const syncListingMock = vi.fn();
+vi.mock('../jobs/sync-listing.js', () => ({
+  syncListing: (...a: unknown[]) => syncListingMock(...a),
 }));
 
 import agentApiRoutes from './agent-api.js';
@@ -1156,5 +1165,226 @@ describe('agent-api', () => {
       expect(r.status).toBe(400);
       expect((await r.json()).error).toContain('guesty|hostex');
     });
+  });
+});
+
+// #1137 PUT /listings/:slug/cleaning-fee
+describe('agent-api PUT /listings/:slug/cleaning-fee (#1137)', () => {
+  const FARMHOUSE_ID = '686d1e927ae7af00234115ad';
+  const AIRBNB2 = { channelSyncStatus: 'IN_PROGRESS', value: { multiplier: 'PER_STAY', formula: 350, valueType: 'FIXED' } };
+  const FIN = (value: any = { multiplier: 'PER_STAY', formula: 350, valueType: 'FIXED' }, extra: any = { airbnb2: AIRBNB2 }) => ({
+    cleaningFee: { value, lastUpdated: '2025-07-23T10:38:23.230Z', ...extra },
+  });
+  const put = (slug: string, body: unknown) =>
+    fetch(`${base}/api/agent/listings/${slug}/cleaning-fee`, {
+      method: 'PUT', headers: KEY, body: typeof body === 'string' ? body : JSON.stringify(body),
+    });
+
+  async function clientMocks() {
+    const { guestyClient } = await import('../services/guesty-client.js');
+    return guestyClient as unknown as { getListing: any; getListingFinancials: any; updateListingCleaningFee: any };
+  }
+
+  beforeEach(async () => {
+    const c = await clientMocks();
+    c.getListing.mockReset();
+    c.getListingFinancials.mockReset().mockResolvedValue(FIN());
+    c.updateListingCleaningFee.mockReset().mockResolvedValue(undefined);
+    syncListingMock.mockReset().mockResolvedValue({ success: true, listingId: FARMHOUSE_ID });
+  });
+
+  it('401 ohne Key', async () => {
+    const r = await fetch(`${base}/api/agent/listings/farmhouse/cleaning-fee`, {
+      method: 'PUT', body: '{"amount":390}', headers: { 'Content-Type': 'application/json' },
+    });
+    expect(r.status).toBe(401);
+  });
+
+  it('404 bei unbekanntem Slug, ohne Guesty-Zugriff', async () => {
+    const c = await clientMocks();
+    const r = await put('gibt-es-nicht', { amount: 390 });
+    expect(r.status).toBe(404);
+    expect(c.getListing).not.toHaveBeenCalled();
+    expect(c.updateListingCleaningFee).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['fehlend', {}],
+    ['String', { amount: '390' }],
+    ['null', { amount: null }],
+    ['0', { amount: 0 }],
+    ['negativ', { amount: -5 }],
+    ['> 1000', { amount: 1000.01 }],
+    ['NaN-artig (1e999 → Infinity)', '{"amount":1e999}'],
+    ['drei Nachkommastellen', { amount: 390.123 }],
+  ])('400 bei ungültigem Betrag: %s', async (_label, body) => {
+    const c = await clientMocks();
+    const r = await put('farmhouse', body);
+    expect(r.status).toBe(400);
+    expect(c.updateListingCleaningFee).not.toHaveBeenCalled();
+  });
+
+  it('400 bei provider ≠ guesty (Hostex-Objekt)', async () => {
+    const c = await clientMocks();
+    const r = await put('bootshaus-alte-oder', { amount: 90 });
+    expect(r.status).toBe(400);
+    expect(c.updateListingCleaningFee).not.toHaveBeenCalled();
+  });
+
+  it('Erfolg: previous aus GET vor, current aus GET nach dem Update, Cache wird aufgefrischt', async () => {
+    const c = await clientMocks();
+    const order: string[] = [];
+    c.getListing
+      .mockImplementationOnce(async () => { order.push('get-before'); return { prices: { cleaningFee: 350 } }; })
+      .mockImplementationOnce(async () => { order.push('get-after'); return { prices: { cleaningFee: 390 } }; });
+    c.updateListingCleaningFee.mockImplementation(async () => { order.push('update'); });
+    syncListingMock.mockImplementation(async () => { order.push('sync'); return { success: true, listingId: FARMHOUSE_ID }; });
+
+    const r = await put('farmhouse', { amount: 390 });
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({
+      slug: 'farmhouse', listingId: FARMHOUSE_ID, previous: 350, current: 390,
+      channelOverrides: { before: { airbnb2: AIRBNB2 }, after: { airbnb2: AIRBNB2 } },
+    });
+    expect(c.updateListingCleaningFee).toHaveBeenCalledWith(FARMHOUSE_ID, 390, { valueType: 'FIXED', multiplier: 'PER_STAY' });
+    expect(syncListingMock).toHaveBeenCalledWith(FARMHOUSE_ID, true);
+    expect(order).toEqual(['get-before', 'update', 'get-after', 'sync']);
+  });
+
+  it('current kommt aus Guesty, nicht aus dem Request (Abweichung sichtbar)', async () => {
+    const c = await clientMocks();
+    c.getListing
+      .mockResolvedValueOnce({ prices: { cleaningFee: 350 } })
+      .mockResolvedValueOnce({ prices: { cleaningFee: 350 } });
+    const r = await put('farmhouse', { amount: 390 });
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({ previous: 350, current: 350 });
+  });
+
+  it('Update scheitert → Fehler durchgereicht, kein Cache-Refresh', async () => {
+    const c = await clientMocks();
+    const { ExternalApiError } = await import('../utils/errors.js');
+    c.getListing.mockResolvedValueOnce({ prices: { cleaningFee: 350 } });
+    c.updateListingCleaningFee.mockRejectedValueOnce(new ExternalApiError('Guesty down', 502, 'Guesty'));
+    const r = await put('farmhouse', { amount: 390 });
+    expect(r.status).toBe(502);
+    expect(syncListingMock).not.toHaveBeenCalled();
+  });
+
+  it('Cache-Refresh scheitert → 200 trotzdem (Guesty-Update ist durch), cacheRefreshed:false', async () => {
+    const c = await clientMocks();
+    c.getListing
+      .mockResolvedValueOnce({ prices: { cleaningFee: 350 } })
+      .mockResolvedValueOnce({ prices: { cleaningFee: 390 } });
+    syncListingMock.mockResolvedValueOnce({ success: false, listingId: FARMHOUSE_ID, error: 'db' });
+    const r = await put('farmhouse', { amount: 390 });
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({ current: 390, cacheRefreshed: false });
+  });
+});
+
+// #1137 Nachbesserung: Override-Vergleich, PERCENTAGE, multiplier-Übernahme, Fehler im Nach-GET
+describe('agent-api PUT /listings/:slug/cleaning-fee — Nachbesserung (#1137)', () => {
+  const FARMHOUSE_ID = '686d1e927ae7af00234115ad';
+  const VAL = { multiplier: 'PER_STAY', formula: 350, valueType: 'FIXED' };
+  const A2 = { channelSyncStatus: 'SYNCED', value: { multiplier: 'PER_STAY', formula: 350, valueType: 'FIXED' } };
+  const put = (body: unknown) =>
+    fetch(`${base}/api/agent/listings/farmhouse/cleaning-fee`, { method: 'PUT', headers: KEY, body: JSON.stringify(body) });
+  async function c() {
+    const { guestyClient } = await import('../services/guesty-client.js');
+    return guestyClient as unknown as { getListing: any; getListingFinancials: any; updateListingCleaningFee: any };
+  }
+  beforeEach(async () => {
+    const m = await c();
+    m.getListing.mockReset().mockResolvedValueOnce({ prices: { cleaningFee: 350 } }).mockResolvedValue({ prices: { cleaningFee: 390 } });
+    m.getListingFinancials.mockReset();
+    m.updateListingCleaningFee.mockReset().mockResolvedValue({});
+    syncListingMock.mockReset().mockResolvedValue({ success: true, listingId: FARMHOUSE_ID });
+  });
+
+  it('Overrides gleich (andere Schlüsselreihenfolge, value/lastUpdated ignoriert) → kein overridesChanged', async () => {
+    const m = await c();
+    m.getListingFinancials
+      .mockResolvedValueOnce({ cleaningFee: { value: VAL, lastUpdated: 'a', airbnb2: A2 } })
+      .mockResolvedValueOnce({ cleaningFee: { airbnb2: { value: A2.value, channelSyncStatus: 'SYNCED' }, lastUpdated: 'b', value: { ...VAL, formula: 390 } } });
+    const body = await (await put({ amount: 390 })).json();
+    expect(body.overridesChanged).toBeUndefined();
+    expect(body.channelOverrides).toEqual({ before: { airbnb2: A2 }, after: { airbnb2: A2 } });
+  });
+
+  it('Override nach dem Update weg → overridesChanged:true, before/after in der Antwort', async () => {
+    const m = await c();
+    m.getListingFinancials
+      .mockResolvedValueOnce({ cleaningFee: { value: VAL, airbnb2: A2 } })
+      .mockResolvedValueOnce({ cleaningFee: { value: { ...VAL, formula: 390 } } });
+    const r = await put({ amount: 390 });
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({
+      overridesChanged: true, channelOverrides: { before: { airbnb2: A2 }, after: {} }, current: 390,
+    });
+  });
+
+  it('Override-Wert geändert → overridesChanged:true', async () => {
+    const m = await c();
+    m.getListingFinancials
+      .mockResolvedValueOnce({ cleaningFee: { value: VAL, airbnb2: A2 } })
+      .mockResolvedValueOnce({ cleaningFee: { value: VAL, airbnb2: { ...A2, value: { ...A2.value, formula: 390 } } } });
+    expect(await (await put({ amount: 390 })).json()).toMatchObject({ overridesChanged: true });
+  });
+
+  it('nur channelSyncStatus wechselt (IN_PROGRESS → SYNCED) → kein overridesChanged, Status bleibt in before/after sichtbar', async () => {
+    const m = await c();
+    const before = { ...A2, channelSyncStatus: 'IN_PROGRESS' };
+    m.getListingFinancials
+      .mockResolvedValueOnce({ cleaningFee: { value: VAL, airbnb2: before } })
+      .mockResolvedValueOnce({ cleaningFee: { value: { ...VAL, formula: 390 }, airbnb2: A2 } });
+    const body = await (await put({ amount: 390 })).json();
+    expect(body.overridesChanged).toBeUndefined();
+    expect(body.channelOverrides).toEqual({ before: { airbnb2: before }, after: { airbnb2: A2 } });
+  });
+
+  it('PERCENTAGE → 409, kein Schreibvorgang', async () => {
+    const m = await c();
+    m.getListingFinancials.mockResolvedValueOnce({ cleaningFee: { value: { valueType: 'PERCENTAGE', multiplier: 'PER_STAY', formula: 10 } } });
+    const r = await put({ amount: 390 });
+    expect(r.status).toBe(409);
+    expect(m.updateListingCleaningFee).not.toHaveBeenCalled();
+  });
+
+  it('abweichender multiplier wird übernommen', async () => {
+    const m = await c();
+    m.getListingFinancials.mockResolvedValue({ cleaningFee: { value: { valueType: 'FIXED', multiplier: 'PER_NIGHT', formula: 350 } } });
+    await put({ amount: 390 });
+    expect(m.updateListingCleaningFee).toHaveBeenCalledWith(FARMHOUSE_ID, 390, { valueType: 'FIXED', multiplier: 'PER_NIGHT' });
+  });
+
+  it('fehlendes cleaningFee.value → FIXED/PER_STAY', async () => {
+    const m = await c();
+    m.getListingFinancials.mockResolvedValue({});
+    await put({ amount: 390 });
+    expect(m.updateListingCleaningFee).toHaveBeenCalledWith(FARMHOUSE_ID, 390, { valueType: 'FIXED', multiplier: 'PER_STAY' });
+  });
+
+  it('Nach-GET scheitert nach erfolgtem PUT → 200 written/verifyFailed, current null, Cache-Refresh läuft', async () => {
+    const m = await c();
+    m.getListingFinancials.mockResolvedValue({ cleaningFee: { value: VAL, airbnb2: A2 } });
+    m.getListing.mockReset().mockResolvedValueOnce({ prices: { cleaningFee: 350 } }).mockRejectedValueOnce(new Error('Guesty timeout'));
+    const r = await put({ amount: 390 });
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({
+      previous: 350, current: null, written: true, verifyFailed: true, verifyError: 'Guesty timeout',
+      channelOverrides: { before: { airbnb2: A2 }, after: null },
+    });
+    expect(m.updateListingCleaningFee).toHaveBeenCalledTimes(1);
+    expect(syncListingMock).toHaveBeenCalledWith(FARMHOUSE_ID, true);
+  });
+
+  it('Vor-GET der Financials scheitert → Fehler, kein Schreibvorgang', async () => {
+    const m = await c();
+    const { ExternalApiError } = await import('../utils/errors.js');
+    m.getListingFinancials.mockRejectedValueOnce(new ExternalApiError('down', 502, 'Guesty'));
+    const r = await put({ amount: 390 });
+    expect(r.status).toBe(502);
+    expect(m.updateListingCleaningFee).not.toHaveBeenCalled();
   });
 });
