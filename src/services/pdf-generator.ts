@@ -4,7 +4,7 @@
  * Generates PDF documents (quotes and invoices) from HTML templates using Puppeteer.
  */
 
-import puppeteer, { type Browser } from 'puppeteer';
+import puppeteer, { type Browser, type Page } from 'puppeteer';
 import Handlebars from 'handlebars';
 import fs from 'fs';
 import path from 'path';
@@ -262,6 +262,7 @@ export function documentToTemplateData(doc: Document, now: Date = new Date()): D
 
 class PDFGenerator {
   private browser: Browser | null = null;
+  private launching: Promise<Browser> | null = null;
   private templates: Map<DocumentType, Handlebars.TemplateDelegate> = new Map();
   private templatesDir: string;
 
@@ -278,42 +279,51 @@ class PDFGenerator {
       logger.warn('Puppeteer browser handle is disconnected, discarding');
       this.browser = null;
     }
-    if (!this.browser) {
-      logger.debug('Launching Puppeteer browser');
-      const browser = await puppeteer.launch({
-        headless: true,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-gpu',
-        ],
+    if (this.browser) return this.browser;
+    // Parallele Aufrufer teilen sich EINEN Start (sonst verwaiste Chromium-Prozesse)
+    if (!this.launching) {
+      this.launching = this.launchBrowser().finally(() => {
+        this.launching = null;
       });
-      browser.on('disconnected', () => {
-        logger.warn('Puppeteer browser disconnected');
-        // Nur das eigene Handle verwerfen (ein neuerer Browser bleibt unberuehrt)
-        if (this.browser === browser) {
-          this.browser = null;
-        }
-      });
-      this.browser = browser;
     }
-    return this.browser;
+    return this.launching;
+  }
+
+  private async launchBrowser(): Promise<Browser> {
+    logger.debug('Launching Puppeteer browser');
+    const browser = await puppeteer.launch({
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+      ],
+    });
+    browser.on('disconnected', () => {
+      logger.warn('Puppeteer browser disconnected');
+      // Nur das eigene Handle verwerfen (ein neuerer Browser bleibt unberuehrt)
+      if (this.browser === browser) {
+        this.browser = null;
+      }
+    });
+    this.browser = browser;
+    return browser;
   }
 
   /**
-   * Browser-Handle verwerfen (und best-effort schliessen), damit der naechste
-   * getBrowser()-Aufruf neu startet.
+   * Genau den gescheiterten Browser verwerfen (und best-effort schliessen),
+   * damit der naechste getBrowser()-Aufruf neu startet. Ein inzwischen von
+   * einem parallelen Aufruf gestarteter neuer Browser bleibt unberuehrt.
    */
-  private async discardBrowser(): Promise<void> {
-    const old = this.browser;
-    this.browser = null;
-    if (old) {
-      try {
-        await old.close();
-      } catch {
-        // tot ist tot — ignorieren
-      }
+  private async discardBrowser(failed: Browser): Promise<void> {
+    if (this.browser === failed) {
+      this.browser = null;
+    }
+    try {
+      await failed.close();
+    } catch {
+      // tot ist tot — ignorieren
     }
   }
 
@@ -331,16 +341,22 @@ class PDFGenerator {
    */
   private async renderPdf(html: string): Promise<Uint8Array> {
     const browser = await this.getBrowser();
-    const page = await browser.newPage();
+    let page: Page | undefined;
     try {
+      page = await browser.newPage();
       await page.setContent(html, { waitUntil: 'networkidle0' });
       return await page.pdf({
         format: 'A4',
         printBackground: true,
         margin: { top: '0', right: '0', bottom: '0', left: '0' },
       });
+    } catch (error) {
+      if (this.isConnectionError(error)) {
+        await this.discardBrowser(browser);
+      }
+      throw error;
     } finally {
-      await page.close().catch(() => {});
+      await page?.close().catch(() => {});
     }
   }
 
@@ -399,7 +415,6 @@ class PDFGenerator {
           { error, documentNumber: document.documentNumber },
           'PDF rendering hit a browser connection error, restarting browser and retrying once'
         );
-        await this.discardBrowser();
         pdfBuffer = await this.renderPdf(html);
       }
 

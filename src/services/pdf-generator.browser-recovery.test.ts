@@ -68,6 +68,7 @@ describe('PDFGenerator Browser-Recovery', () => {
     warnMock.mockReset();
     await pdfGenerator.close().catch(() => {});
     (pdfGenerator as unknown as { browser: unknown }).browser = null;
+    (pdfGenerator as unknown as { launching: unknown }).launching = null;
     (pdfGenerator as unknown as { templatesDir: string }).templatesDir = `${process.cwd()}/data/templates`;
     pdfGenerator.clearTemplateCache();
   });
@@ -137,5 +138,34 @@ describe('PDFGenerator Browser-Recovery', () => {
     await expect(pdfGenerator.generatePDF(doc())).rejects.toThrow('Invalid margin');
     expect(launchMock).toHaveBeenCalledTimes(1);
     expect(b1.page.close).toHaveBeenCalled();
+  });
+
+  it('(e) parallele Aufrufe ohne Browser teilen sich einen einzigen Start', async () => {
+    const b1 = fakeBrowser();
+    launchMock.mockResolvedValueOnce(b1).mockResolvedValue(fakeBrowser());
+    await Promise.all([pdfGenerator.generatePDF(doc()), pdfGenerator.generatePDF(doc())]);
+    expect(launchMock).toHaveBeenCalledTimes(1);
+    expect(b1.newPage).toHaveBeenCalledTimes(2);
+  });
+
+  it('(f) zwei parallele Renders auf sterbendem Browser: beide liefern ein PDF, der neue Browser wird nicht mitgerissen', async () => {
+    // Beide Renders haengen in pdf() auf b1; dann stirbt b1 nacheinander unter beiden.
+    const rejecters: Array<(e: Error) => void> = [];
+    const b1 = fakeBrowser(() => new Promise<Uint8Array>((_, rej) => { rejecters.push(rej); }));
+    const b2 = fakeBrowser();
+    launchMock.mockResolvedValueOnce(b1).mockResolvedValueOnce(b2).mockResolvedValue(fakeBrowser());
+
+    const p1 = pdfGenerator.generatePDF(doc());
+    const p2 = pdfGenerator.generatePDF(doc());
+    await vi.waitFor(() => expect(rejecters).toHaveLength(2));
+
+    rejecters[0](connErr());
+    await p1; // erster Aufruf hat b2 gestartet und dort gerendert
+    rejecters[1](connErr());
+    await p2; // zweiter Aufruf darf b2 NICHT schliessen
+
+    expect(launchMock).toHaveBeenCalledTimes(2);
+    expect(b2.close).not.toHaveBeenCalled();
+    expect(b2.newPage).toHaveBeenCalledTimes(2);
   });
 });
