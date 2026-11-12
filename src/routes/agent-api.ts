@@ -44,6 +44,7 @@ import { revokeVaultSuggestion } from '../services/vault-suggestion-service.js';
 import type { SuggestionStatus } from '../types/feedback.js';
 import { berlinCalendarDay } from '../services/auto-send/berlin-day.js';
 import { getListingTextsForProperty } from '../services/listing-texts-service.js';
+import { syncListing } from '../jobs/sync-listing.js';
 
 const router = express.Router();
 router.use(requireAgentKey);
@@ -674,6 +675,56 @@ router.get('/listings/:id', async (req, res) => {
       publicDescription: result.texts?.publicDescription ?? null,
       guestInstructions: result.texts?.guestInstructions ?? null,
       ...(result.note ? { note: result.note } : {}),
+    });
+  } catch (err) { handleError(res, err); }
+});
+
+// #1137 Reinigungsgebühr eines Guesty-Inserats setzen (Betrag netto in Euro).
+// previous/current kommen aus Guesty (GET prices.cleaningFee vor bzw. nach dem Update),
+// nicht aus dem Request. Danach lokaler Listing-Cache sofort aufgefrischt.
+const CLEANING_FEE_MAX = 1000;
+
+function parseCleaningFeeAmount(body: unknown): number {
+  const amount = (body as { amount?: unknown } | null | undefined)?.amount;
+  if (typeof amount !== 'number' || !Number.isFinite(amount)) {
+    throw new ValidationError('Body muss {"amount": <Zahl in Euro, netto>} enthalten');
+  }
+  if (amount <= 0 || amount > CLEANING_FEE_MAX) {
+    throw new ValidationError(`amount muss > 0 und ≤ ${CLEANING_FEE_MAX} sein (angefragt: ${amount})`);
+  }
+  if (Math.abs(Math.round(amount * 100) - amount * 100) > 1e-6) {
+    throw new ValidationError('amount darf höchstens zwei Nachkommastellen haben');
+  }
+  return amount;
+}
+
+router.put('/listings/:slug/cleaning-fee', async (req, res) => {
+  try {
+    const property = getPropertyBySlug(req.params.slug);
+    if (!property) throw new NotFoundError(`Unbekanntes Objekt: ${req.params.slug} (Slug: ${getPropertySlugs().join('|')})`);
+    const amount = parseCleaningFeeAmount(req.body);
+    if (property.provider !== 'guesty') {
+      throw new ValidationError(`Reinigungsgebühr nur für provider=guesty (Objekt ${property.slug}: ${property.provider})`);
+    }
+    const listingId = getListingId(property);
+
+    const before = await guestyClient.getListing(listingId);
+    const previous = before.prices?.cleaningFee ?? null;
+
+    await guestyClient.updateListingCleaningFee(listingId, amount);
+
+    const after = await guestyClient.getListing(listingId);
+    const current = after.prices?.cleaningFee ?? null;
+
+    // Cache auffrischen (bestehender Sync-Pfad: getListing → mapListing → upsertListing).
+    // Der Guesty-Schreibvorgang ist durch — ein Cache-Problem macht die Antwort nicht zum Fehler.
+    const sync = await syncListing(listingId, true);
+
+    logger.info({ slug: property.slug, previous, current }, 'Listing cleaning fee updated');
+
+    res.json({
+      slug: property.slug, listingId, previous, current,
+      ...(sync.success ? {} : { cacheRefreshed: false }),
     });
   } catch (err) { handleError(res, err); }
 });

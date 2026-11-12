@@ -1040,6 +1040,25 @@ export class GuestyClient {
   }
 
   /**
+   * Reinigungsgebühr eines Inserats setzen (#1137).
+   * Guesty Open API „Update listing Financials": PUT /financials/listing/{id}
+   * (Teil-Update — nur gesendete Felder ändern sich). Es wird AUSSCHLIESSLICH
+   * cleaningFee.value gesendet (Listing-Default, fix pro Aufenthalt, Betrag in
+   * Listing-Währung); keine anderen Preisfelder, keine Kanal-Overrides.
+   * Lesepfad desselben Werts: GET /listings/{id} → prices.cleaningFee.
+   * Hinweis: `PUT /listings/{id}` kennt kein `prices`-Feld im Request.
+   */
+  async updateListingCleaningFee(listingId: string, amount: number): Promise<void> {
+    await this.request<any>(`/financials/listing/${listingId}`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        cleaningFee: { value: { valueType: 'FIXED', multiplier: 'PER_STAY', formula: amount } },
+      }),
+    });
+    logger.info({ listingId, amount }, 'Updated Guesty listing cleaning fee');
+  }
+
+  /**
    * Update an existing guest (Kundenstamm-Nachpflege, z. B. Rechnungsanschrift).
    * `company` (#715): Firmenzeile für Firmenrechnungen — der Dokument-Service
    * nimmt guest.company direkt als Empfänger-Firmenzeile, damit der Gastname

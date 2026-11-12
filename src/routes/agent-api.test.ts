@@ -48,6 +48,8 @@ vi.mock('../services/guesty-client.js', () => ({
   guestyClient: {
     getReservation: vi.fn().mockResolvedValue({ _id: 'res-1', status: 'reserved' }),
     updateGuest: vi.fn().mockResolvedValue(undefined),
+    getListing: vi.fn(),
+    updateListingCleaningFee: vi.fn().mockResolvedValue(undefined),
     getGuest: vi.fn().mockResolvedValue({
       _id: 'guest-1', firstName: 'Lenia', lastName: 'K.', fullName: 'Lenia K.',
       email: 'l@example.com', phones: ['+49 30 1'], company: 'momox SE',
@@ -166,6 +168,12 @@ vi.mock('../jobs/hostex/sync-reservations.js', () => ({
 const syncHostexCalendarMock = vi.fn();
 vi.mock('../jobs/hostex/sync-calendar.js', () => ({
   syncHostexCalendar: (...a: unknown[]) => syncHostexCalendarMock(...a),
+}));
+
+// #1137: Cache-Auffrischung nach Reinigungsgebühr-Update — Job gemockt.
+const syncListingMock = vi.fn();
+vi.mock('../jobs/sync-listing.js', () => ({
+  syncListing: (...a: unknown[]) => syncListingMock(...a),
 }));
 
 import agentApiRoutes from './agent-api.js';
@@ -1156,5 +1164,112 @@ describe('agent-api', () => {
       expect(r.status).toBe(400);
       expect((await r.json()).error).toContain('guesty|hostex');
     });
+  });
+});
+
+// #1137 PUT /listings/:slug/cleaning-fee
+describe('agent-api PUT /listings/:slug/cleaning-fee (#1137)', () => {
+  const FARMHOUSE_ID = '686d1e927ae7af00234115ad';
+  const put = (slug: string, body: unknown) =>
+    fetch(`${base}/api/agent/listings/${slug}/cleaning-fee`, {
+      method: 'PUT', headers: KEY, body: typeof body === 'string' ? body : JSON.stringify(body),
+    });
+
+  async function clientMocks() {
+    const { guestyClient } = await import('../services/guesty-client.js');
+    return guestyClient as unknown as { getListing: any; updateListingCleaningFee: any };
+  }
+
+  beforeEach(async () => {
+    const c = await clientMocks();
+    c.getListing.mockReset();
+    c.updateListingCleaningFee.mockReset().mockResolvedValue(undefined);
+    syncListingMock.mockReset().mockResolvedValue({ success: true, listingId: FARMHOUSE_ID });
+  });
+
+  it('401 ohne Key', async () => {
+    const r = await fetch(`${base}/api/agent/listings/farmhouse/cleaning-fee`, {
+      method: 'PUT', body: '{"amount":390}', headers: { 'Content-Type': 'application/json' },
+    });
+    expect(r.status).toBe(401);
+  });
+
+  it('404 bei unbekanntem Slug, ohne Guesty-Zugriff', async () => {
+    const c = await clientMocks();
+    const r = await put('gibt-es-nicht', { amount: 390 });
+    expect(r.status).toBe(404);
+    expect(c.getListing).not.toHaveBeenCalled();
+    expect(c.updateListingCleaningFee).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['fehlend', {}],
+    ['String', { amount: '390' }],
+    ['null', { amount: null }],
+    ['0', { amount: 0 }],
+    ['negativ', { amount: -5 }],
+    ['> 1000', { amount: 1000.01 }],
+    ['NaN-artig (1e999 → Infinity)', '{"amount":1e999}'],
+    ['drei Nachkommastellen', { amount: 390.123 }],
+  ])('400 bei ungültigem Betrag: %s', async (_label, body) => {
+    const c = await clientMocks();
+    const r = await put('farmhouse', body);
+    expect(r.status).toBe(400);
+    expect(c.updateListingCleaningFee).not.toHaveBeenCalled();
+  });
+
+  it('400 bei provider ≠ guesty (Hostex-Objekt)', async () => {
+    const c = await clientMocks();
+    const r = await put('bootshaus-alte-oder', { amount: 90 });
+    expect(r.status).toBe(400);
+    expect(c.updateListingCleaningFee).not.toHaveBeenCalled();
+  });
+
+  it('Erfolg: previous aus GET vor, current aus GET nach dem Update, Cache wird aufgefrischt', async () => {
+    const c = await clientMocks();
+    const order: string[] = [];
+    c.getListing
+      .mockImplementationOnce(async () => { order.push('get-before'); return { prices: { cleaningFee: 350 } }; })
+      .mockImplementationOnce(async () => { order.push('get-after'); return { prices: { cleaningFee: 390 } }; });
+    c.updateListingCleaningFee.mockImplementation(async () => { order.push('update'); });
+    syncListingMock.mockImplementation(async () => { order.push('sync'); return { success: true, listingId: FARMHOUSE_ID }; });
+
+    const r = await put('farmhouse', { amount: 390 });
+    expect(r.status).toBe(200);
+    expect(await r.json()).toEqual({ slug: 'farmhouse', listingId: FARMHOUSE_ID, previous: 350, current: 390 });
+    expect(c.updateListingCleaningFee).toHaveBeenCalledWith(FARMHOUSE_ID, 390);
+    expect(syncListingMock).toHaveBeenCalledWith(FARMHOUSE_ID, true);
+    expect(order).toEqual(['get-before', 'update', 'get-after', 'sync']);
+  });
+
+  it('current kommt aus Guesty, nicht aus dem Request (Abweichung sichtbar)', async () => {
+    const c = await clientMocks();
+    c.getListing
+      .mockResolvedValueOnce({ prices: { cleaningFee: 350 } })
+      .mockResolvedValueOnce({ prices: { cleaningFee: 350 } });
+    const r = await put('farmhouse', { amount: 390 });
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({ previous: 350, current: 350 });
+  });
+
+  it('Update scheitert → Fehler durchgereicht, kein Cache-Refresh', async () => {
+    const c = await clientMocks();
+    const { ExternalApiError } = await import('../utils/errors.js');
+    c.getListing.mockResolvedValueOnce({ prices: { cleaningFee: 350 } });
+    c.updateListingCleaningFee.mockRejectedValueOnce(new ExternalApiError('Guesty down', 502, 'Guesty'));
+    const r = await put('farmhouse', { amount: 390 });
+    expect(r.status).toBe(502);
+    expect(syncListingMock).not.toHaveBeenCalled();
+  });
+
+  it('Cache-Refresh scheitert → 200 trotzdem (Guesty-Update ist durch), cacheRefreshed:false', async () => {
+    const c = await clientMocks();
+    c.getListing
+      .mockResolvedValueOnce({ prices: { cleaningFee: 350 } })
+      .mockResolvedValueOnce({ prices: { cleaningFee: 390 } });
+    syncListingMock.mockResolvedValueOnce({ success: false, listingId: FARMHOUSE_ID, error: 'db' });
+    const r = await put('farmhouse', { amount: 390 });
+    expect(r.status).toBe(200);
+    expect(await r.json()).toMatchObject({ current: 390, cacheRefreshed: false });
   });
 });

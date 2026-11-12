@@ -102,4 +102,18 @@ describe('GuestyClient writes', () => {
     const filters = JSON.parse(url.searchParams.get('filters')!);
     expect(filters.some((f: any) => f.field === 'checkOut')).toBe(false);
   });
+
+  // #1137: Reinigungsgebühr — Guesty Open API „Update listing Financials"
+  // (PUT /financials/listing/{id}, Teil-Update), nur dieses eine Feld.
+  it('updateListingCleaningFee PUTtet nur cleaningFee.value an /financials/listing/{id}', async () => {
+    const { client, spy } = clientWithMockedRequest({});
+    await client.updateListingCleaningFee('listing-1', 390);
+    expect(spy).toHaveBeenCalledTimes(1);
+    const [endpoint, options] = spy.mock.calls[0];
+    expect(endpoint).toBe('/financials/listing/listing-1');
+    expect(options.method).toBe('PUT');
+    expect(JSON.parse(options.body)).toEqual({
+      cleaningFee: { value: { valueType: 'FIXED', multiplier: 'PER_STAY', formula: 390 } },
+    });
+  });
 });
