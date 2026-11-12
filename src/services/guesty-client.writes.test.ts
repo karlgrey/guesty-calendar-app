@@ -116,4 +116,19 @@ describe('GuestyClient writes', () => {
       cleaningFee: { value: { valueType: 'FIXED', multiplier: 'PER_STAY', formula: 390 } },
     });
   });
+
+  it('updateListingCleaningFee übernimmt übergebenes valueType/multiplier und gibt die PUT-Antwort zurück (#1137)', async () => {
+    const { client, spy } = clientWithMockedRequest({ ok: 1 });
+    const res = await client.updateListingCleaningFee('listing-1', 90, { multiplier: 'PER_NIGHT' });
+    expect(res).toEqual({ ok: 1 });
+    expect(JSON.parse(spy.mock.calls[0][1].body)).toEqual({
+      cleaningFee: { value: { valueType: 'FIXED', multiplier: 'PER_NIGHT', formula: 90 } },
+    });
+  });
+
+  it('getListingFinancials GETtet /financials/listing/{id} (#1137)', async () => {
+    const { client, spy } = clientWithMockedRequest({ cleaningFee: {} });
+    expect(await client.getListingFinancials('listing-1')).toEqual({ cleaningFee: {} });
+    expect(spy.mock.calls[0]).toEqual(['/financials/listing/listing-1']);
+  });
 });

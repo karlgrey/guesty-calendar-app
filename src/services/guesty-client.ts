@@ -1040,22 +1040,46 @@ export class GuestyClient {
   }
 
   /**
-   * Reinigungsgebühr eines Inserats setzen (#1137).
-   * Guesty Open API „Update listing Financials": PUT /financials/listing/{id}
-   * (Teil-Update — nur gesendete Felder ändern sich). Es wird AUSSCHLIESSLICH
-   * cleaningFee.value gesendet (Listing-Default, fix pro Aufenthalt, Betrag in
-   * Listing-Währung); keine anderen Preisfelder, keine Kanal-Overrides.
-   * Lesepfad desselben Werts: GET /listings/{id} → prices.cleaningFee.
-   * Hinweis: `PUT /listings/{id}` kennt kein `prices`-Feld im Request.
+   * Financials eines Inserats lesen (#1137): GET /financials/listing/{id}
+   * (u. a. cleaningFee.value + Kanal-Overrides wie cleaningFee.airbnb2).
    */
-  async updateListingCleaningFee(listingId: string, amount: number): Promise<void> {
-    await this.request<any>(`/financials/listing/${listingId}`, {
+  async getListingFinancials(listingId: string): Promise<any> {
+    return this.request<any>(`/financials/listing/${listingId}`);
+  }
+
+  /**
+   * Reinigungsgebühr eines Inserats setzen (#1137).
+   * Guesty Open API „Update listing Financials": PUT /financials/listing/{id}.
+   * Belegt (Doku propertiesFinancialsUpdate): Teil-Update auf oberster Ebene der
+   * Financials-Felder. NICHT belegt: ob ein Body nur mit cleaningFee.value die
+   * Geschwister-Schlüssel unter cleaningFee (Kanal-Overrides, z. B. airbnb2)
+   * erhält oder das ganze cleaningFee-Objekt ersetzt — der Aufrufer (Agent-API)
+   * vergleicht deshalb vorher/nachher und weist es in der Antwort aus.
+   * Gesendet wird ausschließlich cleaningFee.value (Listing-Default, Betrag in
+   * Listing-Währung); valueType/multiplier übergibt der Aufrufer aus dem Ist-Stand
+   * (Default FIXED/PER_STAY). Gibt die PUT-Antwort zurück.
+   * Lesepfad des Werts im Listing: GET /listings/{id} → prices.cleaningFee
+   * (`PUT /listings/{id}` kennt kein `prices` im Request).
+   */
+  async updateListingCleaningFee(
+    listingId: string,
+    amount: number,
+    mode: { valueType?: string; multiplier?: string } = {},
+  ): Promise<any> {
+    const res = await this.request<any>(`/financials/listing/${listingId}`, {
       method: 'PUT',
       body: JSON.stringify({
-        cleaningFee: { value: { valueType: 'FIXED', multiplier: 'PER_STAY', formula: amount } },
+        cleaningFee: {
+          value: {
+            valueType: mode.valueType ?? 'FIXED',
+            multiplier: mode.multiplier ?? 'PER_STAY',
+            formula: amount,
+          },
+        },
       }),
     });
     logger.info({ listingId, amount }, 'Updated Guesty listing cleaning fee');
+    return res;
   }
 
   /**

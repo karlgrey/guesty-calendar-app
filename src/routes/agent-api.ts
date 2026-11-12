@@ -30,7 +30,7 @@ import { runConsistencyCheck, listOpenReservations } from '../jobs/consistency-c
 import { getPropertyBySlug, getPropertySlugs, getListingId, getAllProperties } from '../config/properties.js';
 import type { PropertyConfig } from '../config/properties.js';
 import { listDocumentsForAgent, getDocumentById } from '../repositories/document-repository.js';
-import { AppError, ExternalApiError, NotFoundError, ValidationError } from '../utils/errors.js';
+import { AppError, ConflictError, ExternalApiError, NotFoundError, ValidationError } from '../utils/errors.js';
 import { config } from '../config/index.js';
 import logger from '../utils/logger.js';
 import { syncAvailability } from '../jobs/sync-availability.js';
@@ -698,6 +698,27 @@ function parseCleaningFeeAmount(body: unknown): number {
   return amount;
 }
 
+// Geschwister-Schlüssel unter cleaningFee (Kanal-Overrides), ohne value und Zeitstempel.
+function cleaningFeeChannelOverrides(financials: any): Record<string, unknown> {
+  const cf = financials?.cleaningFee;
+  if (!cf || typeof cf !== 'object') return {};
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(cf)) {
+    if (k === 'value' || k === 'lastUpdatedAt' || k === 'lastUpdated') continue;
+    out[k] = v;
+  }
+  return out;
+}
+
+function stableStringify(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(stableStringify).join(',')}]`;
+  if (v && typeof v === 'object') {
+    const o = v as Record<string, unknown>;
+    return `{${Object.keys(o).sort().map((k) => `${JSON.stringify(k)}:${stableStringify(o[k])}`).join(',')}}`;
+  }
+  return JSON.stringify(v);
+}
+
 router.put('/listings/:slug/cleaning-fee', async (req, res) => {
   try {
     const property = getPropertyBySlug(req.params.slug);
@@ -708,13 +729,42 @@ router.put('/listings/:slug/cleaning-fee', async (req, res) => {
     }
     const listingId = getListingId(property);
 
+    // Ist-Stand VOR dem Update: Financials (Wertlogik + Kanal-Overrides) und Listing (previous).
+    const financialsBefore = await guestyClient.getListingFinancials(listingId);
+    const existing = financialsBefore?.cleaningFee?.value;
+    if (existing?.valueType === 'PERCENTAGE') {
+      throw new ConflictError('Reinigungsgebühr ist prozentual (PERCENTAGE) — Betrag in Euro nicht setzbar, bitte in Guesty ändern');
+    }
+    const valueType = existing?.valueType ?? 'FIXED';
+    const multiplier = existing?.multiplier ?? 'PER_STAY';
+    const overridesBefore = cleaningFeeChannelOverrides(financialsBefore);
+
     const before = await guestyClient.getListing(listingId);
     const previous = before.prices?.cleaningFee ?? null;
 
-    await guestyClient.updateListingCleaningFee(listingId, amount);
+    await guestyClient.updateListingCleaningFee(listingId, amount, { valueType, multiplier });
 
-    const after = await guestyClient.getListing(listingId);
-    const current = after.prices?.cleaningFee ?? null;
+    // Ab hier ist der Schreibvorgang durch: Fehler beim Nachlesen sind KEIN gescheitertes Update.
+    let current: number | null = null;
+    let overridesAfter: Record<string, unknown> | null = null;
+    let verifyError: string | undefined;
+    try {
+      const after = await guestyClient.getListing(listingId);
+      current = after.prices?.cleaningFee ?? null;
+      overridesAfter = cleaningFeeChannelOverrides(await guestyClient.getListingFinancials(listingId));
+    } catch (verifyErr) {
+      verifyError = verifyErr instanceof Error ? verifyErr.message : String(verifyErr);
+      logger.warn({ slug: property.slug, listingId, err: verifyErr }, 'Cleaning fee written, but re-reading Guesty failed');
+    }
+
+    const overridesChanged = overridesAfter !== null
+      && stableStringify(overridesBefore) !== stableStringify(overridesAfter);
+    if (overridesChanged) {
+      logger.warn(
+        { slug: property.slug, listingId, overridesBefore, overridesAfter },
+        'Cleaning fee update changed channel overrides (alte Werte zur Wiederherstellung)',
+      );
+    }
 
     // Cache auffrischen (bestehender Sync-Pfad: getListing → mapListing → upsertListing).
     // Der Guesty-Schreibvorgang ist durch — ein Cache-Problem macht die Antwort nicht zum Fehler.
@@ -724,6 +774,11 @@ router.put('/listings/:slug/cleaning-fee', async (req, res) => {
 
     res.json({
       slug: property.slug, listingId, previous, current,
+      channelOverrides: { before: overridesBefore, after: overridesAfter },
+      ...(overridesChanged ? { overridesChanged: true } : {}),
+      ...(verifyError !== undefined
+        ? { written: true, verifyFailed: true, verifyError, note: 'Schreibvorgang erfolgt, current/channelOverrides.after unbekannt — GET prüfen' }
+        : {}),
       ...(sync.success ? {} : { cacheRefreshed: false }),
     });
   } catch (err) { handleError(res, err); }
