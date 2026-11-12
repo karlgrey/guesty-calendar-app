@@ -79,7 +79,7 @@ describe('PDFGenerator Browser-Recovery', () => {
 
     await pdfGenerator.generatePDF(doc());
     b1.fire('disconnected');
-    expect(warnMock).toHaveBeenCalledWith(expect.anything(), 'Puppeteer browser disconnected');
+    expect(warnMock).toHaveBeenCalledWith('Puppeteer browser disconnected');
 
     await pdfGenerator.generatePDF(doc());
     expect(launchMock).toHaveBeenCalledTimes(2);
