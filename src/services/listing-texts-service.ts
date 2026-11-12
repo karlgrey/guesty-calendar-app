@@ -15,13 +15,19 @@
  *   sonst löst bei Guesty-Ausfall jeder Widget-Aufruf eine Retry-Kette aus.
  * - Stale-Fallback: abgelaufener Cache wird bei Fehler/Timeout weiter ausgeliefert.
  *
- * Hostex: die Property-API liefert keine Beschreibungsfelder (Fixture + Client geprüft,
- * nur Titel/Channels/Zeiten/WLAN/Adresse) → `texts: null` mit Hinweis.
+ * Hostex (#983): die Property-API liefert keine Beschreibungsfelder, wohl aber
+ * `GET /v3/listings` (Kanal-Listing, `metadata.descriptions[]`). Verknüpfung über
+ * `GET /v3/properties` → `channels[].listing_id` (Airbnb). Gleicher Cache/Dedupe/Fehler-Halte-
+ * Schutz wie Guesty, eigener Cache-Schlüssel `hostex:<propertyId>`. Hausregeln und
+ * Check-in-Anleitung liefert Hostex nicht.
  * airbnb-mail (Florenz): keine API → `texts: null` mit Hinweis.
  */
 
 import { guestyClient } from './guesty-client.js';
-import { mapListingTexts, type ListingTexts } from '../mappers/listing-texts-mapper.js';
+import { getHostexClient } from './hostex-client.js';
+import {
+  mapListingTexts, mapHostexListingTexts, hasAnyListingText, type ListingTexts,
+} from '../mappers/listing-texts-mapper.js';
 import { getListingId, type PropertyConfig } from '../config/properties.js';
 import logger from '../utils/logger.js';
 
@@ -31,6 +37,14 @@ export const LISTING_TEXTS_WAIT_MS = 3000;
 
 export const NOTE_GUESTY_FAILED = 'Guesty-Abruf der Listing-Texte fehlgeschlagen — später erneut versuchen.';
 export const NOTE_GUESTY_PENDING = 'Listing-Texte werden gerade aus Guesty geladen — später erneut versuchen.';
+export const NOTE_HOSTEX_FAILED = 'Hostex-Abruf der Listing-Texte (GET /v3/properties + /v3/listings) fehlgeschlagen — später erneut versuchen.';
+export const NOTE_HOSTEX_PENDING = 'Listing-Texte werden gerade aus Hostex geladen — später erneut versuchen.';
+export const NOTE_HOSTEX_EMPTY = 'Hostex GET /v3/listings liefert für dieses Objekt keine gefüllten Textfelder (metadata.descriptions[], title, metadata.feature geprüft).';
+/** Öffentliche Route /p/:slug/listing: Hostex-Texte werden dort nicht ausgegeben (#983, Spec-Punkt 5). */
+export const NOTE_HOSTEX_PUBLIC = 'Hostex-Inseratstexte werden öffentlich nicht ausgegeben — nur über die Agent-API abrufbar.';
+
+/** Kein Airbnb-Kanal-Listing zur Hostex-Property gefunden. */
+export class HostexListingNotFoundError extends Error {}
 
 export interface ListingTextsResult {
   available: boolean;
@@ -51,26 +65,54 @@ export function clearListingTextsCache(): void {
 
 class WaitTimeout extends Error {}
 
-function fetchTexts(listingId: string, slug: string): Promise<ListingTexts> {
-  const running = inflight.get(listingId);
+function fetchTexts(key: string, slug: string, load: () => Promise<ListingTexts>): Promise<ListingTexts> {
+  const running = inflight.get(key);
   if (running) return running;
-  const p = guestyClient.getListing(listingId)
-    .then((listing) => {
-      const texts = mapListingTexts(listing);
-      cache.set(listingId, { at: Date.now(), texts });
-      lastError.delete(listingId);
+  const p = load()
+    .then((texts) => {
+      cache.set(key, { at: Date.now(), texts });
+      lastError.delete(key);
       return texts;
     })
     .catch((err: unknown) => {
-      lastError.set(listingId, Date.now());
-      logger.warn({ err, slug }, 'Listing-Texte: Guesty-Abruf fehlgeschlagen');
+      lastError.set(key, Date.now());
+      logger.warn({ err, slug }, 'Listing-Texte: Abruf fehlgeschlagen');
       throw err;
     })
-    .finally(() => inflight.delete(listingId));
+    .finally(() => inflight.delete(key));
   // Ein Aufrufer kann nach der Wartegrenze schon weg sein → Rejection gilt als behandelt.
   p.catch(() => {});
-  inflight.set(listingId, p);
+  inflight.set(key, p);
   return p;
+}
+
+async function loadGuestyTexts(listingId: string): Promise<ListingTexts> {
+  return mapListingTexts(await guestyClient.getListing(listingId));
+}
+
+/** Hostex: Property → Airbnb-Kanal-Listing-ID → Listing mit Beschreibungen (nur GET). */
+async function loadHostexTexts(hostexPropertyId: string): Promise<ListingTexts> {
+  const client = getHostexClient(); // wirft ohne Token → als Abruf-Fehler behandelt
+  const properties = await client.getProperties();
+  const prop = properties.find((p) => String(p.id) === hostexPropertyId);
+  const channelIds = (prop?.channels ?? [])
+    .filter((c) => c.channel_type === 'airbnb')
+    .map((c) => c.listing_id);
+  if (channelIds.length === 0) {
+    throw new HostexListingNotFoundError(`Hostex-Property ${hostexPropertyId}: kein Airbnb-Kanal in GET /v3/properties`);
+  }
+  const listings = await client.getListings();
+  const listing = listings.find((l) => l.channel_type === 'airbnb' && channelIds.includes(l.listing_id));
+  if (!listing) {
+    throw new HostexListingNotFoundError(`Hostex-Property ${hostexPropertyId}: Airbnb-Listing nicht in GET /v3/listings`);
+  }
+  return mapHostexListingTexts(listing);
+}
+
+function noteForError(err: unknown, provider: 'guesty' | 'hostex'): string {
+  if (err instanceof HostexListingNotFoundError) return `${err.message} — keine Texte abrufbar.`;
+  if (err instanceof WaitTimeout) return provider === 'hostex' ? NOTE_HOSTEX_PENDING : NOTE_GUESTY_PENDING;
+  return provider === 'hostex' ? NOTE_HOSTEX_FAILED : NOTE_GUESTY_FAILED;
 }
 
 function waitAtMost<T>(p: Promise<T>, ms: number): Promise<T> {
@@ -82,12 +124,6 @@ function waitAtMost<T>(p: Promise<T>, ms: number): Promise<T> {
 }
 
 export async function getListingTextsForProperty(property: PropertyConfig): Promise<ListingTextsResult> {
-  if (property.provider === 'hostex') {
-    return {
-      available: false, source: 'hostex', texts: null,
-      note: 'Hostex-Property-API liefert keine Beschreibungsfelder (Titel, Channels, Zeiten, WLAN, Adresse) — Texte nur im Airbnb-UI einsehbar.',
-    };
-  }
   if (property.provider === 'airbnb-mail') {
     return {
       available: false, source: 'airbnb-mail', texts: null,
@@ -95,24 +131,44 @@ export async function getListingTextsForProperty(property: PropertyConfig): Prom
     };
   }
 
-  const listingId = getListingId(property);
-  const hit = cache.get(listingId);
-  if (hit && Date.now() - hit.at < LISTING_TEXTS_TTL_MS) {
-    return { available: true, source: 'guesty', texts: hit.texts };
+  let source: 'guesty' | 'hostex';
+  let key: string;
+  let load: () => Promise<ListingTexts>;
+  if (property.provider === 'hostex') {
+    const hostexPropertyId = property.hostexPropertyId;
+    if (!hostexPropertyId) {
+      return { available: false, source: 'hostex', texts: null, note: 'Hostex-Objekt ohne hostexPropertyId in properties.json.' };
+    }
+    source = 'hostex';
+    key = `hostex:${hostexPropertyId}`;
+    load = () => loadHostexTexts(hostexPropertyId);
+  } else {
+    const listingId = getListingId(property);
+    source = 'guesty';
+    key = listingId;
+    load = () => loadGuestyTexts(listingId);
   }
-  const stale = hit ? { available: true, source: 'guesty' as const, texts: hit.texts } : null;
 
-  const errAt = lastError.get(listingId);
-  if (errAt !== undefined && Date.now() - errAt < LISTING_TEXTS_ERROR_HOLD_MS && !inflight.has(listingId)) {
-    return stale ?? { available: false, source: 'guesty', texts: null, note: NOTE_GUESTY_FAILED };
+  // Hostex: Listing gefunden, aber kein einziges Textfeld gefüllt → available:false + präziser Hinweis.
+  const ok = (texts: ListingTexts): ListingTextsResult =>
+    source === 'hostex' && !hasAnyListingText(texts)
+      ? { available: false, source, texts: null, note: NOTE_HOSTEX_EMPTY }
+      : { available: true, source, texts };
+
+  const hit = cache.get(key);
+  if (hit && Date.now() - hit.at < LISTING_TEXTS_TTL_MS) return ok(hit.texts);
+  const stale = hit ? ok(hit.texts) : null;
+
+  const errAt = lastError.get(key);
+  if (errAt !== undefined && Date.now() - errAt < LISTING_TEXTS_ERROR_HOLD_MS && !inflight.has(key)) {
+    return stale ?? { available: false, source, texts: null, note: source === 'hostex' ? NOTE_HOSTEX_FAILED : NOTE_GUESTY_FAILED };
   }
 
   try {
-    const texts = await waitAtMost(fetchTexts(listingId, property.slug), LISTING_TEXTS_WAIT_MS);
-    return { available: true, source: 'guesty', texts };
+    const texts = await waitAtMost(fetchTexts(key, property.slug, load), LISTING_TEXTS_WAIT_MS);
+    return ok(texts);
   } catch (err) {
     if (stale) return stale;
-    const note = err instanceof WaitTimeout ? NOTE_GUESTY_PENDING : NOTE_GUESTY_FAILED;
-    return { available: false, source: 'guesty', texts: null, note };
+    return { available: false, source, texts: null, note: noteForError(err, source) };
   }
 }

@@ -674,6 +674,7 @@ router.get('/listings/:id', async (req, res) => {
       available: result.available,
       publicDescription: result.texts?.publicDescription ?? null,
       guestInstructions: result.texts?.guestInstructions ?? null,
+      ...(result.texts?.hostexTexts ? { hostexTexts: result.texts.hostexTexts } : {}),
       ...(result.note ? { note: result.note } : {}),
     });
   } catch (err) { handleError(res, err); }
