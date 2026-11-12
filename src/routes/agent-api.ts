@@ -710,11 +710,15 @@ function cleaningFeeChannelOverrides(financials: any): Record<string, unknown> {
   return out;
 }
 
+// Stabiler Vergleichs-String. `channelSyncStatus` bleibt außen vor: der Status wechselt
+// nach einem Update legitim (IN_PROGRESS → SYNCED) und ist kein Wertverlust — in der
+// Antwort (channelOverrides.before/after) steht er weiterhin.
 function stableStringify(v: unknown): string {
   if (Array.isArray(v)) return `[${v.map(stableStringify).join(',')}]`;
   if (v && typeof v === 'object') {
     const o = v as Record<string, unknown>;
-    return `{${Object.keys(o).sort().map((k) => `${JSON.stringify(k)}:${stableStringify(o[k])}`).join(',')}}`;
+    return `{${Object.keys(o).filter((k) => k !== 'channelSyncStatus').sort()
+      .map((k) => `${JSON.stringify(k)}:${stableStringify(o[k])}`).join(',')}}`;
   }
   return JSON.stringify(v);
 }

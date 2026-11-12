@@ -1332,6 +1332,17 @@ describe('agent-api PUT /listings/:slug/cleaning-fee — Nachbesserung (#1137)',
     expect(await (await put({ amount: 390 })).json()).toMatchObject({ overridesChanged: true });
   });
 
+  it('nur channelSyncStatus wechselt (IN_PROGRESS → SYNCED) → kein overridesChanged, Status bleibt in before/after sichtbar', async () => {
+    const m = await c();
+    const before = { ...A2, channelSyncStatus: 'IN_PROGRESS' };
+    m.getListingFinancials
+      .mockResolvedValueOnce({ cleaningFee: { value: VAL, airbnb2: before } })
+      .mockResolvedValueOnce({ cleaningFee: { value: { ...VAL, formula: 390 }, airbnb2: A2 } });
+    const body = await (await put({ amount: 390 })).json();
+    expect(body.overridesChanged).toBeUndefined();
+    expect(body.channelOverrides).toEqual({ before: { airbnb2: before }, after: { airbnb2: A2 } });
+  });
+
   it('PERCENTAGE → 409, kein Schreibvorgang', async () => {
     const m = await c();
     m.getListingFinancials.mockResolvedValueOnce({ cleaningFee: { value: { valueType: 'PERCENTAGE', multiplier: 'PER_STAY', formula: 10 } } });
