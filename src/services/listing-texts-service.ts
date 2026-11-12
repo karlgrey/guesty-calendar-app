@@ -40,6 +40,8 @@ export const NOTE_GUESTY_PENDING = 'Listing-Texte werden gerade aus Guesty gelad
 export const NOTE_HOSTEX_FAILED = 'Hostex-Abruf der Listing-Texte (GET /v3/properties + /v3/listings) fehlgeschlagen — später erneut versuchen.';
 export const NOTE_HOSTEX_PENDING = 'Listing-Texte werden gerade aus Hostex geladen — später erneut versuchen.';
 export const NOTE_HOSTEX_EMPTY = 'Hostex GET /v3/listings liefert für dieses Objekt keine gefüllten Textfelder (metadata.descriptions[], title, metadata.feature geprüft).';
+/** Öffentliche Route /p/:slug/listing: Hostex-Texte werden dort nicht ausgegeben (#983, Spec-Punkt 5). */
+export const NOTE_HOSTEX_PUBLIC = 'Hostex-Inseratstexte werden öffentlich nicht ausgegeben — nur über die Agent-API abrufbar.';
 
 /** Kein Airbnb-Kanal-Listing zur Hostex-Property gefunden. */
 export class HostexListingNotFoundError extends Error {}

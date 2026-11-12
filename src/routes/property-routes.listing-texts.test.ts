@@ -13,6 +13,7 @@ vi.mock('../repositories/listings-repository.js', () => ({
 const textsMock = vi.fn();
 vi.mock('../services/listing-texts-service.js', () => ({
   getListingTextsForProperty: (...a: unknown[]) => textsMock(...a),
+  NOTE_HOSTEX_PUBLIC: 'Hostex-Inseratstexte werden öffentlich nicht ausgegeben (Mock).',
 }));
 
 import propertyRoutes from './property-routes.js';
@@ -53,21 +54,30 @@ describe('GET /p/:slug/listing — publicDescription (#1043)', () => {
     expect(body.pricing.basePrice).toBe(100);
   });
 
-  it('Hostex: öffentliche Route gibt publicDescription aus, aber weder hostexTexts noch guestInstructions', async () => {
-    textsMock.mockResolvedValueOnce({
+  it('Hostex: öffentliche Antwort bleibt null + Hinweis, kein Hostex-Abruf, keine Hostex-Texte (#983)', async () => {
+    textsMock.mockClear();
+    // Würde der Service doch gefragt, lieferte er diese Texte — nichts davon darf nach außen.
+    textsMock.mockResolvedValue({
       available: true, source: 'hostex',
       texts: {
-        publicDescription: { summary: 'S', space: null, access: null, neighborhood: null, transit: null, notes: null, interactionWithGuests: null, houseRules: null },
+        publicDescription: { summary: 'GEHEIM-SUMMARY', space: null, access: null, neighborhood: null, transit: null, notes: 'GEHEIM-NOTES', interactionWithGuests: 'GEHEIM-INTERACTION', houseRules: null },
         guestInstructions: { checkInNotes: 'GEHEIM-CHECKIN', checkOutInstructions: 'GEHEIM-OUT' },
         hostexTexts: { 'metadata.descriptions[0].about_amenity': 'GEHEIM-HOSTEX' },
       },
     });
-    const { status, body } = await getJson('/p/farmhouse/listing');
-    expect(status).toBe(200);
-    expect(body.publicDescription.summary).toBe('S');
-    const json = JSON.stringify(body);
-    for (const s of ['GEHEIM-CHECKIN', 'GEHEIM-OUT', 'GEHEIM-HOSTEX', 'hostexTexts', 'guestInstructions']) {
-      expect(json).not.toContain(s);
-    }
+    try {
+      for (const slug of ['bootshaus-alte-oder', 'alte-schilderwerkstatt']) {
+        const { status, body } = await getJson(`/p/${slug}/listing`);
+        expect(status).toBe(200);
+        expect(body.publicDescription).toBeNull();
+        expect(body.publicDescriptionNote).toMatch(/Hostex/);
+        expect(body.pricing.basePrice).toBe(100);
+        const json = JSON.stringify(body);
+        expect(json).not.toContain('GEHEIM');
+        expect(json).not.toContain('hostexTexts');
+        expect(json).not.toContain('guestInstructions');
+      }
+      expect(textsMock).not.toHaveBeenCalled();
+    } finally { textsMock.mockReset(); }
   });
 });

@@ -31,4 +31,13 @@ describe('HostexClient.getListings (#983)', () => {
     expect(listings).toHaveLength(101);
     expect(String(fetchMock.mock.calls[1][0])).toContain('offset=100');
   });
+
+  it('stoppt, sobald die gemeldete Gesamtzahl erreicht ist (volle letzte Seite, kein Endlos-Abruf)', async () => {
+    const full = Array.from({ length: 100 }, (_, i) => ({ id: i, listing_id: `l${i}`, channel_type: 'airbnb' }));
+    const fetchMock = vi.fn().mockResolvedValue(envelope({ listings: full, total: 100 }));
+    vi.stubGlobal('fetch', fetchMock);
+    const listings = await new HostexClient('tok', 'https://example.test/v3').getListings();
+    expect(listings).toHaveLength(100);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });

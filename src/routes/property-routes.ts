@@ -14,7 +14,7 @@ import { getReservationsByPeriod } from '../repositories/reservation-repository.
 import { calculateQuote, calculateQuoteWithGuesty } from '../services/pricing-calculator.js';
 import { getCachedQuote, saveQuoteToCache, cleanupExpiredQuotes } from '../repositories/quotes-repository.js';
 import { getPropertyBySlug, getListingId, type PropertyConfig } from '../config/properties.js';
-import { getListingTextsForProperty } from '../services/listing-texts-service.js';
+import { getListingTextsForProperty, NOTE_HOSTEX_PUBLIC } from '../services/listing-texts-service.js';
 import { NotFoundError, ValidationError } from '../utils/errors.js';
 import logger from '../utils/logger.js';
 
@@ -104,7 +104,11 @@ router.get('/:slug/listing', resolveProperty, async (req: Request, res: Response
 
     // #1043: öffentliche Inserat-Texte (nur lesend, gecacht); null + Hinweis, wenn der
     // Anbieter keine liefert (Hostex/airbnb-mail) oder der Abruf scheitert.
-    const textsResult = await getListingTextsForProperty(property);
+    // #983: Hostex-Inseratstexte gehen nur über die Agent-API raus. Die öffentliche Antwort für
+    // Hostex-Objekte bleibt wie zuvor (null + Hinweis) und löst hier keinen Hostex-Abruf aus.
+    const textsResult = property.provider === 'hostex'
+      ? { texts: null, note: NOTE_HOSTEX_PUBLIC }
+      : await getListingTextsForProperty(property);
 
     const response = {
       id: listing.id,

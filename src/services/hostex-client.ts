@@ -218,7 +218,9 @@ export class HostexClient {
       const data = await this.call<HostexListingsData>('GET', `/listings?limit=${limit}&offset=${offset}`);
       const page = data.listings ?? [];
       all.push(...page);
+      // Abbruch: letzte (nicht volle) Seite, gemeldete Gesamtzahl erreicht, oder leere Seite.
       if (page.length < limit) break;
+      if (typeof data.total === 'number' && all.length >= data.total) break;
     }
     return all;
   }
