@@ -44,6 +44,18 @@ vi.mock('../services/document-service.js', () => ({
   }),
   getCancellationWithPDF: vi.fn().mockResolvedValue(null),
 }));
+// #1167: Guesty-Kalender lesen/schreiben, Refresh + lokaler Spiegel gemockt
+// (Klassifizierung echt, Logik-Tests in guesty-availability.test.ts).
+const getCalendarMock = vi.fn();
+const setListingCalendarStatusMock = vi.fn();
+const triggerRefreshMock = vi.fn();
+const setLocalDayBlockedMock = vi.fn();
+vi.mock('../services/property-calendar-refresh.js', () => ({
+  triggerPropertyCalendarRefresh: (...a: unknown[]) => triggerRefreshMock(...a),
+}));
+vi.mock('../repositories/availability-repository.js', () => ({
+  setLocalDayBlocked: (...a: unknown[]) => setLocalDayBlockedMock(...a),
+}));
 vi.mock('../services/guesty-client.js', () => ({
   guestyClient: {
     getReservation: vi.fn().mockResolvedValue({ _id: 'res-1', status: 'reserved' }),
@@ -51,6 +63,9 @@ vi.mock('../services/guesty-client.js', () => ({
     getListing: vi.fn(),
     getListingFinancials: vi.fn(),
     updateListingCleaningFee: vi.fn().mockResolvedValue(undefined),
+    // #1167 Guesty-Blocker
+    getCalendar: (...a: unknown[]) => getCalendarMock(...a),
+    setListingCalendarStatus: (...a: unknown[]) => setListingCalendarStatusMock(...a),
     getGuest: vi.fn().mockResolvedValue({
       _id: 'guest-1', firstName: 'Lenia', lastName: 'K.', fullName: 'Lenia K.',
       email: 'l@example.com', phones: ['+49 30 1'], company: 'momox SE',
@@ -871,9 +886,15 @@ describe('agent-api', () => {
       expect(r.status).toBe(400);
     });
 
-    it('400 bei Guesty-Slug (z. B. farmhouse)', async () => {
-      const r = await fetch(`${base}/api/agent/availability/farmhouse`, { headers: KEY });
+    it('400 bei airbnb-mail-Slug (firenze-loft)', async () => {
+      const r = await fetch(`${base}/api/agent/availability/firenze-loft`, { headers: KEY });
       expect(r.status).toBe(400);
+    });
+
+    it('Antwort trägt provider=hostex', async () => {
+      getAvailabilitiesMock.mockResolvedValueOnce([{ id: 12659677, availabilities: [] }]);
+      const r = await fetch(`${base}/api/agent/availability/bootshaus-alte-oder?from=2026-10-01&to=2026-10-02`, { headers: KEY });
+      expect((await r.json()).provider).toBe('hostex');
     });
 
     it('404 bei unbekanntem Slug', async () => {
@@ -936,6 +957,172 @@ describe('agent-api', () => {
         headers: { 'Content-Type': 'application/json' },
       });
       expect(r.status).toBe(401);
+    });
+  });
+
+  // #1167: Guesty-Blocker. Fixtures nach Live-Befund #799/#802: manuell = blockRefs type m,
+  // Reservierung = blockRef mit reservation-Objekt, pt = Vorbereitungszeit.
+  describe('GET/POST /availability/:slug — Guesty (#1167)', () => {
+    const FH = 'farmhouse';
+    const day = (date: string, extra: Record<string, unknown> = {}) => ({
+      date, listingId: 'L', currency: 'EUR', price: 300, minNights: 2, status: 'available', ...extra,
+    });
+    const manual = (date: string, note = '') => day(date, {
+      status: 'unavailable', note, blocks: { m: true },
+      blockRefs: [{ _id: 'blkM', listingId: 'L', startDate: '2026-11-19', endDate: '2026-11-22', type: 'm', note }],
+    });
+    const booked = (date: string, status = 'confirmed') => day(date, {
+      status: 'unavailable', blocks: { b: true },
+      blockRefs: [{ _id: 'blkR', listingId: 'L', startDate: date, endDate: date, type: 'b', reservationId: 'res-tj',
+        reservation: { _id: 'res-tj', listingId: 'L', checkIn: '2026-11-12', checkOut: '2026-11-14', status } }],
+    });
+    const lateCheckout = (date: string) => manual(date, 'Late-Checkout res-tj');
+    let listingId: string;
+
+    beforeEach(() => {
+      vi.setSystemTime(new Date('2026-11-13T08:00:00.000Z'));
+      getCalendarMock.mockReset();
+      setListingCalendarStatusMock.mockReset().mockResolvedValue('ok');
+      triggerRefreshMock.mockReset().mockReturnValue('angestoßen');
+      setLocalDayBlockedMock.mockReset().mockReturnValue(true);
+      getAvailabilitiesMock.mockReset();
+      updateAvailabilitiesMock.mockReset();
+      listingId = getListingId(getPropertyBySlug(FH)!);
+    });
+    afterEach(() => { vi.useRealTimers(); });
+
+    const post = (action: 'block' | 'unblock', body: unknown) => fetch(`${base}/api/agent/availability/${FH}/${action}`, {
+      method: 'POST', headers: KEY, body: JSON.stringify(body),
+    });
+
+    it('GET liefert Tage + Bereiche, manuell von Reservierung unterscheidbar; kein Hostex-Aufruf', async () => {
+      getCalendarMock.mockResolvedValueOnce([
+        booked('2026-11-13'), lateCheckout('2026-11-15'), day('2026-11-16'),
+        manual('2026-11-19', 'Nadine'), manual('2026-11-20'), manual('2026-11-21'), day('2026-11-22'),
+      ]);
+      const r = await fetch(`${base}/api/agent/availability/${FH}?from=2026-11-13&to=2026-11-22`, { headers: KEY });
+      expect(r.status).toBe(200);
+      expect(getCalendarMock).toHaveBeenCalledWith(listingId, '2026-11-13', '2026-11-22');
+      expect(getAvailabilitiesMock).not.toHaveBeenCalled();
+      const body = await r.json();
+      expect(body.provider).toBe('guesty');
+      expect(body.property).toMatchObject({ slug: FH, provider: 'guesty', listingId });
+      expect(body.days[0]).toMatchObject({ date: '2026-11-13', available: false, blockType: 'reservation', reservationId: 'res-tj' });
+      expect(body.days[2]).toMatchObject({ date: '2026-11-16', available: true, blockType: null });
+      expect(body.blockedRanges).toEqual([
+        { from: '2026-11-13', to: '2026-11-13', nights: 1, remarks: '', blockType: 'reservation', reservationId: 'res-tj' },
+        { from: '2026-11-15', to: '2026-11-15', nights: 1, remarks: 'Late-Checkout res-tj', blockType: 'late-checkout' },
+        { from: '2026-11-19', to: '2026-11-21', nights: 3, remarks: 'Nadine', blockType: 'manual' },
+      ]);
+    });
+
+    it('unblock auf manuellen Block (Testfall 19.–21.11.) gibt die Tage frei, spiegelt lokal, stößt Sync an', async () => {
+      getCalendarMock
+        .mockResolvedValueOnce([manual('2026-11-19', 'Nadine'), manual('2026-11-20'), manual('2026-11-21')])
+        .mockResolvedValueOnce([day('2026-11-19'), day('2026-11-20'), day('2026-11-21')]);
+      const r = await post('unblock', { from: '2026-11-19', to: '2026-11-21' });
+      expect(r.status).toBe(200);
+      expect(setListingCalendarStatusMock).toHaveBeenCalledTimes(1);
+      expect(setListingCalendarStatusMock).toHaveBeenCalledWith(listingId, {
+        startDate: '2026-11-19', endDate: '2026-11-21', status: 'available', note: '',
+      });
+      expect(setLocalDayBlockedMock.mock.calls).toEqual([
+        [listingId, '2026-11-19', false], [listingId, '2026-11-20', false], [listingId, '2026-11-21', false],
+      ]);
+      expect(triggerRefreshMock).toHaveBeenCalledTimes(1);
+      expect(updateAvailabilitiesMock).not.toHaveBeenCalled();
+      const body = await r.json();
+      expect(body).toMatchObject({
+        provider: 'guesty', from: '2026-11-19', to: '2026-11-21', available: true, nights: 3,
+        changed: [{ from: '2026-11-19', to: '2026-11-21', nights: 3 }], changedDays: 3,
+        skipped: [], calendarSync: 'angestoßen',
+      });
+      expect(body.notApplied).toBeUndefined();
+    });
+
+    it('unblock über Reservierung + Late-Checkout-Block: nur manuelle Tage, Rest in skipped', async () => {
+      getCalendarMock
+        .mockResolvedValueOnce([booked('2026-11-13'), lateCheckout('2026-11-15'), day('2026-11-16'), manual('2026-11-19'), day('2026-11-20'), manual('2026-11-21')])
+        .mockResolvedValueOnce([booked('2026-11-13'), lateCheckout('2026-11-15'), day('2026-11-16'), day('2026-11-19'), day('2026-11-20'), day('2026-11-21')]);
+      const r = await post('unblock', { from: '2026-11-13', to: '2026-11-21' });
+      expect(r.status).toBe(200);
+      expect(setListingCalendarStatusMock.mock.calls.map((c) => [c[1].startDate, c[1].endDate])).toEqual([
+        ['2026-11-19', '2026-11-19'], ['2026-11-21', '2026-11-21'],
+      ]);
+      const body = await r.json();
+      expect(body.skipped.map((s: any) => [s.date, s.blockType])).toEqual([
+        ['2026-11-13', 'reservation'], ['2026-11-15', 'late-checkout'],
+      ]);
+      expect(body.unchanged).toEqual(['2026-11-16', '2026-11-20']);
+    });
+
+    it('unblock nur auf Reservierung: kein Schreibaufruf, kein Sync, Reservierung in skipped', async () => {
+      getCalendarMock.mockResolvedValueOnce([booked('2026-11-20'), booked('2026-11-21', 'reserved')]);
+      const r = await post('unblock', { from: '2026-11-20', to: '2026-11-21' });
+      expect(r.status).toBe(200);
+      expect(setListingCalendarStatusMock).not.toHaveBeenCalled();
+      expect(triggerRefreshMock).not.toHaveBeenCalled();
+      const body = await r.json();
+      expect(body).toMatchObject({ changedDays: 0, calendarSync: 'nicht nötig' });
+      expect(body.skipped.map((s: any) => s.blockType)).toEqual(['reservation', 'hold']);
+    });
+
+    it('block auf Tag mit Reservierung → 409, nichts geschrieben', async () => {
+      getCalendarMock.mockResolvedValueOnce([day('2026-11-19'), booked('2026-11-20')]);
+      const r = await post('block', { from: '2026-11-19', to: '2026-11-20' });
+      expect(r.status).toBe(409);
+      expect(setListingCalendarStatusMock).not.toHaveBeenCalled();
+      expect(triggerRefreshMock).not.toHaveBeenCalled();
+      const body = await r.json();
+      expect(body.conflicts).toEqual([expect.objectContaining({ date: '2026-11-20', blockType: 'reservation' })]);
+    });
+
+    it('block auf freie Tage → unavailable, lokal geblockt, Sync angestoßen', async () => {
+      getCalendarMock
+        .mockResolvedValueOnce([day('2026-11-24'), day('2026-11-25')])
+        .mockResolvedValueOnce([manual('2026-11-24'), manual('2026-11-25')]);
+      const r = await post('block', { from: '2026-11-24', to: '2026-11-25' });
+      expect(r.status).toBe(200);
+      expect(setListingCalendarStatusMock).toHaveBeenCalledWith(listingId, {
+        startDate: '2026-11-24', endDate: '2026-11-25', status: 'unavailable',
+      });
+      expect(setLocalDayBlockedMock).toHaveBeenCalledWith(listingId, '2026-11-24', true);
+      expect(triggerRefreshMock).toHaveBeenCalledTimes(1);
+      expect(await r.json()).toMatchObject({ provider: 'guesty', available: false, nights: 2, changedDays: 2 });
+    });
+
+    it('meldet notApplied, wenn Guesty nach dem Schreiben noch den alten Stand zeigt', async () => {
+      getCalendarMock
+        .mockResolvedValueOnce([manual('2026-11-19')])
+        .mockResolvedValueOnce([manual('2026-11-19')]);
+      const r = await post('unblock', { from: '2026-11-19', to: '2026-11-19' });
+      expect(r.status).toBe(200);
+      expect((await r.json()).notApplied).toEqual(['2026-11-19']);
+    });
+
+    it('Guesty-Fehler beim Schreiben → Fehlerstatus mit details, kein Sync', async () => {
+      const { ExternalApiError } = await import('../utils/errors.js');
+      getCalendarMock.mockResolvedValueOnce([manual('2026-11-19')]);
+      setListingCalendarStatusMock.mockRejectedValueOnce(new ExternalApiError('Guesty 422', 422, 'guesty', { message: 'bad' }));
+      const r = await post('unblock', { from: '2026-11-19', to: '2026-11-19' });
+      expect(r.status).toBeGreaterThanOrEqual(400);
+      expect(triggerRefreshMock).not.toHaveBeenCalled();
+      expect(setLocalDayBlockedMock).not.toHaveBeenCalled();
+    });
+
+    it('Teil-Erfolg: erster Lauf geschrieben, zweiter scheitert → Fehler, aber Spiegel + Sync für den ersten', async () => {
+      getCalendarMock.mockResolvedValueOnce([manual('2026-11-19'), day('2026-11-20'), manual('2026-11-21')]);
+      setListingCalendarStatusMock.mockResolvedValueOnce('ok').mockRejectedValueOnce(new Error('Guesty down'));
+      const r = await post('unblock', { from: '2026-11-19', to: '2026-11-21' });
+      expect(r.status).toBe(500);
+      expect(setLocalDayBlockedMock.mock.calls).toEqual([[listingId, '2026-11-19', false]]);
+      expect(triggerRefreshMock).toHaveBeenCalledTimes(1);
+    });
+
+    it('400 bei vergangenem Zeitraum (Guesty)', async () => {
+      const r = await post('unblock', { from: '2026-01-01', to: '2026-01-02' });
+      expect(r.status).toBe(400);
+      expect(getCalendarMock).not.toHaveBeenCalled();
     });
   });
 

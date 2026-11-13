@@ -39,6 +39,11 @@ import { syncHostexReservations } from '../jobs/hostex/sync-reservations.js';
 import { syncHostexCalendar } from '../jobs/hostex/sync-calendar.js';
 import { getHostexClient } from '../services/hostex-client.js';
 import { groupBlockedRanges } from '../services/availability-blocks.js';
+import {
+  classifyGuestyDay, groupGuestyBlockedRanges, planGuestyMutation, toRuns, type GuestyAvailabilityDay,
+} from '../services/guesty-availability.js';
+import { triggerPropertyCalendarRefresh } from '../services/property-calendar-refresh.js';
+import { setLocalDayBlocked } from '../repositories/availability-repository.js';
 import { getSuggestionsByStatus } from '../repositories/feedback-repository.js';
 import { revokeVaultSuggestion } from '../services/vault-suggestion-service.js';
 import type { SuggestionStatus } from '../types/feedback.js';
@@ -595,11 +600,9 @@ router.get('/auto-send/decisions', (req, res) => {
   } catch (err) { handleError(res, err); }
 });
 
-// Hostex Owner-Blocks (#725) — Kalender sperren/freigeben für Hostex-Objekte
-// (Bootshaus, Alte Schilderwerkstatt). Guesty-Blocks sind NICHT Teil dieses
-// Auftrags; die Provider-Weiche unten liefert bei provider=guesty/airbnb-mail
-// bewusst 400, damit ein Guesty-Zweig später ergänzt werden kann, ohne den
-// Endpunkt neu zu schneiden.
+// Kalender-Blocker: Hostex Owner-Blocks (#725, Bootshaus, Alte Schilderwerkstatt) und
+// Guesty-Listing-Kalender (#1167, Farmhouse, U19). Provider-Weiche in den Routen;
+// airbnb-mail (Florenz) → 400.
 const HOSTEX_MAX_RANGE_DAYS = 400;
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -626,12 +629,12 @@ function addDaysToDateString(dateStr: string, days: number): string {
   return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
 }
 
-/** Slug → hostex-Property auflösen, 404 bei unbekanntem Slug, 400 bei Nicht-Hostex-Provider. */
-function getHostexProperty(slug: string): PropertyConfig {
+/** Slug → Property mit Kalender-Endpunkt (hostex|guesty), 404 bei unbekanntem Slug, 400 sonst. */
+function getCalendarProperty(slug: string): PropertyConfig {
   const property = getPropertyBySlug(slug);
   if (!property) throw new NotFoundError(`Unbekanntes property: ${slug} (erlaubt: ${getPropertySlugs().join('|')})`);
-  if (property.provider !== 'hostex') {
-    throw new ValidationError(`property ${slug} hat Provider "${property.provider}" — dieser Endpunkt gilt nur für provider=hostex`);
+  if (property.provider !== 'hostex' && property.provider !== 'guesty') {
+    throw new ValidationError(`property ${slug} hat Provider "${property.provider}" — dieser Endpunkt gilt nur für provider=hostex|guesty`);
   }
   return property;
 }
@@ -656,6 +659,10 @@ function validateAvailabilityRange(fromRaw: string, toRaw: string): { from: stri
 
 function hostexPropertySummary(property: PropertyConfig, hostexPropertyId: string) {
   return { slug: property.slug, name: property.name, provider: property.provider, hostexPropertyId };
+}
+
+function guestyPropertySummary(property: PropertyConfig, listingId: string) {
+  return { slug: property.slug, name: property.name, provider: property.provider, listingId };
 }
 
 // ---------------------------------------------------------------------------
@@ -791,12 +798,24 @@ router.put('/listings/:slug/cleaning-fee', async (req, res) => {
 
 router.get('/availability/:slug', async (req, res) => {
   try {
-    const property = getHostexProperty(req.params.slug);
+    const property = getCalendarProperty(req.params.slug);
     const todayBerlin = berlinCalendarDay(new Date().toISOString());
     const fromRaw = typeof req.query.from === 'string' && req.query.from !== '' ? req.query.from : todayBerlin;
     requireValidDate('from', fromRaw);
     const toRaw = typeof req.query.to === 'string' && req.query.to !== '' ? req.query.to : addDaysToDateString(fromRaw, 365);
     const { from, to } = validateAvailabilityRange(fromRaw, toRaw);
+
+    if (property.provider === 'guesty') {
+      const listingId = getListingId(property);
+      const days = await readGuestyDays(listingId, from, to);
+      res.json({
+        property: guestyPropertySummary(property, listingId),
+        provider: 'guesty',
+        from, to, days,
+        blockedRanges: groupGuestyBlockedRanges(days),
+      });
+      return;
+    }
 
     const hostexPropertyId = getListingId(property);
     const [propertyAvailability] = await getHostexClient().getAvailabilities([hostexPropertyId], from, to);
@@ -806,20 +825,106 @@ router.get('/availability/:slug', async (req, res) => {
 
     res.json({
       property: hostexPropertySummary(property, hostexPropertyId),
+      provider: 'hostex',
       from, to, days,
       blockedRanges: groupBlockedRanges(days),
     });
   } catch (err) { handleError(res, err); }
 });
 
+/** Guesty-Kalender lesen und je Tag klassifizieren (nur Tage im Zeitraum, sortiert). */
+async function readGuestyDays(listingId: string, from: string, to: string): Promise<GuestyAvailabilityDay[]> {
+  const raw = await guestyClient.getCalendar(listingId, from, to);
+  return raw.map(classifyGuestyDay)
+    .filter((d) => d.date >= from && d.date <= to)
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/**
+ * #1167 Guesty-Zweig von block/unblock. unblock löst nur reine manuelle Blöcke (Typ m, ohne
+ * Late-Checkout-Notiz); Reservierung/Hold/Regel-Blöcke bleiben und stehen in `skipped`.
+ * block auf Reservierung/Hold → 409 ohne Schreibaufruf; schon geblockte Tage bleiben unberührt.
+ */
+async function handleGuestyMutation(
+  res: express.Response, property: PropertyConfig, from: string, to: string, available: boolean,
+) {
+  const listingId = getListingId(property);
+  const action = available ? 'unblock' : 'block';
+  const todayBerlin = berlinCalendarDay(new Date().toISOString());
+  const before = await readGuestyDays(listingId, from, to);
+  const plan = planGuestyMutation(before, action, todayBerlin);
+  if (plan.conflicts.length > 0) {
+    res.status(409).json({
+      error: `Zeitraum enthält Reservierung/Hold — nichts geblockt: ${plan.conflicts.map((c) => c.date).join(', ')}`,
+      provider: 'guesty', from, to, conflicts: plan.conflicts,
+    });
+    return;
+  }
+
+  const runs = toRuns(plan.write);
+  const status = available ? 'available' : 'unavailable';
+  const written: string[] = [];
+  let calendarSync = 'nicht nötig';
+  try {
+    for (const run of runs) {
+      await guestyClient.setListingCalendarStatus(listingId, {
+        startDate: run.from, endDate: run.to, status, ...(available ? { note: '' } : {}),
+      });
+      for (let d = run.from; d <= run.to; d = addDaysToDateString(d, 1)) written.push(d);
+    }
+  } finally {
+    // Lokale Availability sofort nachziehen (Website), auch bei Teil-Erfolg; booked-Zeilen nie.
+    for (const d of written) {
+      try { setLocalDayBlocked(listingId, d, !available); } catch (error) {
+        logger.warn({ slug: property.slug, date: d, error }, 'Lokale Availability nach Guesty-Mutation nicht nachgezogen (non-fatal)');
+      }
+    }
+    if (written.length > 0) {
+      logger.info({ slug: property.slug, from, to, available, written: written.length }, 'Guesty availability mutation');
+      // auch bei Teil-Erfolg (späterer PUT gescheitert): Website/Google-Kalender nachziehen
+      calendarSync = triggerPropertyCalendarRefresh(property, listingId);
+    }
+  }
+
+  // Nachlesen: steht ein geschriebener Tag noch im alten Zustand, melden (nicht fatal).
+  let notApplied: string[] | undefined;
+  let verifyError: string | undefined;
+  if (written.length > 0) {
+    try {
+      const after = await readGuestyDays(listingId, from, to);
+      const byDate = new Map(after.map((d) => [d.date, d]));
+      notApplied = written.filter((d) => byDate.get(d)?.available !== available);
+    } catch (err) {
+      verifyError = err instanceof Error ? err.message : String(err);
+    }
+  }
+
+  res.json({
+    property: guestyPropertySummary(property, listingId),
+    provider: 'guesty',
+    from, to, available, nights: daysBetween(from, to) + 1,
+    changed: runs,
+    changedDays: written.length,
+    unchanged: plan.unchanged,
+    skipped: plan.skipped,
+    ...(notApplied && notApplied.length > 0 ? { notApplied, note: 'Guesty zeigt diese Tage noch im alten Zustand — GET /availability prüfen' } : {}),
+    ...(verifyError !== undefined ? { verifyFailed: true, verifyError } : {}),
+    calendarSync,
+  });
+}
+
 async function handleAvailabilityMutation(req: express.Request, res: express.Response, available: boolean) {
   try {
-    const property = getHostexProperty(req.params.slug);
+    const property = getCalendarProperty(req.params.slug);
     const body = req.body;
     if (!body || typeof body.from !== 'string' || typeof body.to !== 'string') {
       throw new ValidationError('Body muss from und to (YYYY-MM-DD) enthalten');
     }
     const { from, to } = validateAvailabilityRange(body.from, body.to);
+    if (property.provider === 'guesty') {
+      await handleGuestyMutation(res, property, from, to, available);
+      return;
+    }
     const hostexPropertyId = getListingId(property);
 
     await getHostexClient().updateAvailabilities({ propertyIds: [hostexPropertyId], startDate: from, endDate: to, available });
@@ -827,6 +932,7 @@ async function handleAvailabilityMutation(req: express.Request, res: express.Res
 
     res.json({
       property: hostexPropertySummary(property, hostexPropertyId),
+      provider: 'hostex',
       from, to, available, nights: daysBetween(from, to) + 1,
       async: true,
       note: 'Hostex verarbeitet asynchron — Stand mit GET /availability prüfen',
