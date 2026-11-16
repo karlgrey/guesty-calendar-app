@@ -13,6 +13,9 @@ export interface DraftExpectation {
   mustContainAny?: string[];
   /** keins darf vorkommen (case-insensitive). */
   mustNotContain?: string[];
+  /** #1191: kein Satz aus den Host-Nachrichten der Fixture wiederholt (repeats_own_sentence) —
+   *  geprüft im Skript test-draft-fixtures.ts (braucht den Verlauf), nicht in checkDraftExpectation. */
+  noRepeatOfHost?: boolean;
 }
 
 const GREETING_RE = /^\s*(hallo|hi|hey|hallöchen|liebe[rs]?|lieber|guten\s+(tag|morgen|abend)|moin|servus|hello|dear|ciao|buongiorno|hola|bonjour)\b[^.!?\n]*[,!]?\s*$/i;

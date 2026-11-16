@@ -123,6 +123,15 @@ export function lastInboundMessageSentAt(messages: Message[]): string | null {
   return sentAt;
 }
 
+// #1191: Fenster der Host-Nachrichten, gegen die auf Satzwiederholungen geprüft wird.
+export const REPEAT_HOST_WINDOW = 3;
+
+/** Bodies der letzten n gesendeten (outbound) Nachrichten, chronologisch (älteste zuerst), leere übersprungen. */
+export function recentHostMessages(messages: Message[], n = REPEAT_HOST_WINDOW): string[] {
+  const bodies = messages.filter((m) => m.direction === 'outbound' && (m.body ?? '').trim()).map((m) => m.body as string);
+  return bodies.slice(-n);
+}
+
 export async function runAutoSendGate(input: GateInput, deps: GateDeps = realGateDeps()): Promise<{ decision: AutoSendDecision; mode: AutoSendMode; sent: boolean }> {
   const mode = resolveAutoSendMode(deps.envMode, input.property.autoSend);
   if (mode === 'off') {
@@ -140,6 +149,8 @@ export async function runAutoSendGate(input: GateInput, deps: GateDeps = realGat
     // Lauf, der über eine Sekundengrenze hinweg dauert).
     const now = new Date();
     const guestMessages = guestMessagesSinceLastHost(input.messages);
+    // #1191: einmal berechnet, an Judge UND mechanischen Check.
+    const hostMessages = recentHostMessages(input.messages);
     // #697/#702: mechanische Buchungsanfrage-Erkennung — pure, unabhängig vom Judge-Modell.
     // Läuft VOR dem Judge-Aufruf, damit Task-Anlage + Fristpersistenz unten unabhängig vom
     // Judge-Ausgang passieren können. Seit #702 durchsucht findOpenBookingRequest den GANZEN
@@ -154,7 +165,7 @@ export async function runAutoSendGate(input: GateInput, deps: GateDeps = realGat
     const judge = await deps.judge({
       guestMessages, draft: input.body, voice: input.voice, facts: input.facts,
       bookingContext: input.bookingContext, guestName: input.thread.guest_name,
-      guestLanguage: input.guestLanguage, now,
+      guestLanguage: input.guestLanguage, now, hostMessages,
     });
     // Kategorie-Override: ein erkannter System-Post erzwingt 'buchungsanfrage' — unabhängig
     // davon, was (oder ob überhaupt) der Judge klassifiziert hat (Spec: "der Judge darf sie
@@ -171,7 +182,7 @@ export async function runAutoSendGate(input: GateInput, deps: GateDeps = realGat
       knownDigitRuns: collectDigitRuns([...guestMessages, input.bookingContext ?? '']),
       guestLanguage: input.guestLanguage,
       isBookingRequest,
-      now, bookingContext: input.bookingContext,
+      now, bookingContext: input.bookingContext, recentHostMessages: hostMessages,
     });
     const baseInput: Omit<PolicyInput, 'promiseTask' | 'bookingTask'> = {
       mode, paused: deps.isPaused(), judge: effectiveJudge, mechanical,

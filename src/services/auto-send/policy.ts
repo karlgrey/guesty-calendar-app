@@ -39,6 +39,7 @@ const MECH_LABEL: Record<MechanicalFlag, string> = {
   language_mismatch: 'falsche Sprache (mechanisch erkannt)', // #695
   confirmation_words: 'Bestätigungswort in einer Buchungsanfrage-Rückfrage', // #697
   zeitbezug_veraltet: 'Wochentag passt nicht zu heute/Buchung', // #698
+  repeats_own_sentence: 'wiederholt eigenen Satz', // #1191
 };
 
 /**
@@ -69,6 +70,10 @@ function decideByGates(i: PolicyInput): AutoSendDecision {
   if (i.mode === 'off') return wait('Auto-Send aus (Modus off)');
   if (i.paused) return wait('Auto-Send pausiert');
   if (i.judge.kind === 'failed') return wait(`Prüfung technisch fehlgeschlagen: ${i.judge.error}`);
+  // #1191: Satzwiederholung entscheidet VOR Buchungsanfrage-/Kategorie-Zweig, damit der Grund
+  // immer „wiederholt eigenen Satz“ nennt (nicht den erstbesten mechanischen Treffer).
+  const repeat = i.mechanical.find((m) => m.flag === 'repeats_own_sentence');
+  if (repeat) return wait(`Mechanischer Check: wiederholt eigenen Satz („${repeat.match}")`);
   const v = i.judge.verdict;
 
   // #697: eigener, engerer Policy-Zweig für Buchungsanfragen — NIE Teil von AUTO_OK_CATEGORIES.

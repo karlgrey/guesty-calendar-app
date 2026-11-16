@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { runAutoSendGate, realGateDeps, type GateDeps, type GateInput } from './runner.js';
+import { runAutoSendGate, realGateDeps, recentHostMessages, type GateDeps, type GateInput } from './runner.js';
 import type { MessageThread, Message } from '../../types/messages.js';
 import type { PropertyConfig } from '../../config/properties.js';
 
@@ -338,5 +338,34 @@ describe('realGateDeps (Final-Review F5 — Wiring-Tests)', () => {
     const d = realGateDeps();
     const guestyThread = { source: 'guesty' } as MessageThread;
     expect(d.canSend(guestyThread, [])).toBe(false);
+  });
+});
+
+// #1191: Satzwiederholung gegenüber den letzten gesendeten Host-Nachrichten.
+describe('recentHostMessages / Gate (#1191)', () => {
+  const out = (id: string, body: string, t: string) => ({ id, direction: 'outbound', body, sent_at: t }) as Message;
+  const inn = (id: string, body: string, t: string) => ({ id, direction: 'inbound', body, sent_at: t }) as Message;
+
+  it('liefert nur die letzten 3 outbound-Bodies, chronologisch, ohne leere', () => {
+    const m = [out('a', 'A', '1'), inn('g1', 'Gast', '2'), out('b', 'B', '3'), out('x', '  ', '4'), out('c', 'C', '5'), inn('g2', 'Gast2', '6'), out('d', 'D', '7')];
+    expect(recentHostMessages(m)).toEqual(['B', 'C', 'D']);
+    expect(recentHostMessages(m, 1)).toEqual(['D']);
+  });
+  const hostBody = 'Hey Nora,\n\nWenn es für euch passt, stell gern die Buchungsanfrage.\n\nLiebe Grüße, Micha';
+  const thread2 = [out('h1', hostBody, '2026-09-19T09:00:00Z'), inn('g1', 'Wir sind 15 Personen.', '2026-09-19T10:00:00Z')];
+
+  it('wiederholter Satz → wait mit Grund und mech-Flag, persistiert', async () => {
+    const d = deps();
+    const r = await runAutoSendGate({ ...input, body: 'Hey Nora,\n\nMit 15 passt das genau.\n\nWenn es für euch passt, stell gern die Buchungsanfrage.\n\nLiebe Grüße, Micha', messages: thread2 }, d);
+    expect(r.decision.decision).toBe('wait');
+    expect(r.decision.reason).toContain('wiederholt eigenen Satz');
+    expect(r.decision.flags).toContain('mech:repeats_own_sentence');
+    expect(d.persistDecision).toHaveBeenCalledWith('d1', expect.objectContaining({ decision: 'wait', reason: expect.stringContaining('wiederholt eigenen Satz') }), 'live');
+    expect(d.send).not.toHaveBeenCalled();
+  });
+  it('Judge bekommt hostMessages', async () => {
+    const d = deps();
+    await runAutoSendGate({ ...input, messages: thread2 }, d);
+    expect(d.judge).toHaveBeenCalledWith(expect.objectContaining({ hostMessages: [hostBody] }));
   });
 });

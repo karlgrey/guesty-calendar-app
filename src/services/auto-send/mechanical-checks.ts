@@ -2,6 +2,7 @@
 import type { MechanicalFinding } from './types.js';
 import { detectLanguage, type SupportedLanguage } from '../../utils/language-detect.js';
 import { allowedWeekdays } from './today-facts.js';
+import { stripGreetingAndClosing } from '../draft-fixture-check.js';
 
 export const MAX_DRAFT_LENGTH = 1200;
 const DIGIT_RUN = /\d{4,}/g;
@@ -42,6 +43,48 @@ export function collectDigitRuns(texts: string[]): string[] {
   return [...out];
 }
 
+// #1191: Satzwiederholung gegenüber den letzten gesendeten Host-Nachrichten.
+export const REPEAT_MIN_WORDS = 5;
+export const REPEAT_JACCARD_THRESHOLD = 0.8;
+
+/** NFC, klein, alles außer Buchstaben/Ziffern/Whitespace (Satzzeichen, Emojis, Anführungszeichen) → Leerzeichen. */
+export function normalizeSentence(s: string): string {
+  return s.normalize('NFC').toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/** Sätze ohne Anrede-Zeile/Grußblock, normalisiert, nur mit ≥ REPEAT_MIN_WORDS Wörtern. */
+export function ownSentences(text: string): { raw: string; norm: string; tokens: Set<string> }[] {
+  const out: { raw: string; norm: string; tokens: Set<string> }[] = [];
+  for (const part of stripGreetingAndClosing(text ?? '').split(/(?<=[.!?…])\s+|\n+/)) {
+    const raw = part.trim();
+    const norm = normalizeSentence(raw);
+    if (!norm) continue;
+    const words = norm.split(' ');
+    if (words.length < REPEAT_MIN_WORDS) continue;
+    out.push({ raw, norm, tokens: new Set(words) });
+  }
+  return out;
+}
+
+function jaccard(a: Set<string>, b: Set<string>): number {
+  let inter = 0;
+  for (const t of a) if (b.has(t)) inter++;
+  const union = a.size + b.size - inter;
+  return union === 0 ? 0 : inter / union;
+}
+
+/** Erster Entwurfssatz (Original, getrimmt), der einen Host-Satz exakt (normalisiert) oder per Token-Jaccard ≥ 0,8 wiederholt. */
+export function findRepeatedOwnSentence(body: string, hostMessages: string[]): string | null {
+  const hostSentences = hostMessages.flatMap((m) => ownSentences(m));
+  if (!hostSentences.length) return null;
+  for (const d of ownSentences(body)) {
+    for (const h of hostSentences) {
+      if (d.norm === h.norm || jaccard(d.tokens, h.tokens) >= REPEAT_JACCARD_THRESHOLD) return d.raw;
+    }
+  }
+  return null;
+}
+
 export function runMechanicalChecks(
   body: string,
   // #695: guestLanguage optional (Rückwärtskompatibilität bestehender Aufrufer/Tests) — ohne
@@ -53,6 +96,8 @@ export function runMechanicalChecks(
   context: {
     knownDigitRuns: string[]; guestLanguage?: SupportedLanguage; isBookingRequest?: boolean;
     now?: Date; bookingContext?: string | null;
+    // #1191: die zuletzt gesendeten Host-Nachrichten — fehlt/leer → kein Wiederholungs-Check.
+    recentHostMessages?: string[];
   },
 ): MechanicalFinding[] {
   const f: MechanicalFinding[] = [];
@@ -88,6 +133,10 @@ export function runMechanicalChecks(
       const m = text.match(new RegExp(`\\b${wd.name}`, 'i'));
       if (m && !allowed.has(wd.index)) { f.push({ flag: 'zeitbezug_veraltet', match: m[0] }); break; }
     }
+  }
+  if (context.recentHostMessages?.length) {
+    const repeated = findRepeatedOwnSentence(text, context.recentHostMessages);
+    if (repeated) f.push({ flag: 'repeats_own_sentence', match: repeated.slice(0, 80) });
   }
   return f;
 }

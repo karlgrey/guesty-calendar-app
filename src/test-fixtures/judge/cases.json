@@ -493,5 +493,42 @@
       "category": "buchungsanfrage",
       "auto": false
     }
+  },
+  {
+    "name": "Nora — Entwurf wiederholt die schon gesendete Einladung zur Buchungsanfrage (#1191)",
+    "guestMessages": [
+      "Danke für die schnelle Rückmeldung! ☺️ Plan B wäre, mit der Familie zu feiern, dann wären es 15 Personen und 2 Kinder (9 und 5 Jahre). Wäre das für dich noch in Ordnung?"
+    ],
+    "hostMessages": [
+      "Hey Nora,\n\nvielen Dank für deine ehrliche Anfrage, das freut mich! Ein gemütlicher Geburtstag im kleinen Kreis ist bei uns grundsätzlich denkbar, große Feiern oder Events wie Hochzeiten bieten wir aber nicht an. Wichtig ist unser festes Limit von 15 Personen insgesamt, Tagesgäste mitgezählt. Wie viele Personen wärt ihr denn insgesamt, inklusive der Gäste, die nur abends vorbeikommen?\n\nWenn es für euch passt, stell gern die Buchungsanfrage.\n\nLiebe Grüße, Micha"
+    ],
+    "draft": "Hey Nora,\n\ndanke dir für die Infos! Mit 15 Personen plus zwei Kindern wärt ihr über unserem Limit von 15 Personen insgesamt, das ist leider eine feste Grenze. Wenn ihr es auf 15 Personen inklusive Kinder schafft, freue ich mich.\n\nWenn es für euch passt, stell gern die Buchungsanfrage.\n\nLiebe Grüße, Micha",
+    "facts": "Hartes Limit: 15 Personen (Übernachtungs- und Tagesgäste zusammen, keine Ausnahmen). 15 Betten. Keine Hochzeiten/großen Feiern; kleine, ruhige Runden bis 15 ggf. case-by-case.",
+    "guestName": "Nora",
+    "bookingContext": "Buchungsanfrage (noch nicht bestätigt): Zeitraum 05.12.2026–07.12.2026, 2 Nächte, 15 Personen — Daten stammen aus der Anfrage selbst.",
+    "expected": {
+      "category": "buchungsanfrage",
+      "auto": false
+    }
+  },
+  {
+    "name": "Nora — Folgeantwort ohne Wiederholung (#1191, Gegenprobe)",
+    "guestMessages": [
+      "Danke! Gibt es in der Nähe eigentlich einen See zum Baden?"
+    ],
+    "hostMessages": [
+      "Hey Nora,\n\nvielen Dank für deine ehrliche Anfrage, das freut mich! Ein gemütlicher Geburtstag im kleinen Kreis ist bei uns grundsätzlich denkbar, große Feiern oder Events wie Hochzeiten bieten wir aber nicht an. Wichtig ist unser festes Limit von 15 Personen insgesamt, Tagesgäste mitgezählt. Wie viele Personen wärt ihr denn insgesamt, inklusive der Gäste, die nur abends vorbeikommen?\n\nWenn es für euch passt, stell gern die Buchungsanfrage.\n\nLiebe Grüße, Micha"
+    ],
+    "draft": "Hey Nora,\n\nja, ein Badesee liegt rund 2 km vom Haus entfernt — perfekt für einen Ausflug zwischendurch.\n\nLiebe Grüße, Micha",
+    "facts": "Hartes Limit: 15 Personen (Übernachtungs- und Tagesgäste zusammen, keine Ausnahmen). 15 Betten. Keine Hochzeiten/großen Feiern; kleine, ruhige Runden bis 15 ggf. case-by-case. Umgebung: ein Badesee liegt rund 2 km entfernt.",
+    "guestName": "Nora",
+    "bookingContext": "Buchungsanfrage (noch nicht bestätigt): Zeitraum 05.12.2026–07.12.2026, 2 Nächte, 15 Personen — Daten stammen aus der Anfrage selbst.",
+    "expected": {
+      "category": [
+        "buchungsanfrage",
+        "playbook_fakt"
+      ],
+      "auto": true
+    }
   }
 ]

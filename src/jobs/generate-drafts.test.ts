@@ -360,3 +360,62 @@ describe('Änderungsantrag (#976)', () => {
     expect(gate.mock.calls[0][0].bookingContext).toBe('Buchung X');
   });
 });
+
+// #1191 Spec Punkt 4/6d: Wiederholung eines eigenen Satzes → genau EIN Neuversuch mit dem Satz.
+describe('Satzwiederholung — automatischer Neuversuch (#1191)', () => {
+  const INVITE = 'Wenn es für euch passt, stell gern die Buchungsanfrage.';
+  const msgs = [
+    { id: 'm1', direction: 'inbound', body: 'Hallo, dürfen abends ein paar Gäste dazukommen?', sent_at: '2026-11-14T10:00:00Z' },
+    { id: 'm2', direction: 'outbound', body: `Hey Nora,\n\nunser Limit sind 15 Personen insgesamt.\n\n${INVITE}\n\nLiebe Grüße, Micha`, sent_at: '2026-11-14T11:00:00Z' },
+    { id: 'm3', direction: 'inbound', body: 'Wir wären 15 Personen und 2 Kinder. Geht das noch?', sent_at: '2026-11-14T12:00:00Z' },
+  ] as any;
+  const repeatWait = { decision: { decision: 'wait', reason: 'Mechanischer Check: wiederholt eigenen Satz', category: 'buchungsanfrage', flags: ['mech:repeats_own_sentence'] }, mode: 'shadow', sent: false };
+
+  it('Treffer → genau ein Neuversuch mit dem wiederholten Satz, gleicher Datensatz, Gate attempt=2', async () => {
+    const gate = vi.fn().mockResolvedValueOnce(repeatWait)
+      .mockResolvedValueOnce({ decision: { decision: 'wait', reason: 'ok', category: 'buchungsanfrage', flags: [] }, mode: 'shadow', sent: false });
+    const generate = vi.fn()
+      .mockResolvedValueOnce({ kind: 'text', body: `Hey Nora,\n\nmit Kindern wird es knapp. ${INVITE}\n\nLiebe Grüße, Micha` })
+      .mockResolvedValueOnce({ kind: 'text', body: 'Hey Nora,\n\nmit Kindern wird es leider knapp.\n\nLiebe Grüße, Micha' });
+    const updateDraftBody = vi.fn();
+    const d = deps({ getThreads: vi.fn().mockReturnValue([mkThread('guesty:n')]), getMessages: vi.fn().mockReturnValue(msgs), generate, gate, updateDraftBody });
+
+    await generateDraftsForProperty(property, d);
+
+    expect(d.create).toHaveBeenCalledTimes(1);
+    expect(generate).toHaveBeenCalledTimes(2);
+    expect(generate.mock.calls[0][0].repeatRetrySentence).toBeFalsy();
+    expect(generate.mock.calls[1][0].repeatRetrySentence).toBe(INVITE);
+    expect(generate.mock.calls[1][0].languageRetry).toBeFalsy();
+    const draftId = (d.create as any).mock.calls[0][0].id;
+    expect(updateDraftBody).toHaveBeenCalledWith(draftId, 'Hey Nora,\n\nmit Kindern wird es leider knapp.\n\nLiebe Grüße, Micha');
+    expect(gate).toHaveBeenCalledTimes(2);
+    expect(gate.mock.calls[1][0]).toMatchObject({ draftId, attempt: 2 });
+  });
+
+  it('bleibt der Treffer, kein dritter Anlauf', async () => {
+    const gate = vi.fn().mockResolvedValue(repeatWait);
+    const generate = vi.fn().mockResolvedValue({ kind: 'text', body: `Hey Nora, ${INVITE}` });
+    const d = deps({ getThreads: vi.fn().mockReturnValue([mkThread('guesty:n')]), getMessages: vi.fn().mockReturnValue(msgs), generate, gate });
+    await generateDraftsForProperty(property, d);
+    expect(generate).toHaveBeenCalledTimes(2);
+    expect(gate).toHaveBeenCalledTimes(2);
+  });
+
+  it('Sprache UND Wiederholung → trotzdem nur EIN Neuversuch mit beiden Korrekturen', async () => {
+    const gate = vi.fn().mockResolvedValue({ decision: { decision: 'wait', reason: 'x', category: null, flags: ['mech:language_mismatch', 'mech:repeats_own_sentence'] }, mode: 'shadow', sent: false });
+    const generate = vi.fn().mockResolvedValue({ kind: 'text', body: `Hey Nora,\n\n${INVITE}` });
+    const d = deps({ getThreads: vi.fn().mockReturnValue([mkThread('guesty:n')]), getMessages: vi.fn().mockReturnValue(msgs), generate, gate });
+    await generateDraftsForProperty(property, d);
+    expect(generate).toHaveBeenCalledTimes(2);
+    expect(generate.mock.calls[1][0]).toMatchObject({ languageRetry: true, repeatRetrySentence: INVITE });
+  });
+
+  it('wait ohne Wiederholungs-/Sprach-Flag → kein Neuversuch', async () => {
+    const gate = vi.fn().mockResolvedValue({ decision: { decision: 'wait', reason: 'x', category: null, flags: ['mech:url'] }, mode: 'shadow', sent: false });
+    const generate = vi.fn().mockResolvedValue({ kind: 'text', body: 'Hey Nora, schau mal hier.' });
+    const d = deps({ getThreads: vi.fn().mockReturnValue([mkThread('guesty:n')]), getMessages: vi.fn().mockReturnValue(msgs), generate, gate });
+    await generateDraftsForProperty(property, d);
+    expect(generate).toHaveBeenCalledTimes(1);
+  });
+});

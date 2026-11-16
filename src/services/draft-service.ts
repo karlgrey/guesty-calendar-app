@@ -81,6 +81,10 @@ export interface DraftInput {
   // #1082 Stufe 1: Few-shot „So schreibt Micha“ — explizit übergebene Beispiele (Tests, Abnahme-
   // Werkzeug). Fehlt das Feld, holt generateDraftForThread sie über deps.findExamples.
   hostExamples?: HostExample[];
+  // #1191: automatischer Neuversuch nach repeats_own_sentence — der wiederholte Satz aus dem
+  // ersten Entwurf (mechanical-checks.ts findRepeatedOwnSentence). Optional, null/fehlend = kein
+  // Neuversuch.
+  repeatRetrySentence?: string | null;
 }
 export interface DraftDeps {
   call: typeof callClaudeTool;
@@ -221,22 +225,51 @@ const REQUEST_KIND_LABEL: Record<BookingRequestKind, string> = {
     'Inquiry) — der Gast hat bisher nur angefragt bzw. eine Frage gestellt, noch KEINE verbindliche Buchungsanfrage',
 };
 
-function buildBookingClosingRule(requestKind: BookingRequestKind | null): string {
+// #1191 (Fall Lisa FH, 14.11.2026): der Schlusssatz stand bisher als wörtlicher Mustersatz im
+// Prompt („Wenn es für euch passt, stell gern die Buchungsanfrage.") und wurde bei JEDER
+// Folgenachricht erneut verlangt — der Block hat Vorrang vor den allgemeinen Regeln, also schrieb
+// das Modell denselben Satz zweimal hintereinander. Jetzt: Einladung/Ankündigung höchstens einmal
+// je Thread (closingAlreadySent, erkannt in hostAlreadySentClosing), eigene Formulierung statt
+// festem Baustein.
+function buildBookingClosingRule(requestKind: BookingRequestKind | null, closingAlreadySent = false): string {
   if (requestKind === 'request_to_book') {
-    return '4. Schlusssatz: kündige an, dass die Bestätigung in Kürze kommt — sinngemäß „die Bestätigung kommt in ' +
-      'Kürze" (Substantiv „Bestätigung", NICHT „bestätigt/bestätige ich/angenommen"; keine Zusage, dass die Buchung ' +
-      'angenommen ist). Hast du die eine Rückfrage aus Punkt 2 gestellt, ersetzt ein kurzer Bezug darauf diesen Satz ' +
-      '(z. B. „Sag mir kurz Bescheid, dann melde ich mich gleich wieder.").';
+    if (closingAlreadySent) {
+      return '4. Schluss: eine frühere Host-Nachricht in diesem Gespräch hat bereits angekündigt, dass die Bestätigung ' +
+        'kommt — kündige sie NICHT noch einmal an. Antworte nur auf den Inhalt der Gastnachricht und schließe neutral und ' +
+        'freundlich, ohne Zusage.';
+    }
+    return '4. Schluss: kündige an, dass die Bestätigung in Kürze kommt — in eigenen Worten, passend zum Gespräch, kein ' +
+      'fester Baustein (Substantiv „Bestätigung", NICHT „bestätigt/bestätige ich/angenommen"; keine Zusage, dass die ' +
+      'Buchung angenommen ist). Hast du die eine Rückfrage aus Punkt 2 gestellt, ersetzt ein kurzer Bezug darauf diese ' +
+      'Ankündigung.';
   }
   if (requestKind === 'inquiry') {
-    return '4. Schlusssatz: lade den Gast ein, die Buchungsanfrage zu stellen — sinngemäß „Wenn es für euch passt, ' +
-      'stell gern die Buchungsanfrage." (ohne die Plattform zu nennen). Hast du die eine Rückfrage aus Punkt 2 ' +
-      'gestellt, kommt die Einladung nach der Frage.';
+    if (closingAlreadySent) {
+      return '4. Schluss: eine frühere Host-Nachricht in diesem Gespräch hat den Gast bereits eingeladen, die ' +
+        'Buchungsanfrage zu stellen — lade NICHT noch einmal ein. Antworte nur auf den Inhalt der Gastnachricht und ' +
+        'schließe neutral und freundlich, ohne Zusage und ohne Ankündigung einer Bestätigung.';
+    }
+    return '4. Schluss: lade den Gast ein, die Buchungsanfrage zu stellen — in eigenen Worten, passend zum Gespräch, kein ' +
+      'fester Baustein (ohne die Plattform zu nennen). Hast du die eine Rückfrage aus Punkt 2 gestellt, kommt die ' +
+      'Einladung nach der Frage.';
   }
   return '4. Schlusssatz: freundlich und offen, ohne Zusage und ohne Ankündigung einer Bestätigung.';
 }
 
-function buildBookingRequestBlock(requestKind: BookingRequestKind | null): string {
+// #1191: Wurde die Einladung (Inquiry) bzw. die Bestätigungs-Ankündigung (Request-to-Book) in
+// diesem Thread schon von einer Host-Nachricht ausgesprochen? Bewusst grob über Schlüsselwörter
+// DE/EN — ein Fehltreffer kostet nur die (dann wiederholte) Einladung, die der allgemeine
+// Wiederholungs-Check (mechanical-checks.ts, repeats_own_sentence) zusätzlich abfängt.
+const INVITATION_SENT_RE = /buchungsanfrage|anfrage\s+(?:zu\s+)?(?:stellen|stell|schicken|schick|senden)|request[\s-]to[\s-]book|booking\s+request|(?:send|submit)\s+(?:a|the|your|us\s+a)\s+(?:booking\s+)?request/i;
+const CONFIRMATION_ANNOUNCED_RE = /bestätigung|confirmation/i;
+
+export function hostAlreadySentClosing(messages: Message[], requestKind: BookingRequestKind | null): boolean {
+  if (!requestKind) return false;
+  const re = requestKind === 'inquiry' ? INVITATION_SENT_RE : CONFIRMATION_ANNOUNCED_RE;
+  return messages.some((m) => m.direction === 'outbound' && re.test(m.body ?? ''));
+}
+
+function buildBookingRequestBlock(requestKind: BookingRequestKind | null, closingAlreadySent = false): string {
   const kindLabel = requestKind ? REQUEST_KIND_LABEL[requestKind] : 'Inquiry oder Request-to-Book)';
   return [
     '### BUCHUNGSANFRAGE — Sonderregeln für DIESE Antwort (haben Vorrang vor allgemeinen Regeln unten) ###',
@@ -258,7 +291,7 @@ function buildBookingRequestBlock(requestKind: BookingRequestKind | null): strin
     '3. Interne Prüfbedingungen NIEMALS als Aussage ("passt das für uns", "steht einer Bestätigung nichts im Weg", ' +
       '"eine Runde wie eure ist willkommen/passt gut") — ' +
       'Unsicheres nur als Frage an den Gast, nie als Aussage über den Ausgang der Prüfung.',
-    buildBookingClosingRule(requestKind),
+    buildBookingClosingRule(requestKind, closingAlreadySent),
     // #976: Kürze-Regel gilt auch hier (#1004-Abnahme: Tipps-Antwort war zu lang).
     'Länge: auch hier gilt die LÄNGE-Regel oben — insgesamt höchstens 3–4 kurze Sätze. Tipps-Fragen knapp ' +
       'beantworten: eine kleine Auswahl (höchstens zwei, drei Tipps) in EINEM Satz, keine Liste, keine Beschreibungen.',
@@ -287,6 +320,20 @@ export const LENGTH_RULE_BLOCK = [
   '- Länger werden darf eine Antwort NUR bei: (1) einem Angebot, (2) einer Absage/Ablehnung, (3) einem Problemfall ' +
     '(Beschwerde, Schaden, Störung/Ausfall, Notfall).',
   '### ENDE LÄNGE ###',
+].join('\n');
+
+// #1191 (Fall Lisa FH, 14.11.2026, Micha: „Das macht doch kein Mensch, genauso klingt ein
+// Roboter"): der Verlauf ging schon immer vollständig ins Modell, auch die eigenen Nachrichten —
+// es fehlte aber jede Regel gegen Wiederholung. Harte Regel für ALLE Kategorien, als eigener Block
+// direkt nach der Längenregel. Anrede und Grußzeile im Voice-Stil sind ausgenommen (dieselbe
+// Ausnahme wie im mechanischen Check repeats_own_sentence).
+export const REPEAT_RULE_BLOCK = [
+  '### KEINE WIEDERHOLUNG — harte Regel, gilt vor Voice und Objektwissen ###',
+  'Lies im Verlauf auch deine EIGENEN früheren Nachrichten (Zeilen „Host:"). Wiederhole KEINEN Satz und KEINE feste ' +
+    'Wendung, die dort schon steht — weder eine Einladung noch einen Schlusssatz noch einen Hinweis —, und sag ' +
+    'Bereits-Gesagtes nicht noch einmal. Ein Mensch schreibt nicht zweimal denselben Satz.',
+  '- Ausgenommen sind nur die Anrede und die Grußzeile im Voice-Stil (z. B. „Liebe Grüße, Micha").',
+  '### ENDE KEINE WIEDERHOLUNG ###',
 ].join('\n');
 
 // #976 (Fall Gast AS 20.–21.11.2026): Gast hat sich bei der Personenzahl vertan und die Änderung
@@ -348,6 +395,11 @@ export function buildSystemPrompt(
   // #1082: Few-shot-Beispiele „So schreibt Micha“ — LETZTER optionaler Parameter, leer = kein
   // Block (Prompt bit-identisch zu vorher).
   hostExamples: HostExample[] = [],
+  // #1191: LETZTER optionaler Parameter (Options-Objekt statt weiterer Positionsparameter).
+  // closingAlreadySent: Einladung/Bestätigungs-Ankündigung steht schon in einer Host-Nachricht
+  // (hostAlreadySentClosing) → neutraler Schluss im Buchungsanfrage-Block. repeatRetrySentence:
+  // automatischer Neuversuch nach repeats_own_sentence — der wiederholte Satz wird benannt.
+  extra: { closingAlreadySent?: boolean; repeatRetrySentence?: string | null } = {},
 ): string {
   const lines = [
     buildThreadFactsBlock(thread),
@@ -361,8 +413,10 @@ export function buildSystemPrompt(
     buildTodayBlock(now, bookingContext),
     // #976: Längenregel für ALLE Antworten (auch Buchungsanfragen, dort mit Tipps-Zusatz im Block).
     LENGTH_RULE_BLOCK,
+    // #1191: Wiederholungsregel für ALLE Antworten.
+    REPEAT_RULE_BLOCK,
   ];
-  if (isBookingRequest) lines.push(buildBookingRequestBlock(requestKind));
+  if (isBookingRequest) lines.push(buildBookingRequestBlock(requestKind, extra.closingAlreadySent ?? false));
   else if (alteration) lines.push(buildAlterationBlock(alteration));
   lines.push(
     'Du entwirfst eine Antwort auf eine Gastnachricht für eine Ferienunterkunft, in Michas Stimme.',
@@ -393,6 +447,15 @@ export function buildSystemPrompt(
     // erkanntem language_mismatch — explizite Korrektur-Anweisung statt stillem zweiten Versuch.
     lines.push(
       `Die vorige Antwort war in der falschen Sprache. Schreibe ausschließlich auf ${LANGUAGE_LABEL[guestLanguage]}.`,
+    );
+  }
+  if (extra.repeatRetrySentence) {
+    // #1191 Spec Punkt 4: genau ein automatischer Neuversuch nach repeats_own_sentence — Muster
+    // wie der Sprach-Retry (#695), mit dem konkreten Satz als Korrektur-Anweisung.
+    lines.push(
+      `Die vorige Antwort hat einen Satz wiederholt, der schon in einer deiner früheren Nachrichten steht („${extra.repeatRetrySentence}"). ` +
+        'Schreibe die Antwort neu: dieser Satz und jede andere Formulierung aus deinen früheren Nachrichten kommen NICHT ' +
+        'noch einmal vor, auch nicht leicht umgestellt; was schon gesagt wurde, sagst du nicht erneut.',
     );
   }
   lines.push(
@@ -488,6 +551,11 @@ export async function generateDraftForThread(
         input.requestKind ?? null,
         input.alteration ?? null,
         resolveHostExamples(input, deps),
+        {
+          // #1191: Einladung/Ankündigung höchstens einmal je Thread.
+          closingAlreadySent: hostAlreadySentClosing(input.messages, input.requestKind ?? null),
+          repeatRetrySentence: input.repeatRetrySentence ?? null,
+        },
       ),
       userMessage: buildConversation(input.messages, input.thread.guest_name),
       tool: SUBMIT_REPLY_TOOL,

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { runMechanicalChecks, collectDigitRuns } from './mechanical-checks.js';
+import { runMechanicalChecks, collectDigitRuns, normalizeSentence, findRepeatedOwnSentence } from './mechanical-checks.js';
 
 const flags = (body: string, known: string[] = []) => runMechanicalChecks(body, { knownDigitRuns: known }).map((f) => f.flag);
 
@@ -148,5 +148,43 @@ describe('runMechanicalChecks — zeitbezug_veraltet (#698)', () => {
   it('liefert Fundstelle', () => {
     const f = runMechanicalChecks('Schönen Sonntag noch!', { knownDigitRuns: [], now: monday, bookingContext: null });
     expect(f).toEqual([{ flag: 'zeitbezug_veraltet', match: 'Sonntag' }]);
+  });
+});
+
+// #1191: Satzwiederholung gegenüber den letzten gesendeten Host-Nachrichten.
+describe('repeats_own_sentence (#1191)', () => {
+  const host = 'Hey Nora,\n\nvielen Dank für deine Anfrage, das freut mich! Wichtig ist unser festes Limit von 15 Personen insgesamt, Tagesgäste mitgezählt.\n\nWenn es für euch passt, stell gern die Buchungsanfrage.\n\nLiebe Grüße, Micha';
+  const run = (body: string, ...rest: [string[]?]) =>
+    runMechanicalChecks(body, { knownDigitRuns: ['15'], recentHostMessages: rest.length ? rest[0] : [host] }).filter((f) => f.flag === 'repeats_own_sentence');
+  const draft = (satz: string) => `Hey Nora,\n\ndanke dir für die Infos, mit 15 Personen inklusive Kindern seid ihr genau am Limit. ${satz}\n\nLiebe Grüße, Micha`;
+
+  it('identischer Satz → Flag mit Fundstelle', () => {
+    const r = run(draft('Wenn es für euch passt, stell gern die Buchungsanfrage.'));
+    expect(r).toHaveLength(1);
+    expect(r[0].match).toContain('stell gern die Buchungsanfrage');
+  });
+  it('andere Interpunktion/Emoji → Treffer (Normalisierung)', () => {
+    expect(run(draft('Wenn es für euch passt, stell gern die Buchungsanfrage 😊'))).toHaveLength(1);
+  });
+  it('ein Wort Unterschied (Jaccard) → Treffer', () => {
+    expect(run(draft('Wenn es für euch so passt, stell gern die Buchungsanfrage.'))).toHaveLength(1);
+  });
+  it('keine Wiederholung → kein Flag', () => {
+    expect(run(draft('Meld dich einfach, wenn noch etwas offen ist.'))).toHaveLength(0);
+  });
+  it('nur gleiche Anrede und gleicher Gruß → kein Flag', () => {
+    expect(run('Hey Nora,\n\nalles klar, dann bis zur Anreise im Mai.\n\nLiebe Grüße, Micha')).toHaveLength(0);
+  });
+  it('gleicher kurzer Satz unter 5 Wörtern → kein Flag', () => {
+    expect(run('Bis bald!', ['Bis bald!'])).toHaveLength(0);
+    expect(run('Danke dir sehr!', ['Danke dir sehr!'])).toHaveLength(0);
+  });
+  it('ohne recentHostMessages → kein Flag (Bestand)', () => {
+    expect(run(draft('Wenn es für euch passt, stell gern die Buchungsanfrage.'), undefined)).toHaveLength(0);
+    expect(run(draft('Wenn es für euch passt, stell gern die Buchungsanfrage.'), [])).toHaveLength(0);
+  });
+  it('normalizeSentence/findRepeatedOwnSentence: Grundverhalten', () => {
+    expect(normalizeSentence('  Hallo,  „Welt“ 😊!  ')).toBe('hallo welt');
+    expect(findRepeatedOwnSentence('Das ist ein ganz neuer Satz hier.', [host])).toBeNull();
   });
 });

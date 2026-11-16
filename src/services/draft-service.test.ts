@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { generateDraftForThread, buildSystemPrompt } from './draft-service.js';
+import { generateDraftForThread, buildSystemPrompt, hostAlreadySentClosing } from './draft-service.js';
 import type { MessageThread, Message } from '../types/messages.js';
 
 function thread(): MessageThread {
@@ -375,18 +375,23 @@ describe('buildSystemPrompt — Buchungsanfrage ohne Pflicht-Rückfrage (#1004)'
   const prompt = (kind: 'inquiry' | 'request_to_book' | null) =>
     buildSystemPrompt('v', 'f', null, t, 'de', false, true, NOW, kind);
 
-  it('request_to_book: benennt die Art und verlangt den Schlusssatz „Bestätigung kommt in Kürze"', () => {
+  // #1191: Schlusssatz ohne wörtlichen Mustersatz („eigene Formulierung, kein fester Baustein").
+  it('request_to_book: benennt die Art und verlangt die Ankündigung der Bestätigung in eigenen Worten', () => {
     const p = prompt('request_to_book');
     expect(p).toContain('Dies ist eine Airbnb-Buchungsanfrage (Request-to-Book)');
-    expect(p).toContain('die Bestätigung kommt in Kürze');
-    expect(p).not.toContain('stell gern die Buchungsanfrage');
+    expect(p).toContain('dass die Bestätigung in Kürze kommt');
+    expect(p).toContain('kein fester Baustein');
+    expect(p).not.toContain('„die Bestätigung kommt in Kürze"');
+    expect(p).not.toContain('lade den Gast ein, die Buchungsanfrage zu stellen');
   });
 
-  it('inquiry: benennt die Art und lädt zur Buchungsanfrage ein', () => {
+  it('inquiry: benennt die Art und lädt zur Buchungsanfrage ein — ohne Mustersatz', () => {
     const p = prompt('inquiry');
     expect(p).toContain('Dies ist eine Airbnb-Buchungsanfrage (Inquiry)');
-    expect(p).toContain('stell gern die Buchungsanfrage');
-    expect(p).not.toContain('die Bestätigung kommt in Kürze');
+    expect(p).toContain('lade den Gast ein, die Buchungsanfrage zu stellen');
+    expect(p).toContain('kein fester Baustein');
+    expect(p).not.toContain('stell gern die Buchungsanfrage');
+    expect(p).not.toContain('dass die Bestätigung in Kürze kommt');
   });
 
   it('keine Anlass-Pflicht mehr: Routine-Rückfrage ausdrücklich verboten, Pflichtstruktur entfernt', () => {
@@ -518,5 +523,84 @@ describe('buildSystemPrompt — Website-Links nach bestätigter Buchung (#1027)'
 
   it('keine URLs im Code — Vault bleibt einzige Quelle (#440-Muster)', () => {
     expect(prompt('airbnb', 'confirmed')).not.toMatch(/https?:\/\//);
+  });
+});
+
+// #1191 (Fall Lisa FH, 14.11.2026, anonymisiert): die Einladung zur Buchungsanfrage stand im
+// ersten Host-Text UND im nächsten Entwurf — Ursache war der Pflicht-Mustersatz im Block.
+describe('Satzwiederholungen (#1191)', () => {
+  const INVITE = 'Wenn es für euch passt, stell gern die Buchungsanfrage.';
+  const msg = (id: string, direction: Message['direction'], body: string, sent_at: string): Message => ({
+    id, thread_id: 'guesty:n1', direction, sent_at, from_name: null, from_address: null, to_address: null,
+    subject: null, body, body_html: null, source: 'guesty', raw_meta: null,
+  });
+  const noraThread = (): MessageThread => ({ ...thread(), id: 'guesty:n1', source: 'guesty', guest_name: 'Nora', reservation_status: 'inquiry' });
+  const noraMessages: Message[] = [
+    msg('n1', 'inbound', 'Hallo Michael! Ich würde gern meinen 30. Geburtstag bei dir feiern. Dürfen abends ein paar Gäste dazukommen, die wieder heimfahren?', '2026-11-14T10:00:00Z'),
+    msg('n2', 'system', 'New guest inquiry', '2026-11-14T10:00:01Z'),
+    msg('n3', 'outbound', `Hey Nora,\n\nvielen Dank für deine Anfrage, das freut mich! Wichtig ist unser festes Limit von 15 Personen insgesamt, Tagesgäste mitgezählt. Wie viele wärt ihr insgesamt?\n\n${INVITE}\n\nLiebe Grüße, Micha`, '2026-11-14T12:00:00Z'),
+    msg('n4', 'inbound', 'Danke für die schnelle Rückmeldung! Mit der Familie wären wir 15 Personen und 2 Kinder (9 und 5 Jahre). Wäre das noch in Ordnung?', '2026-11-14T13:00:00Z'),
+  ];
+
+  it('(a) Host-Nachrichten stehen im User-Prompt (Bestand)', async () => {
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'x' });
+    await generateDraftForThread({ thread: noraThread(), messages: noraMessages, voice: 'v', facts: 'f', isBookingRequest: true, requestKind: 'inquiry' }, { call });
+    const user = call.mock.calls[0][0].userMessage as string;
+    expect(user).toContain(`Host: Hey Nora`);
+    expect(user).toContain(INVITE);
+  });
+
+  it('(b) Einladung schon gesendet: System-Prompt ohne Pflicht-Einladung und Mustersatz, mit Wiederholungsregel', async () => {
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'x' });
+    await generateDraftForThread({ thread: noraThread(), messages: noraMessages, voice: 'v', facts: 'f', isBookingRequest: true, requestKind: 'inquiry' }, { call });
+    const p = call.mock.calls[0][0].systemPrompt as string;
+    expect(p).toContain('BUCHUNGSANFRAGE — Sonderregeln');
+    expect(p).not.toContain('lade den Gast ein, die Buchungsanfrage zu stellen');
+    expect(p).not.toContain('stell gern die Buchungsanfrage');
+    expect(p).toContain('lade NICHT noch einmal ein');
+    expect(p).toContain('KEINE WIEDERHOLUNG');
+    expect(p).toContain('Wiederhole KEINEN Satz');
+  });
+
+  it('Inquiry ohne vorherige Einladung: Einladung bleibt (einmal je Thread)', async () => {
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'x' });
+    await generateDraftForThread({ thread: noraThread(), messages: noraMessages.slice(0, 2), voice: 'v', facts: 'f', isBookingRequest: true, requestKind: 'inquiry' }, { call });
+    expect(call.mock.calls[0][0].systemPrompt).toContain('lade den Gast ein, die Buchungsanfrage zu stellen');
+  });
+
+  it('Request-to-Book: Ankündigung der Bestätigung nur einmal je Thread', () => {
+    const rtb: Message[] = [
+      msg('r1', 'system', 'New guest reservation request HMX', '2026-11-14T10:00:00Z'),
+      msg('r2', 'outbound', 'Hey Nora, schön, dass ihr kommt! Die Bestätigung kommt in Kürze. Liebe Grüße, Micha', '2026-11-14T11:00:00Z'),
+    ];
+    expect(hostAlreadySentClosing(rtb, 'request_to_book')).toBe(true);
+    expect(hostAlreadySentClosing(rtb.slice(0, 1), 'request_to_book')).toBe(false);
+    const t = { channel: 'airbnb' as const, reservation_status: 'reserved' };
+    const p = buildSystemPrompt('v', 'f', null, t, 'de', false, true, new Date(), 'request_to_book', null, [], { closingAlreadySent: true });
+    expect(p).not.toContain('dass die Bestätigung in Kürze kommt —');
+    expect(p).toContain('kündige sie NICHT noch einmal an');
+  });
+
+  it('hostAlreadySentClosing: nur Host-Nachrichten zählen, unbekannte Art nie', () => {
+    expect(hostAlreadySentClosing(noraMessages, 'inquiry')).toBe(true);
+    expect(hostAlreadySentClosing([noraMessages[0], msg('g', 'inbound', 'Ich stelle gleich die Buchungsanfrage!', '2026-11-14T11:00:00Z')], 'inquiry')).toBe(false);
+    expect(hostAlreadySentClosing(noraMessages, null)).toBe(false);
+  });
+
+  it('Wiederholungsregel gilt für alle Kategorien (auch ohne Buchungsanfrage)', () => {
+    const p = buildSystemPrompt('v', 'f', null, { channel: 'airbnb', reservation_status: 'confirmed' });
+    expect(p).toContain('KEINE WIEDERHOLUNG');
+    expect(p).toContain('Anrede und die Grußzeile');
+  });
+
+  it('Neuversuch nach repeats_own_sentence nennt den wiederholten Satz', async () => {
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'x' });
+    await generateDraftForThread({ thread: noraThread(), messages: noraMessages, voice: 'v', facts: 'f', repeatRetrySentence: INVITE }, { call });
+    const p = call.mock.calls[0][0].systemPrompt as string;
+    expect(p).toContain(`(„${INVITE}")`);
+    expect(p).toContain('Schreibe die Antwort neu');
+    const call2 = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'x' });
+    await generateDraftForThread({ thread: noraThread(), messages: noraMessages, voice: 'v', facts: 'f' }, { call: call2 });
+    expect(call2.mock.calls[0][0].systemPrompt).not.toContain('Schreibe die Antwort neu');
   });
 });

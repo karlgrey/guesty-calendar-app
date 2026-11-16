@@ -63,7 +63,7 @@ import { loadVoice, loadPropertyFacts } from '../services/vault-knowledge.js';
 import { buildBookingContext } from '../services/booking-context.js';
 import { findOpenBookingRequest, type BookingRequestKind } from '../services/booking-request.js';
 import {
-  buildSystemPrompt, buildConversation, generateDraftForThread, DRAFT_MODEL, type DraftDeps,
+  buildSystemPrompt, buildConversation, generateDraftForThread, hostAlreadySentClosing, DRAFT_MODEL, type DraftDeps,
 } from '../services/draft-service.js';
 import { callClaudeTool, type CallClaudeToolInput } from '../services/anthropic-client.js';
 import { findHostExamples } from '../services/host-examples.js';
@@ -203,6 +203,8 @@ function printSection(title: string, body: string): void {
 async function dumpDirect(thread: MessageThread, messages: Message[], voice: string, facts: string, bookingContext: string | null, br: BookingRequestInfo): Promise<void> {
   const systemPrompt = buildSystemPrompt(
     voice, facts, bookingContext, thread, undefined, undefined, br.isBookingRequest, undefined, br.requestKind, br.alteration,
+    // #1191: wie generateDraftForThread — Einladung/Ankündigung höchstens einmal je Thread.
+    [], { closingAlreadySent: hostAlreadySentClosing(messages, br.requestKind) },
   );
   const userMessage = buildConversation(messages, thread.guest_name);
   printSection('THREAD-FAKTEN', JSON.stringify({

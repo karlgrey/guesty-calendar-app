@@ -86,6 +86,14 @@ export function buildJudgeSystemPrompt(
     '  Zusicherung zu formulieren, nur als offene Rückfrage (z. B. statt "die Personenzahl passt" → "wie viele',
     '  Personen wärt ihr insgesamt?"). Gilt für ALLE Kategorien, nicht nur buchungsanfrage.',
     '',
+    // #1191 (Fall Lisa FH, 14.11.2026): Wiederholung eigener Formulierungen führt zu Abzug — bewusst
+    // als confidence-Kriterium statt neuem Risk-Flag (Flag-Liste und Policy bleiben unverändert;
+    // der harte Stopp kommt aus dem mechanischen Check repeats_own_sentence).
+    'WIEDERHOLUNG: Stehen in der User-Nachricht EIGENE FRÜHERE NACHRICHTEN (Host), prüfe den Entwurf dagegen. Wiederholt',
+    '  der Entwurf einen Satz oder eine feste Wendung von dort (z. B. dieselbe Einladung zur Buchungsanfrage, denselben',
+    '  Schlusssatz, denselben Hinweis) — wörtlich oder nur leicht umgestellt — oder sagt er Bereits-Gesagtes noch einmal,',
+    '  ist confidence höchstens mittel. Anrede und Grußzeile (z. B. „Liebe Grüße, Micha") sind davon ausgenommen.',
+    '',
     'confidence=hoch NUR, wenn: Kategorie eindeutig, keine Flags AUSSER ggf. promises_action, und jede Sachaussage im Entwurf ' +
       '(außer der Zusage selbst) einer Zeile im OBJEKTWISSEN/BUCHUNGSKONTEXT entspricht. Eine Handlungszusage (promises_action) ' +
       'braucht dafür KEINEN Beleg im Objektwissen — sie wird separat als Aufgabe nachgehalten, senkt confidence also nicht. ' +
@@ -97,7 +105,8 @@ export function buildJudgeSystemPrompt(
       'deine Antworten habe" ohne eine Frage im Entwurf → confidence niedrig). Eine Rückfrage ist NICHT erforderlich: eine ' +
       'Antwort, die auf die Gastnachricht eingeht, Fragen aus dem OBJEKTWISSEN beantwortet und ankündigt, dass die ' +
       'Bestätigung in Kürze kommt (Request-to-Book) bzw. zur Buchungsanfrage einlädt (Inquiry), ist korrekt — diese ' +
-      'Ankündigung bzw. Einladung ist KEIN promises_action und keine Zusage. Sachaussagen (Tipps, Limit, ausgeschlossene ' +
+      'Ankündigung bzw. Einladung ist KEIN promises_action und keine Zusage. Sie ist aber nur EINMAL je Gespräch richtig: ' +
+      'steht sie schon in einer EIGENEN FRÜHEREN NACHRICHT, gilt die WIEDERHOLUNG-Regel oben. Sachaussagen (Tipps, Limit, ausgeschlossene ' +
       'Event-Arten) müssen dem OBJEKTWISSEN entsprechen. Dass die eigentliche Buchungsentscheidung bei Micha bleibt, ist ' +
       'bereits durch die Kategorie selbst sichergestellt (Annahme/Ablehnung geht immer an Micha) und darf confidence NICHT ' +
       'zusätzlich senken.',
