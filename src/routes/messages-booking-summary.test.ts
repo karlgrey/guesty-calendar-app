@@ -62,3 +62,20 @@ describe('renderBookingSummaryBadge', () => {
     expect(renderBookingSummaryBadge(null)).toBe('');
   });
 });
+
+// Review-Gate #1187: Status und Währung stammen aus Fremd-APIs — nie roh ins HTML.
+describe('HTML-Escaping', () => {
+  const evil = '"><script>x</script>';
+  it('Kopfzeile escaped unbekannten Status und Währungscode', () => {
+    const html = renderBookingSummaryLine(s({ status: evil, hostPayout: 5, totalPrice: 6, currency: '<b>' }));
+    expect(html).not.toContain('<script>');
+    expect(html).not.toContain('<b>');
+    expect(html).toContain('&lt;script&gt;');
+  });
+  it('Badge escaped den Status im title-Attribut', () => {
+    const html = renderBookingSummaryBadge(s({ status: evil }));
+    expect(html).not.toContain('<script>');
+    expect(html).not.toContain('title="Anfrage ("');
+    expect(html).toContain('&quot;&gt;&lt;script&gt;');
+  });
+});
