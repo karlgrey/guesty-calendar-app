@@ -14,7 +14,7 @@ vi.mock('../services/guesty-client.js', () => ({
 }));
 
 import { guestyClient } from '../services/guesty-client.js';
-import { syncInquiries } from './sync-inquiries.js';
+import { syncInquiries, mapGuestyInquiryMoney } from './sync-inquiries.js';
 
 let db: Database.Database;
 
@@ -31,6 +31,9 @@ beforeEach(() => {
       guest_name TEXT,
       guests_count INTEGER,
       source TEXT,
+      currency TEXT,
+      total_price REAL,
+      host_payout REAL,
       created_at_guesty TEXT,
       last_synced_at TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -89,5 +92,40 @@ describe('syncInquiries Paginierung (#271)', () => {
     expect((guestyClient.getReservations as any).mock.calls.length).toBe(1);
     const count = db.prepare('SELECT COUNT(*) n FROM inquiries').get() as { n: number };
     expect(count.n).toBe(2);
+  });
+});
+
+describe('Preisdaten an Anfragen (#1187)', () => {
+  const money = { currency: 'EUR', hostPayout: 1234, fareAccommodationAdjusted: 1450 };
+  const row = () => db.prepare('SELECT currency, total_price, host_payout FROM inquiries WHERE inquiry_id = ?').get('res-0001') as any;
+
+  it('Anfrage mit money: Zeile trägt Währung, Gastpreis und Auszahlung', async () => {
+    (guestyClient.getReservations as any).mockResolvedValueOnce([{ ...fakeReservation(1, 'inquiry'), money }]);
+    await syncInquiries('listing-fh');
+    expect(row()).toEqual({ currency: 'EUR', total_price: 1450, host_payout: 1234 });
+  });
+
+  it('ohne money: NULLs', async () => {
+    (guestyClient.getReservations as any).mockResolvedValueOnce([fakeReservation(1, 'inquiry')]);
+    await syncInquiries('listing-fh');
+    expect(row()).toEqual({ currency: null, total_price: null, host_payout: null });
+  });
+
+  it('zweiter Sync ohne money überschreibt bekannte Werte nicht', async () => {
+    (guestyClient.getReservations as any)
+      .mockResolvedValueOnce([{ ...fakeReservation(1, 'inquiry'), money }])
+      .mockResolvedValueOnce([fakeReservation(1, 'inquiry')]);
+    await syncInquiries('listing-fh');
+    await syncInquiries('listing-fh');
+    expect(row()).toEqual({ currency: 'EUR', total_price: 1450, host_payout: 1234 });
+  });
+
+  it('mapGuestyInquiryMoney: Mapping, 0 bleibt 0, Unbrauchbares wird null', () => {
+    expect(mapGuestyInquiryMoney({ money })).toEqual({ currency: 'EUR', total_price: 1450, host_payout: 1234 });
+    expect(mapGuestyInquiryMoney({ money: { currency: 'EUR', hostPayout: 0, fareAccommodationAdjusted: 0 } }))
+      .toEqual({ currency: 'EUR', total_price: 0, host_payout: 0 });
+    expect(mapGuestyInquiryMoney({})).toEqual({ currency: null, total_price: null, host_payout: null });
+    expect(mapGuestyInquiryMoney({ money: { currency: '', hostPayout: '12', fareAccommodationAdjusted: NaN } }))
+      .toEqual({ currency: null, total_price: null, host_payout: null });
   });
 });

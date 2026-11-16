@@ -16,6 +16,26 @@ export interface SyncInquiriesResult {
 }
 
 /**
+ * #1187: Preisdaten einer Guesty-Reservierung für die inquiries-Tabelle.
+ * Semantik wie reservation-mapper.ts (currency, fareAccommodationAdjusted, hostPayout),
+ * aber fehlende/nicht-numerische Werte werden NULL (unbekannt), echte 0 bleibt 0.
+ */
+export function mapGuestyInquiryMoney(r: any): {
+  currency: string | null;
+  total_price: number | null;
+  host_payout: number | null;
+} {
+  const num = (x: unknown): number | null =>
+    typeof x === 'number' && Number.isFinite(x) ? x : null;
+  const currency = r?.money?.currency;
+  return {
+    currency: typeof currency === 'string' && currency ? currency : null,
+    total_price: num(r?.money?.fareAccommodationAdjusted),
+    host_payout: num(r?.money?.hostPayout),
+  };
+}
+
+/**
  * Sync all inquiries and reservations from Guesty API
  *
  * Fetches ALL reservation statuses (inquiry, confirmed, reserved, canceled, declined)
@@ -76,8 +96,11 @@ export async function syncInquiries(listingId: string): Promise<SyncInquiriesRes
         guests_count,
         source,
         created_at_guesty,
-        last_synced_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        last_synced_at,
+        currency,
+        total_price,
+        host_payout
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(inquiry_id) DO UPDATE SET
         status = excluded.status,
         check_in = excluded.check_in,
@@ -85,7 +108,11 @@ export async function syncInquiries(listingId: string): Promise<SyncInquiriesRes
         guest_name = excluded.guest_name,
         guests_count = excluded.guests_count,
         source = excluded.source,
-        last_synced_at = excluded.last_synced_at
+        last_synced_at = excluded.last_synced_at,
+        -- #1187: Payload ohne money darf bekannte Preisdaten nicht löschen
+        currency = COALESCE(excluded.currency, inquiries.currency),
+        total_price = COALESCE(excluded.total_price, inquiries.total_price),
+        host_payout = COALESCE(excluded.host_payout, inquiries.host_payout)
     `);
 
     const upsertMany = db.transaction((reservations: any[]) => {
@@ -103,6 +130,8 @@ export async function syncInquiries(listingId: string): Promise<SyncInquiriesRes
         const checkInDate = r.checkInDateLocalized || r.checkIn?.split('T')[0] || r.checkIn;
         const checkOutDate = r.checkOutDateLocalized || r.checkOut?.split('T')[0] || r.checkOut;
 
+        const money = mapGuestyInquiryMoney(r);
+
         upsertStmt.run(
           r._id,
           r.listingId,
@@ -113,7 +142,10 @@ export async function syncInquiries(listingId: string): Promise<SyncInquiriesRes
           r.guestsCount || 0,
           r.source || null,
           r.createdAt || now,
-          now
+          now,
+          money.currency,
+          money.total_price,
+          money.host_payout
         );
       }
     });

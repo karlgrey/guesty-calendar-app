@@ -49,8 +49,8 @@ export async function syncHostexReservations(property: PropertyConfig): Promise<
       INSERT INTO inquiries (
         inquiry_id, listing_id, status, check_in, check_out,
         guest_name, guests_count, source, created_at_guesty, last_synced_at,
-        hostex_conversation_id
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        hostex_conversation_id, currency, total_price, host_payout
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(inquiry_id) DO UPDATE SET
         status = excluded.status,
         check_in = excluded.check_in,
@@ -62,7 +62,11 @@ export async function syncHostexReservations(property: PropertyConfig): Promise<
         -- #441: NULL nie über einen bekannten Link überschreiben — ein Update-Payload
         -- ohne conversation_id (z. B. Reservation ohne zugehörige Conversation) soll
         -- eine zuvor beobachtete Verknüpfung nicht löschen.
-        hostex_conversation_id = COALESCE(excluded.hostex_conversation_id, inquiries.hostex_conversation_id)
+        hostex_conversation_id = COALESCE(excluded.hostex_conversation_id, inquiries.hostex_conversation_id),
+        -- #1187: Payload ohne Preisdaten darf bekannte Werte nicht löschen
+        currency = COALESCE(excluded.currency, inquiries.currency),
+        total_price = COALESCE(excluded.total_price, inquiries.total_price),
+        host_payout = COALESCE(excluded.host_payout, inquiries.host_payout)
     `);
 
     let inquiriesCount = 0;
@@ -84,6 +88,9 @@ export async function syncHostexReservations(property: PropertyConfig): Promise<
           asInquiry.created_at_guesty,
           asInquiry.last_synced_at,
           asInquiry.hostex_conversation_id,
+          asInquiry.currency,
+          asInquiry.total_price,
+          asInquiry.host_payout,
         );
         inquiriesCount++;
         if (asReservation) {

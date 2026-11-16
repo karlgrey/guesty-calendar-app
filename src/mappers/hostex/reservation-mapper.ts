@@ -24,6 +24,10 @@ export interface MappedInquiry {
   source: string | null;
   created_at_guesty: string | null;
   last_synced_at: string;
+  // #1187: Preisdaten (NULL = unbekannt)
+  currency: string | null;
+  total_price: number | null;
+  host_payout: number | null;
   // #441: join key back to the Hostex conversation this reservation belongs to
   // (HostexReservation.conversation_id) — sync-hostex-messages.ts looks this up
   // to resolve message_threads.reservation_status, which Hostex's conversation
@@ -94,6 +98,7 @@ export function mapHostexReservation(
   const totalPrice = res.rates?.total_rate?.amount ?? 0;
   const totalCommission = res.rates?.total_commission?.amount ?? 0;
   const hostPayout = totalPrice - totalCommission;
+  const hasTotal = res.rates?.total_rate?.amount != null;
 
   const asInquiry: MappedInquiry = {
     inquiry_id: res.reservation_code,
@@ -106,6 +111,10 @@ export function mapHostexReservation(
     source: res.channel_type ?? null,
     created_at_guesty: res.created_at ?? res.booked_at ?? null,
     last_synced_at: now,
+    // #1187: ohne rates.total_rate.amount bleibt der Preis unbekannt (NULL statt 0)
+    currency: res.rates?.total_rate?.currency ?? null,
+    total_price: hasTotal ? totalPrice : null,
+    host_payout: hasTotal ? hostPayout : null,
     hostex_conversation_id: res.conversation_id ?? null,
   };
 
