@@ -50,6 +50,7 @@ import type { SuggestionStatus } from '../types/feedback.js';
 import { berlinCalendarDay } from '../services/auto-send/berlin-day.js';
 import { getListingTextsForProperty } from '../services/listing-texts-service.js';
 import { syncListing } from '../jobs/sync-listing.js';
+import { cancelAirbnbMailReservation } from '../services/airbnb-mail-cancellation.js';
 
 const router = express.Router();
 router.use(requireAgentKey);
@@ -1040,6 +1041,17 @@ router.post('/vault-suggestions/:id/revoke', (req, res) => {
       pushed: result.pushed,
       alreadyRevoked: result.alreadyRevoked ?? false,
     });
+  } catch (err) { handleError(res, err); }
+});
+
+// #1143: airbnb-mail/airbnb-ical-Reservierung manuell stornieren (Status setzen, Google-Event löschen).
+router.post('/airbnb-mail/reservations/:code/cancel', async (req, res) => {
+  try {
+    const reason = req.body?.reason;
+    if (reason !== undefined && (typeof reason !== 'string' || !reason.trim())) {
+      throw new ValidationError('reason must be a non-empty string');
+    }
+    res.json(await cancelAirbnbMailReservation(req.params.code, reason));
   } catch (err) { handleError(res, err); }
 });
 
