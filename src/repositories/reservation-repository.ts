@@ -688,3 +688,32 @@ export function applyCancellationLocally(reservationId: string, status: string):
     );
   }
 }
+
+/**
+ * #1143: Storno einer airbnb-mail/airbnb-ical-Reservierung. Anders als
+ * applyCancellationLocally bleibt die Zeile erhalten (host_payout & Co.
+ * unverändert, für BI/Belege); nur der Status wechselt. Alle aktiven
+ * Leser (Google-Sync, getReservationsByPeriod …) filtern auf
+ * ACTIVE_RESERVATION_STATUSES und sehen die Zeile danach nicht mehr.
+ * Idempotent.
+ */
+export function markReservationCanceled(reservationId: string): { reservations: number; inquiries: number } {
+  const db = getDatabase();
+
+  try {
+    return db.transaction(() => {
+      const res = db
+        .prepare("UPDATE reservations SET status = 'canceled', updated_at = CURRENT_TIMESTAMP WHERE reservation_id = ?")
+        .run(reservationId);
+      const inq = db
+        .prepare("UPDATE inquiries SET status = 'canceled' WHERE inquiry_id = ?")
+        .run(reservationId);
+      return { reservations: res.changes, inquiries: inq.changes };
+    })();
+  } catch (error) {
+    logger.error({ error, reservationId }, 'Failed to mark reservation canceled');
+    throw new DatabaseError(
+      `Failed to mark reservation canceled: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
+  }
+}
