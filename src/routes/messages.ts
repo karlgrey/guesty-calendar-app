@@ -16,7 +16,8 @@ import { getPropertiesByProvider } from '../config/properties.js';
 import { getPropertyForThread, propertyForBadge } from '../utils/thread-property.js';
 import { loadVoice, loadPropertyFacts } from '../services/vault-knowledge.js';
 import { generateDraftForThread, DRAFT_MODEL } from '../services/draft-service.js';
-import { buildBookingContext } from '../services/booking-context.js';
+import { buildBookingContext, resolveThreadBookingSummary, type ThreadBookingSummary } from '../services/booking-context.js';
+import { renderBookingSummaryLine, renderBookingSummaryBadge } from './messages-booking-summary.js';
 import { findOpenBookingRequest } from '../services/booking-request.js';
 import { resolveAlterationSituation, alterationAdminHint, pendingAlterationFromRawMeta, type AlterationSituation } from '../services/alteration-request.js';
 import { sendClaimedDraft } from '../services/draft-send-service.js';
@@ -52,6 +53,18 @@ export function renderAlterationHint(s: AlterationSituation | null): string {
   return `<p class="subtitle" style="background:var(--color-sand);padding:10px 14px;border-radius:8px;border-left:4px solid var(--color-amber)">
     ${esc(alterationAdminHint(s))}
   </p>`;
+}
+
+// #1187: Anfrage-/Buchungsdaten eines Threads (nur DB, non-fatal). undefined = Lookup-Fehler
+// (dann zeigt die Seite gar nichts statt eines falschen „nicht verknüpft"-Hinweises).
+function safeBookingSummary(thread: Parameters<typeof resolveThreadBookingSummary>[0]): ThreadBookingSummary | null | undefined {
+  if (!thread.reservation_id && !thread.inquiry_id) return null;
+  try {
+    return resolveThreadBookingSummary(thread);
+  } catch (err) {
+    logger.warn({ threadId: thread.id, err: err instanceof Error ? err.message : String(err) }, 'Buchungsdaten des Threads nicht ladbar');
+    return undefined;
+  }
 }
 
 // ISO timestamp -> "2026-06-29 08:37" (trim seconds/timezone for readability).
@@ -235,9 +248,11 @@ router.get('/', (req, res) => {
       const codeBadge = code
         ? `<span class="badge"${property?.uiColor ? ` style="background:${esc(property.uiColor)};color:var(--color-charcoal)"` : ''}>${esc(code)}</span>`
         : '';
+      const summary = safeBookingSummary(t);
+      const bookingBadge = summary ? renderBookingSummaryBadge(summary) : '';
       return `<li><a href="/admin/messages/${encodeURIComponent(t.id)}">
         <span class="thread-name">${name}</span>
-        <span class="thread-meta">${draftBadge}${autoBadge}${alterationBadge}${codeBadge}<span class="badge">${esc(t.channel)}</span><span>${esc(fmtDate(t.last_message_at))}</span></span>
+        <span class="thread-meta">${draftBadge}${autoBadge}${alterationBadge}${codeBadge}${bookingBadge}<span class="badge">${esc(t.channel)}</span><span>${esc(fmtDate(t.last_message_at))}</span></span>
       </a></li>`;
     })
     .join('');
@@ -498,9 +513,13 @@ router.get('/:threadId', async (req, res) => {
   } catch (err) {
     logger.warn({ threadId: thread.id, err: err instanceof Error ? err.message : String(err) }, 'GET /:threadId: Änderungs-Hinweis nicht ermittelbar');
   }
+  // #1187: Zeitraum, Personen, Preis der Anfrage/Buchung (nur DB, non-fatal).
+  const bookingSummary = safeBookingSummary(thread);
+  const bookingSummaryLine = bookingSummary === undefined ? '' : renderBookingSummaryLine(bookingSummary);
   const body = `<a class="back-link" href="/admin/messages">&larr; Alle Nachrichten</a>
     <h1>${name}</h1>
     <p class="subtitle"><span class="badge">${esc(thread.channel)}</span>${property ? ` · <strong>${esc(property.name)}</strong>` : ''} · Provider: ${esc(thread.source)}</p>
+    ${bookingSummaryLine}
     ${alterationHint}
     <div class="section"><h3>Verlauf</h3>${history}</div>
     ${timesPanel}

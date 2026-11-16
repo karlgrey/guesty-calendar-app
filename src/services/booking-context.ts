@@ -7,7 +7,7 @@
  * inquiry_id link. This module turns that link into a short prompt block so
  * the model knows what the platform already knows and stops asking again.
  */
-import { getReservationById, getInquiryById } from '../repositories/reservation-repository.js';
+import { getReservationById, getInquiryById, getInquiryWithMoneyById } from '../repositories/reservation-repository.js';
 import type { MessageThread } from '../types/messages.js';
 import { nightsBetween } from '../utils/date.js';
 
@@ -93,4 +93,82 @@ export function resolveBookingPeriod(thread: MessageThread): { periodLabel: stri
     }
   }
   return { periodLabel: null, guestsCount: null };
+}
+
+/**
+ * #1187: strukturierte Buchungs-/Anfragedaten eines Threads für die Nachrichten-App
+ * (Thread-Kopf + Listen-Badge). Reihenfolge wie resolveBookingPeriod: erst die Reservierung,
+ * sonst die Anfrage — auch wenn reservation_id gesetzt ist, aber (Guesty-Anfrage) noch keine
+ * reservations-Zeile existiert. Reine DB-Lesung, kein Live-Abruf (Rate-Limit).
+ * null = Thread nicht verknüpft bzw. keine passende Zeile.
+ *
+ * Preis-Semantik wie die Sync-Mapper: hostPayout = Auszahlung an den Gastgeber;
+ * totalPrice = reservations/inquiries.total_price (Guesty: fareAccommodationAdjusted,
+ * Hostex: total_rate).
+ */
+export interface ThreadBookingSummary {
+  kind: 'reservation' | 'inquiry';
+  status: string | null;
+  checkIn: string | null; // YYYY-MM-DD
+  checkOut: string | null; // YYYY-MM-DD
+  nights: number | null;
+  guestsCount: number | null;
+  adults: number | null;
+  children: number | null;
+  hostPayout: number | null;
+  totalPrice: number | null;
+  currency: string | null;
+  platform: string | null;
+}
+
+/** Guesty-Anfragen-Sync schreibt `guestsCount || 0` — 0 Personen heißt dort "unbekannt". */
+function positiveOrNull(n: number | null | undefined): number | null {
+  return typeof n === 'number' && n > 0 ? n : null;
+}
+
+export function resolveThreadBookingSummary(thread: MessageThread): ThreadBookingSummary | null {
+  if (thread.reservation_id) {
+    const res = getReservationById(thread.reservation_id);
+    if (res) {
+      const checkIn = res.check_in_localized?.slice(0, 10) ?? res.check_in?.slice(0, 10) ?? null;
+      const checkOut = res.check_out_localized?.slice(0, 10) ?? res.check_out?.slice(0, 10) ?? null;
+      return {
+        kind: 'reservation',
+        status: thread.reservation_status ?? res.status ?? null,
+        checkIn,
+        checkOut,
+        nights: res.nights_count ?? (checkIn && checkOut ? nightsBetween(checkIn, checkOut) : null),
+        guestsCount: positiveOrNull(res.guests_count),
+        adults: res.adults_count ?? null,
+        children: res.children_count ?? null,
+        hostPayout: res.host_payout ?? null,
+        totalPrice: res.total_price ?? null,
+        currency: res.currency ?? null,
+        platform: res.platform ?? res.source ?? null,
+      };
+    }
+  }
+  const inquiryId = thread.inquiry_id ?? null;
+  if (inquiryId) {
+    const inq = getInquiryWithMoneyById(inquiryId);
+    if (inq) {
+      const checkIn = inq.check_in ? inq.check_in.slice(0, 10) : null;
+      const checkOut = inq.check_out ? inq.check_out.slice(0, 10) : null;
+      return {
+        kind: 'inquiry',
+        status: inq.status || null,
+        checkIn,
+        checkOut,
+        nights: checkIn && checkOut ? nightsBetween(checkIn, checkOut) : null,
+        guestsCount: positiveOrNull(inq.guests_count),
+        adults: null,
+        children: null,
+        hostPayout: inq.host_payout,
+        totalPrice: inq.total_price,
+        currency: inq.currency,
+        platform: inq.source,
+      };
+    }
+  }
+  return null;
 }

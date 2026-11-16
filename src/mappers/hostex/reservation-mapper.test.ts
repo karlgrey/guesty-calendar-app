@@ -161,4 +161,25 @@ describe('mapHostexReservation', () => {
       expect(asInquiry.hostex_conversation_id).toBeNull();
     });
   });
+
+  // #1187: Preisdaten auch an der Anfrage-Zeile
+  describe('Preisdaten an der Anfrage (#1187)', () => {
+    it('asInquiry trägt Währung, Gastpreis und Auszahlung', () => {
+      const { asInquiry } = mapHostexReservation(baseRes, defaultTimes);
+      expect(asInquiry.currency).toBe('EUR');
+      expect(asInquiry.total_price).toBe(300);
+      expect(asInquiry.host_payout).toBe(255);
+    });
+
+    it('wait_accept-Anfrage mit rates trägt Preis, ohne rates null (nicht 0)', () => {
+      const withRates = mapHostexReservation({ ...baseRes, status: 'wait_accept' as const }, defaultTimes);
+      expect(withRates.asReservation).toBeNull();
+      expect(withRates.asInquiry.total_price).toBe(300);
+      const { rates: _r, ...noRates } = baseRes;
+      const without = mapHostexReservation({ ...noRates, status: 'wait_accept' as const } as HostexReservation, defaultTimes);
+      expect(without.asInquiry.currency).toBeNull();
+      expect(without.asInquiry.total_price).toBeNull();
+      expect(without.asInquiry.host_payout).toBeNull();
+    });
+  });
 });

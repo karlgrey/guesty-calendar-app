@@ -267,6 +267,48 @@ export function getInquiryById(inquiryId: string): Inquiry | null {
 }
 
 /**
+ * #1187: Anfrage inkl. Plattform und Preis (Migration 040) für die Nachrichten-App.
+ * Eigene Abfrage statt getInquiryById zu erweitern: `SELECT *` + Feld-Auswahl, damit sie
+ * auch auf Tabellen ohne die 040-Spalten (Tests, Altbestand) nicht bricht — Preis dann null.
+ */
+export interface InquiryWithMoney extends Inquiry {
+  source: string | null;
+  currency: string | null;
+  total_price: number | null;
+  host_payout: number | null;
+}
+
+export function getInquiryWithMoneyById(inquiryId: string): InquiryWithMoney | null {
+  const db = getDatabase();
+
+  try {
+    const row = db
+      .prepare('SELECT * FROM inquiries WHERE inquiry_id = ?')
+      .get(inquiryId) as Record<string, unknown> | undefined;
+    if (!row) return null;
+    const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
+    const str = (v: unknown): string | null => (typeof v === 'string' && v !== '' ? v : null);
+    return {
+      inquiry_id: String(row.inquiry_id),
+      status: String(row.status ?? ''),
+      check_in: String(row.check_in ?? ''),
+      check_out: String(row.check_out ?? ''),
+      guest_name: str(row.guest_name),
+      guests_count: num(row.guests_count),
+      source: str(row.source),
+      currency: str(row.currency),
+      total_price: num(row.total_price),
+      host_payout: num(row.host_payout),
+    };
+  } catch (error) {
+    logger.error({ error, inquiryId }, 'Failed to get inquiry with money');
+    throw new DatabaseError(
+      `Failed to get inquiry: ${error instanceof Error ? error.message : 'Unknown error'}`
+    );
+  }
+}
+
+/**
  * #441: look up a Hostex reservation/inquiry by its Hostex conversation id — the join key
  * sync-hostex-messages.ts needs to resolve `message_threads.reservation_status` for Hostex
  * threads. Guesty needs no equivalent lookup: its conversation payload already embeds

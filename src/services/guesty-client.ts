@@ -687,7 +687,8 @@ export class GuestyClient {
 
     // Specify fields using space-separated format per Guesty API docs
     // Example from docs: fields=_id confirmationCode status checkInDateLocalized...
-    const fieldsString = '_id listingId status checkIn checkOut checkInDateLocalized checkOutDateLocalized guest guestsCount source createdAt confirmedAt confirmationCode integration';
+    // #1187: money.* (Punkt-Syntax) für Preisdaten an Anfragen (sync-inquiries.ts)
+    const fieldsString = '_id listingId status checkIn checkOut checkInDateLocalized checkOutDateLocalized guest guestsCount source createdAt confirmedAt confirmationCode integration money.currency money.hostPayout money.fareAccommodationAdjusted';
     queryParams.append('fields', fieldsString);
 
     // Set limit
