@@ -183,6 +183,19 @@ describe('repeats_own_sentence (#1191)', () => {
     expect(run(draft('Wenn es für euch passt, stell gern die Buchungsanfrage.'), undefined)).toHaveLength(0);
     expect(run(draft('Wenn es für euch passt, stell gern die Buchungsanfrage.'), [])).toHaveLength(0);
   });
+  // Review #1191: eine Zeile, die wie ein Gruß beginnt („Herzlich willkommen …"), darf den Rest
+  // des Textes nicht aus der Prüfung nehmen — weder im Entwurf noch in der Host-Nachricht.
+  it('Zeile mit Gruß-Anfang mitten im Text schaltet den Check nicht ab', () => {
+    const invite = 'Wenn es für euch passt, stell gern die Buchungsanfrage.';
+    const withWelcome = `Hey Nora,\n\nHerzlich willkommen! Schön, dass ihr da seid.\n\n${invite}\n\nLiebe Grüße, Micha`;
+    expect(run(withWelcome)).toHaveLength(1);
+    expect(run(draft(invite), [withWelcome])).toHaveLength(1);
+    expect(run('Hey Nora,\n\nBis bald dann, ich freue mich auf euch.\n\nSchön, dass ihr da seid.\n\nLG', [withWelcome])).toHaveLength(1);
+  });
+  it('mehrzeiliger bzw. langer Grußblock bleibt ausgenommen', () => {
+    const gruss = 'Liebe Grüße und bis ganz bald bei uns im Farmhouse\nMicha';
+    expect(run(`Hey Nora,\n\nalles klar soweit.\n\n${gruss}`, [`Hey Nora,\n\ndas passt.\n\n${gruss}`])).toHaveLength(0);
+  });
   it('normalizeSentence/findRepeatedOwnSentence: Grundverhalten', () => {
     expect(normalizeSentence('  Hallo,  „Welt“ 😊!  ')).toBe('hallo welt');
     expect(findRepeatedOwnSentence('Das ist ein ganz neuer Satz hier.', [host])).toBeNull();

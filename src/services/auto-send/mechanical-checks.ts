@@ -52,10 +52,29 @@ export function normalizeSentence(s: string): string {
   return s.normalize('NFC').toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').replace(/\s+/g, ' ').trim();
 }
 
-/** Sätze ohne Anrede-Zeile/Grußblock, normalisiert, nur mit ≥ REPEAT_MIN_WORDS Wörtern. */
+const SENTENCE_SPLIT = /(?<=[.!?…])\s+|\n+/;
+
+/**
+ * Text ohne Anrede-Zeile und Grußformel. stripGreetingAndClosing schneidet ab der ERSTEN Zeile ab,
+ * die wie ein Gruß beginnt — auch bei „Herzlich willkommen! …" oder „Bis bald …" mitten im Text;
+ * alles dahinter bliebe ungeprüft (Review #1191). Deshalb wird der abgeschnittene Rest zeilenweise
+ * wieder aufgenommen: von einer Gruß-/Anrede-Zeile entfällt nur der erste Satz (die Formel selbst),
+ * jede andere Zeile zählt normal.
+ */
+function textForRepeatCheck(text: string): string {
+  const full = text.replace(/\r\n/g, '\n');
+  const stripped = stripGreetingAndClosing(full);
+  const at = full.indexOf(stripped);
+  if (at < 0) return stripped;
+  const rest = full.slice(at + stripped.length).split('\n').filter((l) => l.trim())
+    .map((line) => (stripGreetingAndClosing(line) === '' ? line.split(SENTENCE_SPLIT).slice(1).join(' ') : line));
+  return [stripped, ...rest].join('\n');
+}
+
+/** Sätze ohne Anrede-Zeile/Grußformel, normalisiert, nur mit ≥ REPEAT_MIN_WORDS Wörtern. */
 export function ownSentences(text: string): { raw: string; norm: string; tokens: Set<string> }[] {
   const out: { raw: string; norm: string; tokens: Set<string> }[] = [];
-  for (const part of stripGreetingAndClosing(text ?? '').split(/(?<=[.!?…])\s+|\n+/)) {
+  for (const part of textForRepeatCheck(text ?? '').split(SENTENCE_SPLIT)) {
     const raw = part.trim();
     const norm = normalizeSentence(raw);
     if (!norm) continue;
