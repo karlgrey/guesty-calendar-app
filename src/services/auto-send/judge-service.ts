@@ -19,6 +19,9 @@ export interface JudgeInput {
   // Default new Date() in judgeDraft/buildJudgeSystemPrompt, damit bestehende Aufrufer/Tests ohne
   // dieses Feld weiterlaufen.
   now?: Date;
+  // #1191: die zuletzt gesendeten Host-Nachrichten des Threads (chronologisch), damit das
+  // Prüfmodell Wiederholungen eigener Formulierungen erkennen kann. Optional/leer → keine Änderung.
+  hostMessages?: string[];
 }
 export interface JudgeDeps { call: typeof callClaudeTool; model: string }
 // deps-Default liest config.judgeModel erst beim tatsächlichen Aufruf (nicht beim Modul-Import) —
@@ -33,6 +36,14 @@ export function buildJudgeUserMessage(input: JudgeInput): string {
   // unverändert (Rückwärtskompatibilität, z. B. Testfixtures in test-judge-fixtures.ts).
   if (input.guestLanguage) {
     lines.push(`ANTWORTSPRACHE laut deterministischer Erkennung: ${LANGUAGE_LABEL[input.guestLanguage]}`);
+  }
+  // #1191: nur bei vorhandenen Host-Nachrichten, VOR dem Gastnachrichten-Block.
+  if (input.hostMessages?.length) {
+    lines.push(
+      '--- EIGENE FRÜHERE NACHRICHTEN (Host, zuletzt gesendet, chronologisch) ---',
+      ...input.hostMessages.map((m, i) => `[${i + 1}] ${m}`),
+      '--- ENDE EIGENE NACHRICHTEN ---',
+    );
   }
   lines.push(
     '--- GASTNACHRICHT(EN), chronologisch ---',

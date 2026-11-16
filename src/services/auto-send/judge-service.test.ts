@@ -68,6 +68,18 @@ describe('judgeDraft', () => {
     expect(m).not.toContain('ANTWORTSPRACHE');
   });
 
+  // #1191: eigene frühere Host-Nachrichten als Judge-Kontext (Wiederholungen erkennen).
+  it('User-Message enthält EIGENE FRÜHERE NACHRICHTEN vor der Gastnachricht, wenn hostMessages gesetzt', () => {
+    const m = buildJudgeUserMessage({ ...input, hostMessages: ['Erste.', 'Zweite.'] });
+    expect(m).toContain('--- EIGENE FRÜHERE NACHRICHTEN (Host, zuletzt gesendet, chronologisch) ---\n[1] Erste.\n[2] Zweite.\n--- ENDE EIGENE NACHRICHTEN ---');
+    expect(m.indexOf('--- EIGENE FRÜHERE')).toBeLessThan(m.indexOf('--- GASTNACHRICHT'));
+  });
+  it('ohne/leere hostMessages bleibt die User-Message bit-identisch (#1191)', () => {
+    const base = buildJudgeUserMessage(input);
+    expect(buildJudgeUserMessage({ ...input, hostMessages: [] })).toBe(base);
+    expect(base).not.toContain('EIGENE FRÜHERE');
+  });
+
   // #696: promised_action — nur relevant, wenn das Modell es liefert.
   it('promises_action + promised_action → promisedAction im Urteil', async () => {
     const call = vi.fn().mockResolvedValue({
@@ -126,5 +138,16 @@ describe('buildJudgeSystemPrompt — Buchungsanfrage-Kriterium (#1004)', () => {
     expect(p).toContain('nennt KEINE Plattform');
     expect(p).toContain('sobald ich deine Antworten habe');
     expect(p).toContain('KEIN promises_action');
+  });
+});
+
+describe('buildJudgeSystemPrompt — Wiederholung eigener Formulierungen (#1191)', () => {
+  it('Kriterium: Wiederholung aus EIGENEN FRÜHEREN NACHRICHTEN senkt confidence, Gruß ausgenommen', async () => {
+    const { buildJudgeSystemPrompt } = await import('./judge-prompt.js');
+    const p = buildJudgeSystemPrompt('V', 'F', null, new Date('2026-11-16T10:00:00.000Z'));
+    expect(p).toContain('WIEDERHOLUNG');
+    expect(p).toContain('confidence höchstens mittel');
+    expect(p).toContain('nur EINMAL je Gespräch');
+    expect(p).toContain('Grußzeile');
   });
 });

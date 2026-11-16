@@ -10,7 +10,7 @@
  * anlegt. Migration: 032_add_draft_regeneration.sql.
  */
 import { getMessagesByThread } from '../repositories/message-repository.js';
-import { getActiveDraftByThread, claimDraftRegeneration, applyDraftRegeneration } from '../repositories/draft-repository.js';
+import { getActiveDraftByThread, claimDraftRegeneration, applyDraftRegeneration, updateDraftBody } from '../repositories/draft-repository.js';
 import { getPropertyForThread } from '../utils/thread-property.js';
 import { loadVoice, loadPropertyFacts } from './vault-knowledge.js';
 import { generateDraftForThread, type DraftResult } from './draft-service.js';
@@ -20,7 +20,7 @@ import { findOpenBookingRequest, type BookingRequestKind } from './booking-reque
 import { runAutoSendGate, type GateInput } from './auto-send/runner.js';
 import type { AutoSendDecision, AutoSendMode } from './auto-send/types.js';
 import { detectLanguage, type SupportedLanguage } from '../utils/language-detect.js';
-import { lastInboundBody } from '../jobs/generate-drafts.js';
+import { lastInboundBody, planDraftRetry } from '../jobs/generate-drafts.js';
 import { parseUtc } from '../utils/date.js';
 import { config } from '../config/index.js';
 import type { Message, MessageDraft, MessageThread } from '../types/messages.js';
@@ -45,12 +45,17 @@ export interface StaleDraftRegenDeps {
   generate: (input: {
     thread: MessageThread; messages: Message[]; voice: string; facts: string; bookingContext: string | null;
     guestLanguage?: SupportedLanguage; isBookingRequest?: boolean;
+    languageRetry?: boolean; repeatRetrySentence?: string | null; // #1191 Neuversuch
     requestKind?: BookingRequestKind | null; // #1004
     alteration?: AlterationSituation | null; // #976
   }) => Promise<DraftResult>;
   claim: (draftId: string, staleHours: number) => boolean;
   apply: (draftId: string, newBody: string) => boolean;
   gate: (i: GateInput) => Promise<GateResult>;
+  // #1191: Body-Update für den einen automatischen Neuversuch — bewusst NICHT apply (das würde
+  // previous_body mit der ersten Neufassung überschreiben und die Vorversion verlieren). Optional:
+  // fehlt der Dep, gibt es keinen Neuversuch.
+  updateBody?: (draftId: string, body: string) => void;
   staleHours: number;
   // #976: optional; fehlt der Dep, gibt es keinen Änderungs-Block.
   resolveAlteration?: (thread: MessageThread, messages: Message[], isBookingRequest: boolean) => AlterationSituation | null;
@@ -67,6 +72,7 @@ const realDeps: StaleDraftRegenDeps = {
   claim: claimDraftRegeneration,
   apply: applyDraftRegeneration,
   gate: (i) => runAutoSendGate(i),
+  updateBody: updateDraftBody,
   staleHours: config.draftStaleHours,
   resolveAlteration: (thread, messages, isBookingRequest) => resolveAlterationSituation(thread, messages, { isBookingRequest }),
 };
@@ -156,8 +162,21 @@ export async function regenerateStaleDraftIfNeeded(
   // versenden (dieselbe Kette wie bei einer frischen Generierung). Das ist gewollt, nicht
   // unterdrückt: setAutoDecision setzt auto_* (inkl. auto_judged_at) neu, ein Gate-Fehler wird
   // nur geloggt, nicht geworfen — die Neugenerierung selbst ist bereits erfolgreich.
+  const gateContext = withAlterationFact(bookingContext, alteration);
   try {
-    await deps.gate({ draftId: draft.id, body: result.body, thread, messages, voice, facts, bookingContext: withAlterationFact(bookingContext, alteration), property, guestLanguage });
+    const gateResult = await deps.gate({ draftId: draft.id, body: result.body, thread, messages, voice, facts, bookingContext: gateContext, property, guestLanguage });
+    // #1191 Spec Punkt 4: genau EIN Neuversuch nach repeats_own_sentence (und/oder falscher
+    // Sprache) — Muster generate-drafts.ts, derselbe Datensatz, Gate mit attempt 2.
+    // Ausgelöst nur durch die Wiederholung (Scope #1191); kommt die falsche Sprache dazu, wird
+    // sie im selben Neuversuch mitkorrigiert.
+    const retry = deps.updateBody ? planDraftRetry(gateResult, result.body, messages) : null;
+    if (retry?.repeatRetrySentence && deps.updateBody) {
+      const retryResult = await deps.generate({ thread, messages, voice, facts, bookingContext, guestLanguage, ...retry, isBookingRequest, requestKind, alteration });
+      if (retryResult.kind === 'text') {
+        deps.updateBody(draft.id, retryResult.body);
+        await deps.gate({ draftId: draft.id, body: retryResult.body, thread, messages, voice, facts, bookingContext: gateContext, property, guestLanguage, attempt: 2 });
+      }
+    }
   } catch (err) {
     logger.warn({ threadId: thread.id, draftId: draft.id, err: err instanceof Error ? err.message : String(err) }, 'stale-draft-regen: Gate fehlgeschlagen (Entwurf bleibt pending)');
   }

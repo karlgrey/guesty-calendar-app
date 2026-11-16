@@ -545,8 +545,8 @@ Copy-Paste kann ein sicherer Entwurf automatisch rausgehen. Spec:
   /api/agent/auto-send/stats?days=` (Auto-Send-Auswertung); `/threads` liefert zusätzlich
   `autoDecision` und `property.shortCode`.
 - **Testfixtures:** `npm run test:judge` (`src/scripts/test-judge-fixtures.ts`, Live-Lauf
-  gegen `JUDGE_MODEL`, 36 Fälle in `src/test-fixtures/judge/cases.json`) — **Pflicht vor
-  jeder Prompt-Änderung** an `judge-prompt.ts` (Stand #1004-Review, 03.11.2026: 36/36). Fixtures
+  gegen `JUDGE_MODEL`, 38 Fälle in `src/test-fixtures/judge/cases.json`) — **Pflicht vor
+  jeder Prompt-Änderung** an `judge-prompt.ts` (Stand #1191, 16.11.2026: 38/38). Fixtures
   mit Tageszeit-Bezug im Entwurf („21 Uhr … bis gleich", Oskar) tragen ein festes `now`, damit
   der HEUTE-Fakt (#698) sie nicht abhängig von der Laufzeit kippen kann.
 - **Sprach-Pin (#695, 21.09.2026):** `src/utils/language-detect.ts` erkennt die Sprache der
@@ -561,6 +561,21 @@ Copy-Paste kann ein sicherer Entwurf automatisch rausgehen. Spec:
   persistierte `auto_reason` trägt dann den Präfix „Neuversuch: “ (nur die letzte Entscheidung
   steht in der DB, beide im Log). `no_reply`/`failed` beim Neuversuch → erste wait-Entscheidung
   bleibt. Fixture „lorenzo dank en" in `cases.json` (Feld `guestLanguage`).
+- **Satzwiederholungen (#1191, 16.11.2026, Fall Lisa FH):** der Entwurf darf keinen Satz aus den
+  eigenen Host-Nachrichten wiederholen. Entwurfs-Prompt (`draft-service.ts`): harte Regel
+  `REPEAT_RULE_BLOCK` für alle Kategorien (Anrede/Grußzeile ausgenommen); im Buchungsanfrage-Block
+  kommt die Einladung zur Buchungsanfrage (Inquiry) bzw. die Ankündigung der Bestätigung
+  (Request-to-Book) höchstens EINMAL je Thread — `hostAlreadySentClosing` (Schlüsselwörter in einer
+  outbound-Nachricht) schaltet auf neutralen Schluss; kein wörtlicher Mustersatz mehr im Prompt.
+  Mechanischer Check `repeats_own_sentence` (`mechanical-checks.ts`, `findRepeatedOwnSentence`):
+  Entwurfssätze ab 5 Wörtern (ohne Anrede/Gruß, normalisiert ohne Satzzeichen/Emojis) gegen die
+  letzten 3 gesendeten Host-Nachrichten (`recentHostMessages`, `runner.ts`), Treffer bei Gleichheit
+  oder Token-Jaccard ≥ 0,8; `policy.ts` meldet ihn vor allen Kategorie-Zweigen als „wiederholt eigenen
+  Satz". Treffer → GENAU EIN Neuversuch mit dem Satz als Korrektur (`planDraftRetry` in
+  `generate-drafts.ts`, teilt sich den einen Neuversuch mit dem Sprach-Pin; ebenso in
+  `stale-draft-regen.ts`, dort per `updateDraftBody`, damit die Vorversion erhalten bleibt). Der Judge
+  sieht die Host-Nachrichten (`JudgeInput.hostMessages`) und senkt confidence bei Wiederholung.
+  Nicht abgedeckt: der „Neu generieren"-Button (`routes/messages.ts`) — dort greift nur das Gate.
 - **Zusagen-Task (#696, 21.09.2026, Fall Lorenzo U19):** eine Zusage im Entwurf
   (Judge-Risk-Flag `promises_action`) ist allein kein Wait-Grund mehr, WENN sie
   nachgehalten wird — der Judge liefert bei `promises_action` zusätzlich `promised_action`

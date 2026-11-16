@@ -6,7 +6,8 @@ import { loadVoice, loadPropertyFacts } from '../services/vault-knowledge.js';
 import { generateDraftForThread, DRAFT_MODEL, type DraftResult } from '../services/draft-service.js';
 import { buildBookingContext } from '../services/booking-context.js';
 import { findOpenBookingRequest, type BookingRequestKind } from '../services/booking-request.js';
-import { runAutoSendGate, type GateInput } from '../services/auto-send/runner.js';
+import { runAutoSendGate, recentHostMessages, type GateInput } from '../services/auto-send/runner.js';
+import { findRepeatedOwnSentence } from '../services/auto-send/mechanical-checks.js';
 import type { AutoSendDecision, AutoSendMode } from '../services/auto-send/types.js';
 import { detectLanguage, type SupportedLanguage } from '../utils/language-detect.js';
 import type { MessageThread, Message, NewDraft } from '../types/messages.js';
@@ -36,6 +37,27 @@ function isLanguageMismatchWait(gateResult: GateResult | undefined): boolean {
   if (!gateResult?.decision || gateResult.decision.decision !== 'wait') return false;
   const flags = gateResult.decision.flags ?? [];
   return flags.includes('language_mismatch') || flags.includes('mech:language_mismatch');
+}
+
+/**
+ * #1191 Spec Punkt 4: Neuversuch-Plan nach dem ersten Gate-Lauf — language_mismatch (#695) und
+ * repeats_own_sentence (mechanisch) teilen sich GENAU EINEN Neuversuch; beide Korrekturen gehen
+ * dann gemeinsam in den Prompt. null = kein Neuversuch. Exportiert für stale-draft-regen.ts.
+ */
+export function planDraftRetry(
+  gateResult: GateResult | undefined, body: string, messages: Message[],
+): { languageRetry?: true; repeatRetrySentence?: string } | null {
+  const language = isLanguageMismatchWait(gateResult);
+  const repeat = !!gateResult?.decision && gateResult.decision.decision === 'wait' &&
+    (gateResult.decision.flags ?? []).includes('mech:repeats_own_sentence');
+  if (!language && !repeat) return null;
+  const plan: { languageRetry?: true; repeatRetrySentence?: string } = {};
+  if (language) plan.languageRetry = true;
+  if (repeat) {
+    plan.repeatRetrySentence = findRepeatedOwnSentence(body, recentHostMessages(messages)) ??
+      '(ein Satz aus deinen früheren Nachrichten)';
+  }
+  return plan;
 }
 
 export const DRAFT_GEN_CAP = 10;
@@ -70,6 +92,8 @@ export interface DraftGenDeps {
     // #695: Sprach-Pin — Fakt statt Prosa-Regel im Prompt (Spec Punkt 1) + Flag für den
     // Neuversuch-Prompt-Zusatz (Spec Punkt 3).
     guestLanguage?: SupportedLanguage; languageRetry?: boolean;
+    // #1191: Neuversuch nach repeats_own_sentence — der wiederholte Satz.
+    repeatRetrySentence?: string | null;
     // #697: mechanisch erkannte Buchungsanfrage — wählt den Buchungsanfrage-Prompt-Block.
     isBookingRequest?: boolean;
     // #1004: Art der Anfrage (Inquiry/Request-to-Book) für Kontext + Schlusssatz im Block.
@@ -154,10 +178,12 @@ export async function generateDraftsForProperty(
         generated++;
         try {
           const gateResult = await deps.gate({ draftId, body: result.body, thread, messages, voice, facts, bookingContext: gateContext, property, guestLanguage });
-          if (isLanguageMismatchWait(gateResult)) {
-            // #695 Spec Punkt 3: genau EIN automatischer Neuversuch mit expliziter Korrektur-
-            // Anweisung — derselbe Draft-Datensatz wird überschrieben, nicht neu angelegt.
-            const retryResult = await deps.generate({ thread, messages, voice, facts, bookingContext, guestLanguage, languageRetry: true, isBookingRequest, requestKind, alteration });
+          const retry = planDraftRetry(gateResult, result.body, messages);
+          if (retry) {
+            // #695 Spec Punkt 3 / #1191 Spec Punkt 4: genau EIN automatischer Neuversuch mit
+            // expliziter Korrektur-Anweisung (falsche Sprache und/oder wiederholter eigener Satz) —
+            // derselbe Draft-Datensatz wird überschrieben, nicht neu angelegt.
+            const retryResult = await deps.generate({ thread, messages, voice, facts, bookingContext, guestLanguage, ...retry, isBookingRequest, requestKind, alteration });
             if (retryResult.kind === 'text') {
               deps.updateDraftBody(draftId, retryResult.body);
               try {

@@ -24,6 +24,9 @@ import type { SupportedLanguage } from '../utils/language-detect.js';
 interface Case {
   name: string; guestMessages: string[]; draft: string; facts?: string; guestName?: string | null;
   guestLanguage?: SupportedLanguage; bookingContext?: string; now?: string;
+  // #1191: optionale zuletzt gesendete Host-Nachrichten — gehen wie live (runner.ts) an Judge UND
+  // mechanischen Check (repeats_own_sentence).
+  hostMessages?: string[];
   expected: {
     category: string | string[]; auto: boolean;
     // #696: optional — nur für Fälle mit Zusage gesetzt (Fixture "Lorenzo").
@@ -37,7 +40,7 @@ for (const c of cases) {
   const r = await judgeDraft({
     guestMessages: c.guestMessages, draft: c.draft, voice: 'Du, locker, herzlich, kurz.',
     facts: c.facts ?? '(keine Fakten)', bookingContext: c.bookingContext ?? null, guestName: c.guestName ?? null,
-    guestLanguage: c.guestLanguage, now,
+    guestLanguage: c.guestLanguage, now, hostMessages: c.hostMessages,
   });
   if (r.kind !== 'verdict') { console.log(`✗ ${c.name}: technisch fehlgeschlagen (${r.error})`); failed++; continue; }
   const v = r.verdict;
@@ -51,6 +54,7 @@ for (const c of cases) {
     guestLanguage: c.guestLanguage,
     isBookingRequest: v.category === 'buchungsanfrage',
     now, bookingContext: c.bookingContext ?? null,
+    recentHostMessages: c.hostMessages,
   });
   const baseInput = { mode: 'live' as const, paused: false, judge: r, mechanical, threadHasHumanIntervention: false, threadHasFailedSend: false, autoSentToday: 0, dailyCap: 10, canSend: true };
   const d = decide({ ...baseInput, promiseTask: null });

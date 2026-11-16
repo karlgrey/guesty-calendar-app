@@ -130,5 +130,43 @@
       "maxChars": 350
     },
     "now": "2026-10-26T09:00:00Z"
+  },
+  {
+    "name": "Nora — Einladung zur Buchungsanfrage schon gesendet (#1191)",
+    "description": "Anonymisierter Fall Lisa FH (14.11.2026): Inquiry, erste Host-Antwort endet mit der Einladung zur Buchungsanfrage, Gast stellt eine Folgefrage. Erwartet: keine erneute Einladung, kein wiederholter Satz.",
+    "propertySlug": "farmhouse",
+    "thread": {
+      "channel": "airbnb",
+      "reservation_status": "inquiry",
+      "guest_name": "Nora"
+    },
+    "bookingContext": "Buchungsanfrage (noch nicht bestätigt): Zeitraum 05.12.2026–07.12.2026, 2 Nächte, 15 Personen — Daten stammen aus der Anfrage selbst.",
+    "alteration": null,
+    "messages": [
+      {
+        "direction": "inbound",
+        "body": "Hallo Michael! :) Ich bin gerade auf dein tolles Inserat gestoßen. Ich würde an diesem Wochenende gern meinen 30. Geburtstag bei dir reinfeiern. Wäre es möglich, dass abends ein paar zusätzliche Gäste dazukommen, die später wieder nach Hause fahren?"
+      },
+      {
+        "direction": "system",
+        "body": "New guest inquiry"
+      },
+      {
+        "direction": "outbound",
+        "body": "Hey Nora,\n\nvielen Dank für deine ehrliche Anfrage, das freut mich! Ein gemütlicher Geburtstag im kleinen Kreis ist bei uns grundsätzlich denkbar, große Feiern oder Events wie Hochzeiten bieten wir aber nicht an. Wichtig ist unser festes Limit von 15 Personen insgesamt, Tagesgäste mitgezählt. Wie viele Personen wärt ihr denn insgesamt, inklusive der Gäste, die nur abends vorbeikommen?\n\nWenn es für euch passt, stell gern die Buchungsanfrage.\n\nLiebe Grüße, Micha"
+      },
+      {
+        "direction": "inbound",
+        "body": "Danke für die schnelle Rückmeldung! ☺️ Plan A war es, mit Freunden zu feiern, jedoch würde das die Personenanzahl überschreiten. Plan B wäre es, mit der Familie zu feiern und dann wären es 15 Personen und 2 Kinder (9 und 5 Jahre). Wäre das für dich noch in Ordnung?"
+      }
+    ],
+    "expect": {
+      "mustNotContain": [
+        "stell gern die buchungsanfrage",
+        "stell gerne die buchungsanfrage"
+      ],
+      "noRepeatOfHost": true
+    },
+    "now": "2026-11-14T13:30:00Z"
   }
 ]

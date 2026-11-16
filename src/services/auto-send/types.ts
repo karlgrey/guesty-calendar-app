@@ -64,7 +64,10 @@ export type MechanicalFlag =
   // #698 (Fall Lorenzo U19): Entwurf nennt einen Wochentag (DE/EN), der nicht zum heutigen
   // Berliner Kalendertag bzw. zum Aufenthaltszeitraum passt (nur relevant, wenn der mechanische
   // Check mit `now` läuft, siehe mechanical-checks.ts/today-facts.ts).
-  | 'zeitbezug_veraltet';
+  | 'zeitbezug_veraltet'
+  // #1191: Entwurf wiederholt einen Satz (≥ 5 Wörter), der in den letzten gesendeten
+  // Host-Nachrichten des Threads schon steht (siehe mechanical-checks.ts findRepeatedOwnSentence).
+  | 'repeats_own_sentence';
 export interface MechanicalFinding { flag: MechanicalFlag; match: string }
 
 export interface AutoSendDecision {

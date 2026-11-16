@@ -17,6 +17,9 @@ import { callClaudeTool } from '../services/anthropic-client.js';
 import { detectLanguage } from '../utils/language-detect.js';
 import { checkDraftExpectation, countSentences, stripGreetingAndClosing, type DraftExpectation } from '../services/draft-fixture-check.js';
 import type { AlterationSituation } from '../services/alteration-request.js';
+import { findOpenBookingRequest } from '../services/booking-request.js';
+import { findRepeatedOwnSentence } from '../services/auto-send/mechanical-checks.js';
+import { recentHostMessages } from '../services/auto-send/runner.js';
 import type { MessageThread, MessageChannel, Message, MessageDirection } from '../types/messages.js';
 
 export interface DraftCase {
@@ -87,14 +90,22 @@ async function main(): Promise<void> {
       const messages = messagesFromCase(c, id, property.provider);
       const lastInbound = [...messages].reverse().find((m) => m.direction === 'inbound');
       const guestLanguage = detectLanguage(lastInbound?.body ?? '');
+      // #1191: Buchungsanfrage wie im echten Pfad (generate-drafts.ts) aus dem System-Post erkennen —
+      // Fixtures ohne System-Post (bzw. mit bestätigter Buchung) bleiben unverändert.
+      const openRequest = findOpenBookingRequest(messages, thread.reservation_status);
       const result = await generateDraftForThread(
         {
           thread, messages, voice, facts, bookingContext: c.bookingContext ?? null,
           alteration: c.alteration, now: c.now ? new Date(c.now) : undefined, guestLanguage,
+          isBookingRequest: openRequest !== null, requestKind: openRequest?.requestKind ?? null,
         },
         { call: callClaudeTool },
       );
       const check = checkDraftExpectation(result, c.expect);
+      if (c.expect.noRepeatOfHost && result.kind === 'text') {
+        const repeated = findRepeatedOwnSentence(result.body, recentHostMessages(messages));
+        if (repeated) { check.pass = false; check.failures.push(`wiederholt eigenen Satz: „${repeated}"`); }
+      }
       if (check.pass) green++;
       console.log(`\n--- Lauf ${run}/${runs}: ${check.pass ? '✓' : '✗'} kind=${result.kind}`);
       if (result.kind === 'text') {

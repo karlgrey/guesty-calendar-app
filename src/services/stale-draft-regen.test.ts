@@ -260,3 +260,50 @@ describe('regenerateStaleDraftIfNeeded — Änderungsantrag (#976)', () => {
     expect((d.generate as any).mock.calls[0][0].alteration).toBeNull();
   });
 });
+
+// #1191 Spec Punkt 4: Wiederholungs-Check auch in der Stale-Regeneration — genau ein Neuversuch,
+// Body per updateBody (nicht apply, sonst ginge die Vorversion verloren), Gate attempt=2.
+describe('regenerateStaleDraftIfNeeded — Satzwiederholung (#1191)', () => {
+  const INVITE = 'Wenn es für euch passt, stell gern die Buchungsanfrage.';
+  const msgs = [
+    mkMessage({ id: 'm0', direction: 'outbound', body: `Hey Anna, schön von dir zu hören. ${INVITE} Liebe Grüße, Micha`, sent_at: new Date(Date.now() - 9 * HOUR).toISOString() }),
+    mkMessage(),
+  ];
+  const repeatWait = { decision: { decision: 'wait', reason: 'Mechanischer Check: wiederholt eigenen Satz', category: null, flags: ['mech:repeats_own_sentence'] }, mode: 'shadow', sent: false };
+
+  it('Treffer → ein Neuversuch mit dem Satz, updateBody statt apply, Gate attempt=2', async () => {
+    const generate = vi.fn()
+      .mockResolvedValueOnce({ kind: 'text', body: `Alles klar! ${INVITE}` })
+      .mockResolvedValueOnce({ kind: 'text', body: 'Alles klar, bis bald!' });
+    const gate = vi.fn().mockResolvedValueOnce(repeatWait).mockResolvedValueOnce({ decision: { decision: 'wait', reason: 'ok', category: null, flags: [] }, mode: 'shadow', sent: false });
+    const updateBody = vi.fn();
+    const d = deps({ getMessages: vi.fn().mockReturnValue(msgs), generate, gate, updateBody });
+    const res = await regenerateStaleDraftIfNeeded(mkThread(), d);
+    expect(res).toEqual({ kind: 'regenerated' });
+    expect(generate).toHaveBeenCalledTimes(2);
+    expect(generate.mock.calls[1][0].repeatRetrySentence).toBe(INVITE);
+    expect(d.apply).toHaveBeenCalledTimes(1);
+    expect(updateBody).toHaveBeenCalledWith('d1', 'Alles klar, bis bald!');
+    expect(gate.mock.calls[1][0]).toMatchObject({ draftId: 'd1', body: 'Alles klar, bis bald!', attempt: 2 });
+  });
+
+  it('bleibt der Treffer → kein dritter Anlauf; ohne Treffer kein Neuversuch', async () => {
+    const generate = vi.fn().mockResolvedValue({ kind: 'text', body: `Alles klar! ${INVITE}` });
+    const gate = vi.fn().mockResolvedValue(repeatWait);
+    const d = deps({ getMessages: vi.fn().mockReturnValue(msgs), generate, gate, updateBody: vi.fn() });
+    await regenerateStaleDraftIfNeeded(mkThread(), d);
+    expect(generate).toHaveBeenCalledTimes(2);
+    expect(gate).toHaveBeenCalledTimes(2);
+
+    const d2 = deps({ updateBody: vi.fn() });
+    await regenerateStaleDraftIfNeeded(mkThread(), d2);
+    expect(d2.generate).toHaveBeenCalledTimes(1);
+  });
+
+  it('nur language_mismatch → kein Neuversuch in der Stale-Regeneration (Scope #1191)', async () => {
+    const gate = vi.fn().mockResolvedValue({ decision: { decision: 'wait', reason: 'x', category: null, flags: ['mech:language_mismatch'] }, mode: 'shadow', sent: false });
+    const d = deps({ gate, updateBody: vi.fn() });
+    await regenerateStaleDraftIfNeeded(mkThread(), d);
+    expect(d.generate).toHaveBeenCalledTimes(1);
+  });
+});

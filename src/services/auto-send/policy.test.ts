@@ -189,3 +189,21 @@ describe('decide: Buchungsanfrage-Zweig (#697)', () => {
     });
   });
 });
+
+// #1191: repeats_own_sentence entscheidet vor Kategorie-/Buchungsanfrage-Zweig mit eigenem Grund.
+describe('decide: repeats_own_sentence (#1191)', () => {
+  const rep = [{ flag: 'repeats_own_sentence' as const, match: 'Wenn es für euch passt, stell gern die Buchungsanfrage.' }];
+  it('buchungsanfrage mit Task + Treffer → wait „wiederholt eigenen Satz“', () => {
+    const j = withVerdict({ category: 'buchungsanfrage' });
+    const d = decide({ ...base, judge: j, mechanical: rep, bookingTask: { created: true, taskNumber: 701, deadlineLabel: null } });
+    expect(d.decision).toBe('wait');
+    expect(d.reason).toContain('wiederholt eigenen Satz');
+    expect(d.flags).toContain('mech:repeats_own_sentence');
+  });
+  it('playbook_fakt + Treffer → wait „wiederholt eigenen Satz“', () => {
+    const d = decide({ ...base, judge: withVerdict({ category: 'playbook_fakt' }), mechanical: rep });
+    expect(d.decision).toBe('wait');
+    expect(d.reason).toContain('wiederholt eigenen Satz');
+    expect(d.flags).toContain('mech:repeats_own_sentence');
+  });
+});
