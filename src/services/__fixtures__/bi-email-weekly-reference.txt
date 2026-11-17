@@ -1,0 +1,24 @@
+AirBnB Portfolio Report · 2. Jun 2026
+2 Properties: Farmhouse, Uferstrasse <19>
+Umsatz 2026 (ganzes Kalenderjahr inkl. gebuchter Zukunft): ≈ 45.000 € · Ø Belegung 6Wo: 66% · Buchungen 2026: 60 · fest gebucht: 12.000 €
+
+⚠️ Airbnb-Mail-Sync gestört:
+  Uferstrasse <19>: seit 30h kein erfolgreicher Sync mehr
+
+⚠️ Datenqualität:
+  Farmhouse: Buchung X fehlt
+
+Kennzahlen:
+  Farmhouse: Bel 70%/62%, Umsatz 2026 30.000 € (Monat 4.000 €, +12%), Buchungen 40, ADR 150 €
+  Uferstrasse <19>: Bel 62%/55%, Umsatz 2026 ≈ 15.000 € (Monat ≈ 2.000 €, -8%), Buchungen 20, ADR ≈ 120 €
+
+Nächste Anreisen:
+  03.06.2026 Farmhouse — Max M. (4N/2P, direct) [Turnover]
+  09.06.2026 Uferstrasse <19> — Anna & Co (3N/3P, airbnb2)
+
+Forecast (Umsatz, Portfolio):
+  Jun: fest 6.000 € → erwartet 9.000 € (bis 11.000 €, hoch)
+  Jul: noch offen (niedrig)
+
+Forecast pro Property (Σ 6 Mon):
+  Farmhouse: fest 6.000 € → erwartet 9.000 € [Vorjahr, mittel]

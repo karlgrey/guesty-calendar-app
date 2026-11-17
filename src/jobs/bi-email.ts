@@ -6,6 +6,7 @@
  */
 import { addDays, addMonths, format, getDay, getHours, startOfMonth, differenceInCalendarDays, differenceInCalendarMonths, getDaysInMonth } from 'date-fns';
 import { toZonedTime } from 'date-fns-tz';
+import { de } from 'date-fns/locale';
 import {
   getAllProperties,
   getBiReportConfig,
@@ -25,6 +26,7 @@ import {
   getReservationsInRange,
   getLeadTimeSamples,
   getRevenueForCheckInMonth,
+  ACTIVE_RESERVATION_STATUSES,
 } from '../repositories/reservation-repository.js';
 import { buildGanttGrid } from '../services/bi-calendar.js';
 import { buildLeadTimeCurve, forecastMonthRevenue, type RevenueForecast, type ForecastConfidence } from '../services/forecast.js';
@@ -35,7 +37,9 @@ import { findStaleAirbnbMailSources } from '../services/airbnb-mail-staleness.js
 import { getEstimatedYearStats, getUnmatchedPayouts } from '../repositories/airbnb-payout-repository.js';
 import { findReservationsMissingInIcal } from './airbnb-mail/reconcile-ical.js';
 import { config } from '../config/index.js';
-import type { BiReportModel, PropertyKpi, UpcomingArrival, PropertyForecast } from '../types/bi-report.js';
+import type { BiReportModel, BiReportLabels, PropertyKpi, UpcomingArrival, PropertyForecast } from '../types/bi-report.js';
+import { getActiveRecipientEmails } from '../repositories/report-recipient-repository.js';
+import { filterPropertiesInReporting, REPORTING_TIMEZONE } from '../services/reporting/reporting-scope.js';
 import logger from '../utils/logger.js';
 
 const CALENDAR_DAYS = 42;
@@ -53,20 +57,88 @@ interface PropertyData {
   kpi: PropertyKpi;
 }
 
+/** Berichtszeitraum des Monatsreports (abgeschlossener Kalendermonat). */
+export interface ReportPeriod {
+  start: string;        // YYYY-MM-01
+  endExclusive: string; // erster Tag des Folgemonats
+  label: string;        // z. B. "Oktober 2026"
+}
+
+export interface BuildBiReportOptions {
+  period?: ReportPeriod;
+}
+
+/**
+ * Vormonat relativ zu `now` in der Report-Zeitzone (reine Funktion).
+ * 01.12.2026 06:00 Berlin -> { start '2026-11-01', endExclusive '2026-12-01', label 'November 2026' }.
+ */
+export function getPreviousMonthPeriod(now: Date, tz: string = REPORTING_TIMEZONE): ReportPeriod {
+  const zoned = toZonedTime(now, tz);
+  const thisMonthFirst = new Date(zoned.getFullYear(), zoned.getMonth(), 1);
+  const prevMonthFirst = new Date(zoned.getFullYear(), zoned.getMonth() - 1, 1);
+  return {
+    start: format(prevMonthFirst, 'yyyy-MM-dd'),
+    endExclusive: format(thisMonthFirst, 'yyyy-MM-dd'),
+    label: format(prevMonthFirst, 'LLLL yyyy', { locale: de }),
+  };
+}
+
+/** Text-Overrides des Monatsreports (Renderer fällt sonst auf die Wochen-Strings zurück). */
+function monthlyLabels(label: string): BiReportLabels {
+  return {
+    title: `AirBnB Portfolio Report · Monat ${label}`,
+    calendarHeading: `① Übersichtskalender · ${label}`,
+    arrivalsHeading: `② Anreisen &amp; Turnovers · ${label}`,
+    arrivalsEmpty: `Keine Anreisen im Berichtszeitraum ${label}.`,
+    kpiOcc6wk: 'Bel. Monat',
+    kpiOcc30d: 'Bel. Vormon.',
+    kpiRevenueMonth: 'Umsatz Monat',
+    kpiBlocked: 'Block-Tg',
+    statOccupancy: 'Ø Belegung Monat',
+    textOccupancy: 'Ø Belegung Monat',
+    textArrivalsHeading: `Anreisen ${label}:`,
+  };
+}
+
+const isActiveStatus = (status: string | null | undefined): boolean =>
+  (ACTIVE_RESERVATION_STATUSES as readonly string[]).includes(status ?? '');
+
+/** Listing-IDs der Properties (defekte Konfiguration wird übersprungen, wie in der Schleife unten). */
+function listingIdsOf(properties: PropertyConfig[]): string[] {
+  const ids: string[] = [];
+  for (const p of properties) {
+    try {
+      ids.push(getListingId(p));
+    } catch {
+      /* Property ohne Listing-ID: wird unten geloggt und übersprungen */
+    }
+  }
+  return ids;
+}
+
 /** Build the full report model. All DB I/O is via the imported repos. */
 export function buildBiReportModel(
   properties: PropertyConfig[],
   now: Date,
-  horizonMonths: number
+  horizonMonths: number,
+  options?: BuildBiReportOptions
 ): BiReportModel {
-  const today = ymd(now);
-  const in6Weeks = ymd(addDays(now, CALENDAR_DAYS));
+  const period = options?.period;
+  // Wochenreport: heute .. +42 Tage. Monatsreport: der abgeschlossene Vormonat.
+  const nowDay = ymd(now);
+  const today = period ? period.start : nowDay;
+  const periodLastDay = period ? ymd(addDays(new Date(`${period.endExclusive}T00:00:00`), -1)) : null;
+  const in6Weeks = periodLastDay ?? ymd(addDays(now, CALENDAR_DAYS));
+  const calendarDays = period ? differenceInCalendarDays(new Date(`${period.endExclusive}T00:00:00`), new Date(`${period.start}T00:00:00`)) : CALENDAR_DAYS;
   const last30 = ymd(addDays(now, -30));
-  const curMonth = format(now, 'yyyy-MM');
-  const prevMonth = format(addMonths(now, -1), 'yyyy-MM');
+  const curMonth = period ? period.start.slice(0, 7) : format(now, 'yyyy-MM');
+  const prevMonthDate = period ? addMonths(new Date(`${period.start}T00:00:00`), -1) : addMonths(now, -1);
+  const prevMonth = format(prevMonthDate, 'yyyy-MM');
+  const prevMonthStart = format(prevMonthDate, 'yyyy-MM-01');
 
-  // Pooled lead-time curve across the whole portfolio
-  const curve = buildLeadTimeCurve(getLeadTimeSamples());
+  // Pooled lead-time curve across the whole portfolio — nur über die übergebenen
+  // Properties (aus dem Reporting genommene Objekte gehen auch nicht mit Historie ein, #1223).
+  const curve = buildLeadTimeCurve(getLeadTimeSamples(listingIdsOf(properties)));
 
   const collected: PropertyData[] = [];
   const dataWarnings: string[] = [];
@@ -85,7 +157,9 @@ export function buildBiReportModel(
       const breakdown6wk = getOccupancyBreakdown(listingId, today, in6Weeks);
       const occ6wk = breakdown6wk.rate;
       const blockedDays6wk = breakdown6wk.blockedDays;
-      const occ30d = getOccupancyRate(listingId, last30, today);
+      const occ30d = period
+        ? getOccupancyRate(listingId, prevMonthStart, ymd(addDays(new Date(`${period.start}T00:00:00`), -1)))
+        : getOccupancyRate(listingId, last30, today);
       const revMonth = getRevenueForCheckInMonth(listingId, curMonth);
       const revPrev = getRevenueForCheckInMonth(listingId, prevMonth);
       const changePct = revPrev > 0 ? Math.round(((revMonth - revPrev) / revPrev) * 100) : revMonth > 0 ? 100 : 0;
@@ -93,10 +167,12 @@ export function buildBiReportModel(
 
       // 'future' ignores the days arg (no upper bound) — returns all upcoming
       // check-ins, used for the next-5 arrivals list.
-      const futureReservations = getReservationsByPeriod(listingId, 0, 'future');
+      const futureReservations = period ? [] : getReservationsByPeriod(listingId, 0, 'future');
       // Stays overlapping the calendar window (incl. in-progress) for the Gantt
       // and same-day turnover detection.
-      const windowReservations = getReservationsInRange(listingId, today, in6Weeks);
+      const windowReservations = period
+        ? getReservationsInRange(listingId, today, in6Weeks).filter((r) => isActiveStatus(r.status))
+        : getReservationsInRange(listingId, today, in6Weeks);
 
       // Airbnb-mail provider only: unconfirmed payout amounts + data-quality
       // warnings (unmatched payouts, bookings vanished from the calendar).
@@ -108,7 +184,7 @@ export function buildBiReportModel(
             `${property.name}: Auszahlung ${p.amount} € vom ${p.payout_date} keiner Buchung zuordenbar (${p.reservation_code})`
           );
         }
-        for (const code of findReservationsMissingInIcal(listingId, today)) {
+        for (const code of findReservationsMissingInIcal(listingId, nowDay)) {
           dataWarnings.push(`${property.name}: Buchung ${code} fehlt im Airbnb-Kalender — prüfen (Storno?)`);
         }
       }
@@ -143,7 +219,7 @@ export function buildBiReportModel(
   // Calendar grid
   const calendar = buildGanttGrid({
     startDate: today,
-    dayCount: CALENDAR_DAYS,
+    dayCount: calendarDays,
     properties: collected.map((c) => ({
       slug: c.property.slug,
       name: c.property.name,
@@ -152,13 +228,17 @@ export function buildBiReportModel(
     })),
   });
 
-  // Next 5 arrivals portfolio-wide
-  const arrivals: UpcomingArrival[] = collected
+  // Wochenreport: nächste 5 Anreisen portfolioweit. Monatsreport: ALLE Anreisen des Zeitraums.
+  const arrivalSource = (c: PropertyData) =>
+    period
+      ? c.windowReservations.filter((r) => r.check_in.slice(0, 10) >= period.start && r.check_in.slice(0, 10) < period.endExclusive)
+      : c.futureReservations;
+  const allArrivals: UpcomingArrival[] = collected
     .flatMap((c) => {
       // Checkouts from window stays (incl. in-progress) so an arrival on a day
       // that also has a departure is flagged as a turnover.
       const checkOuts = new Set(c.windowReservations.map((r) => r.check_out.slice(0, 10)));
-      return c.futureReservations.map((r) => ({
+      return arrivalSource(c).map((r) => ({
         date: r.check_in.slice(0, 10),
         propertySlug: c.property.slug,
         propertyName: c.property.name,
@@ -169,8 +249,8 @@ export function buildBiReportModel(
         isTurnover: checkOuts.has(r.check_in.slice(0, 10)),
       }));
     })
-    .sort((a, b) => a.date.localeCompare(b.date))
-    .slice(0, 5);
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const arrivals = period ? allArrivals : allArrivals.slice(0, 5);
 
   // ----- Forecast v2 (revenue, layered: historical > pickup > rampup) -----
   const biForecast = getBiReportConfig()?.forecast ?? { rampMonths: 12, steadyOccupancyPct: 0.6 };
@@ -257,7 +337,7 @@ export function buildBiReportModel(
 
   return {
     generatedAt: now.toISOString(),
-    weekLabel: format(now, 'd. MMM yyyy'),
+    weekLabel: period ? period.label : format(now, 'd. MMM yyyy'),
     currency: collected[0]?.kpi.currency || 'EUR',
     portfolio: {
       revenueYtd: collected.reduce((s, c) => s + c.kpi.revenueYtd, 0),
@@ -273,6 +353,7 @@ export function buildBiReportModel(
     propertyForecasts,
     staleAirbnbMailSources,
     dataWarnings,
+    ...(period ? { labels: monthlyLabels(period.label) } : {}),
   };
 }
 
@@ -333,30 +414,75 @@ export async function sendBiReportEmail(): Promise<{ success: boolean; sent: boo
     logger.debug('BI report disabled or not configured');
     return { success: true, sent: false };
   }
-  if (!biConfig.recipients.length) {
+  // Empfänger bei jedem Versand frisch aus der DB (Häkchen im Admin wirken ohne Neustart).
+  const recipients = getActiveRecipientEmails('portfolio-weekly');
+  if (!recipients.length) {
     logger.warn('BI report enabled but no recipients configured');
     return { success: true, sent: false, error: 'No recipients' };
   }
 
   try {
-    const properties = getAllProperties();
-    const model = buildBiReportModel(properties, new Date(), biConfig.forecastHorizonMonths);
+    const now = new Date();
+    const properties = filterPropertiesInReporting(getAllProperties(), now);
+    const model = buildBiReportModel(properties, now, biConfig.forecastHorizonMonths);
     const { html, text } = generateBiReportEmail(model);
 
     const sent = await sendEmail({
-      to: biConfig.recipients,
+      to: recipients,
       subject: `📊 AirBnB Portfolio Report · ${model.weekLabel}`,
       html,
       text,
     });
 
     if (sent) {
-      logger.info({ recipients: biConfig.recipients.length, properties: model.kpis.length }, '✅ BI report email sent');
+      logger.info({ recipients: recipients.length, properties: model.kpis.length }, '✅ BI report email sent');
       return { success: true, sent: true };
     }
     return { success: false, sent: false, error: 'Email sending failed' };
   } catch (error) {
     logger.error({ error }, '❌ BI report email job failed');
+    return { success: false, sent: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+}
+
+/**
+ * Portfolio-Report monatlich (report-type portfolio-monthly): Berichtszeitraum = abgeschlossener
+ * Vormonat, gleicher Aufbau wie der Wochenreport. Gleicher enabled-Schalter (biReport.enabled).
+ */
+export async function sendPortfolioMonthlyEmail(
+  now: Date = new Date()
+): Promise<{ success: boolean; sent: boolean; error?: string }> {
+  const biConfig = getBiReportConfig();
+  if (!biConfig || !biConfig.enabled) {
+    logger.debug('Portfolio monthly report disabled or not configured');
+    return { success: true, sent: false };
+  }
+  const recipients = getActiveRecipientEmails('portfolio-monthly');
+  if (!recipients.length) {
+    logger.warn('Portfolio monthly report enabled but no recipients configured');
+    return { success: true, sent: false, error: 'No recipients' };
+  }
+
+  try {
+    const period = getPreviousMonthPeriod(now);
+    const properties = filterPropertiesInReporting(getAllProperties(), now);
+    const model = buildBiReportModel(properties, now, biConfig.forecastHorizonMonths, { period });
+    const { html, text } = generateBiReportEmail(model);
+
+    const sent = await sendEmail({
+      to: recipients,
+      subject: `📊 AirBnB Portfolio Report · Monat ${period.label}`,
+      html,
+      text,
+    });
+
+    if (sent) {
+      logger.info({ recipients: recipients.length, properties: model.kpis.length, period: period.label }, '✅ Portfolio monthly report email sent');
+      return { success: true, sent: true };
+    }
+    return { success: false, sent: false, error: 'Email sending failed' };
+  } catch (error) {
+    logger.error({ error }, '❌ Portfolio monthly report email job failed');
     return { success: false, sent: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 }

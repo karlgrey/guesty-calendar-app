@@ -675,17 +675,21 @@ export function getRecentCheckoutIdsNeedingReview(
  * Lead-time samples for the pickup forecast, pooled across ALL listings.
  * Only rows with a real booking date and a future-relative check_in count.
  */
-export function getLeadTimeSamples(): Array<{ checkIn: string; reservedAt: string }> {
+export function getLeadTimeSamples(listingIds?: string[]): Array<{ checkIn: string; reservedAt: string }> {
+  // Optionaler Filter (#1223): nur diese Listings poolen (z. B. ohne aus dem Reporting genommene Objekte).
+  if (listingIds && listingIds.length === 0) return [];
   const db = getDatabase();
+  const listingFilter = listingIds ? `AND listing_id IN (${listingIds.map(() => '?').join(',')})` : '';
   const rows = db
     .prepare(
       `SELECT date(check_in) AS checkIn, reserved_at AS reservedAt
        FROM reservations
        WHERE reserved_at IS NOT NULL
          AND status IN (${ACTIVE_STATUS_SQL_LIST})
-         AND date(check_in) > date(reserved_at)`
+         AND date(check_in) > date(reserved_at)
+         ${listingFilter}`
     )
-    .all() as Array<{ checkIn: string; reservedAt: string }>;
+    .all(...(listingIds ?? [])) as Array<{ checkIn: string; reservedAt: string }>;
   return rows;
 }
 

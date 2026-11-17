@@ -45,6 +45,24 @@ export interface PropertyForecast {
   months: RevenueForecast[];
 }
 
+/**
+ * Optionale Text-Overrides (Monatsreport). Fehlt ein Feld bzw. `labels`, rendert der
+ * Template-Renderer den bisherigen Wochenreport-String.
+ */
+export interface BiReportLabels {
+  title?: string;           // Titelzeile ohne Emoji, z. B. "AirBnB Portfolio Report · Monat Oktober 2026"
+  calendarHeading?: string; // Überschrift ① (HTML-sicher)
+  arrivalsHeading?: string; // Überschrift ② (HTML-sicher)
+  arrivalsEmpty?: string;   // Leer-Text der Anreisen-Liste
+  kpiOcc6wk?: string;       // Spaltenkopf 'Bel. 6Wo'
+  kpiOcc30d?: string;       // Spaltenkopf 'Bel. 30Tg'
+  kpiRevenueMonth?: string; // Spaltenkopf 'Umsatz Monat'
+  kpiBlocked?: string;      // Spaltenkopf 'Block-Tg'
+  statOccupancy?: string;   // Stat-Kachel 'Ø Belegung 6 Wo'
+  textOccupancy?: string;   // Text-Version 'Ø Belegung 6Wo'
+  textArrivalsHeading?: string; // Text-Version 'Nächste Anreisen:'
+}
+
 export interface BiReportModel {
   generatedAt: string;   // ISO timestamp
   weekLabel: string;     // e.g. "2. Jun 2026"
@@ -67,4 +85,6 @@ export interface BiReportModel {
   // Human-readable data-quality warnings (e.g. unmatched payouts, bookings
   // missing from the Airbnb calendar) — surfaced as a "Datenqualität" section.
   dataWarnings: string[];
+  // Text-Overrides für den Monatsreport; fehlt = Wochenreport-Texte.
+  labels?: BiReportLabels;
 }
