@@ -26,8 +26,9 @@ function msg(id: string, threadId: string, direction: string, sentAt: string, bo
     .run(id, threadId, direction, sentAt, body);
 }
 function draft(id: string, threadId: string, kind: 'inquiry' | 'request_to_book', taskId: number, systemMsgId: string) {
-  db.prepare(`INSERT INTO message_drafts (id, thread_id, provider, body, generated_by, request_kind, smarttasks_task_id, smarttasks_task_guest_message_id)
-    VALUES (?, ?, 'guesty', 'Entwurf', 'llm', ?, ?, ?)`).run(id, threadId, kind, taskId, systemMsgId);
+  // created_at wie im Betrieb: Entwurf (und Task) entstehen kurz nach dem System-Post.
+  db.prepare(`INSERT INTO message_drafts (id, thread_id, provider, body, generated_by, request_kind, smarttasks_task_id, smarttasks_task_guest_message_id, created_at)
+    VALUES (?, ?, 'guesty', 'Entwurf', 'llm', ?, ?, ?, '2026-11-16 10:00:30')`).run(id, threadId, kind, taskId, systemMsgId);
 }
 /** Inquiry-Thread: Gastnachricht 10:00, System-Post 10:00:06, Task am Draft. */
 function inquiryThread(threadId: string, taskId: number, kind: 'inquiry' | 'request_to_book' = 'inquiry') {
@@ -94,6 +95,29 @@ describe('closeAnsweredInquiryTasks (#1210)', () => {
     const r = await closeAnsweredInquiryTasks({}, deps(c));
     expect(r.closed).toBe(0);
     expect(c.getTask).not.toHaveBeenCalled();
+  });
+
+  it('Folgerunde: Host-Antwort VOR der Task-Anlage zählt nicht (erste Antwort ging automatisch ohne Task)', async () => {
+    // Runde 1: Inquiry automatisch beantwortet, kein Task. Runde 2: Gast schreibt erneut, der
+    // Entwurf wartet auf Micha → Task wird JETZT am selben System-Post angelegt. Die alte
+    // Host-Nachricht liegt zwar nach dem System-Post, ist aber nicht die Antwort auf Runde 2.
+    thread('guesty:t13');
+    msg('guesty:t13:g1', 'guesty:t13', 'inbound', '2026-11-16T10:00:00Z');
+    msg('guesty:t13:sys', 'guesty:t13', 'system', '2026-11-16T10:00:06Z', 'New guest inquiry');
+    msg('guesty:t13:o1', 'guesty:t13', 'outbound', '2026-11-16T10:01:00Z', 'automatische Antwort');
+    msg('guesty:t13:g2', 'guesty:t13', 'inbound', '2026-11-16T12:00:00Z', 'Können wir 2 Hunde mitbringen?');
+    draft('guesty:t13:d2', 'guesty:t13', 'inquiry', 513, 'guesty:t13:sys');
+    db.prepare(`UPDATE message_drafts SET created_at = '2026-11-16 12:00:30' WHERE id = 'guesty:t13:d2'`).run();
+    const c = client();
+    const r1 = await closeAnsweredInquiryTasks({}, deps(c));
+    expect(r1.closed).toBe(0);
+    expect(c.getTask).not.toHaveBeenCalled();
+    expect(outcome(513)).toBeUndefined();
+    // Micha antwortet auf Runde 2 → jetzt schließt der Task, mit dem Zeitpunkt DIESER Antwort.
+    msg('guesty:t13:o2', 'guesty:t13', 'outbound', '2026-11-16T13:00:00Z', 'Ja, gern');
+    const r2 = await closeAnsweredInquiryTasks({}, deps(c));
+    expect(r2.closed).toBe(1);
+    expect(c.addComment).toHaveBeenCalledWith(513, buildClosureComment('2026-11-16T13:00:00Z'));
   });
 
   it('Request-to-Book bleibt offen, auch nach gesendeter Antwort', async () => {

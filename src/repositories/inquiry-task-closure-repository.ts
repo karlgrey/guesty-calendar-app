@@ -5,12 +5,17 @@
 // eine outbound-Nachricht ZEITLICH NACH dem auslösenden Guesty-System-Post steht — egal ob über
 // die App gesendet (draft-send-service.ts legt die outbound-Zeile sofort an) oder direkt in
 // Airbnb (der Sync bringt die Host-Nachricht). inquiry_task_closures ist der Idempotenz-Anker.
+//
+// Zusätzlich muss die Host-Nachricht NACH dem Entwurf liegen, an dem der Task hängt (frühester
+// Draft je Task = Zeitpunkt der Task-Anlage). Sonst schlösse sich ein Task der Folgerunde sofort
+// wieder: Runde 1 automatisch beantwortet (kein Task), Gast schreibt erneut, Entwurf wartet →
+// Task entsteht am SELBEN System-Post, die alte Auto-Antwort läge schon „nach dem System-Post".
 import { getDatabase } from '../db/index.js';
 
 export interface AnsweredInquiryTask {
   taskId: number;
   threadId: string;
-  /** sent_at der ersten Host-Nachricht nach dem System-Post. */
+  /** sent_at der ersten Host-Nachricht nach System-Post UND Task-Entwurf. */
   answeredAt: string;
 }
 
@@ -23,6 +28,7 @@ export function findAnsweredInquiryTasks(threadId?: string): AnsweredInquiryTask
        MIN((SELECT o.sent_at FROM messages o
             WHERE o.thread_id = d.thread_id AND o.direction = 'outbound'
               AND julianday(o.sent_at) > julianday(sys.sent_at)
+              AND julianday(o.sent_at) > julianday(d.created_at)
             ORDER BY julianday(o.sent_at) ASC LIMIT 1)) AS answeredAt
      FROM message_drafts d
      JOIN messages sys ON sys.id = d.smarttasks_task_guest_message_id AND sys.direction = 'system'
