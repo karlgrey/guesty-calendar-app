@@ -684,6 +684,68 @@ describe('runDailyConsistencyJob', () => {
     // Check schützen soll).
     expect(sendEmailMock).toHaveBeenCalled();
   });
+
+  describe('#1210 — nur reserved zählt als Stale Hold', () => {
+    const OLD = '2026-08-01T00:00:00.000Z'; // > 7 Tage vor "heute"
+    const fixtures = [
+      { _id: 'inq-1', listingId: 'L', status: 'inquiry', checkInDateLocalized: '2026-10-01', checkOutDateLocalized: '2026-10-03', createdAt: OLD, guest: { fullName: 'Inquiry Gast' } },
+      { _id: 'res-1', listingId: 'L', status: 'reserved', checkInDateLocalized: '2026-10-05', checkOutDateLocalized: '2026-10-07', createdAt: OLD, guest: { fullName: 'Reserved Gast' } },
+    ];
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-08-27T10:00:00.000Z'));
+      getAllPropertiesMock.mockReturnValue([]);
+      getPropertiesByProviderMock.mockReturnValue([]);
+      getPropertyByGuestyIdMock.mockReturnValue(undefined);
+      // Simuliert die serverseitige Status-Filterung der Guesty-API
+      getReservationsMock.mockImplementation(async (opts: { status?: string[] }) =>
+        fixtures.filter((r) => !opts?.status || opts.status.includes(r.status))
+      );
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('alte Inquiry erzeugt keinen Stale-Hold-Alert (Abfrage nur mit Status reserved)', async () => {
+      getReservationsMock.mockImplementation(async (opts: { status?: string[] }) =>
+        fixtures.filter((r) => r.status === 'inquiry' && (!opts?.status || opts.status.includes(r.status)))
+      );
+      const { config } = await import('../config/index.js');
+      const originalRecipients = config.consistencyAlertRecipients;
+      (config as any).consistencyAlertRecipients = ['ops@example.com'];
+      try {
+        await runDailyConsistencyJob();
+      } finally {
+        (config as any).consistencyAlertRecipients = originalRecipients;
+      }
+
+      const statusCalls = getReservationsMock.mock.calls
+        .map((c) => (c[0] as { status?: string[] })?.status)
+        .filter((s): s is string[] => Array.isArray(s));
+      expect(statusCalls.length).toBeGreaterThan(0);
+      for (const s of statusCalls) expect(s).toEqual(['reserved']);
+      expect(sendEmailMock).not.toHaveBeenCalled();
+    });
+
+    it('alte reserved-Reservierung erscheint weiterhin als Stale Hold in der Mail', async () => {
+      const { config } = await import('../config/index.js');
+      const originalRecipients = config.consistencyAlertRecipients;
+      (config as any).consistencyAlertRecipients = ['ops@example.com'];
+      sendEmailMock.mockResolvedValueOnce(true);
+      try {
+        await runDailyConsistencyJob();
+      } finally {
+        (config as any).consistencyAlertRecipients = originalRecipients;
+      }
+
+      expect(sendEmailMock).toHaveBeenCalledTimes(1);
+      const mail = JSON.stringify(sendEmailMock.mock.calls[0]);
+      expect(mail).toContain('Reserved Gast');
+      expect(mail).not.toContain('Inquiry Gast');
+    });
+  });
 });
 
 // ─── #769: Abreisetag-Fenster (airbnb-mail) ─────────────────────────────────

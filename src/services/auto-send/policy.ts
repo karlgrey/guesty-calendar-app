@@ -19,8 +19,10 @@ export interface PolicyInput {
    * wenn die Rückfrage auf 'wait' steht. null/undefined = (noch) nicht versucht/kein
    * Buchungsanfrage-Fall. `deadlineLabel` ist die Berliner Frist ("Di 22:35") für den
    * Reason-Text, oder null, wenn keine Plattform-Frist erkannt wurde.
+   * `skipped` (#1210): Inquiry im Live-Modus, die sonst automatisch ginge — bewusst KEIN Task
+   * (Entscheidung Micha 17.11.2026), die Gate-Logik bleibt sonst unverändert.
    */
-  bookingTask?: { created: boolean; taskNumber: number | null; deadlineLabel: string | null } | null;
+  bookingTask?: { created: boolean; taskNumber: number | null; deadlineLabel: string | null; skipped?: boolean } | null;
 }
 
 const CATEGORY_LABEL: Record<JudgeCategory, string> = {
@@ -88,8 +90,11 @@ function decideByGates(i: PolicyInput): AutoSendDecision {
     if (i.threadHasFailedSend) return wait('Vorheriger Versand in diesem Thread ist fehlgeschlagen — bitte manuell prüfen');
     if (!i.canSend) return wait('Kanal unklar — kein Versand möglich');
     if (i.autoSentToday >= i.dailyCap) return wait(`Tageslimit erreicht (${i.autoSentToday}/${i.dailyCap})`);
-    if (!i.bookingTask?.created) return wait('Task konnte nicht angelegt werden');
+    if (!i.bookingTask?.created && !i.bookingTask?.skipped) return wait('Task konnte nicht angelegt werden');
     const deadlinePart = i.bookingTask.deadlineLabel ? `, Frist ${i.bookingTask.deadlineLabel}` : '';
+    if (!i.bookingTask.created) {
+      return { decision: 'auto', reason: `Inquiry: Antwort automatisch, kein Task nötig${deadlinePart}`, category, flags };
+    }
     return {
       decision: 'auto',
       reason: `Buchungsanfrage: Antwort automatisch, Airbnb-Entscheidung bei Micha → Task #${i.bookingTask.taskNumber}${deadlinePart}`,

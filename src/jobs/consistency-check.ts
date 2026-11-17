@@ -606,7 +606,9 @@ export async function runDailyConsistencyJob(): Promise<void> {
   let openReservations: OpenReservation[] = [];
   let holdSweepErrors: HoldSweepError[] = [];
   try {
-    const result = await listOpenReservations(['reserved', 'inquiry'], false);
+    // #1210: nur reserved zählt als Hold — beantwortete Airbnb-Inquiries ohne
+    // Buchung sind kein vergessener Hold (Entscheidung Micha 17.11.2026).
+    const result = await listOpenReservations(['reserved'], false);
     openReservations = result.reservations;
     holdSweepErrors = result.errors;
   } catch (error) {

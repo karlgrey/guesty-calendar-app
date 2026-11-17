@@ -12,6 +12,7 @@ import type { AutoSendDecision, AutoSendMode } from '../services/auto-send/types
 import { detectLanguage, type SupportedLanguage } from '../utils/language-detect.js';
 import type { MessageThread, Message, NewDraft } from '../types/messages.js';
 import type { PropertyConfig } from '../config/properties.js';
+import { closeAnsweredInquiryTasks } from '../services/inquiry-task-closer.js';
 import logger from '../utils/logger.js';
 
 // #695: Sprach-Pin — die deterministisch erkannte Sprache der letzten Gastnachricht (nicht die
@@ -112,6 +113,10 @@ export interface DraftGenDeps {
   updateDraftBody: (id: string, body: string) => void;
   // #976: Änderungs-Situation (optional; fehlt der Dep, gibt es keinen Änderungs-Block).
   resolveAlteration?: (thread: MessageThread, messages: Message[], isBookingRequest: boolean) => AlterationSituation | null;
+  // #1210: Inquiry-Tasks beantworteter Anfragen schließen — läuft nach JEDEM Sync (Loop, Webhook,
+  // ETL, „Jetzt syncen"), weil alle Sync-Pfade hier enden; deckt die direkt in Airbnb gesendete
+  // Antwort ab. Optional (fehlt der Dep in Tests, passiert nichts); wirft nie.
+  closeAnsweredInquiryTasks?: () => Promise<unknown>;
 }
 
 const realDeps: DraftGenDeps = {
@@ -126,6 +131,7 @@ const realDeps: DraftGenDeps = {
   gate: (i) => runAutoSendGate(i),
   updateDraftBody,
   resolveAlteration: (thread, messages, isBookingRequest) => resolveAlterationSituation(thread, messages, { isBookingRequest }),
+  closeAnsweredInquiryTasks: () => closeAnsweredInquiryTasks(),
 };
 
 export async function generateDraftsForProperty(
@@ -133,6 +139,13 @@ export async function generateDraftsForProperty(
   deps: DraftGenDeps = realDeps,
   opts: { onlyThreadIds?: string[] } = {},
 ): Promise<{ generated: number; skipped: number }> {
+  if (deps.closeAnsweredInquiryTasks) {
+    try {
+      await deps.closeAnsweredInquiryTasks();
+    } catch (err) {
+      logger.warn({ slug: property.slug, err: err instanceof Error ? err.message : String(err) }, 'draft-gen: Inquiry-Task-Selbstschluss fehlgeschlagen (non-fatal)');
+    }
+  }
   const target = resolveDraftSource(property);
   if (!target || !property.vaultNote) return { generated: 0, skipped: 0 };
   const voice = deps.loadVoice();

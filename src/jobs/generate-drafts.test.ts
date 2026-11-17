@@ -419,3 +419,19 @@ describe('Satzwiederholung — automatischer Neuversuch (#1191)', () => {
     expect(generate).toHaveBeenCalledTimes(1);
   });
 });
+
+// #1210: alle Sync-Pfade enden in generateDraftsForProperty — dort läuft der Inquiry-Task-Selbstschluss.
+describe('generateDraftsForProperty — Inquiry-Task-Selbstschluss (#1210)', () => {
+  it('ruft den Selbstschluss auf, auch für ein Objekt ohne vaultNote', async () => {
+    const close = vi.fn().mockResolvedValue({ closed: 0, skipped: 0, failed: 0 });
+    const noVault = { ...property, vaultNote: undefined } as unknown as PropertyConfig;
+    await generateDraftsForProperty(noVault, deps({ closeAnsweredInquiryTasks: close }));
+    expect(close).toHaveBeenCalledTimes(1);
+  });
+  it('ein Fehler im Selbstschluss bricht die Entwurfs-Generierung nicht ab', async () => {
+    const close = vi.fn().mockRejectedValue(new Error('SmartTasks down'));
+    const d = deps({ closeAnsweredInquiryTasks: close });
+    await expect(generateDraftsForProperty(property, d)).resolves.toBeDefined();
+    expect(close).toHaveBeenCalled();
+  });
+});

@@ -2,13 +2,21 @@ import type { MessageThread } from '../types/messages.js';
 import { sendReply } from './message-sender.js';
 import { markDraftSent, markDraftError } from '../repositories/draft-repository.js';
 import { upsertMessage } from '../repositories/message-repository.js';
+import { closeAnsweredInquiryTasks } from './inquiry-task-closer.js';
+import logger from '../utils/logger.js';
 
 export interface SendDraftDeps {
   sendReply: typeof sendReply; markDraftSent: typeof markDraftSent; markDraftError: typeof markDraftError; upsertMessage: typeof upsertMessage;
   /** Injizierbarer Zeitgeber (Tests); Default `() => new Date()`. */
   now?: () => Date;
+  /** #1210: nach erfolgreichem Versand — Inquiry-Task des Threads selbst schließen. Läuft
+   *  fire-and-forget: ein SmartTasks-Fehler darf den Versand nie abbrechen oder verzögern. */
+  onSent?: (threadId: string) => Promise<unknown>;
 }
-const defaultDeps: SendDraftDeps = { sendReply, markDraftSent, markDraftError, upsertMessage };
+const defaultDeps: SendDraftDeps = {
+  sendReply, markDraftSent, markDraftError, upsertMessage,
+  onSent: (threadId) => closeAnsweredInquiryTasks({ threadId }),
+};
 
 /** Versand eines bereits per claimDraftForSending geclaimten Entwurfs (Freigabe-Klick ODER Auto-Send). */
 export async function sendClaimedDraft(
@@ -29,6 +37,14 @@ export async function sendClaimedDraft(
       subject: null, body: bodyToSend, body_html: null, source: thread.source,
       raw_meta: JSON.stringify({ draftId, externalMessageId, sentBy }),
     });
+    if (deps.onSent) {
+      try {
+        void deps.onSent(thread.id).catch((err: unknown) =>
+          logger.warn({ threadId: thread.id, err: err instanceof Error ? err.message : String(err) }, 'draft-send: Inquiry-Task-Selbstschluss fehlgeschlagen (Versand ok)'));
+      } catch (err) {
+        logger.warn({ threadId: thread.id, err: err instanceof Error ? err.message : String(err) }, 'draft-send: Inquiry-Task-Selbstschluss fehlgeschlagen (Versand ok)');
+      }
+    }
     return { ok: true };
   } catch (sendErr) {
     deps.markDraftError(draftId, sendErr instanceof Error ? sendErr.message : String(sendErr));
