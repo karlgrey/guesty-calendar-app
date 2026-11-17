@@ -14,6 +14,8 @@ import { getEstimatedYearStats } from '../repositories/airbnb-payout-repository.
 import { getAnalyticsSummary, hasAnalyticsData, getMonthlyAnalyticsComparison, getTopRegions, getAnalyticsRange } from '../repositories/analytics-repository.js';
 import { sendEmail } from '../services/email-service.js';
 import { generateWeeklySummaryEmail } from '../services/email-templates.js';
+import { getActiveRecipientEmails } from '../repositories/report-recipient-repository.js';
+import { isPropertyInReporting } from '../services/reporting/reporting-scope.js';
 import logger from '../utils/logger.js';
 import { toZonedTime } from 'date-fns-tz';
 import { getHours, getDay, addDays, addMonths, format } from 'date-fns';
@@ -43,8 +45,22 @@ export async function sendWeeklySummaryEmailForProperty(property: PropertyConfig
       };
     }
 
-    // Check if recipients are configured
-    if (!weeklyReport.recipients || weeklyReport.recipients.length === 0) {
+    // Objekt aus dem Reporting genommen (reportingUntil, z. B. Florenz)? Stichtag = Versandtag in Berlin.
+    if (!isPropertyInReporting(property, new Date())) {
+      logger.info(
+        { propertySlug: slug, reportingUntil: property.reportingUntil },
+        `Weekly report: ${name} aus dem Reporting genommen (reportingUntil ${property.reportingUntil})`
+      );
+      return {
+        success: true,
+        sent: false,
+        propertySlug: slug,
+      };
+    }
+
+    // Empfänger bei jedem Versand frisch aus der DB (weekly-summary je Objekt)
+    const recipients = getActiveRecipientEmails('weekly-summary', slug);
+    if (recipients.length === 0) {
       logger.warn({ propertySlug: slug }, 'Weekly report enabled but no recipients configured');
       return {
         success: true,
@@ -203,7 +219,7 @@ export async function sendWeeklySummaryEmailForProperty(property: PropertyConfig
 
     // Send email
     const sent = await sendEmail({
-      to: weeklyReport.recipients,
+      to: recipients,
       subject: `📊 Weekly Summary - ${emailData.propertyTitle}`,
       html,
       text,
@@ -213,8 +229,8 @@ export async function sendWeeklySummaryEmailForProperty(property: PropertyConfig
       logger.info(
         {
           propertySlug: slug,
-          recipientCount: weeklyReport.recipients.length,
-          recipients: weeklyReport.recipients,
+          recipientCount: recipients.length,
+          recipients,
           upcomingBookings: upcomingBookings.length,
           allTimeRevenue: allTimeStats.totalRevenue,
         },
@@ -224,7 +240,7 @@ export async function sendWeeklySummaryEmailForProperty(property: PropertyConfig
       return {
         success: true,
         sent: true,
-        recipientCount: weeklyReport.recipients.length,
+        recipientCount: recipients.length,
         propertySlug: slug,
       };
     } else {

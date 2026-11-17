@@ -144,6 +144,21 @@ Konfiguration als **Top-Level-Block** `biReport` in `data/properties.json` (Gesc
   `git pull && npm run build && pm2 restart`, **kein** `git stash`/`pop` mehr nötig. Empfänger
   künftig im Repo ändern, nicht live auf prod.
 - Spec: `docs/superpowers/specs/2026-06-02-portfolio-bi-email-design.md`
+- **Empfänger (#1223):** kommen bei jedem Versand frisch aus der DB (`getActiveRecipientEmails`, Admin-Matrix `/admin/reporting`);
+  `recipients` in `properties.json` sind wirkungslos (nur Import-Quelle). Objekte mit `reportingUntil` (Berlin-Versandtag) fallen
+  aus Weekly Summary, Portfolio (inkl. gepoolter Lead-Time-Kurve) und Kalender-Report.
+- **Portfolio monatlich** (`sendPortfolioMonthlyEmail`, report-type `portfolio-monthly`): Berichtszeitraum = abgeschlossener Vormonat,
+  gleicher Aufbau (`buildBiReportModel(..., { period })`, Text-Overrides über `model.labels`). Versand am 1. des Monats 06:xx Berlin,
+  Doppelversand-Schutz `scheduler_state` `portfolio_monthly_last_sent_month`.
+- **Kalender-Report „Nächste Gäste“** (`src/jobs/calendar-email.ts`, report-type `calendar-weekly`): montags 06:xx Berlin, Marker
+  `calendar_weekly_last_sent_day`; heute..+14 Tage je Objekt, nur Vorname/Personen/Kanal + geblockte Zeiträume, keine Preise/Kontaktdaten.
+- Manueller Test: `npx tsx src/scripts/test-report-emails.ts monthly|calendar`.
+- **Empfänger-Pflege (#1223, Migration 041):** Tabellen `report_recipients` + `report_subscriptions`
+  (report_type × property_slug, `''` = objektübergreifend, `active`). Admin-Seite `/admin/reporting` (Matrix, Häkchen speichern
+  sofort, Empfänger hinzufügen/entfernen). Einmaliger Import beim ersten Start: `src/services/reporting/report-recipients-bootstrap.ts`
+  (Marker `scheduler_state` `report_recipients_bootstrap_v1`) übernimmt `weeklyReport.recipients`/`biReport.recipients` und seedet
+  per Local-Part: christian → nur `portfolio-monthly` (aus weekly-summary/portfolio-weekly raus), holger/ulf/angela → `calendar-weekly`.
+  Konsistenz-Alert und LLM-Alarm bleiben bei `.env` (nicht im Dashboard).
 
 ### Google Analytics 4
 Optional per property. Configured in `properties.json` `ga4` field (or omit for disabled).

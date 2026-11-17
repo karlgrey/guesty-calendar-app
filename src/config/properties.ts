@@ -40,6 +40,8 @@ export interface GoogleCalendarConfig {
  */
 export interface WeeklyReportConfig {
   enabled: boolean;
+  /** Seit #1223 wirkungslos: Empfänger leben in report_subscriptions (/admin/reporting).
+   *  Nur noch Quelle für den einmaligen Import beim ersten Start (report-recipients-bootstrap). */
   recipients: string[];
   day: number; // 0 = Sunday, 1 = Monday, etc.
   hour: number; // 0-23
@@ -50,6 +52,7 @@ export interface WeeklyReportConfig {
  */
 export interface BiReportConfig {
   enabled: boolean;
+  /** Seit #1223 wirkungslos (siehe WeeklyReportConfig.recipients) — nur Import-Quelle. */
   recipients: string[];
   day: number;   // 0 = Sunday, 1 = Monday, ...
   hour: number;  // 0-23
@@ -144,6 +147,10 @@ export interface PropertyConfig {
   checkInTime?: string;
   checkOutTime?: string;
   weeklyReport: WeeklyReportConfig;
+  /** Letzter Tag (YYYY-MM-DD, Europe/Berlin), an dem das Objekt noch im Reporting ist (#1223).
+   *  Ab dem Folgetag: kein Weekly Summary, nicht im Portfolio Report (wöchentlich/monatlich),
+   *  nicht im Kalender-Report. Buchungen, Nachrichten und Kalender-Sync bleiben unberührt. */
+  reportingUntil?: string;
   ga4?: GA4Config;
   googleCalendar?: GoogleCalendarConfig;
   static?: PropertyStaticConfig;
@@ -168,14 +175,14 @@ const googleCalendarConfigSchema = z.object({
 
 const weeklyReportConfigSchema = z.object({
   enabled: z.boolean(),
-  recipients: z.array(z.string().email()),
+  recipients: z.array(z.string().email()).default([]),
   day: z.number().int().min(0).max(6),
   hour: z.number().int().min(0).max(23),
 });
 
 const biReportConfigSchema = z.object({
   enabled: z.boolean(),
-  recipients: z.array(z.string().email()),
+  recipients: z.array(z.string().email()).default([]),
   day: z.number().int().min(0).max(6),
   hour: z.number().int().min(0).max(23),
   timezone: z.string().default('Europe/Berlin'),
@@ -251,6 +258,7 @@ const propertyConfigSchema = z.object({
   checkInTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
   checkOutTime: z.string().regex(/^\d{2}:\d{2}$/).optional(),
   weeklyReport: weeklyReportConfigSchema,
+  reportingUntil: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'reportingUntil must be YYYY-MM-DD').optional(),
   ga4: ga4ConfigSchema.optional().default({ enabled: false }),
   googleCalendar: googleCalendarConfigSchema.optional().default({ enabled: false }),
   static: propertyStaticConfigSchema.optional(),

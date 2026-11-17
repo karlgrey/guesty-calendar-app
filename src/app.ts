@@ -22,6 +22,7 @@ import adminRoutes from './routes/admin.js';
 import messagesRoutes from './routes/messages.js';
 import reviewsRoutes from './routes/reviews.js';
 import suggestionsRoutes from './routes/suggestions.js';
+import reportingRoutes from './routes/reporting.js';
 import authRoutes from './routes/auth.js';
 import adminUsersRoutes from './routes/admin-users.js';
 import propertyRoutes from './routes/property-routes.js';
@@ -109,6 +110,7 @@ export function createApp() {
   app.use('/admin/messages', requireAuth, messagesRoutes);
   app.use('/admin/reviews', requireAuth, reviewsRoutes);
   app.use('/admin/suggestions', requireAuth, suggestionsRoutes);
+  app.use('/admin/reporting', requireAuth, reportingRoutes);
   app.use('/admin', requireAuth, adminRoutes);
   app.use('/api/admin-users', adminUsersRoutes); // requireAuth is applied within the router
 

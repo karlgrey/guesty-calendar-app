@@ -10,7 +10,8 @@ import { runETLJob } from './etl-job.js';
 import { startMessageLoop, stopMessageLoop } from './message-loop.js';
 import { startGuestyTelemetryFlush, stopGuestyTelemetryFlush, flushGuestyRequestTelemetry } from '../services/guesty-request-telemetry.js';
 import { sendWeeklySummaryEmailForProperty, shouldSendWeeklyEmailForProperty } from './weekly-email.js';
-import { sendBiReportEmail, shouldSendBiReport } from './bi-email.js';
+import { sendBiReportEmail, shouldSendBiReport, sendPortfolioMonthlyEmail } from './bi-email.js';
+import { sendCalendarWeeklyEmail } from './calendar-email.js';
 import { syncAnalytics, shouldSyncAnalytics } from './sync-analytics.js';
 import { syncGoogleCalendarForProperty } from './sync-google-calendar.js';
 import { checkAirbnbMailStaleness } from './airbnb-mail/check-staleness.js';
@@ -20,6 +21,8 @@ import { todayInTimezone } from './airbnb-mail/reconcile-ical.js';
 import { getSchedulerState, setSchedulerState } from '../repositories/scheduler-state-repository.js';
 import { config } from '../config/index.js';
 import { getAllProperties, getBiReportConfig, type PropertyConfig } from '../config/properties.js';
+import { getActiveRecipientEmails } from '../repositories/report-recipient-repository.js';
+import { dayInTimezone, REPORTING_TIMEZONE } from '../services/reporting/reporting-scope.js';
 import logger from '../utils/logger.js';
 
 // Persistente Tagesmarker (überleben einen Prozess-Neustart, anders als die
@@ -27,6 +30,15 @@ import logger from '../utils/logger.js';
 const CONSISTENCY_CHECK_STATE_KEY = 'dailyConsistencyCheckLastRunDay';
 const LLM_HEALTH_CHECK_STATE_KEY = 'llm_health_check_last_run_day';
 const DAILY_FORCE_SYNC_STATE_KEY = 'dailyForceSyncLastRunDay';
+// Report-Jobs (#1223): Marker NUR nach erfolgreichem Versand setzen.
+const PORTFOLIO_MONTHLY_STATE_KEY = 'portfolio_monthly_last_sent_month'; // YYYY-MM (Versandmonat, Berlin)
+const CALENDAR_WEEKLY_STATE_KEY = 'calendar_weekly_last_sent_day'; // YYYY-MM-DD (Berlin)
+
+// Zeitplan der neuen Reports (Konstanten im Code, nicht in properties.json); alles Europe/Berlin.
+const PORTFOLIO_MONTHLY_DAY_OF_MONTH = 1;
+const PORTFOLIO_MONTHLY_HOUR = 6;
+const CALENDAR_WEEKLY_WEEKDAY = 1; // Montag
+const CALENDAR_WEEKLY_HOUR = 6;
 
 /**
  * Job scheduler state
@@ -64,6 +76,10 @@ interface SchedulerState {
   llmHealthCheckLastRunDay: string | null;
   // Dito für den täglichen Force-Sync (#603, gleiches RAM-Marker-Muster).
   dailyForceSyncLastRunDay: string | null;
+  portfolioMonthlyIntervalId: NodeJS.Timeout | null;
+  portfolioMonthlyLastSentMonth: string | null;
+  calendarWeeklyIntervalId: NodeJS.Timeout | null;
+  calendarWeeklyLastSentDay: string | null;
 }
 
 const state: SchedulerState = {
@@ -95,6 +111,10 @@ const state: SchedulerState = {
   llmHealthCheckIntervalId: null,
   llmHealthCheckLastRunDay: null,
   dailyForceSyncLastRunDay: null,
+  portfolioMonthlyIntervalId: null,
+  portfolioMonthlyLastSentMonth: null,
+  calendarWeeklyIntervalId: null,
+  calendarWeeklyLastSentDay: null,
 };
 
 /**
@@ -108,6 +128,8 @@ export function resetSchedulerStateForTests(): void {
   state.llmHealthCheckLastRunDay = null;
   state.lastDailyForceSync = null;
   state.dailyForceSyncLastRunDay = null;
+  state.portfolioMonthlyLastSentMonth = null;
+  state.calendarWeeklyLastSentDay = null;
 }
 
 /**
@@ -393,6 +415,79 @@ export async function checkAndRunDailyLlmHealthCheck() {
 }
 
 /**
+ * Portfolio-Report monatlich (#1223): lädt den persistierten Monatsmarker.
+ */
+export function loadPortfolioMonthlyState(): void {
+  state.portfolioMonthlyLastSentMonth = getSchedulerState(PORTFOLIO_MONTHLY_STATE_KEY);
+}
+
+/** 1. des Monats, 06:xx Europe/Berlin, einmal pro Monat (persistierter Marker). */
+export function shouldSendPortfolioMonthly(): boolean {
+  const now = new Date();
+  const zoned = toZonedTime(now, REPORTING_TIMEZONE);
+  if (zoned.getDate() !== PORTFOLIO_MONTHLY_DAY_OF_MONTH || getHours(zoned) !== PORTFOLIO_MONTHLY_HOUR) return false;
+  return state.portfolioMonthlyLastSentMonth !== dayInTimezone(now).slice(0, 7);
+}
+
+/** Versendet den Monatsreport; Marker erst nach erfolgreichem Versand (sent:true). Non-fatal. */
+export async function checkAndSendPortfolioMonthly() {
+  try {
+    if (!shouldSendPortfolioMonthly()) return;
+
+    logger.info('📊 Portfolio monthly report triggered');
+    const result = await sendPortfolioMonthlyEmail();
+    if (result.sent) {
+      const month = dayInTimezone(new Date()).slice(0, 7);
+      state.portfolioMonthlyLastSentMonth = month;
+      setSchedulerState(PORTFOLIO_MONTHLY_STATE_KEY, month);
+    }
+  } catch (error) {
+    logger.error({ error }, '❌ Error in portfolio monthly report');
+  }
+}
+
+/**
+ * Kalender-Report "Nächste Gäste" (#1223): lädt den persistierten Tagesmarker.
+ */
+export function loadCalendarWeeklyState(): void {
+  state.calendarWeeklyLastSentDay = getSchedulerState(CALENDAR_WEEKLY_STATE_KEY);
+}
+
+/** Montags 06:xx Europe/Berlin, einmal pro Tag (persistierter Marker). */
+export function shouldSendCalendarWeekly(): boolean {
+  const now = new Date();
+  const zoned = toZonedTime(now, REPORTING_TIMEZONE);
+  if (zoned.getDay() !== CALENDAR_WEEKLY_WEEKDAY || getHours(zoned) !== CALENDAR_WEEKLY_HOUR) return false;
+  return state.calendarWeeklyLastSentDay !== dayInTimezone(now);
+}
+
+/** Versendet den Kalender-Report; Marker erst nach erfolgreichem Versand (sent:true). Non-fatal. */
+export async function checkAndSendCalendarWeekly() {
+  try {
+    if (!shouldSendCalendarWeekly()) return;
+
+    logger.info('📅 Calendar weekly report triggered');
+    const result = await sendCalendarWeeklyEmail();
+    if (result.sent) {
+      const today = dayInTimezone(new Date());
+      state.calendarWeeklyLastSentDay = today;
+      setSchedulerState(CALENDAR_WEEKLY_STATE_KEY, today);
+    }
+  } catch (error) {
+    logger.error({ error }, '❌ Error in calendar weekly report');
+  }
+}
+
+/** Anzahl aktiver DB-Empfänger fürs Startup-Log (non-fatal). */
+function recipientCountSafe(...args: Parameters<typeof getActiveRecipientEmails>): number | null {
+  try {
+    return getActiveRecipientEmails(...args).length;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Load the persisted "already ran today" marker for the daily consistency
  * check from the DB. Call once at scheduler start (#603) — a RAM-only
  * marker didn't survive a deploy restart mid-hour, causing a duplicate
@@ -579,7 +674,7 @@ export function startScheduler() {
               slug: p.slug,
               day: p.weeklyReport.day,
               hour: p.weeklyReport.hour,
-              recipients: p.weeklyReport.recipients,
+              recipientCount: recipientCountSafe('weekly-summary', p.slug),
             })),
         },
         '📧 Starting multi-property weekly email scheduler'
@@ -589,7 +684,6 @@ export function startScheduler() {
         {
           weeklyReportDay: config.weeklyReportDay,
           weeklyReportHour: config.weeklyReportHour,
-          recipients: config.weeklyReportRecipients,
         },
         '📧 Starting weekly email scheduler'
       );
@@ -607,7 +701,7 @@ export function startScheduler() {
   const biConfig = getBiReportConfig();
   if (biConfig?.enabled) {
     logger.info(
-      { day: biConfig.day, hour: biConfig.hour, recipients: biConfig.recipients.length, timezone: biConfig.timezone },
+      { day: biConfig.day, hour: biConfig.hour, recipients: recipientCountSafe('portfolio-weekly'), timezone: biConfig.timezone },
       '📊 Starting portfolio BI report scheduler'
     );
     checkAndSendBiReport();
@@ -689,6 +783,18 @@ export function startScheduler() {
   loadLlmHealthCheckState();
   checkAndRunDailyLlmHealthCheck();
   state.llmHealthCheckIntervalId = setInterval(checkAndRunDailyLlmHealthCheck, hourlyInterval);
+
+  // Portfolio-Report monatlich (1. des Monats 06:xx Europe/Berlin, #1223)
+  logger.info('📊 Starting portfolio monthly report scheduler (1st of month, 06:00 Europe/Berlin)');
+  loadPortfolioMonthlyState();
+  checkAndSendPortfolioMonthly();
+  state.portfolioMonthlyIntervalId = setInterval(checkAndSendPortfolioMonthly, hourlyInterval);
+
+  // Kalender-Report "Nächste Gäste" (montags 06:xx Europe/Berlin, #1223)
+  logger.info('📅 Starting calendar weekly report scheduler (Mondays, 06:00 Europe/Berlin)');
+  loadCalendarWeeklyState();
+  checkAndSendCalendarWeekly();
+  state.calendarWeeklyIntervalId = setInterval(checkAndSendCalendarWeekly, hourlyInterval);
 }
 
 /**
@@ -743,6 +849,16 @@ export function stopScheduler() {
   if (state.llmHealthCheckIntervalId) {
     clearInterval(state.llmHealthCheckIntervalId);
     state.llmHealthCheckIntervalId = null;
+  }
+
+  if (state.portfolioMonthlyIntervalId) {
+    clearInterval(state.portfolioMonthlyIntervalId);
+    state.portfolioMonthlyIntervalId = null;
+  }
+
+  if (state.calendarWeeklyIntervalId) {
+    clearInterval(state.calendarWeeklyIntervalId);
+    state.calendarWeeklyIntervalId = null;
   }
 
   stopMessageLoop();
