@@ -6,6 +6,7 @@ import { createApp } from './app.js';
 import { config } from './config/index.js';
 import { initDatabase, executeSchema, isDatabaseInitialized, closeDatabase, runMigrations } from './db/index.js';
 import { startScheduler, stopScheduler } from './jobs/scheduler.js';
+import { bootstrapReportRecipients } from './services/reporting/report-recipients-bootstrap.js';
 import logger from './utils/logger.js';
 
 /**
@@ -32,6 +33,14 @@ async function start() {
     const migrationsApplied = runMigrations();
     if (migrationsApplied > 0) {
       logger.info(`Applied ${migrationsApplied} database migration(s)`);
+    }
+
+    // Einmaliger Import der Report-Empfänger aus properties.json (#1223); Fehler stoppen den Start nicht
+    try {
+      const bootstrap = bootstrapReportRecipients();
+      if (bootstrap.ran) logger.info(bootstrap, 'Report-Empfänger-Bootstrap ausgeführt');
+    } catch (error) {
+      logger.error({ error }, 'Report-Empfänger-Bootstrap fehlgeschlagen');
     }
 
     // Create Express app
