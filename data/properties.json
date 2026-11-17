@@ -183,6 +183,7 @@
         "day": 1,
         "hour": 6
       },
+      "reportingUntil": "2026-11-23",
       "googleCalendar": {
         "enabled": true,
         "calendarId": "794cde51eacd16c41d2ef4f09e09f28035bb07d810633a4b661c871888b4f86d@group.calendar.google.com",
