@@ -178,6 +178,39 @@ describe('Vormerkliste (#772)', () => {
     expect(pendingGuestyConversationCount()).toBe(0);
   });
 
+  it('#1234: vorgemerkte conv → Einzelabruf der Anfragedaten nach ihrem Sync, vor der Draft-Gen', async () => {
+    addPendingGuestyConversation(pendingConv);
+    const prefetchInquiry = vi.fn().mockResolvedValue('fetched');
+    const d = deps({ prefetchInquiry });
+    await runMessageLoopOnce(d);
+    expect(prefetchInquiry).toHaveBeenCalledTimes(1);
+    expect(prefetchInquiry).toHaveBeenCalledWith('guesty:p1');
+    const order = (fn: unknown) => (fn as any).mock.invocationCallOrder[0];
+    expect(order(d.syncGuesty)).toBeLessThan(order(prefetchInquiry));
+    expect(order(prefetchInquiry)).toBeLessThan(order(d.generateDrafts));
+  });
+
+  it('#1234: Einzelabruf wirft → Loop läuft weiter, conv gilt als gesynct', async () => {
+    addPendingGuestyConversation(pendingConv);
+    const d = deps({ prefetchInquiry: vi.fn().mockRejectedValue(new Error('boom')) });
+    await runMessageLoopOnce(d);
+    expect(pendingGuestyConversationCount()).toBe(0);
+    expect(d.generateDrafts).toHaveBeenCalled();
+  });
+
+  it('#1234: Sync der vorgemerkten conv scheitert → kein Einzelabruf', async () => {
+    addPendingGuestyConversation(pendingConv);
+    const prefetchInquiry = vi.fn();
+    await runMessageLoopOnce(deps({ syncGuesty: vi.fn().mockResolvedValue({ success: false, error: 'x' }), prefetchInquiry }));
+    expect(prefetchInquiry).not.toHaveBeenCalled();
+  });
+
+  it('#1234: regulärer Poll ohne Vormerkung → kein Einzelabruf (kein Zusatz-Traffic)', async () => {
+    const prefetchInquiry = vi.fn();
+    await runMessageLoopOnce(deps({ prefetchInquiry }));
+    expect(prefetchInquiry).not.toHaveBeenCalled();
+  });
+
   it('Fehler (success=false oder Exception) → wieder vorgemerkt', async () => {
     addPendingGuestyConversation(pendingConv);
     await runMessageLoopOnce(deps({ syncGuesty: vi.fn().mockResolvedValue({ success: false, error: 'x' }) }));

@@ -17,6 +17,12 @@ function deDate(dateStr: string): string {
   return `${d}.${m}.${y}`;
 }
 
+/** 3118.05, 'EUR' → "3.118,05 EUR" (Währung fehlt → nur die Zahl). */
+function formatMoney(amount: number, currency: string | null): string {
+  const n = new Intl.NumberFormat('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(amount);
+  return currency ? `${n} ${currency}` : n;
+}
+
 /**
  * Builds a short "what the platform already knows about this booking" block
  * for the draft-generation system prompt. Returns null when the thread isn't
@@ -49,16 +55,22 @@ export function buildBookingContext(thread: MessageThread): string | null {
   }
 
   if (thread.inquiry_id) {
-    const inquiry = getInquiryById(thread.inquiry_id);
-    if (!inquiry) return null;
+    const inquiry = getInquiryWithMoneyById(thread.inquiry_id);
+    if (!inquiry || !inquiry.check_in || !inquiry.check_out) return null;
 
     const checkIn = deDate(inquiry.check_in);
     const checkOut = deDate(inquiry.check_out);
     const nights = nightsBetween(inquiry.check_in, inquiry.check_out);
-    const guests = inquiry.guests_count != null ? `${inquiry.guests_count} Personen` : 'Personenzahl unbekannt';
+    // Guesty-Anfragen-Sync schreibt `guestsCount || 0` — 0 heißt dort "unbekannt" (#1234).
+    const guests = positiveOrNull(inquiry.guests_count) != null ? `${inquiry.guests_count} Personen` : 'Personenzahl unbekannt';
+    // #1234 (Fall Daniel): Preis laut Plattform mitgeben, damit der Entwurf ein Gegenangebot des
+    // Gasts einordnen kann. Nur der Gastpreis (total_price), nie die Auszahlung (host_payout).
+    const price = inquiry.total_price != null
+      ? `, Preis laut Plattform ${formatMoney(inquiry.total_price, inquiry.currency)}`
+      : '';
 
     return (
-      `Buchungsanfrage (noch nicht bestätigt): Zeitraum ${checkIn}–${checkOut}, ${nights} Nächte, ${guests} ` +
+      `Buchungsanfrage (noch nicht bestätigt): Zeitraum ${checkIn}–${checkOut}, ${nights} Nächte, ${guests}${price} ` +
       `— Daten stammen aus der Anfrage selbst.`
     );
   }

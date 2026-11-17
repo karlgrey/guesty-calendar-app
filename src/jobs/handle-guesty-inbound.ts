@@ -7,6 +7,7 @@ import { getAllProperties, type PropertyConfig } from '../config/properties.js';
 import { guestyClient } from '../services/guesty-client.js';
 import { syncGuestyMessagesForProperty } from './sync-guesty-messages.js';
 import { generateDraftsForProperty } from './generate-drafts.js';
+import { prefetchInquiryForThread } from './inquiry-prefetch.js';
 import {
   acquireMessageSyncLock,
   messageSyncLock,
@@ -21,12 +22,15 @@ export interface InboundDeps {
   getConversation: (id: string) => Promise<any>;
   syncGuesty: (p: PropertyConfig, convs: any[]) => Promise<unknown>;
   generateDrafts: (p: PropertyConfig, onlyThreadIds: string[]) => Promise<unknown>;
+  /** #1234: Einzelabruf der Anfragedaten, falls die inquiries-/reservations-Zeile fehlt. Wirft nie. */
+  prefetchInquiry: (threadId: string) => Promise<unknown>;
 }
 const realDeps: InboundDeps = {
   getProperties: getAllProperties,
   getConversation: (id) => guestyClient.getConversation(id),
   syncGuesty: (p, convs) => syncGuestyMessagesForProperty(p, convs, { deep: true }),
   generateDrafts: (p, ids) => generateDraftsForProperty(p, undefined, { onlyThreadIds: ids }),
+  prefetchInquiry: (threadId) => prefetchInquiryForThread(threadId),
 };
 /** Wartezeit auf den Nachrichten-Lock; der Loop-Lauf (Draft-Gen) kann Minuten dauern. */
 export const WEBHOOK_LOCK_WAIT_MS = 120_000;
@@ -46,7 +50,16 @@ export async function handleGuestyInbound(payload: GuestyMessageWebhook, deps: I
   }
   try {
     await deps.syncGuesty(property, [conv]);
-    await deps.generateDrafts(property, [`guesty:${conv._id}`]);
+    const threadId = `guesty:${conv._id}`;
+    // #1234: Anfragedaten (Zeitraum, Personen, Preis) VOR Entwurf, Auto-Send-Gate und Task laden —
+    // sonst fehlen sie bis zum nächsten Stunden-ETL. Non-fatal (prefetchInquiryForThread wirft nie;
+    // der catch ist nur die Absicherung gegen eine fremde Dep).
+    try {
+      await deps.prefetchInquiry(threadId);
+    } catch (err) {
+      logger.warn({ threadId, err: err instanceof Error ? err.message : String(err) }, 'guesty-webhook: Einzelabruf fehlgeschlagen (non-fatal)');
+    }
+    await deps.generateDrafts(property, [threadId]);
   } finally {
     messageSyncLock.release('webhook');
   }

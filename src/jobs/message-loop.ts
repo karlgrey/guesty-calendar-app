@@ -6,6 +6,7 @@ import { syncHostexMessagesForProperty } from './hostex/sync-hostex-messages.js'
 import { syncGuestyMessagesForProperty, fetchConversationsIncremental } from './sync-guesty-messages.js';
 import { guestyClient, diffRequestCounters, type GuestyRequestCounters } from '../services/guesty-client.js';
 import { generateDraftsForProperty } from './generate-drafts.js';
+import { prefetchInquiryForThread } from './inquiry-prefetch.js';
 import logger from '../utils/logger.js';
 
 export const messageSyncLock = {
@@ -104,6 +105,8 @@ export interface MessageLoopDeps {
   generateDrafts: (p: PropertyConfig) => Promise<unknown>;
   /** Prozessweite Guesty-HTTP-Zähler (Telemetrie je Lauf). */
   getRequestCounters?: () => GuestyRequestCounters;
+  /** #1234: Einzelabruf der Anfragedaten für vorgemerkte Webhook-Konversationen. Wirft nie. */
+  prefetchInquiry?: (threadId: string) => Promise<unknown>;
 }
 
 const realDeps: MessageLoopDeps = {
@@ -115,6 +118,7 @@ const realDeps: MessageLoopDeps = {
   syncGuesty: (p, convs, opts) => syncGuestyMessagesForProperty(p, convs, opts),
   generateDrafts: (p) => generateDraftsForProperty(p),
   getRequestCounters: () => guestyClient.getRequestCounters(),
+  prefetchInquiry: (threadId) => prefetchInquiryForThread(threadId),
 };
 
 export async function runMessageLoopOnce(
@@ -145,6 +149,13 @@ export async function runMessageLoopOnce(
         const r = await deps.syncGuesty(prop, [conv], { deep: true });
         if (r.success) {
           alreadySynced.add(conv._id);
+          // #1234: vorgemerkter Webhook-Eingang — Anfragedaten vor der Draft-Gen unten laden,
+          // wie im direkten Webhook-Pfad (handle-guesty-inbound.ts). Non-fatal.
+          try {
+            await deps.prefetchInquiry?.(`guesty:${conv._id}`);
+          } catch (err) {
+            logger.warn({ conversationId: conv._id, err: err instanceof Error ? err.message : String(err) }, 'message-loop: Einzelabruf fehlgeschlagen (non-fatal)');
+          }
         } else {
           addPendingGuestyConversation(conv);
           logger.warn({ conversationId: conv._id, error: r.error }, 'message-loop: vorgemerkte Konversation fehlgeschlagen — wieder vorgemerkt');

@@ -75,6 +75,32 @@ describe('buildBookingContext', () => {
     expect(ctx).toContain('Daten stammen aus der Anfrage selbst');
   });
 
+  it('#1234: Anfrage mit Preis (Migration 040) → Preis laut Plattform im Kontext, nie die Auszahlung', () => {
+    db.exec('ALTER TABLE inquiries ADD COLUMN currency TEXT; ALTER TABLE inquiries ADD COLUMN total_price REAL; ALTER TABLE inquiries ADD COLUMN host_payout REAL;');
+    db.prepare(`
+      INSERT INTO inquiries (inquiry_id, status, check_in, check_out, guest_name, guests_count, currency, total_price, host_payout)
+      VALUES (?,?,?,?,?,?,?,?,?)
+    `).run('INQ-D', 'inquiry', '2026-11-20', '2026-11-22', 'Daniel', 8, 'EUR', 3118.05, 2777.77);
+
+    const ctx = buildBookingContext(thread({ inquiry_id: 'INQ-D' }));
+    expect(ctx).toBe(
+      'Buchungsanfrage (noch nicht bestätigt): Zeitraum 20.11.2026–22.11.2026, 2 Nächte, 8 Personen, ' +
+      'Preis laut Plattform 3.118,05 EUR — Daten stammen aus der Anfrage selbst.',
+    );
+    expect(ctx).not.toContain('2.777,77');
+  });
+
+  it('#1234: Anfrage ohne Preis → kein Preis-Teil; 0 Personen (Guesty-Sync "unbekannt") → Personenzahl unbekannt', () => {
+    db.prepare(`
+      INSERT INTO inquiries (inquiry_id, status, check_in, check_out, guest_name, guests_count)
+      VALUES (?,?,?,?,?,?)
+    `).run('INQ-0', 'inquiry', '2026-11-20', '2026-11-22', 'X', 0);
+
+    const ctx = buildBookingContext(thread({ inquiry_id: 'INQ-0' }));
+    expect(ctx).toContain('Personenzahl unbekannt');
+    expect(ctx).not.toContain('Preis');
+  });
+
   it('nightsBetween: zählt korrekt über den Frühjahrs-DST-Übergang Europe/Berlin (29.03.2026)', () => {
     db.prepare(`
       INSERT INTO inquiries (inquiry_id, status, check_in, check_out, guest_name, guests_count)
