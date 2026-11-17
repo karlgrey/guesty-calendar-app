@@ -34,9 +34,15 @@ vi.mock('./weekly-email.js', () => ({
   sendWeeklySummaryEmailForProperty: vi.fn(),
   shouldSendWeeklyEmailForProperty: vi.fn(() => false),
 }));
+const sendPortfolioMonthlyEmailMock = vi.fn();
 vi.mock('./bi-email.js', () => ({
   sendBiReportEmail: vi.fn(),
   shouldSendBiReport: vi.fn(() => false),
+  sendPortfolioMonthlyEmail: (...args: unknown[]) => sendPortfolioMonthlyEmailMock(...args),
+}));
+const sendCalendarWeeklyEmailMock = vi.fn();
+vi.mock('./calendar-email.js', () => ({
+  sendCalendarWeeklyEmail: (...args: unknown[]) => sendCalendarWeeklyEmailMock(...args),
 }));
 vi.mock('./sync-analytics.js', () => ({
   syncAnalytics: vi.fn(),
@@ -74,6 +80,12 @@ import {
   shouldRunDailyLlmHealthCheck,
   checkAndRunDailyLlmHealthCheck,
   loadLlmHealthCheckState,
+  loadPortfolioMonthlyState,
+  shouldSendPortfolioMonthly,
+  checkAndSendPortfolioMonthly,
+  loadCalendarWeeklyState,
+  shouldSendCalendarWeekly,
+  checkAndSendCalendarWeekly,
   resetSchedulerStateForTests,
 } from './scheduler.js';
 
@@ -85,6 +97,8 @@ beforeEach(() => {
   runETLJobMock.mockReset().mockResolvedValue({ success: true, listing: {}, availability: {}, duration: 1 });
   getSchedulerStateMock.mockReset().mockReturnValue(null);
   setSchedulerStateMock.mockReset();
+  sendPortfolioMonthlyEmailMock.mockReset().mockResolvedValue({ success: true, sent: true });
+  sendCalendarWeeklyEmailMock.mockReset().mockResolvedValue({ success: true, sent: true });
 });
 
 describe('shouldRunDailyConsistencyCheck (Zeitzone Europe/Berlin, #603)', () => {
@@ -297,6 +311,132 @@ describe('Täglicher LLM-Health-Check (07:00 Europe/Berlin, #907)', () => {
     resetSchedulerStateForTests();
     loadLlmHealthCheckState();
     expect(shouldRunDailyLlmHealthCheck()).toBe(true);
+    vi.useRealTimers();
+  });
+});
+
+describe('Portfolio monatlich (1. des Monats 06:xx Europe/Berlin, #1223)', () => {
+  const KEY = 'portfolio_monthly_last_sent_month';
+
+  it('sendet am 1. um 06:xx Berlin (Winter: 05:xx UTC), nicht am 2. und nicht um 07:xx', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-12-01T05:30:00.000Z')); // 06:30 Berlin (CET)
+    expect(shouldSendPortfolioMonthly()).toBe(true);
+    vi.setSystemTime(new Date('2026-12-01T06:30:00.000Z')); // 07:30 Berlin
+    expect(shouldSendPortfolioMonthly()).toBe(false);
+    vi.setSystemTime(new Date('2026-12-02T05:30:00.000Z'));
+    expect(shouldSendPortfolioMonthly()).toBe(false);
+    vi.useRealTimers();
+  });
+
+  it('Sommer: 06:xx Berlin = 04:xx UTC', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-01T04:30:00.000Z'));
+    expect(shouldSendPortfolioMonthly()).toBe(true);
+    vi.setSystemTime(new Date('2026-07-01T05:30:00.000Z'));
+    expect(shouldSendPortfolioMonthly()).toBe(false);
+    vi.useRealTimers();
+  });
+
+  it('sendet und persistiert den Monatsmarker YYYY-MM; zweiter Tick sendet nicht mehr', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-12-01T05:30:00.000Z'));
+    await checkAndSendPortfolioMonthly();
+    expect(sendPortfolioMonthlyEmailMock).toHaveBeenCalledTimes(1);
+    expect(setSchedulerStateMock).toHaveBeenCalledWith(KEY, '2026-12');
+    await checkAndSendPortfolioMonthly();
+    expect(sendPortfolioMonthlyEmailMock).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
+  it('Neustart-Simulation: Marker aus der DB verhindert zweiten Versand im selben Monat', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-12-01T05:30:00.000Z'));
+    getSchedulerStateMock.mockImplementation((k: string) => (k === KEY ? '2026-12' : null));
+    resetSchedulerStateForTests();
+    loadPortfolioMonthlyState();
+    await checkAndSendPortfolioMonthly();
+    expect(sendPortfolioMonthlyEmailMock).not.toHaveBeenCalled();
+    expect(setSchedulerStateMock).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('Folgemonat sendet wieder', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2027-01-01T05:30:00.000Z'));
+    getSchedulerStateMock.mockImplementation((k: string) => (k === KEY ? '2026-12' : null));
+    resetSchedulerStateForTests();
+    loadPortfolioMonthlyState();
+    expect(shouldSendPortfolioMonthly()).toBe(true);
+    vi.useRealTimers();
+  });
+
+  it('kein Marker bei sent:false und bei Fehler (nächster Tick versucht es erneut)', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-12-01T05:30:00.000Z'));
+    sendPortfolioMonthlyEmailMock.mockResolvedValueOnce({ success: true, sent: false, error: 'No recipients' });
+    await checkAndSendPortfolioMonthly();
+    expect(setSchedulerStateMock).not.toHaveBeenCalled();
+    sendPortfolioMonthlyEmailMock.mockRejectedValueOnce(new Error('boom'));
+    await checkAndSendPortfolioMonthly();
+    expect(setSchedulerStateMock).not.toHaveBeenCalled();
+    expect(shouldSendPortfolioMonthly()).toBe(true);
+    vi.useRealTimers();
+  });
+});
+
+describe('Kalender-Report (montags 06:xx Europe/Berlin, #1223)', () => {
+  const KEY = 'calendar_weekly_last_sent_day';
+
+  it('sendet montags 06:xx Berlin, nicht dienstags, nicht um 07:xx', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-23T05:30:00.000Z')); // Mo 06:30 Berlin (CET)
+    expect(shouldSendCalendarWeekly()).toBe(true);
+    vi.setSystemTime(new Date('2026-11-23T06:30:00.000Z')); // 07:30
+    expect(shouldSendCalendarWeekly()).toBe(false);
+    vi.setSystemTime(new Date('2026-11-24T05:30:00.000Z')); // Di
+    expect(shouldSendCalendarWeekly()).toBe(false);
+    vi.useRealTimers();
+  });
+
+  it('sendet und persistiert den Tagesmarker; zweiter Tick sendet nicht mehr', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-23T05:30:00.000Z'));
+    await checkAndSendCalendarWeekly();
+    expect(sendCalendarWeeklyEmailMock).toHaveBeenCalledTimes(1);
+    expect(setSchedulerStateMock).toHaveBeenCalledWith(KEY, '2026-11-23');
+    await checkAndSendCalendarWeekly();
+    expect(sendCalendarWeeklyEmailMock).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
+  it('Neustart-Simulation: Marker aus der DB verhindert zweiten Versand am selben Tag', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-23T05:30:00.000Z'));
+    getSchedulerStateMock.mockImplementation((k: string) => (k === KEY ? '2026-11-23' : null));
+    resetSchedulerStateForTests();
+    loadCalendarWeeklyState();
+    await checkAndSendCalendarWeekly();
+    expect(sendCalendarWeeklyEmailMock).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('nächster Montag sendet wieder', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-30T05:30:00.000Z'));
+    getSchedulerStateMock.mockImplementation((k: string) => (k === KEY ? '2026-11-23' : null));
+    resetSchedulerStateForTests();
+    loadCalendarWeeklyState();
+    expect(shouldSendCalendarWeekly()).toBe(true);
+    vi.useRealTimers();
+  });
+
+  it('kein Marker bei sent:false', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-11-23T05:30:00.000Z'));
+    sendCalendarWeeklyEmailMock.mockResolvedValueOnce({ success: true, sent: false, error: 'No recipients' });
+    await checkAndSendCalendarWeekly();
+    expect(setSchedulerStateMock).not.toHaveBeenCalled();
     vi.useRealTimers();
   });
 });

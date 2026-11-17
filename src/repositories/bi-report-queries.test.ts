@@ -40,6 +40,29 @@ describe('getLeadTimeSamples', () => {
   });
 });
 
+describe('getLeadTimeSamples — listingIds-Filter (#1223)', () => {
+  beforeEach(() => {
+    const ins = db.prepare(`INSERT INTO reservations (reservation_id,listing_id,check_in,check_out,status,reserved_at) VALUES (?,?,?,?,?,?)`);
+    ins.run('r1', 'A', '2026-07-10', '2026-07-15', 'confirmed', '2026-06-01T00:00:00Z');
+    ins.run('r2', 'B', '2026-08-01', '2026-08-05', 'reserved', '2026-07-20T00:00:00Z');
+    ins.run('r3', 'C', '2026-08-10', '2026-08-12', 'confirmed', '2026-07-01T00:00:00Z');
+  });
+
+  it('ohne Parameter unverändert: alle Listings', () => {
+    expect(getLeadTimeSamples()).toHaveLength(3);
+  });
+
+  it('mit listingIds nur diese Listings (aus dem Reporting genommenes Objekt fällt raus)', () => {
+    const samples = getLeadTimeSamples(['A', 'B']);
+    expect(samples).toHaveLength(2);
+    expect(samples).not.toContainEqual({ checkIn: '2026-08-10', reservedAt: '2026-07-01T00:00:00Z' });
+  });
+
+  it('leeres Array liefert leeres Ergebnis', () => {
+    expect(getLeadTimeSamples([])).toEqual([]);
+  });
+});
+
 describe('getRevenueForCheckInMonth', () => {
   it('sums host_payout for confirmed/reserved with check_in in the given month', () => {
     const ins = db.prepare(`INSERT INTO reservations (reservation_id,listing_id,check_in,check_out,status,host_payout,total_price) VALUES (?,?,?,?,?,?,?)`);

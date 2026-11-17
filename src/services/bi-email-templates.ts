@@ -1,7 +1,7 @@
 /**
  * Portfolio BI email renderer. Email-safe HTML (tables + inline styles only).
  */
-import type { BiReportModel, PropertyKpi, UpcomingArrival } from '../types/bi-report.js';
+import type { BiReportLabels, BiReportModel, PropertyKpi, UpcomingArrival } from '../types/bi-report.js';
 import type { DayState, GanttGrid } from './bi-calendar.js';
 import type { RevenueForecast } from './forecast.js';
 import type { StaleAirbnbMailSource } from './airbnb-mail-staleness.js';
@@ -65,8 +65,8 @@ function renderCalendar(cal: GanttGrid): string {
     </p>`;
 }
 
-function renderArrivals(arrivals: UpcomingArrival[]): string {
-  if (arrivals.length === 0) return '<p style="font:13px sans-serif;color:#888">Keine anstehenden Anreisen.</p>';
+function renderArrivals(arrivals: UpcomingArrival[], emptyText = 'Keine anstehenden Anreisen.'): string {
+  if (arrivals.length === 0) return `<p style="font:13px sans-serif;color:#888">${h(emptyText)}</p>`;
   const rows = arrivals
     .map((a) => {
       const turn = a.isTurnover
@@ -84,7 +84,7 @@ function renderArrivals(arrivals: UpcomingArrival[]): string {
   return `<table style="border-collapse:collapse;width:100%"><tbody>${rows}</tbody></table>`;
 }
 
-function renderKpiTable(kpis: PropertyKpi[], portfolio: BiReportModel['portfolio'], year: number): string {
+function renderKpiTable(kpis: PropertyKpi[], portfolio: BiReportModel['portfolio'], year: number, labels?: BiReportLabels): string {
   const th = (t: string) =>
     `<th style="font:600 11px sans-serif;color:#888;padding:6px 8px;border-bottom:2px solid #ddd;text-align:right">${t}</th>`;
   const td = (t: string, align = 'right') =>
@@ -109,7 +109,7 @@ function renderKpiTable(kpis: PropertyKpi[], portfolio: BiReportModel['portfolio
     : '';
   return `<table style="border-collapse:collapse;width:100%">
       <tr><th style="text-align:left;font:600 11px sans-serif;color:#888;padding:6px 8px;border-bottom:2px solid #ddd">Property</th>
-        ${th('Bel. 6Wo')}${th('Bel. 30Tg')}${th(`Umsatz ${year}`)}${th('Umsatz Monat')}${th('Δ Vormon.')}${th(`Buch. ${year}`)}${th('ADR')}${th('Block-Tg')}</tr>
+        ${th(labels?.kpiOcc6wk ?? 'Bel. 6Wo')}${th(labels?.kpiOcc30d ?? 'Bel. 30Tg')}${th(`Umsatz ${year}`)}${th(labels?.kpiRevenueMonth ?? 'Umsatz Monat')}${th('Δ Vormon.')}${th(`Buch. ${year}`)}${th('ADR')}${th(labels?.kpiBlocked ?? 'Block-Tg')}</tr>
       ${body}${total}
     </table>${legend}`;
 }
@@ -227,12 +227,12 @@ export function generateBiReportEmail(model: BiReportModel): { html: string; tex
     <body style="margin:0;background:#fff">
     <div style="max-width:680px;margin:0 auto;border:1px solid #e2e4df;border-radius:10px;overflow:hidden">
       <div style="background:#2f3a33;color:#fff;padding:16px 18px">
-        <div style="font:700 16px sans-serif">📊 AirBnB Portfolio Report · ${model.weekLabel}</div>
+        <div style="font:700 16px sans-serif">📊 ${model.labels?.title ?? `AirBnB Portfolio Report · ${model.weekLabel}`}</div>
         <div style="font:11px sans-serif;opacity:.7;margin-top:2px">${model.kpis.length} Properties: ${propertyNames}</div>
       </div>
       <table style="border-collapse:separate;border-spacing:1px;width:100%"><tr>
         ${stat(`${hasEstimates ? '≈ ' : ''}${eur(model.portfolio.revenueYtd)}`, `Umsatz ${year}`)}
-        ${stat(pct(model.portfolio.avgOccupancy6wk), 'Ø Belegung 6 Wo')}
+        ${stat(pct(model.portfolio.avgOccupancy6wk), model.labels?.statOccupancy ?? 'Ø Belegung 6 Wo')}
         ${stat(String(model.portfolio.bookingsYtd), `Buchungen ${year}`)}
         ${stat(eur(model.portfolio.committedRevenueHorizon), 'fest gebucht')}
       </tr></table>
@@ -242,16 +242,16 @@ export function generateBiReportEmail(model: BiReportModel): { html: string; tex
       ${model.staleAirbnbMailSources?.length ? renderStalenessWarning(model.staleAirbnbMailSources) : ''}
       ${model.dataWarnings.length ? renderDataWarnings(model.dataWarnings) : ''}
       <div style="padding:16px 18px">
-        <h3 style="font:700 13px sans-serif;margin:0 0 10px">① Übersichtskalender · 6 Wochen</h3>
+        <h3 style="font:700 13px sans-serif;margin:0 0 10px">${model.labels?.calendarHeading ?? '① Übersichtskalender · 6 Wochen'}</h3>
         ${renderCalendar(model.calendar)}
       </div>
       <div style="padding:0 18px 16px">
-        <h3 style="font:700 13px sans-serif;margin:0 0 10px">② Nächste Anreisen &amp; Turnovers</h3>
-        ${renderArrivals(model.arrivals)}
+        <h3 style="font:700 13px sans-serif;margin:0 0 10px">${model.labels?.arrivalsHeading ?? '② Nächste Anreisen &amp; Turnovers'}</h3>
+        ${renderArrivals(model.arrivals, model.labels?.arrivalsEmpty)}
       </div>
       <div style="padding:0 18px 16px">
         <h3 style="font:700 13px sans-serif;margin:0 0 10px">③ Kennzahlen pro Property</h3>
-        ${renderKpiTable(model.kpis, model.portfolio, year)}
+        ${renderKpiTable(model.kpis, model.portfolio, year, model.labels)}
       </div>
       <div style="padding:0 18px 18px">
         <h3 style="font:700 13px sans-serif;margin:0 0 10px">④ Forecast · 6 Monate (Umsatz)</h3>
@@ -277,9 +277,9 @@ export function generateBiReportEmail(model: BiReportModel): { html: string; tex
     </body></html>`;
 
   const textLines = [
-    `AirBnB Portfolio Report · ${model.weekLabel}`,
+    model.labels?.title ?? `AirBnB Portfolio Report · ${model.weekLabel}`,
     `${model.kpis.length} Properties: ${model.kpis.map((k) => k.name).join(', ')}`,
-    `Umsatz ${year} (ganzes Kalenderjahr inkl. gebuchter Zukunft): ${hasEstimates ? '≈ ' : ''}${eur(model.portfolio.revenueYtd)} · Ø Belegung 6Wo: ${pct(model.portfolio.avgOccupancy6wk)} · Buchungen ${year}: ${model.portfolio.bookingsYtd} · fest gebucht: ${eur(model.portfolio.committedRevenueHorizon)}`,
+    `Umsatz ${year} (ganzes Kalenderjahr inkl. gebuchter Zukunft): ${hasEstimates ? '≈ ' : ''}${eur(model.portfolio.revenueYtd)} · ${model.labels?.textOccupancy ?? 'Ø Belegung 6Wo'}: ${pct(model.portfolio.avgOccupancy6wk)} · Buchungen ${year}: ${model.portfolio.bookingsYtd} · fest gebucht: ${eur(model.portfolio.committedRevenueHorizon)}`,
     ...(model.staleAirbnbMailSources?.length
       ? ['', '⚠️ Airbnb-Mail-Sync gestört:', ...model.staleAirbnbMailSources.map((s) => `  ${stalenessLine(s)}`)]
       : []),
@@ -293,7 +293,7 @@ export function generateBiReportEmail(model: BiReportModel): { html: string; tex
       return `  ${k.name}: Bel ${pct(k.occupancy6wk)}/${pct(k.occupancy30d)}, Umsatz ${year} ${approx}${eur(k.revenueYtd)} (Monat ${approx}${eur(k.revenueMonth)}, ${k.revenueChangePct >= 0 ? '+' : ''}${k.revenueChangePct}%), Buchungen ${k.bookingsYtd}, ADR ${approx}${eur(k.adr)}`;
     }),
     '',
-    'Nächste Anreisen:',
+    model.labels?.textArrivalsHeading ?? 'Nächste Anreisen:',
     ...model.arrivals.map(
       (a) => `  ${deDate(a.date)} ${a.propertyName} — ${a.guestName} (${a.nights}N/${a.guests}P, ${a.source})${a.isTurnover ? ' [Turnover]' : ''}`
     ),
