@@ -35,6 +35,125 @@ export function mapGuestyInquiryMoney(r: any): {
   };
 }
 
+/** Zeile der inquiries-Tabelle aus einer Guesty-Reservierung (Liste oder Einzelabruf). */
+export interface GuestyInquiryRow {
+  inquiry_id: string;
+  listing_id: string;
+  status: string;
+  check_in: string;
+  check_out: string;
+  guest_name: string;
+  guests_count: number;
+  source: string | null;
+  created_at_guesty: string;
+  last_synced_at: string;
+  currency: string | null;
+  total_price: number | null;
+  host_payout: number | null;
+}
+
+/**
+ * #1234: Mapper Guesty-Reservierung → inquiries-Zeile, gemeinsam für den Stunden-Sync
+ * (syncInquiries) und den Einzelabruf beim Nachrichten-Eingang (inquiry-prefetch.ts).
+ * null, wenn Pflichtfelder fehlen (_id, listingId, status, checkIn, checkOut).
+ */
+export function mapGuestyInquiryRow(r: any, now: string): GuestyInquiryRow | null {
+  if (!r?._id || !r.listingId || !r.status || !r.checkIn || !r.checkOut) return null;
+
+  // Extract guest name from guest object
+  const guestName = r.guest?.fullName || r.guest?.firstName || 'Unknown';
+
+  // Use checkInDateLocalized if available, otherwise parse checkIn
+  const checkInDate = r.checkInDateLocalized || r.checkIn?.split('T')[0] || r.checkIn;
+  const checkOutDate = r.checkOutDateLocalized || r.checkOut?.split('T')[0] || r.checkOut;
+
+  const money = mapGuestyInquiryMoney(r);
+
+  return {
+    inquiry_id: r._id,
+    listing_id: r.listingId,
+    status: r.status,
+    check_in: checkInDate,
+    check_out: checkOutDate,
+    guest_name: guestName,
+    guests_count: r.guestsCount || 0,
+    source: r.source || null,
+    created_at_guesty: r.createdAt || now,
+    last_synced_at: now,
+    currency: money.currency,
+    total_price: money.total_price,
+    host_payout: money.host_payout,
+  };
+}
+
+/**
+ * #1234: Upsert von Guesty-Reservierungen in inquiries (eine Transaktion). Liefert die Anzahl
+ * geschriebener Zeilen; Reservierungen ohne Pflichtfelder werden übersprungen.
+ */
+export function upsertGuestyInquiries(reservations: any[], now: string = new Date().toISOString()): number {
+  const db = getDatabase();
+  const upsertStmt = db.prepare(`
+    INSERT INTO inquiries (
+      inquiry_id,
+      listing_id,
+      status,
+      check_in,
+      check_out,
+      guest_name,
+      guests_count,
+      source,
+      created_at_guesty,
+      last_synced_at,
+      currency,
+      total_price,
+      host_payout
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(inquiry_id) DO UPDATE SET
+      status = excluded.status,
+      check_in = excluded.check_in,
+      check_out = excluded.check_out,
+      guest_name = excluded.guest_name,
+      guests_count = excluded.guests_count,
+      source = excluded.source,
+      last_synced_at = excluded.last_synced_at,
+      -- #1187: Payload ohne money darf bekannte Preisdaten nicht löschen
+      currency = COALESCE(excluded.currency, inquiries.currency),
+      total_price = COALESCE(excluded.total_price, inquiries.total_price),
+      host_payout = COALESCE(excluded.host_payout, inquiries.host_payout)
+  `);
+
+  const upsertMany = db.transaction((items: any[]): number => {
+    let written = 0;
+    for (const r of items) {
+      const row = mapGuestyInquiryRow(r, now);
+      if (!row) {
+        // Skip if missing required fields
+        logger.debug({ reservation: r?._id }, 'Skipping reservation with missing required fields');
+        continue;
+      }
+      upsertStmt.run(
+        row.inquiry_id,
+        row.listing_id,
+        row.status,
+        row.check_in,
+        row.check_out,
+        row.guest_name,
+        row.guests_count,
+        row.source,
+        row.created_at_guesty,
+        row.last_synced_at,
+        row.currency,
+        row.total_price,
+        row.host_payout,
+      );
+      written++;
+    }
+    return written;
+  });
+
+  return upsertMany(reservations);
+}
+
 /**
  * Sync all inquiries and reservations from Guesty API
  *
@@ -80,77 +199,8 @@ export async function syncInquiries(listingId: string): Promise<SyncInquiriesRes
       r.status === 'confirmed' || r.status === 'reserved'
     );
 
-    // Upsert to inquiries table
-    const now = new Date().toISOString();
-    const db = getDatabase();
-
-    // Upsert each reservation/inquiry
-    const upsertStmt = db.prepare(`
-      INSERT INTO inquiries (
-        inquiry_id,
-        listing_id,
-        status,
-        check_in,
-        check_out,
-        guest_name,
-        guests_count,
-        source,
-        created_at_guesty,
-        last_synced_at,
-        currency,
-        total_price,
-        host_payout
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(inquiry_id) DO UPDATE SET
-        status = excluded.status,
-        check_in = excluded.check_in,
-        check_out = excluded.check_out,
-        guest_name = excluded.guest_name,
-        guests_count = excluded.guests_count,
-        source = excluded.source,
-        last_synced_at = excluded.last_synced_at,
-        -- #1187: Payload ohne money darf bekannte Preisdaten nicht löschen
-        currency = COALESCE(excluded.currency, inquiries.currency),
-        total_price = COALESCE(excluded.total_price, inquiries.total_price),
-        host_payout = COALESCE(excluded.host_payout, inquiries.host_payout)
-    `);
-
-    const upsertMany = db.transaction((reservations: any[]) => {
-      for (const r of reservations) {
-        // Skip if missing required fields
-        if (!r._id || !r.listingId || !r.status || !r.checkIn || !r.checkOut) {
-          logger.debug({ reservation: r._id }, 'Skipping reservation with missing required fields');
-          continue;
-        }
-
-        // Extract guest name from guest object
-        const guestName = r.guest?.fullName || r.guest?.firstName || 'Unknown';
-
-        // Use checkInDateLocalized if available, otherwise parse checkIn
-        const checkInDate = r.checkInDateLocalized || r.checkIn?.split('T')[0] || r.checkIn;
-        const checkOutDate = r.checkOutDateLocalized || r.checkOut?.split('T')[0] || r.checkOut;
-
-        const money = mapGuestyInquiryMoney(r);
-
-        upsertStmt.run(
-          r._id,
-          r.listingId,
-          r.status,
-          checkInDate,
-          checkOutDate,
-          guestName,
-          r.guestsCount || 0,
-          r.source || null,
-          r.createdAt || now,
-          now,
-          money.currency,
-          money.total_price,
-          money.host_payout
-        );
-      }
-    });
-
-    upsertMany(allReservations);
+    // Upsert to inquiries table (#1234: gemeinsamer Mapper/Upsert mit dem Einzelabruf beim Eingang)
+    upsertGuestyInquiries(allReservations);
 
     const duration = Date.now() - startTime;
 
