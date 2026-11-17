@@ -22,3 +22,29 @@ describe('sendClaimedDraft', () => {
     expect(d.markDraftError).toHaveBeenCalledWith('d1', 'down');
   });
 });
+
+// #1210: nach erfolgreichem Versand schließt der Thread seinen Inquiry-Task selbst — nie blockierend.
+describe('sendClaimedDraft — Inquiry-Task-Selbstschluss (#1210)', () => {
+  it('ruft onSent mit der Thread-Id NACH dem Anlegen der Outbound-Zeile', async () => {
+    const order: string[] = [];
+    const d = deps({
+      upsertMessage: vi.fn(() => { order.push('upsert'); }) as any,
+      onSent: vi.fn(async () => { order.push('onSent'); }),
+    });
+    expect(await sendClaimedDraft('d1', thread, 'Hallo', 'micha', d)).toEqual({ ok: true });
+    expect(d.onSent).toHaveBeenCalledWith('hostex:t1');
+    expect(order).toEqual(['upsert', 'onSent']);
+  });
+  it('SmartTasks-Fehler (async oder sync) bricht den Versand nicht ab', async () => {
+    const async = deps({ onSent: vi.fn().mockRejectedValue(new Error('SmartTasks down')) });
+    expect(await sendClaimedDraft('d1', thread, 'Hallo', 'micha', async)).toEqual({ ok: true });
+    const sync = deps({ onSent: vi.fn(() => { throw new Error('kaputt'); }) });
+    expect(await sendClaimedDraft('d1', thread, 'Hallo', 'micha', sync)).toEqual({ ok: true });
+    expect(sync.markDraftError).not.toHaveBeenCalled();
+  });
+  it('fehlgeschlagener Versand ruft onSent nicht', async () => {
+    const d = deps({ sendReply: vi.fn().mockRejectedValue(new Error('down')), onSent: vi.fn() });
+    await sendClaimedDraft('d1', thread, 'Hallo', 'micha', d);
+    expect(d.onSent).not.toHaveBeenCalled();
+  });
+});
