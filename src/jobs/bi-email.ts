@@ -154,11 +154,13 @@ export function buildBiReportModel(
 
       const allTime = getAllTimeStats(listingId);
       const currentYear = getCurrentYearStats(listingId);
-      const breakdown6wk = getOccupancyBreakdown(listingId, today, in6Weeks);
+      // getOccupancyBreakdown/getOccupancyRate rechnen [start, end) — im Monatsreport daher das
+      // exklusive Monatsende übergeben, sonst fehlt der letzte Tag des Monats.
+      const breakdown6wk = getOccupancyBreakdown(listingId, today, period ? period.endExclusive : in6Weeks);
       const occ6wk = breakdown6wk.rate;
       const blockedDays6wk = breakdown6wk.blockedDays;
       const occ30d = period
-        ? getOccupancyRate(listingId, prevMonthStart, ymd(addDays(new Date(`${period.start}T00:00:00`), -1)))
+        ? getOccupancyRate(listingId, prevMonthStart, period.start)
         : getOccupancyRate(listingId, last30, today);
       const revMonth = getRevenueForCheckInMonth(listingId, curMonth);
       const revPrev = getRevenueForCheckInMonth(listingId, prevMonth);

@@ -118,8 +118,8 @@ describe('buildBiReportModel — Monatszeitraum', () => {
     expect(model.labels?.calendarHeading).toBe('① Übersichtskalender · Oktober 2026');
     expect(model.labels?.arrivalsHeading).toBe('② Anreisen &amp; Turnovers · Oktober 2026');
     // KPI: Belegung im Monat, Vormonat, Umsatz Monat/Vormonat
-    expect(getOccupancyBreakdownMock).toHaveBeenCalledWith('id-farmhouse', '2026-10-01', '2026-10-31');
-    expect(getOccupancyRateMock).toHaveBeenCalledWith('id-farmhouse', '2026-09-01', '2026-09-30');
+    expect(getOccupancyBreakdownMock).toHaveBeenCalledWith('id-farmhouse', '2026-10-01', '2026-11-01'); // [start, end)
+    expect(getOccupancyRateMock).toHaveBeenCalledWith('id-farmhouse', '2026-09-01', '2026-10-01');
     expect(getRevenueMock).toHaveBeenCalledWith('id-farmhouse', '2026-10');
     expect(getRevenueMock).toHaveBeenCalledWith('id-farmhouse', '2026-09');
     expect(getAvailabilityMock).toHaveBeenCalledWith('id-farmhouse', '2026-10-01', '2026-10-31');
