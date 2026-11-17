@@ -56,11 +56,16 @@ export function buildCalendarReportModel(properties: PropertyConfig[], now: Date
         order: 0,
       }));
 
-      const blocked = getAvailability(listingId, windowStart, windowEnd).map((a) => ({
-        date: day(a.date),
-        status: a.status as string,
-        block_type: (a.block_type ?? null) as string | null,
-      }));
+      // Nächte eines gelisteten Aufenthalts zählen nie als "geblockt": Guesty-Holds (Status
+      // reserved) kommen lokal als status='blocked' an und stünden sonst doppelt im Report.
+      const isStayNight = (d: string) => stays.some((r) => day(r.check_in) <= d && d < day(r.check_out));
+      const blocked = getAvailability(listingId, windowStart, windowEnd)
+        .map((a) => ({
+          date: day(a.date),
+          status: a.status as string,
+          block_type: (a.block_type ?? null) as string | null,
+        }))
+        .filter((a) => !isStayNight(a.date));
       // Spans nach block_type getrennt -> für den Report zusammenhängende Zeiträume wieder verschmelzen
       const merged: Array<{ from: string; to: string }> = [];
       for (const span of buildBlockSpans(blocked).sort((a, b) => a.startDate.localeCompare(b.startDate))) {

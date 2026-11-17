@@ -94,6 +94,20 @@ describe('Fenster heute .. heute+14', () => {
     expect(html).toContain('Mi 25.11. – Do 26.11. · geblockt');
     expect(text).toContain('geblockt');
   });
+
+  it('Hold (reserved, Nächte lokal blocked) steht nur als Aufenthalt da, nicht zusätzlich als geblockt', () => {
+    reservations = [stay('hold', '2026-11-25', '2026-11-27', { status: 'reserved' })];
+    availability = [
+      { date: '2026-11-25', status: 'blocked', block_type: null },
+      { date: '2026-11-26', status: 'blocked', block_type: null },
+      { date: '2026-11-27', status: 'blocked', block_type: null }, // Abreisetag: echter Block danach bleibt
+    ];
+    const m = buildCalendarReportModel([allProps[0]] as never, NOW);
+    expect(m.properties[0].entries).toEqual([
+      expect.objectContaining({ kind: 'stay', checkIn: '2026-11-25', checkOut: '2026-11-27' }),
+      { kind: 'block', from: '2026-11-27', to: '2026-11-27' },
+    ]);
+  });
 });
 
 describe('Rendering', () => {
