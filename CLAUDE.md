@@ -620,6 +620,10 @@ Copy-Paste kann ein sicherer Entwurf automatisch rausgehen. Spec:
     zusätzlichen Keys angelegt); Ausgabe direkt in `/opt/guesty-calendar-app/.env` als
     `SMARTTASKS_API_KEY=…` eintragen, nirgends sonst notieren. **Widerruf:** `npx tsx
     scripts/revoke-api-key.ts <id>` (Id aus Tabelle `api_keys`).
+    Seit #1210 zusätzlich `getTask` (`GET /tasks/:id`, nur Status), `updateTaskStatus`
+    (`PATCH /tasks/:id {status}`) und `addComment` (`POST /tasks/:id/comments {body}`) über
+    den gemeinsamen Request-Pfad. Done setzt die App NUR auf selbst angelegten Tasks (der
+    Key hängt am User „Claude", der sie anlegt; fremde Tasks lehnt SmartTasks mit 403 ab).
   - **Task-Inhalt** (`promise-task-service.ts`): Titel `Zusage an Gast <Vorname>
     (<Objekt-Code>): <promised_action>`; Beschreibung mit Thread-Link (`adminUrl`), Zitat
     der Gastnachricht, Zitat des Entwurfs, Datum. Projekt = Betriebs-Projekt des Objekts
@@ -714,8 +718,8 @@ Copy-Paste kann ein sicherer Entwurf automatisch rausgehen. Spec:
     Zusatz-Check `confirmation_words` (nur im Buchungsanfrage-Kontext, DE+EN Bestätigungswörter)
     als zweite Verteidigungslinie.
   - **Task-Anlage** (`src/services/booking-request-task-service.ts`,
-    `resolveBookingRequestTask`, `runner.ts`): läuft IMMER, sobald ein System-Post erkannt
-    wurde — anders als die Zusagen-Task (#696), NICHT nur wenn der Entwurf sonst automatisch
+    `resolveBookingRequestTask`, `runner.ts`): läuft, sobald ein System-Post erkannt
+    wurde (Ausnahme seit #1210: automatisch beantwortete Inquiry im Live-Modus, siehe unten) — anders als die Zusagen-Task (#696), NICHT nur wenn der Entwurf sonst automatisch
     ginge, weil Micha den Task auch bei `wait` braucht. Titel „Airbnb-Anfrage <Vorname>:
     <Objekt-Code> <Zeitraum>, <Personen> P." (Zeitraum/Personen aus
     `booking-context.ts` `resolveBookingPeriod`, sonst weggelassen), Projekt =
@@ -726,6 +730,25 @@ Copy-Paste kann ein sicherer Entwurf automatisch rausgehen. Spec:
     gilt. Idempotent über dieselben Spalten wie der Zusagen-Task (`smarttasks_task_id`/
     `smarttasks_task_guest_message_id`, Migration 029) — hier trägt die Spalte die Id des
     System-Posts statt einer Gastnachricht.
+  - **Inquiry: kein Task bei Auto-Antwort, sonst Selbstschluss (#1210, Migration 042,
+    Entscheidung Micha 17.11.2026):** Geht die Antwort auf eine INQUIRY im Live-Modus
+    automatisch raus (`runner.ts`: pure Probe `wouldAutoWithBookingTask`, dann
+    `bookingTask.skipped`; Reason „Inquiry: Antwort automatisch, kein Task nötig, Frist …"),
+    wird KEIN Task angelegt; scheitern Claim oder Versand, wird er nachgeholt. Schattenmodus
+    und wartende Entwürfe legen den Task wie bisher an. Er schließt sich selbst
+    (`src/services/inquiry-task-closer.ts`, `closeAnsweredInquiryTasks`: Done + Kommentar
+    „Antwort gesendet TT.MM. HH:MM, Task automatisch geschlossen"), sobald im Thread eine
+    outbound-Nachricht NACH dem System-Post UND nach dem Entwurf steht, an dem der Task hängt
+    (`inquiry-task-closure-repository.ts`; die zweite Bedingung verhindert, dass ein Task der
+    Folgerunde durch eine ältere Auto-Antwort sofort wieder zugeht). Auslöser: nach jedem
+    erfolgreichen `sendClaimedDraft` (fire-and-forget) und zu Beginn jedes
+    `generateDraftsForProperty`-Laufs (deckt die direkt in Airbnb gesendete Antwort ab).
+    Idempotenz-Anker ist `inquiry_task_closures` (ein Eintrag je Task: `pending` Claim,
+    `closed`, `skipped` = schon Done/Dropped oder dauerhafter 4xx, `legacy` = vor Migration
+    042 angelegt, wird NIE automatisch geschlossen). Netz-/5xx-Fehler geben den Claim frei
+    (nächster Sync), hängende Claims nach 1 h; der Closer wirft nie. **Request-to-Book ist
+    ausgenommen** (Task bleibt bis zur Entscheidung in Airbnb). Ein geschlossener Task wird
+    bei einer weiteren Gastnachricht zum selben System-Post wiederverwendet, nicht neu geöffnet.
   - **Sichtbarkeit:** `GET /api/agent/drafts/awaiting` zeigt Buchungsanfrage-Drafts mit
     `auto_decision='auto'` IMMER zusätzlich an (live gesendet ODER Schatten) — eigener
     `reason`-Text „Rückfrage automatisch gesendet — Entscheidung in Airbnb nach

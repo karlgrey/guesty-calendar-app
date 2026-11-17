@@ -4,7 +4,7 @@ import type { Message, MessageThread } from '../../types/messages.js';
 import type { PropertyConfig } from '../../config/properties.js';
 import { judgeDraft, type JudgeInput } from './judge-service.js';
 import { runMechanicalChecks, collectDigitRuns } from './mechanical-checks.js';
-import { decide, wouldAutoWithPromiseTask, type PolicyInput } from './policy.js';
+import { decide, wouldAutoWithPromiseTask, wouldAutoWithBookingTask, type PolicyInput } from './policy.js';
 import { resolveAutoSendMode } from './mode.js';
 import { startOfBerlinDayIso, formatBerlinDeadline } from './berlin-day.js';
 import type { AutoSendDecision, AutoSendMode, JudgeResult } from './types.js';
@@ -143,6 +143,18 @@ export async function runAutoSendGate(input: GateInput, deps: GateDeps = realGat
   }
 
   let decision: AutoSendDecision;
+  // #1210: Inquiry ohne Task (Antwort sollte automatisch rausgehen) — Eingabe für die
+  // nachgeholte Anlage, falls Claim oder Versand scheitern (dann wartet die Antwort auf Micha).
+  let deferredInquiryTask: BookingRequestTaskInput | null = null;
+  const createDeferredInquiryTask = async (why: string): Promise<void> => {
+    if (!deferredInquiryTask) return;
+    try {
+      const r = await deps.resolveBookingRequestTask(deferredInquiryTask);
+      logger.info({ draftId: input.draftId, why, taskNumber: r.taskNumber, created: r.created }, 'auto-send: Inquiry-Task nachträglich angelegt');
+    } catch (err) {
+      logger.warn({ draftId: input.draftId, why, err: err instanceof Error ? err.message : String(err) }, 'auto-send: Inquiry-Task-Nachanlage fehlgeschlagen');
+    }
+  };
   try {
     // #698 (Fall Lorenzo U19): EINMAL je Gate-Lauf bestimmt — geht an Judge UND mechanischen
     // Check, damit beide vom selben HEUTE-Zeitpunkt ausgehen (kein Auseinanderdriften bei einem
@@ -204,13 +216,24 @@ export async function runAutoSendGate(input: GateInput, deps: GateDeps = realGat
     if (bookingRequest) {
       deps.persistBookingRequest(input.draftId, bookingRequest.requestKind, bookingRequest.platformDeadlineAt);
       const { periodLabel, guestsCount } = deps.resolveBookingPeriod(input.thread);
-      const result = await deps.resolveBookingRequestTask({
+      const taskInput: BookingRequestTaskInput = {
         draftId: input.draftId, threadId: input.thread.id, systemMessageId: bookingRequest.systemMessageId,
         requestKind: bookingRequest.requestKind, platformDeadlineAt: bookingRequest.platformDeadlineAt,
         guestName: input.thread.guest_name, guestMessage: lastGuestMessage, draftBody: input.body,
         periodLabel, guestsCount, property: input.property, mode,
-      });
-      bookingTask = { created: result.created, taskNumber: result.taskNumber, deadlineLabel: formatBerlinDeadline(bookingRequest.platformDeadlineAt) };
+      };
+      const deadlineLabel = formatBerlinDeadline(bookingRequest.platformDeadlineAt);
+      // #1210 (Entscheidung Micha 17.11.2026): geht die Antwort auf eine INQUIRY automatisch raus
+      // (Live-Modus, alle Gates grün — dieselbe pure Probe wie decide()), wird KEIN Task angelegt.
+      // Schattenmodus und wartende Entwürfe legen ihn wie bisher an; Request-to-Book immer.
+      // Scheitert der Versand danach doch, holt sendOrFallback() die Anlage nach (unten).
+      if (bookingRequest.requestKind === 'inquiry' && mode === 'live' && wouldAutoWithBookingTask({ ...baseInput, promiseTask: null })) {
+        bookingTask = { created: false, skipped: true, taskNumber: null, deadlineLabel };
+        deferredInquiryTask = taskInput;
+      } else {
+        const result = await deps.resolveBookingRequestTask(taskInput);
+        bookingTask = { created: result.created, taskNumber: result.taskNumber, deadlineLabel };
+      }
     }
 
     // #696: Zusagen-Task — die (async) SmartTasks-Anlage lohnt sich nur, wenn der Entwurf
@@ -243,7 +266,12 @@ export async function runAutoSendGate(input: GateInput, deps: GateDeps = realGat
   deps.persistDecision(input.draftId, decision, mode);
   logger.info({ draftId: input.draftId, threadId: input.thread.id, mode, decision: decision.decision, reason: decision.reason, flags: decision.flags }, 'auto-send: Entscheidung');
 
-  if (mode !== 'live' || decision.decision !== 'auto') return { decision, mode, sent: false };
+  if (mode !== 'live' || decision.decision !== 'auto') {
+    // #1210: defensiv — die Probe sagte „auto", die Kette endete aber anders (z. B. Exception
+    // nach der Probe): dann wartet die Antwort auf Micha, also doch Task.
+    await createDeferredInquiryTask('nicht-automatisch');
+    return { decision, mode, sent: false };
+  }
   if (!deps.claim(input.draftId)) {
     // Final-Review F3: Claim verloren (z. B. Prozess-Crash zwischen zwei Läufen) darf den
     // Entwurf nicht stillschweigend auf auto_decision='auto' stehen lassen — sonst blockiert
@@ -252,9 +280,13 @@ export async function runAutoSendGate(input: GateInput, deps: GateDeps = realGat
     logger.warn({ draftId: input.draftId }, 'auto-send: Claim fehlgeschlagen');
     decision = { decision: 'wait', reason: 'Entwurf konnte nicht für den Versand reserviert werden', category: decision.category, flags: decision.flags };
     deps.persistDecision(input.draftId, decision, mode);
+    await createDeferredInquiryTask('claim-fehlgeschlagen');
     return { decision, mode, sent: false };
   }
   const result = await deps.send(input.draftId, input.thread, input.body, 'auto');
-  if (!result.ok) logger.error({ draftId: input.draftId, err: result.err instanceof Error ? result.err.message : String(result.err) }, 'auto-send: Versand fehlgeschlagen');
+  if (!result.ok) {
+    logger.error({ draftId: input.draftId, err: result.err instanceof Error ? result.err.message : String(result.err) }, 'auto-send: Versand fehlgeschlagen');
+    await createDeferredInquiryTask('versand-fehlgeschlagen');
+  }
   return { decision, mode, sent: result.ok };
 }

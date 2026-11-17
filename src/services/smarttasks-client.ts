@@ -24,6 +24,11 @@ export interface SmartTasksTaskRef {
   id: number;
 }
 
+export interface SmartTasksTaskStatus {
+  id: number;
+  status: string;
+}
+
 const REQUEST_TIMEOUT_MS = 10_000;
 
 export class SmartTasksClient {
@@ -48,6 +53,37 @@ export class SmartTasksClient {
    */
   async createTask(input: CreateSmartTaskInput): Promise<SmartTasksTaskRef> {
     const path = '/tasks';
+    const { data, status } = await this.request('POST', path, input);
+    const id = (data as { id?: unknown } | null)?.id;
+    if (typeof id !== 'number') {
+      throw new ExternalApiError('SmartTasks: Antwort ohne Task-Id', status, 'SmartTasks', { path });
+    }
+    return { id };
+  }
+
+  /** GET /tasks/:id — nur Id + Status (#1210: Selbstschluss fasst geschlossene Tasks nicht an). */
+  async getTask(id: number): Promise<SmartTasksTaskStatus> {
+    const path = `/tasks/${id}`;
+    const { data, status } = await this.request('GET', path);
+    const s = (data as { status?: unknown } | null)?.status;
+    if (typeof s !== 'string') {
+      throw new ExternalApiError('SmartTasks: Antwort ohne Status', status, 'SmartTasks', { path });
+    }
+    return { id, status: s };
+  }
+
+  /** PATCH /tasks/:id {status} (#1210). Done auf fremden Tasks lehnt der Server für AI-User mit 403 ab. */
+  async updateTaskStatus(id: number, status: string): Promise<void> {
+    await this.request('PATCH', `/tasks/${id}`, { status });
+  }
+
+  /** POST /tasks/:id/comments {body} (#1210). */
+  async addComment(id: number, body: string): Promise<void> {
+    await this.request('POST', `/tasks/${id}/comments`, { body });
+  }
+
+  /** Gemeinsamer Request-Pfad: Bearer-Auth, 10 s Timeout, ExternalApiError bei Netz/HTTP-Fehler. */
+  private async request(method: string, path: string, body?: unknown): Promise<{ data: unknown; status: number }> {
     const url = `${this.baseUrl}${path}`;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -56,13 +92,13 @@ export class SmartTasksClient {
       let response: Response;
       try {
         response = await fetch(url, {
-          method: 'POST',
+          method,
           headers: {
             Authorization: `Bearer ${this.apiKey}`,
             'Content-Type': 'application/json',
             'User-Agent': 'guesty-calendar-app',
           },
-          body: JSON.stringify(input),
+          ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
           signal: controller.signal,
         });
       } catch (err) {
@@ -70,7 +106,7 @@ export class SmartTasksClient {
         // daher kein logApiCall (der braucht einen Statuscode).
         const msg = err instanceof Error ? err.message : String(err);
         const timedOut = err instanceof Error && err.name === 'AbortError';
-        logger.warn({ path, err: msg, timedOut }, 'SmartTasks: Aufruf fehlgeschlagen (Netzwerk/Timeout)');
+        logger.warn({ path, method, err: msg, timedOut }, 'SmartTasks: Aufruf fehlgeschlagen (Netzwerk/Timeout)');
         throw new ExternalApiError(
           `SmartTasks-Aufruf fehlgeschlagen${timedOut ? ' (Timeout)' : ''}: ${msg}`,
           0,
@@ -90,11 +126,8 @@ export class SmartTasksClient {
           { path },
         );
       }
-      const data = (await response.json()) as { id?: unknown };
-      if (typeof data.id !== 'number') {
-        throw new ExternalApiError('SmartTasks: Antwort ohne Task-Id', response.status, 'SmartTasks', { path });
-      }
-      return { id: data.id };
+      const data = await response.json().catch(() => null);
+      return { data, status: response.status };
     } finally {
       clearTimeout(timeout);
     }

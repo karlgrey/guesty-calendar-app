@@ -369,3 +369,86 @@ describe('recentHostMessages / Gate (#1191)', () => {
     expect(d.judge).toHaveBeenCalledWith(expect.objectContaining({ hostMessages: [hostBody] }));
   });
 });
+
+// #1210 (Entscheidung Micha 17.11.2026): Inquiry mit automatisch gesendeter Antwort → kein Task;
+// wartend/Schattenmodus → Task wie bisher; Request-to-Book unverändert.
+describe('runAutoSendGate: Inquiry-Task nur, wenn die Antwort auf Micha wartet (#1210)', () => {
+  const bookingVerdict = { kind: 'verdict', verdict: { category: 'buchungsanfrage', answerableFromFacts: true, riskFlags: [], confidence: 'hoch', reasoning: 'r', promisedAction: null } } as const;
+  const inquiryMessages = [
+    { id: 'm1', direction: 'inbound', body: 'Is the house free in May?', sent_at: '2026-11-16T10:00:00.000Z' },
+    { id: 'm2', direction: 'system', body: 'New guest inquiry', sent_at: '2026-11-16T10:00:06.000Z' },
+  ] as Message[];
+  const rtbMessages = [
+    { id: 'm1', direction: 'inbound', body: 'We would like to book.', sent_at: '2026-11-16T10:00:00.000Z' },
+    { id: 'm2', direction: 'system', body: 'New guest reservation request HMXYZ', sent_at: '2026-11-16T10:00:06.000Z' },
+  ] as Message[];
+  const openThread = { ...thread, reservation_status: 'inquiry' } as MessageThread;
+  const inquiryInput: GateInput = { ...input, thread: openThread, body: 'Hi! Yes, May is free.', messages: inquiryMessages };
+
+  it('Inquiry, live, automatisch gesendet → KEIN Task, decision auto, gesendet', async () => {
+    const task = vi.fn();
+    const send = vi.fn().mockResolvedValue({ ok: true });
+    const d = deps({ judge: vi.fn().mockResolvedValue(bookingVerdict), resolveBookingRequestTask: task, send });
+    const r = await runAutoSendGate(inquiryInput, d);
+    expect(r.decision.decision).toBe('auto');
+    expect(r.decision.reason).toMatch(/^Inquiry: Antwort automatisch, kein Task nötig, Frist /);
+    expect(r.sent).toBe(true);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(task).not.toHaveBeenCalled();
+    expect(d.persistBookingRequest).toHaveBeenCalledWith('d1', 'inquiry', '2026-11-17T10:00:06.000Z');
+  });
+
+  it('Inquiry, live, Antwort wartet (z. B. Konfidenz mittel) → Task wird angelegt', async () => {
+    const task = vi.fn().mockResolvedValue({ created: true, taskNumber: 801, reused: false });
+    const verdict = { kind: 'verdict', verdict: { ...bookingVerdict.verdict, confidence: 'mittel' } } as const;
+    const d = deps({ judge: vi.fn().mockResolvedValue(verdict), resolveBookingRequestTask: task });
+    const r = await runAutoSendGate(inquiryInput, d);
+    expect(r.decision.decision).toBe('wait');
+    expect(task).toHaveBeenCalledTimes(1);
+    expect(task.mock.calls[0][0]).toMatchObject({ requestKind: 'inquiry', systemMessageId: 'm2' });
+  });
+
+  it('Inquiry im Schattenmodus → Task wie bisher', async () => {
+    const task = vi.fn().mockResolvedValue({ created: true, taskNumber: 802, reused: false });
+    const d = deps({ envMode: 'shadow', judge: vi.fn().mockResolvedValue(bookingVerdict), resolveBookingRequestTask: task });
+    const r = await runAutoSendGate(inquiryInput, d);
+    expect(r.sent).toBe(false);
+    expect(task).toHaveBeenCalledTimes(1);
+  });
+
+  it('Request-to-Book, live, automatisch gesendet → Task bleibt (unverändert)', async () => {
+    const task = vi.fn().mockResolvedValue({ created: true, taskNumber: 803, reused: false });
+    const d = deps({ judge: vi.fn().mockResolvedValue(bookingVerdict), resolveBookingRequestTask: task });
+    const r = await runAutoSendGate({ ...inquiryInput, messages: rtbMessages }, d);
+    expect(r.decision.reason).toMatch(/Task #803/);
+    expect(r.sent).toBe(true);
+    expect(task).toHaveBeenCalledTimes(1);
+  });
+
+  it('Inquiry, Versand scheitert → Task wird nachgeholt (Antwort wartet jetzt auf Micha)', async () => {
+    const task = vi.fn().mockResolvedValue({ created: true, taskNumber: 804, reused: false });
+    const d = deps({
+      judge: vi.fn().mockResolvedValue(bookingVerdict), resolveBookingRequestTask: task,
+      send: vi.fn().mockResolvedValue({ ok: false, err: new Error('Guesty down') }),
+    });
+    const r = await runAutoSendGate(inquiryInput, d);
+    expect(r.sent).toBe(false);
+    expect(task).toHaveBeenCalledTimes(1);
+  });
+
+  it('Inquiry, Claim verloren → Task wird nachgeholt', async () => {
+    const task = vi.fn().mockResolvedValue({ created: true, taskNumber: 805, reused: false });
+    const d = deps({ judge: vi.fn().mockResolvedValue(bookingVerdict), resolveBookingRequestTask: task, claim: vi.fn().mockReturnValue(false) });
+    const r = await runAutoSendGate(inquiryInput, d);
+    expect(r.decision.decision).toBe('wait');
+    expect(task).toHaveBeenCalledTimes(1);
+  });
+
+  it('Nachanlage wirft → kein Abbruch', async () => {
+    const d = deps({
+      judge: vi.fn().mockResolvedValue(bookingVerdict), resolveBookingRequestTask: vi.fn().mockRejectedValue(new Error('boom')),
+      send: vi.fn().mockResolvedValue({ ok: false, err: new Error('x') }),
+    });
+    await expect(runAutoSendGate(inquiryInput, d)).resolves.toMatchObject({ sent: false });
+  });
+});
