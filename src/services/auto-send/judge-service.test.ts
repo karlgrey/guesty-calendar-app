@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { judgeDraft, buildJudgeUserMessage } from './judge-service.js';
+import logger from '../../utils/logger.js';
 
 const input = { guestMessages: ['Können wir um 13 Uhr kommen?'], draft: 'Ja, 13 Uhr passt.', voice: 'V', facts: 'F', bookingContext: null, guestName: 'Anna' };
 
@@ -24,6 +25,22 @@ describe('judgeDraft', () => {
     const call = vi.fn().mockResolvedValue({ category: 'multi_topic', answerable_from_facts: false, risk_flags: ['multi_topic'], confidence: 'mittel', reasoning: 'x' });
     const r = await judgeDraft(input, { call, model: 'm' });
     expect(r.kind === 'verdict' && r.verdict.riskFlags).toEqual(['multi_topic']);
+  });
+  it('Risiko-Flag als Kategorie → genau eine Log-Zeile mit Thread-Bezug und Originalwert (#1251)', async () => {
+    const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    try {
+      const call = vi.fn().mockResolvedValue({ category: 'multi_topic', answerable_from_facts: false, risk_flags: [], confidence: 'mittel', reasoning: 'x' });
+      await judgeDraft({ ...input, threadId: 'hostex:0-1' }, { call, model: 'm' });
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn.mock.calls[0][0]).toEqual({ threadId: 'hostex:0-1', originalCategory: 'multi_topic' });
+      // Gegenprobe: die sonstige unbekannte Kategorie loggt hier nichts und bleibt failed.
+      warn.mockClear();
+      const bad = vi.fn().mockResolvedValue({ category: 'quatsch', answerable_from_facts: false, risk_flags: [], confidence: 'mittel', reasoning: 'x' });
+      expect((await judgeDraft({ ...input, threadId: 'hostex:0-1' }, { call: bad, model: 'm' })).kind).toBe('failed');
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
   });
   it('unbekanntes Flag → failed statt stillschweigend verworfen (Final-Review F4: fail closed)', async () => {
     const call = vi.fn().mockResolvedValue({ category: 'geld', answerable_from_facts: false, risk_flags: ['promises_action', 'wat'], confidence: 'mittel', reasoning: 'x' });
@@ -149,6 +166,18 @@ describe('buildJudgeSystemPrompt — Buchungsanfrage-Kriterium (#1004)', () => {
     expect(p).toContain('nennt KEINE Plattform');
     expect(p).toContain('sobald ich deine Antworten habe');
     expect(p).toContain('KEIN promises_action');
+  });
+});
+
+describe('buildJudgeSystemPrompt — Risiko-Flags sind keine Kategorie (#1251)', () => {
+  it('der Hinweis steht im Kategorien-Abschnitt, vor der Flag-Liste', async () => {
+    const { buildJudgeSystemPrompt } = await import('./judge-prompt.js');
+    const p = buildJudgeSystemPrompt('V', 'F', null, new Date('2026-11-19T10:00:00.000Z'));
+    const hint = p.indexOf('sind NIE eine Kategorie');
+    expect(hint).toBeGreaterThan(p.indexOf('KATEGORIEN des Gast-Anliegens'));
+    expect(hint).toBeLessThan(p.indexOf('- dank_smalltalk:'));
+    expect(hint).toBeLessThan(p.indexOf('RISIKO-FLAGS (alle zutreffenden setzen)'));
+    expect(p).toContain('unklar + Flag multi_topic');
   });
 });
 
