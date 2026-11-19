@@ -706,12 +706,16 @@ export class GuestyClient {
   }): Promise<{ results: any[]; pagination?: { skip?: number; limit?: number; hasMore?: boolean } }> {
     const q: string[] = [];
     const add = (key: string, value: string) => q.push(`${key}=${encodeURIComponent(value)}`);
+    // Listenwerte: das Komma bleibt wörtlich (so in der Probe belegt). encodeURIComponent über
+    // die ganze Liste schriebe `%2C`; ob Guesty das noch als Trenner liest, ist nicht belegt.
+    const addList = (key: string, values: readonly string[]) =>
+      q.push(`${key}=${values.map((v) => encodeURIComponent(v)).join(',')}`);
     if (params?.listingId) add('filter[listingId]', params.listingId);
     const statuses = params?.status && params.status.length > 0 ? params.status : ALL_RESERVATION_STATUSES;
-    add('filter[status]', statuses.join(','));
+    addList('filter[status]', statuses);
     if (params?.checkOutGte) add('filter[checkOut][gte]', params.checkOutGte.slice(0, 10));
     if (params?.reservationIds && params.reservationIds.length > 0) {
-      add('filter[reservationId][in]', params.reservationIds.join(','));
+      addList('filter[reservationId][in]', params.reservationIds);
     }
     add('limit', String(Math.min(params?.limit ?? 100, 100)));
     if (params?.skip) add('skip', String(params.skip));

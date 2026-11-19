@@ -161,6 +161,19 @@ describe('getReservationsPage', () => {
     expect(page.hasMore).toBe(searchFx.pagination.hasMore);
   });
 
+  it('f2) Rohform der URL wie in der Probe: Komma und eckige Klammern wörtlich, kein %2C/%5B', async () => {
+    route({ search: () => jsonResponse(200, searchFx) });
+    const client = newClient();
+    await client.getReservationsPage({ status: ['confirmed', 'reserved'], checkOutGte: '2026-11-19' });
+    await client.searchReservationsV3({ reservationIds: ['aaa', 'bbb'] });
+    const [first, second] = urls();
+    expect(first).toContain('filter[status]=confirmed,reserved&');
+    expect(first).toContain('filter[checkOut][gte]=2026-11-19');
+    expect(second).toContain('filter[reservationId][in]=aaa,bbb');
+    expect(second).toContain(`filter[status]=${ALL_RESERVATION_STATUSES.join(',')}`);
+    for (const u of [first, second]) expect(u).not.toMatch(/%2C|%5B|%5D/i);
+  });
+
   it('h) ohne pagination: hasMore = Rohanzahl >= limit', async () => {
     const two = { results: [searchFx.results[0], searchFx.results[0]] };
     route({ search: () => jsonResponse(200, two) });
