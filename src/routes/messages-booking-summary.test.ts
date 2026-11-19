@@ -1,6 +1,6 @@
 // #1187: Formatierung der Anfrage-/Buchungsdaten (Kopfzeile + Listen-Badge).
 import { describe, it, expect } from 'vitest';
-import { renderBookingSummaryLine, renderBookingSummaryBadge, formatMoney, bookingKindLabel } from './messages-booking-summary.js';
+import { renderBookingSummaryLine, renderBookingSummaryBadge, formatMoney, bookingKindLabel, renderCounterOfferLine } from './messages-booking-summary.js';
 import type { ThreadBookingSummary } from '../services/booking-context.js';
 
 const s = (over: Partial<ThreadBookingSummary> = {}): ThreadBookingSummary => ({
@@ -106,5 +106,17 @@ describe('HTML-Escaping', () => {
     expect(html).not.toContain('<script>');
     expect(html).not.toContain('title="Anfrage ("');
     expect(html).toContain('&quot;&gt;&lt;script&gt;');
+  });
+});
+
+describe('renderCounterOfferLine (#1243)', () => {
+  it('leer ohne Notiz', () => {
+    expect(renderCounterOfferLine(null)).toBe('');
+    expect(renderCounterOfferLine('')).toBe('');
+  });
+  it('Absatz mit escaptem Text', () => {
+    expect(renderCounterOfferLine('Betrag 2.600 € <b>')).toBe(
+      '<p class="subtitle counter-offer" style="margin-top:-4px">Betrag 2.600 € &lt;b&gt;</p>',
+    );
   });
 });

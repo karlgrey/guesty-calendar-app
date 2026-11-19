@@ -39,6 +39,11 @@ vi.mock('../services/stay-times-service.js', () => ({
   deleteStayTimes: (...a: unknown[]) => deleteStayTimes(...a),
 }));
 
+const resolveCounterOfferNote = vi.fn();
+vi.mock('../services/counter-offer-context.js', () => ({
+  resolveCounterOfferNote: (...a: unknown[]) => resolveCounterOfferNote(...a),
+}));
+
 import Database from 'better-sqlite3';
 import { setDatabase, resetDatabase } from '../db/index.js';
 import messagesRoutes from './messages.js';
@@ -88,6 +93,7 @@ beforeEach(() => {
   setDatabase(db);
   getThreadsNeedingReply.mockReturnValue([]);
   getStayTimes.mockReturnValue(null);
+  resolveCounterOfferNote.mockReturnValue(null);
 });
 afterEach(() => { resetDatabase(); db.close(); });
 
@@ -119,6 +125,15 @@ describe('GET /:threadId — Anfragedaten im Kopf (#1187)', () => {
     getThreadById.mockReturnValue(thread({ reservation_id: 'G1', inquiry_id: 'G1' }));
     const html = await page();
     expect(html).toContain('<strong>Anfrage</strong> · 31.12.2027–01.01.2028 · 1 Nacht · 1 Person (laut Anfrage) · Preis unbekannt');
+  });
+
+  it('#1243: Gegenangebot-Zeile direkt unter der Kopfzeile, ohne Notiz keine Zeile', async () => {
+    getThreadById.mockReturnValue(thread({ reservation_id: 'G2', inquiry_id: 'G2' }));
+    expect(await page()).not.toContain('counter-offer');
+    resolveCounterOfferNote.mockReturnValue('Betrag in der Gastnachricht 2.600 € (mögliches Gegenangebot)');
+    const html = await page();
+    expect(html).toContain('<p class="subtitle counter-offer" style="margin-top:-4px">Betrag in der Gastnachricht 2.600 € (mögliches Gegenangebot)</p>');
+    expect(html.indexOf('booking-summary')).toBeLessThan(html.indexOf('counter-offer'));
   });
 
   it('ohne Verknüpfung: Hinweis', async () => {
