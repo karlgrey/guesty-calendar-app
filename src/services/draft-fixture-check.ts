@@ -16,6 +16,19 @@ export interface DraftExpectation {
   /** #1191: kein Satz aus den Host-Nachrichten der Fixture wiederholt (repeats_own_sentence) —
    *  geprüft im Skript test-draft-fixtures.ts (braucht den Verlauf), nicht in checkDraftExpectation. */
   noRepeatOfHost?: boolean;
+  /** #1243: jede Gruppe braucht mindestens einen Treffer (case-insensitive). */
+  mustContainAllOf?: string[][];
+  /** #1243: Positivliste für Eurobeträge — jeder Betrag mit Währung im Entwurf muss (deutsch
+   *  geschrieben, z. B. „3.948,30") hier stehen; leere Liste = kein Eurobetrag erlaubt. */
+  allowedAmounts?: string[];
+}
+
+// #1243: Betrag mit Währung davor oder danach („3.948,30 €", „2.600 Euro", „€3.600", „EUR 500").
+const AMOUNT_WITH_CURRENCY = /(?:€|\bEUR)\s?(\d[\d.]*(?:,\d{1,2})?)|(\d[\d.]*(?:,\d{1,2})?)\s?(?:€|EUR\b|Euro\b)/gi;
+
+/** Eurobeträge eines Texts, wie geschrieben (ohne Währung). */
+export function amountsInText(body: string): string[] {
+  return [...body.matchAll(AMOUNT_WITH_CURRENCY)].map((m) => (m[1] ?? m[2]).replace(/\.$/, ''));
 }
 
 const GREETING_RE = /^\s*(hallo|hi|hey|hallöchen|liebe[rs]?|lieber|guten\s+(tag|morgen|abend)|moin|servus|hello|dear|ciao|buongiorno|hola|bonjour)\b[^.!?\n]*[,!]?\s*$/i;
@@ -95,6 +108,16 @@ export function checkDraftExpectation(result: DraftResult, expect: DraftExpectat
   }
   for (const s of expect.mustNotContain ?? []) {
     if (lower.includes(s.toLowerCase())) failures.push(`verbotener Begriff enthalten: „${s}“`);
+  }
+  for (const group of expect.mustContainAllOf ?? []) {
+    if (!group.some((s) => lower.includes(s.toLowerCase()))) {
+      failures.push(`Pflichtgruppe fehlt: ${group.join(' | ')}`);
+    }
+  }
+  if (expect.allowedAmounts) {
+    for (const a of amountsInText(body)) {
+      if (!expect.allowedAmounts.includes(a)) failures.push(`nicht erlaubter Betrag: ${a}`);
+    }
   }
   return { pass: failures.length === 0, failures };
 }

@@ -70,3 +70,30 @@ describe('checkDraftExpectation', () => {
     expect(r.failures[0]).toMatch(/bettwäsche/);
   });
 });
+
+// #1243: Preis-/Rabatt-Fixtures brauchen „alle Gruppen“-Pflichtbegriffe und eine Betrags-Positivliste.
+describe('checkDraftExpectation — mustContainAllOf und allowedAmounts (#1243)', () => {
+  const text = (body: string) => ({ kind: 'text' as const, body });
+
+  it('mustContainAllOf: jede Gruppe braucht mindestens einen Treffer', () => {
+    const exp = { mustContainAllOf: [['10 %', '10%', 'zehn prozent'], ['unterkunft']] };
+    expect(checkDraftExpectation(text('Ich kann euch 10 % auf die Unterkunft anbieten.'), exp).pass).toBe(true);
+    const r = checkDraftExpectation(text('Ich kann euch 10 % anbieten.'), exp);
+    expect(r.pass).toBe(false);
+    expect(r.failures[0]).toContain('unterkunft');
+  });
+
+  it('allowedAmounts: jeder Eurobetrag im Entwurf muss auf der Liste stehen', () => {
+    const exp = { allowedAmounts: ['3.948,30', '2.600'] };
+    expect(checkDraftExpectation(text('Der Preis liegt bei ca. 3.948,30 € inkl. Steuern, 2.600 Euro sind zu wenig.'), exp).pass).toBe(true);
+    const r = checkDraftExpectation(text('Ich kann euch 3.553,47 EUR anbieten.'), exp);
+    expect(r.pass).toBe(false);
+    expect(r.failures[0]).toContain('3.553,47');
+    expect(checkDraftExpectation(text('Mit Nachlass wären es €3.600.'), exp).pass).toBe(false);
+  });
+
+  it('allowedAmounts leer: kein Eurobetrag erlaubt', () => {
+    expect(checkDraftExpectation(text('Schön, dass ihr kommt!'), { allowedAmounts: [] }).pass).toBe(true);
+    expect(checkDraftExpectation(text('Das kostet 500 €.'), { allowedAmounts: [] }).pass).toBe(false);
+  });
+});
