@@ -49,8 +49,9 @@ export async function syncHostexReservations(property: PropertyConfig): Promise<
       INSERT INTO inquiries (
         inquiry_id, listing_id, status, check_in, check_out,
         guest_name, guests_count, source, created_at_guesty, last_synced_at,
-        hostex_conversation_id, currency, total_price, host_payout
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        hostex_conversation_id, currency, total_price, host_payout,
+        guest_total, price_basis
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(inquiry_id) DO UPDATE SET
         status = excluded.status,
         check_in = excluded.check_in,
@@ -66,7 +67,10 @@ export async function syncHostexReservations(property: PropertyConfig): Promise<
         -- #1187: Payload ohne Preisdaten darf bekannte Werte nicht löschen
         currency = COALESCE(excluded.currency, inquiries.currency),
         total_price = COALESCE(excluded.total_price, inquiries.total_price),
-        host_payout = COALESCE(excluded.host_payout, inquiries.host_payout)
+        host_payout = COALESCE(excluded.host_payout, inquiries.host_payout),
+        -- #1242: wie sync-inquiries.ts — nur gemeinsam und nur bei bekannter Herkunft
+        guest_total = CASE WHEN excluded.price_basis IS NULL THEN inquiries.guest_total ELSE excluded.guest_total END,
+        price_basis = COALESCE(excluded.price_basis, inquiries.price_basis)
     `);
 
     let inquiriesCount = 0;
@@ -91,6 +95,8 @@ export async function syncHostexReservations(property: PropertyConfig): Promise<
           asInquiry.currency,
           asInquiry.total_price,
           asInquiry.host_payout,
+          asInquiry.guest_total,
+          asInquiry.price_basis,
         );
         inquiriesCount++;
         if (asReservation) {

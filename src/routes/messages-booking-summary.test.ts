@@ -5,17 +5,46 @@ import type { ThreadBookingSummary } from '../services/booking-context.js';
 
 const s = (over: Partial<ThreadBookingSummary> = {}): ThreadBookingSummary => ({
   kind: 'inquiry', status: 'inquiry', checkIn: '2027-12-31', checkOut: '2028-01-01', nights: 1,
-  guestsCount: 1, adults: null, children: null, hostPayout: null, totalPrice: null, currency: null, platform: 'airbnb2', ...over,
+  guestsCount: 1, adults: null, children: null, hostPayout: null, totalPrice: null, currency: null, platform: 'airbnb2', guestPrice: null, ...over,
 });
 
 describe('renderBookingSummaryLine', () => {
   it('Anfrage ohne Preis', () => {
     expect(renderBookingSummaryLine(s())).toContain('<strong>Anfrage</strong> · 31.12.2027–01.01.2028 · 1 Nacht · 1 Person (laut Anfrage) · Preis unbekannt');
   });
-  it('nur Auszahlung bekannt: Gastpreis –', () => {
-    const html = renderBookingSummaryLine(s({ hostPayout: 1234, currency: 'EUR' }));
-    expect(html).toContain('Auszahlung 1.234 €');
-    expect(html).toContain('Gastpreis –');
+  it('Anfrage, nur Auszahlung bekannt: Gastpreis unbekannt (total_price wird bei Anfragen nie als Gastpreis gezeigt)', () => {
+    const html = renderBookingSummaryLine(s({ hostPayout: 1234, totalPrice: 1234, currency: 'EUR' }));
+    expect(html).toContain('<strong>Auszahlung 1.234 €</strong>');
+    expect(html).toContain('Gastpreis unbekannt');
+    expect(html).not.toContain('Gastpreis 1.234');
+  });
+  it('#1242 Anfrage mit berechnetem Gastbetrag (Fall Daniel): mit Steuer Hauptwert, ohne Steuer + Auszahlung klein', () => {
+    const html = renderBookingSummaryLine(s({
+      hostPayout: 3118.05, totalPrice: 3118.05, currency: 'EUR',
+      guestPrice: { kind: 'estimated', inclTax: 3948.3, exclTax: 3690, currency: 'EUR', channel: 'Airbnb' },
+    }));
+    expect(html).toContain('<strong>Gastpreis laut Airbnb ca. 3.948,30 € inkl. Steuern</strong>');
+    expect(html).toContain('<small style="opacity:.75">berechnet, ohne Steuern ca. 3.690 € · Auszahlung 3.118,05 €</small>');
+  });
+  it('#1242 Anfrage mit echtem Gastbetrag', () => {
+    const html = renderBookingSummaryLine(s({
+      hostPayout: 163.78, currency: 'EUR',
+      guestPrice: { kind: 'actual', total: 191.53, currency: 'EUR', channel: 'Airbnb' },
+    }));
+    expect(html).toContain('<strong>Gastpreis laut Airbnb 191,53 € inkl. Steuern</strong>');
+    expect(html).toContain('Auszahlung 163,78 €');
+    expect(html).not.toContain('berechnet');
+  });
+  it('#1242 Anfrage mit Übernachtungspreis: ehrlich bezeichnet, Auszahlung Hauptwert', () => {
+    const html = renderBookingSummaryLine(s({
+      hostPayout: 4750, totalPrice: 4400, currency: 'EUR',
+      guestPrice: { kind: 'accommodation', amount: 4400, currency: 'EUR', channel: 'Airbnb' },
+    }));
+    expect(html).toContain('<strong>Auszahlung 4.750 €</strong> <small style="opacity:.75">Übernachtungspreis 4.400 € (ohne Reinigung/Steuern)</small>');
+  });
+  it('#1242 Buchung bleibt wie bisher (Auszahlung + Gastpreis aus total_price)', () => {
+    const html = renderBookingSummaryLine(s({ kind: 'reservation', status: 'confirmed', hostPayout: 1234, totalPrice: 1450, currency: 'EUR' }));
+    expect(html).toContain('<strong>Auszahlung 1.234 €</strong> <small style="opacity:.75">Gastpreis 1.450 €</small>');
   });
   it('fehlende Personen und Daten: Striche', () => {
     const html = renderBookingSummaryLine(s({ guestsCount: null, checkIn: null, nights: null }));

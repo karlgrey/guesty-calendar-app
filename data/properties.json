@@ -217,5 +217,9 @@
     "hour": 6,
     "timezone": "Europe/Berlin",
     "forecastHorizonMonths": 6
+  },
+  "airbnbGuestPrice": {
+    "hostServiceFeeRate": 0.155,
+    "taxRate": 0.07
   }
 }

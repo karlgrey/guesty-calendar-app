@@ -74,7 +74,7 @@ beforeEach(() => {
     CREATE TABLE inquiries (
       id INTEGER PRIMARY KEY, inquiry_id TEXT UNIQUE, listing_id TEXT, status TEXT,
       check_in TEXT, check_out TEXT, guest_name TEXT, guests_count INTEGER, source TEXT,
-      currency TEXT, total_price REAL, host_payout REAL
+      currency TEXT, total_price REAL, host_payout REAL, guest_total REAL, price_basis TEXT
     );
   `);
   db.prepare(`INSERT INTO reservations (reservation_id, listing_id, check_in, check_out, check_in_localized, check_out_localized,
@@ -82,8 +82,9 @@ beforeEach(() => {
     VALUES ('R1','L1','2026-12-01T15:00:00.000Z','2026-12-04T12:00:00.000Z','2026-12-01','2026-12-04',3,'confirmed',3,2,1,'airbnb2','airbnb2','EUR',1450,1234)`).run();
   db.prepare(`INSERT INTO inquiries (inquiry_id, listing_id, status, check_in, check_out, guest_name, guests_count, source, currency, total_price, host_payout)
     VALUES ('G1','L1','inquiry','2027-12-31','2028-01-01','Lisa',1,'airbnb2',NULL,NULL,NULL)`).run();
-  db.prepare(`INSERT INTO inquiries (inquiry_id, listing_id, status, check_in, check_out, guest_name, guests_count, source, currency, total_price, host_payout)
-    VALUES ('G2','L1','inquiry','2027-07-10','2027-07-14','Max',4,'airbnb2','EUR',820.5,700)`).run();
+  // #1242: Airbnb-Anfrage über Guesty — einzige Zahl ist die Netto-Auszahlung (Fall Daniel)
+  db.prepare(`INSERT INTO inquiries (inquiry_id, listing_id, status, check_in, check_out, guest_name, guests_count, source, currency, total_price, host_payout, price_basis)
+    VALUES ('G2','L1','inquiry','2027-07-10','2027-07-14','Max',4,'airbnb2','EUR',3118.05,3118.05,'net_payout')`).run();
   setDatabase(db);
   getThreadsNeedingReply.mockReturnValue([]);
   getStayTimes.mockReturnValue(null);
@@ -109,8 +110,9 @@ describe('GET /:threadId — Anfragedaten im Kopf (#1187)', () => {
     getThreadById.mockReturnValue(thread({ reservation_id: 'G2', inquiry_id: 'G2' }));
     const html = await page();
     expect(html).toContain('<strong>Anfrage</strong> · 10.07.2027–14.07.2027 · 4 Nächte · 4 Personen (laut Anfrage)');
-    expect(html).toContain('Auszahlung 700 €');
-    expect(html).toContain('Gastpreis 820,50 €');
+    // #1242: Gastbetrag mit Steuer als Hauptwert (Sätze aus data/properties.json: 15,5 % / 7 %)
+    expect(html).toContain('<strong>Gastpreis laut Airbnb ca. 3.948,30 € inkl. Steuern</strong>');
+    expect(html).toContain('berechnet, ohne Steuern ca. 3.690 € · Auszahlung 3.118,05 €');
   });
 
   it('Anfrage ohne Preis (Lisa-Fall): Kopfzeile wie in der Akzeptanz, „Preis unbekannt"', async () => {

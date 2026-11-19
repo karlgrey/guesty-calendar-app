@@ -28,6 +28,11 @@ export interface MappedInquiry {
   currency: string | null;
   total_price: number | null;
   host_payout: number | null;
+  // #1242: Gastbetrag inkl. Steuern laut Plattform + Herkunft (Migration 043). rates.total_rate ist
+  // bei angenommenen Buchungen nachweislich der Gastbetrag (Übernachtung + Reinigung + Steuer,
+  // Live-Befund 19.11.2026); bei offenen Hostex-Anfragen (wait_accept) ist das unbelegt → NULL.
+  guest_total: number | null;
+  price_basis: 'guest_total' | null;
   // #441: join key back to the Hostex conversation this reservation belongs to
   // (HostexReservation.conversation_id) — sync-hostex-messages.ts looks this up
   // to resolve message_threads.reservation_status, which Hostex's conversation
@@ -115,6 +120,8 @@ export function mapHostexReservation(
     currency: res.rates?.total_rate?.currency ?? null,
     total_price: hasTotal ? totalPrice : null,
     host_payout: hasTotal ? hostPayout : null,
+    guest_total: hasTotal && res.status === 'accepted' && totalPrice > 0 ? totalPrice : null,
+    price_basis: hasTotal && res.status === 'accepted' && totalPrice > 0 ? 'guest_total' : null,
     hostex_conversation_id: res.conversation_id ?? null,
   };
 

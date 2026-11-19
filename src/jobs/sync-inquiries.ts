@@ -7,6 +7,7 @@
 import { guestyClient } from '../services/guesty-client.js';
 import logger from '../utils/logger.js';
 import { getDatabase } from '../db/index.js';
+import { classifyGuestyGuestPrice, type PriceBasis } from '../services/guest-price.js';
 
 export interface SyncInquiriesResult {
   success: boolean;
@@ -19,6 +20,12 @@ export interface SyncInquiriesResult {
  * #1187: Preisdaten einer Guesty-Reservierung für die inquiries-Tabelle.
  * Semantik wie reservation-mapper.ts (currency, fareAccommodationAdjusted, hostPayout),
  * aber fehlende/nicht-numerische Werte werden NULL (unbekannt), echte 0 bleibt 0.
+ *
+ * ACHTUNG (#1242, Live-Befund 19.11.2026): total_price ist NICHT überall der Übernachtungspreis.
+ * Bei Airbnb-ANFRAGEN liefert Guesty nur eine Position (AF, Herkunft CHANNEL) — dort ist
+ * fareAccommodationAdjusted = hostPayout = Netto-Auszahlung des Gastgebers (Übernachtung +
+ * Reinigung − Host-Servicegebühr, ohne Steuer). Was die Zahl bedeutet, steht in price_basis
+ * (classifyGuestyGuestPrice, services/guest-price.ts); den Gastbetrag nie aus total_price ablesen.
  */
 export function mapGuestyInquiryMoney(r: any): {
   currency: string | null;
@@ -50,6 +57,10 @@ export interface GuestyInquiryRow {
   currency: string | null;
   total_price: number | null;
   host_payout: number | null;
+  /** #1242: Gastbetrag inkl. Steuern laut Plattform (nur bei price_basis 'guest_total') */
+  guest_total: number | null;
+  /** #1242: Herkunft der Preiszahlen (Migration 043) */
+  price_basis: PriceBasis | null;
 }
 
 /**
@@ -68,6 +79,7 @@ export function mapGuestyInquiryRow(r: any, now: string): GuestyInquiryRow | nul
   const checkOutDate = r.checkOutDateLocalized || r.checkOut?.split('T')[0] || r.checkOut;
 
   const money = mapGuestyInquiryMoney(r);
+  const guestPrice = classifyGuestyGuestPrice(r);
 
   return {
     inquiry_id: r._id,
@@ -83,6 +95,8 @@ export function mapGuestyInquiryRow(r: any, now: string): GuestyInquiryRow | nul
     currency: money.currency,
     total_price: money.total_price,
     host_payout: money.host_payout,
+    guest_total: guestPrice.guest_total,
+    price_basis: guestPrice.price_basis,
   };
 }
 
@@ -106,8 +120,10 @@ export function upsertGuestyInquiries(reservations: any[], now: string = new Dat
       last_synced_at,
       currency,
       total_price,
-      host_payout
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      host_payout,
+      guest_total,
+      price_basis
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(inquiry_id) DO UPDATE SET
       status = excluded.status,
       check_in = excluded.check_in,
@@ -119,7 +135,12 @@ export function upsertGuestyInquiries(reservations: any[], now: string = new Dat
       -- #1187: Payload ohne money darf bekannte Preisdaten nicht löschen
       currency = COALESCE(excluded.currency, inquiries.currency),
       total_price = COALESCE(excluded.total_price, inquiries.total_price),
-      host_payout = COALESCE(excluded.host_payout, inquiries.host_payout)
+      host_payout = COALESCE(excluded.host_payout, inquiries.host_payout),
+      -- #1242: guest_total und price_basis nur gemeinsam und nur bei bekannter Herkunft
+      -- überschreiben (Anfrage → Buchung wechselt net_payout → guest_total; ein Payload ohne
+      -- Aufschlüsselung lässt den bekannten Stand stehen)
+      guest_total = CASE WHEN excluded.price_basis IS NULL THEN inquiries.guest_total ELSE excluded.guest_total END,
+      price_basis = COALESCE(excluded.price_basis, inquiries.price_basis)
   `);
 
   const upsertMany = db.transaction((items: any[]): number => {
@@ -145,6 +166,8 @@ export function upsertGuestyInquiries(reservations: any[], now: string = new Dat
         row.currency,
         row.total_price,
         row.host_payout,
+        row.guest_total,
+        row.price_basis,
       );
       written++;
     }

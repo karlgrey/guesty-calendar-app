@@ -182,4 +182,25 @@ describe('mapHostexReservation', () => {
       expect(without.asInquiry.host_payout).toBeNull();
     });
   });
+
+  // #1242: Gastbetrag an der Anfrage-Zeile (Migration 043)
+  describe('Gastbetrag an der Anfrage (#1242)', () => {
+    it('accepted: total_rate ist der Gastbetrag → guest_total', () => {
+      const { asInquiry } = mapHostexReservation(baseRes, defaultTimes);
+      expect(asInquiry.guest_total).toBe(300);
+      expect(asInquiry.price_basis).toBe('guest_total');
+    });
+
+    it.each(['wait_accept', 'wait_pay', 'cancelled'])('%s: Bedeutung von total_rate unbelegt → NULL', (status) => {
+      const { asInquiry } = mapHostexReservation({ ...baseRes, status } as HostexReservation, defaultTimes);
+      expect(asInquiry.guest_total).toBeNull();
+      expect(asInquiry.price_basis).toBeNull();
+    });
+
+    it('ohne rates → NULL', () => {
+      const { asInquiry } = mapHostexReservation({ ...baseRes, rates: undefined } as unknown as HostexReservation, defaultTimes);
+      expect(asInquiry.guest_total).toBeNull();
+      expect(asInquiry.price_basis).toBeNull();
+    });
+  });
 });

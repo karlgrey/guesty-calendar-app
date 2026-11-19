@@ -14,7 +14,7 @@ vi.mock('../services/guesty-client.js', () => ({
 }));
 
 import { guestyClient } from '../services/guesty-client.js';
-import { syncInquiries, mapGuestyInquiryMoney } from './sync-inquiries.js';
+import { syncInquiries, mapGuestyInquiryMoney, upsertGuestyInquiries } from './sync-inquiries.js';
 
 let db: Database.Database;
 
@@ -34,6 +34,8 @@ beforeEach(() => {
       currency TEXT,
       total_price REAL,
       host_payout REAL,
+      guest_total REAL,
+      price_basis TEXT,
       created_at_guesty TEXT,
       last_synced_at TEXT NOT NULL,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -127,5 +129,57 @@ describe('Preisdaten an Anfragen (#1187)', () => {
     expect(mapGuestyInquiryMoney({})).toEqual({ currency: null, total_price: null, host_payout: null });
     expect(mapGuestyInquiryMoney({ money: { currency: '', hostPayout: '12', fareAccommodationAdjusted: NaN } }))
       .toEqual({ currency: null, total_price: null, host_payout: null });
+  });
+});
+
+describe('Gast-Gesamtbetrag an Anfragen (#1242)', () => {
+  // Fall Daniel, Werte vom echten Payload (19.11.2026): Airbnb-Anfrage nur mit Netto-Position
+  const danielListMoney = {
+    currency: 'EUR', hostPayout: 3118.05, fareAccommodationAdjusted: 3118.05,
+    fareCleaning: 0, totalTaxes: 0, hostServiceFee: 0,
+  };
+  // Einzelabruf GET /reservations/{id} liefert den ganzen money-Block (mehr Felder als die Liste)
+  const danielFullMoney = {
+    ...danielListMoney, fareAccommodation: 3118.05, subTotalPrice: 3118.05, commissionFormula: 'net_income',
+    invoiceItems: [{ normalType: 'AF', amount: 3118.05, origin: 'CHANNEL' }],
+  };
+  const daniel = (money: Record<string, unknown>, status = 'inquiry') =>
+    ({ ...fakeReservation(1, status), _id: 'daniel', source: 'airbnb2', guestsCount: 8, money });
+  const row = (id = 'daniel') =>
+    db.prepare('SELECT total_price, host_payout, guest_total, price_basis FROM inquiries WHERE inquiry_id = ?').get(id) as any;
+
+  it('Stunden-Sync (Liste) und Einzelabruf schreiben denselben Wert (gemeinsamer Mapper)', async () => {
+    (guestyClient.getReservations as any).mockResolvedValueOnce([daniel(danielListMoney)]);
+    await syncInquiries('listing-fh');
+    const fromList = row();
+
+    db.exec('DELETE FROM inquiries');
+    expect(upsertGuestyInquiries([daniel(danielFullMoney)])).toBe(1); // Weg des Einzelabrufs (inquiry-prefetch realDeps)
+    const fromSingle = row();
+
+    expect(fromList).toEqual({ total_price: 3118.05, host_payout: 3118.05, guest_total: null, price_basis: 'net_payout' });
+    expect(fromSingle).toEqual(fromList);
+  });
+
+  it('Anfrage wird Buchung: net_payout → echter Gastbetrag', async () => {
+    const confirmedMoney = {
+      currency: 'EUR', hostPayout: 3339.75, fareAccommodationAdjusted: 3300,
+      fareCleaning: 350, totalTaxes: 255.5, hostServiceFee: 565.75,
+    };
+    (guestyClient.getReservations as any)
+      .mockResolvedValueOnce([daniel(danielListMoney)])
+      .mockResolvedValueOnce([daniel(confirmedMoney, 'confirmed')]);
+    await syncInquiries('listing-fh');
+    await syncInquiries('listing-fh');
+    expect(row()).toMatchObject({ guest_total: 3905.5, price_basis: 'guest_total' });
+  });
+
+  it('Payload ohne Aufschlüsselung überschreibt bekannten Gastbetrag nicht', async () => {
+    (guestyClient.getReservations as any)
+      .mockResolvedValueOnce([daniel({ ...danielListMoney, hostPayout: 163.78, fareAccommodationAdjusted: 139, fareCleaning: 40, totalTaxes: 12.53, hostServiceFee: 27.75 }, 'confirmed')])
+      .mockResolvedValueOnce([daniel({ currency: 'EUR', hostPayout: 163.78, fareAccommodationAdjusted: 139 }, 'confirmed')]);
+    await syncInquiries('listing-fh');
+    await syncInquiries('listing-fh');
+    expect(row()).toMatchObject({ guest_total: 191.53, price_basis: 'guest_total' });
   });
 });
