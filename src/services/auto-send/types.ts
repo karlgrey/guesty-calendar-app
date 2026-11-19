@@ -67,7 +67,10 @@ export type MechanicalFlag =
   | 'zeitbezug_veraltet'
   // #1191: Entwurf wiederholt einen Satz (≥ 5 Wörter), der in den letzten gesendeten
   // Host-Nachrichten des Threads schon steht (siehe mechanical-checks.ts findRepeatedOwnSentence).
-  | 'repeats_own_sentence';
+  | 'repeats_own_sentence'
+  // #1243: Entwurf nennt Prozent/Rabatt-Wörter (immer) bzw. Preiswörter (nur bei Buchungsanfragen) —
+  // kein Entwurf mit Preis oder Nachlass geht automatisch raus (siehe mechanical-checks.ts).
+  | 'price_discount';
 export interface MechanicalFinding { flag: MechanicalFlag; match: string }
 
 export interface AutoSendDecision {

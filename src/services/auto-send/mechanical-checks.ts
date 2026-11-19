@@ -37,6 +37,15 @@ const WEEKDAY_NAMES: Array<{ name: string; index: number }> = [
   { name: 'Saturday', index: 6 },
 ];
 
+// #1243: kein Entwurf mit Preis oder Nachlass geht automatisch raus. Immer (alle Kategorien):
+// Prozentangabe (Ziffer oder Zahlwort + %/Prozent/percent) und Rabatt-Wörter. Nur bei
+// Buchungsanfragen zusätzlich Preiswörter (bewusst KEIN „total“, KEIN „Kosten“ allein: beides
+// kommt in harmlosen Antworten vor, z. B. Gesamtzahl der Personen bzw. Nebenkosten-Auskünfte).
+const PERCENT_WORDS = 'null|eins|ein|zwei|drei|vier|fünf|sechs|sieben|acht|neun|zehn|elf|zwölf|fünfzehn|zwanzig|dreißig|vierzig|fünfzig|hundert|one|two|three|four|five|six|seven|eight|nine|ten|fifteen|twenty|thirty|fifty';
+const PERCENT = new RegExp(String.raw`\d+(?:[.,]\d+)?\s*(?:%|prozent\b|percent\b)|\b(?:${PERCENT_WORDS})\s+(?:prozent|percent)\b`, 'i');
+const DISCOUNT_WORDS = /\b\w*(?:rabatt|nachlass|ermäßigung|discount)\w*|\bsconto\b/i;
+const PRICE_WORDS = /\b\w*preise?n?\b|\bprices?\b|\bgesamtbetrag\b|\bkostet\b|\bcosts?\b|\bgegenangebot\w*|\bcounter-?offer\w*/i;
+
 export function collectDigitRuns(texts: string[]): string[] {
   const out = new Set<string>();
   for (const t of texts) for (const m of t.matchAll(DIGIT_RUN)) out.add(m[0]);
@@ -145,6 +154,13 @@ export function runMechanicalChecks(
   if (context.isBookingRequest) {
     const match = text.match(CONFIRMATION_WORDS) ?? text.match(NOTHING_IN_THE_WAY);
     if (match) f.push({ flag: 'confirmation_words', match: match[0] });
+  }
+  // #1243: ein Finding je Check (Fundstelle als match)
+  const percent = text.match(PERCENT) ?? text.match(DISCOUNT_WORDS);
+  if (percent) f.push({ flag: 'price_discount', match: percent[0] });
+  if (context.isBookingRequest) {
+    const priceWord = text.match(PRICE_WORDS);
+    if (priceWord) f.push({ flag: 'price_discount', match: priceWord[0] });
   }
   if (context.now) {
     const allowed = allowedWeekdays(context.now, context.bookingContext ?? null);

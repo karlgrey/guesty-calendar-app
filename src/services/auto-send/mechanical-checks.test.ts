@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { runMechanicalChecks, collectDigitRuns, normalizeSentence, findRepeatedOwnSentence } from './mechanical-checks.js';
 
@@ -199,5 +200,53 @@ describe('repeats_own_sentence (#1191)', () => {
   it('normalizeSentence/findRepeatedOwnSentence: Grundverhalten', () => {
     expect(normalizeSentence('  Hallo,  „Welt“ 😊!  ')).toBe('hallo welt');
     expect(findRepeatedOwnSentence('Das ist ein ganz neuer Satz hier.', [host])).toBeNull();
+  });
+});
+
+// #1243: kein Entwurf mit Preis oder Nachlass geht automatisch raus
+describe('price_discount (#1243)', () => {
+  const run = (body: string, isBookingRequest = false) =>
+    runMechanicalChecks(body, { knownDigitRuns: [], isBookingRequest }).filter((f) => f.flag === 'price_discount');
+
+  it.each([
+    'Ich kann dir 10 % Nachlass anbieten.', 'Das wären 10% weniger.', 'Wir geben 10 Prozent.',
+    'We can do 10 percent off.', 'Wir geben zehn Prozent.', 'Ein Rabatt ist möglich.', 'Gibt es einen Frühbucherrabatt?',
+    'Wir machen einen Preisnachlass.', 'Eine Ermäßigung ist drin.', 'Any discount possible?', 'Uno sconto, grazie.',
+  ])('immer (auch ohne Buchungsanfrage): %s', (t) => {
+    expect(run(t, false)).toHaveLength(1);
+    expect(run(t, true)).toHaveLength(1);
+  });
+
+  it.each([
+    'Der Gesamtpreis liegt bei ca. 3.948,30 EUR.', 'Die Preise findest du in Airbnb.', 'Das kostet extra.',
+    'The price is fixed.', 'Das ist ein Gegenangebot.', 'A counter-offer is possible.', 'Der Gesamtbetrag steht in Airbnb.',
+  ])('Preiswort nur bei Buchungsanfrage: %s', (t) => {
+    expect(run(t, false)).toHaveLength(0);
+    expect(run(t, true)).toHaveLength(1);
+  });
+
+  it('kein „total“, kein „Kosten“ allein, harmlose Sätze → kein Treffer', () => {
+    for (const t of ['Total schön, dass ihr kommt.', 'Die Kosten für Holz tragen wir.', 'Wir freuen uns sehr auf euch.']) {
+      expect(run(t, true)).toHaveLength(0);
+    }
+  });
+
+  it('ein Finding je Check, match = Fundstelle', () => {
+    const r = run('Der Preis passt, 10 % Rabatt gibt es.', true);
+    expect(r).toHaveLength(2);
+    expect(r[0].match).toBe('10 %');
+    expect(r[1].match).toBe('Preis');
+  });
+
+  // Regression: bestehende Auto-Fälle der Judge-Fixtures dürfen nie feuern.
+  it('feuert bei keinem Fixture-Fall mit expected.auto === true', () => {
+    const cases = JSON.parse(readFileSync(new URL('../../test-fixtures/judge/cases.json', import.meta.url), 'utf8')) as
+      Array<{ name: string; draft: string; expected: { auto: boolean } }>;
+    const autos = cases.filter((c) => c.expected.auto === true);
+    expect(autos.length).toBeGreaterThan(0);
+    for (const c of autos) {
+      expect(run(c.draft, true), `${c.name} (Buchungsanfrage)`).toHaveLength(0);
+      expect(run(c.draft, false), `${c.name}`).toHaveLength(0);
+    }
   });
 });
