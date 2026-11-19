@@ -9,7 +9,8 @@
  * sie mit demselben Mapper wie syncInquiries in inquiries.
  *
  * Wirft nie: Fehler, Rate-Limit oder Timeout werden geloggt, der Eingang läuft ohne Daten
- * weiter wie bisher. Kein Voll-Sync, höchstens ein Abruf je Aufruf.
+ * weiter wie bisher. Kein Voll-Sync, je Aufruf eine Reservierung (seit #1099 zwei Guesty-Aufrufe:
+ * v3-Einzelabruf + guests-crud für den Gastnamen).
  */
 import { getThreadById } from '../repositories/message-repository.js';
 import { getReservationById, getInquiryById } from '../repositories/reservation-repository.js';
@@ -43,7 +44,8 @@ const realDeps: InquiryPrefetchDeps = {
   getThread: getThreadById,
   hasReservation: (id) => getReservationById(id) !== null,
   hasInquiry: (id) => getInquiryById(id) !== null,
-  getReservation: (id) => guestyClient.getReservation(id),
+  // #1099: inquiries braucht money + Gastname, keinen Zahlungsstand (v3-Abruf + guests-crud)
+  getReservation: (id) => guestyClient.getReservation(id, { payments: false }),
   upsertInquiry: (r) => upsertGuestyInquiries([r]),
 };
 

@@ -84,23 +84,23 @@ describe('GuestyClient writes', () => {
     expect(JSON.parse(options.body)).toEqual({ status: 'canceled', cancellationReason: 'Cancelled Due to Hold/Expiration' });
   });
 
-  it('F5: getReservations mit checkOutGte fügt einen zusätzlichen $gte-Filter neben dem Statusfilter hinzu', async () => {
-    const { client, spy } = clientWithMockedRequest({ results: [] });
-    await client.getReservations({ listingId: 'l1', status: ['confirmed', 'reserved'], checkOutGte: '2026-08-27' });
+  it('F5: getReservations mit checkOutGte setzt filter[checkOut][gte] (nur Datum) neben dem Statusfilter (v3)', async () => {
+    const { client, spy } = clientWithMockedRequest({ results: [], pagination: { skip: 0, limit: 100, hasMore: false } });
+    await client.getReservations({ listingId: 'l1', status: ['confirmed', 'reserved'], checkOutGte: '2026-08-28' });
     const [endpoint] = spy.mock.calls[0];
+    expect(endpoint.startsWith('/reservations-v3/search?')).toBe(true);
     const url = new URL(`http://x${endpoint}`);
-    const filters = JSON.parse(url.searchParams.get('filters')!);
-    expect(filters).toContainEqual({ operator: '$gte', field: 'checkOut', value: '2026-08-27' });
-    expect(filters).toContainEqual({ operator: '$in', field: 'status', value: ['confirmed', 'reserved'] });
+    expect(url.searchParams.get('filter[checkOut][gte]')).toBe('2026-08-28');
+    expect(url.searchParams.get('filter[status]')).toBe('confirmed,reserved');
   });
 
-  it('F5: getReservations ohne checkOutGte fügt keinen checkOut-Filter hinzu', async () => {
-    const { client, spy } = clientWithMockedRequest({ results: [] });
+  it('F5: getReservations ohne checkOutGte setzt keinen filter[checkOut]-Parameter (v3)', async () => {
+    const { client, spy } = clientWithMockedRequest({ results: [], pagination: { skip: 0, limit: 100, hasMore: false } });
     await client.getReservations({ listingId: 'l1' });
     const [endpoint] = spy.mock.calls[0];
+    expect(endpoint.startsWith('/reservations-v3/search?')).toBe(true);
     const url = new URL(`http://x${endpoint}`);
-    const filters = JSON.parse(url.searchParams.get('filters')!);
-    expect(filters.some((f: any) => f.field === 'checkOut')).toBe(false);
+    expect([...url.searchParams.keys()].some((k) => k.startsWith('filter[checkOut]'))).toBe(false);
   });
 
   // #1137: Reinigungsgebühr — Guesty Open API „Update listing Financials"

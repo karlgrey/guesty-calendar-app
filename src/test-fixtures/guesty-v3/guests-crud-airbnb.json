@@ -1,0 +1,50 @@
+{
+  "_id": "f55c0860d6ee620a2808ef9d",
+  "accountId": "f88d5b52a32dffd067b459e1",
+  "firstName": "Max",
+  "lastName": "Beispiel",
+  "fullName": "Max Beispiel",
+  "verifications": [],
+  "emails": [],
+  "phones": [],
+  "languages": "de",
+  "airbnb": {
+    "id": "431400731368880"
+  },
+  "airbnb2": {
+    "id": "1056763577509453061",
+    "firstName": "Max",
+    "lastName": "Beispiel",
+    "isFromChannel": true,
+    "url": "https://www.airbnb.com/users/show/1056763577509453061",
+    "fullName": "Max Beispiel"
+  },
+  "tags": [],
+  "preferredLanguage": "de",
+  "dietaryPreferences": [],
+  "allergies": [],
+  "interests": [],
+  "otaLinks": [
+    {
+      "type": "airbnb",
+      "url": "https://www.airbnb.com/users/show/1056763577509453061"
+    }
+  ],
+  "isOtaModified": false,
+  "contactType": "guest",
+  "ageCategory": "adult",
+  "communicationMethods": [
+    "airbnb2"
+  ],
+  "paymentMethodIds": [],
+  "paymentProvidersCustomers": [],
+  "archive": {
+    "isArchived": false,
+    "at": null
+  },
+  "pictures": [],
+  "createdAt": "2026-11-18T07:57:15.094Z",
+  "__v": 0,
+  "confirmed": true,
+  "returningGuest": false
+}

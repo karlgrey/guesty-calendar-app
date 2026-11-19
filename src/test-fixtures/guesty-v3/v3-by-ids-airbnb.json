@@ -1,0 +1,492 @@
+[
+  {
+    "_id": "ff08cc3f251ecdbfd7324144",
+    "accountId": "f88d5b52a32dffd067b459e1",
+    "alteredAt": "2026-11-18T21:03:31.726Z",
+    "bookerId": "f55c0860d6ee620a2808ef9d",
+    "bookingDate": "2026-11-18T07:56:44.378Z",
+    "channelMetadata": {
+      "externalReservationId": "HMTEST0001",
+      "externalListingId": "6017663116032696115",
+      "createdAt": "2026-11-18T07:56:44.378Z",
+      "hostRole": "OWNER",
+      "confirmedAt": "2026-11-18T07:56:53.445Z",
+      "cancellationTerms": {
+        "penaltyAmount": "45.48",
+        "reasons": [
+          {
+            "reason": "DECLINE_REASON_HOST_DOUBLE",
+            "sub_reasons": [
+              "DECLINE_REASON_HOST_EMERGENCY",
+              "DECLINE_REASON_HOST_HOST_UNAVAILABLE",
+              "DECLINE_REASON_HOST_DOUBLE_BOOKED"
+            ]
+          },
+          {
+            "reason": "DECLINE_REASON_HOST_CHANGE",
+            "sub_reasons": [
+              "DECLINE_REASON_HOST_RESERVATION_LENGTH",
+              "DECLINE_REASON_HOST_DIFFERENT_PRICE"
+            ]
+          },
+          {
+            "reason": "DECLINE_REASON_HOST_BAD_REVIEWS_SPARSE_PROFILE",
+            "sub_reasons": []
+          },
+          {
+            "reason": "DECLINE_REASON_HOST_UNAUTHORIZED_PARTY",
+            "sub_reasons": [
+              "DECLINE_REASON_HOST_PARTY_REVIEWS",
+              "DECLINE_REASON_HOST_PARTY_INDICATION"
+            ]
+          },
+          {
+            "reason": "DECLINE_REASON_HOST_BEHAVIOR",
+            "sub_reasons": [
+              "DECLINE_REASON_HOST_BEHAVIOR_REVIEWS",
+              "DECLINE_REASON_HOST_BEHAVIOR_INDICATION"
+            ]
+          },
+          {
+            "reason": "DECLINE_REASON_HOST_ASKED",
+            "sub_reasons": []
+          },
+          {
+            "reason": "DECLINE_REASON_HOST_OTHER",
+            "sub_reasons": []
+          }
+        ]
+      },
+      "cancellationPolicy": "flexible",
+      "guestContact": {
+        "state": "absent",
+        "phoneNumbers": [],
+        "hasTemporaryPhoneNumbers": false,
+        "updatedAt": "2026-11-18T07:57:15.752Z"
+      }
+    },
+    "channelsSyncState": {
+      "listing": {
+        "syncMode": "ENABLED",
+        "unlockOnListingId": "69849a19d793670014d4a11a"
+      }
+    },
+    "confirmationCode": "HMTEST0001",
+    "confirmedAt": "2026-11-18T07:57:15.752Z",
+    "conversationExternalId": "1101282662",
+    "createdAt": "2026-11-18T07:57:15.751Z",
+    "guestStay": {
+      "status": "not_set",
+      "createdAt": "2026-11-18T07:57:15.752Z",
+      "updatedAt": "2026-11-18T07:57:15.752Z"
+    },
+    "guests": [
+      {
+        "id": "f55c0860d6ee620a2808ef9d",
+        "type": "adult"
+      }
+    ],
+    "integrationId": "f35d404b2fe69d540271106e",
+    "moneyId": "f5ae0adae5ed869a7d52306e",
+    "platform": "airbnb2",
+    "source": "airbnb2",
+    "status": "confirmed",
+    "stay": [
+      {
+        "checkInDateLocalized": "2026-11-25",
+        "checkOutDateLocalized": "2026-11-26",
+        "guestsCount": 2,
+        "numberOfGuests": {
+          "numberOfAdults": 2,
+          "numberOfChildren": 0,
+          "numberOfInfants": 0,
+          "numberOfPets": 0
+        },
+        "unitTypeId": "69849a19d793670014d4a11a",
+        "unitId": "69849a19d793670014d4a11a",
+        "eta": "2026-11-25T15:00:00.000Z",
+        "etd": "2026-11-26T12:00:00.000Z"
+      }
+    ],
+    "unifiedId": "v1-f35d404b2fe69d540271106e-1101282662",
+    "conversationId": "fdb0d5430213800ce5ecff1e",
+    "money": {
+      "_id": "f5ae0adae5ed869a7d52306e",
+      "reservationId": "ff08cc3f251ecdbfd7324144",
+      "listingId": "69849a19d793670014d4a11a",
+      "accountId": "f88d5b52a32dffd067b459e1",
+      "hostOriginalPayout": 163.78,
+      "invoiceItems": [
+        {
+          "title": "Accommodation fare",
+          "amount": 139,
+          "currency": "EUR",
+          "isLocked": true,
+          "type": "ACCOMMODATION_FARE",
+          "normalType": "AF",
+          "refId": "00000000-0000-4000-8000-771514955125",
+          "origin": "CHANNEL",
+          "internalIndex": 0,
+          "originalGrosses": {
+            "amount": 139,
+            "baseAmount": 139,
+            "breakdown": [
+              {
+                "date": "2026-11-25",
+                "price": 139
+              }
+            ]
+          },
+          "_id": "f15ae75ad3d66c40f87481f2"
+        },
+        {
+          "title": "Cleaning fee",
+          "amount": 40,
+          "baseAmount": 40,
+          "currency": "EUR",
+          "isLocked": true,
+          "type": "CLEANING_FEE",
+          "normalType": "CF",
+          "refId": "00000000-0000-4000-8000-771514955125",
+          "origin": "CHANNEL",
+          "internalIndex": 0,
+          "originalGrosses": {
+            "amount": 40,
+            "baseAmount": 40
+          },
+          "_id": "f8fa0d112bf1541a58c34286"
+        },
+        {
+          "title": "Host channel fee",
+          "amount": -27.75,
+          "baseAmount": -27.75,
+          "currency": "EUR",
+          "isLocked": true,
+          "normalType": "PCM",
+          "refId": "00000000-0000-4000-8000-771514955125",
+          "origin": "CHANNEL",
+          "internalIndex": 0,
+          "_id": "fe5afda82f2eda14e13550e6"
+        },
+        {
+          "title": "Goods and services tax",
+          "amount": 12.53,
+          "baseAmount": 12.53,
+          "currency": "EUR",
+          "isLocked": true,
+          "isTax": true,
+          "type": "TAX",
+          "normalType": "GST",
+          "refId": "00000000-0000-4000-8000-771514955125",
+          "origin": "CHANNEL",
+          "internalIndex": 0,
+          "_id": "fac5bf88ea4119529668784a"
+        }
+      ],
+      "channelInvoiceItems": [
+        {
+          "name": "pass_through_vat_gst",
+          "type": "TAX",
+          "title": "Goods and services tax",
+          "normalType": "GST",
+          "channel": "AirBnbOfficial",
+          "currency": "EUR",
+          "amount": 12.53,
+          "isLocked": true,
+          "origin": "CHANNEL"
+        },
+        {
+          "name": "ACCOMMODATION",
+          "type": "ACCOMMODATION_FARE",
+          "title": "Accommodation fare",
+          "normalType": "AF",
+          "channel": "AirBnbOfficial",
+          "currency": "EUR",
+          "amount": 139,
+          "isLocked": true,
+          "origin": "CHANNEL"
+        },
+        {
+          "name": "CLEANING_FEE",
+          "type": "CLEANING_FEE",
+          "title": "Cleaning fee",
+          "normalType": "CF",
+          "channel": "AirBnbOfficial",
+          "currency": "EUR",
+          "amount": 40,
+          "isLocked": true,
+          "origin": "CHANNEL"
+        },
+        {
+          "name": "HOST_SERVICE_FEE",
+          "type": "ADDITIONAL",
+          "title": "Host channel fee",
+          "normalType": "PCM",
+          "channel": "AirBnbOfficial",
+          "currency": "EUR",
+          "amount": 27.75,
+          "isLocked": true,
+          "origin": "CHANNEL"
+        }
+      ],
+      "nightlyRateInvoiceItems": [
+        {
+          "_id": "f15ae75ad3d66c40f87481f2",
+          "adjustments": [],
+          "includedAdjustments": [],
+          "internalIndex": 0,
+          "isCalculatedByGuesty": true,
+          "nightsBreakdown": [
+            {
+              "date": "2026-11-25",
+              "basePrice": 139,
+              "_id": "f738a6d99c2740edbe9a0884"
+            }
+          ],
+          "normalType": "AF",
+          "origin": "CHANNEL",
+          "refId": "00000000-0000-4000-8000-771514955125",
+          "title": "Accommodation fare",
+          "totalNightsPrice": 139,
+          "totalPrice": 139
+        },
+        {
+          "_id": "f8fa0d112bf1541a58c34286",
+          "adjustments": [],
+          "includedAdjustments": [],
+          "internalIndex": 0,
+          "isCalculatedByGuesty": true,
+          "multiplier": "PER_STAY",
+          "nightsBreakdown": [
+            {
+              "date": "2026-11-25",
+              "basePrice": 40,
+              "_id": "f137649edb8fe95baac68d82"
+            }
+          ],
+          "normalType": "CF",
+          "origin": "CHANNEL",
+          "refId": "00000000-0000-4000-8000-771514955125",
+          "title": "Cleaning fee",
+          "totalNightsPrice": 40,
+          "totalPrice": 40
+        },
+        {
+          "_id": "fe5afda82f2eda14e13550e6",
+          "adjustments": [],
+          "includedAdjustments": [],
+          "internalIndex": 0,
+          "isCalculatedByGuesty": true,
+          "multiplier": "PER_NIGHT",
+          "nightsBreakdown": [
+            {
+              "date": "2026-11-25",
+              "basePrice": -27.75,
+              "_id": "f6c8239e118b6742540078c3"
+            }
+          ],
+          "normalType": "PCM",
+          "origin": "CHANNEL",
+          "refId": "00000000-0000-4000-8000-771514955125",
+          "title": "Host channel fee",
+          "totalNightsPrice": -27.75,
+          "totalPrice": -27.75
+        },
+        {
+          "_id": "fac5bf88ea4119529668784a",
+          "adjustments": [],
+          "includedAdjustments": [],
+          "internalIndex": 0,
+          "isCalculatedByGuesty": true,
+          "multiplier": "PER_STAY",
+          "nightsBreakdown": [
+            {
+              "date": "2026-11-25",
+              "basePrice": 12.53,
+              "_id": "fc92cfc9eada81b8860de2d1"
+            }
+          ],
+          "normalType": "GST",
+          "origin": "CHANNEL",
+          "refId": "00000000-0000-4000-8000-771514955125",
+          "title": "Goods and services tax",
+          "totalNightsPrice": 12.53,
+          "totalPrice": 12.53
+        }
+      ],
+      "currency": "EUR",
+      "platform": "airbnb2",
+      "source": "airbnb2",
+      "fareAccommodationAdjustment": 0,
+      "fareAccommodationDiscount": 0,
+      "fareAccommodation": 139,
+      "fareAccommodationAdjusted": 139,
+      "fareAccommodationBundleFeesApplied": 0,
+      "fareCleaning": 40,
+      "guestFeeBase": 0,
+      "guestFeeVat": 0,
+      "hostServiceFee": 27.75,
+      "hostServiceFeeTax": 0,
+      "hostServiceFeeIncTax": 27.75,
+      "subTotalPrice": 151.25,
+      "hostPayout": 163.78,
+      "hostPayoutUsd": 179.56,
+      "totalTaxes": 12.53,
+      "totalFees": 40,
+      "useAccountRevenueShare": true,
+      "netIncomeFormula": "host_payout",
+      "netIncome": 163.78,
+      "commissionFormula": "net_income",
+      "commission": 163.78,
+      "commissionTaxPercentage": 0,
+      "commissionTax": 0,
+      "commissionIncTax": 163.78,
+      "ownerRevenueFormula": "net_income - pm_commission",
+      "ownerRevenue": 0,
+      "channelCommissionRules": null,
+      "currencyConversionRateToAccount": 1,
+      "deductedFees": [],
+      "altered": false,
+      "transientOccupancyTax": 12.53,
+      "version": 4,
+      "bundledFees": [],
+      "createdAt": "2026-11-18T07:57:15.904Z",
+      "updatedAt": "2026-11-18T21:03:31.977Z",
+      "__v": 0,
+      "settingsSnapshot": {
+        "_id": "f9cabaa7c53ad5fd27d4eec6",
+        "channelCommission": {
+          "manual": []
+        },
+        "taxes": [
+          {
+            "name": "VAT",
+            "type": "VAT",
+            "units": "PERCENTAGE",
+            "quantifier": "PER_STAY",
+            "amount": 7,
+            "appliedToAllFees": true,
+            "appliedOnFees": [
+              "AF",
+              "ACTIVITIES",
+              "ADDITIONAL_BED",
+              "ADDITIONAL_CHARGE",
+              "AIR_CONDITIONING",
+              "BABY_BED",
+              "BEVERAGE",
+              "BOOKING_FEE",
+              "BREAKFAST",
+              "BUSINESS_CENTER",
+              "CAR_RENTAL",
+              "CHEF",
+              "CLEANING",
+              "CF",
+              "CLUB_CARD",
+              "COMMISSION_CHARGE",
+              "COMMUNITY",
+              "CONCIERGE",
+              "CREDIT_CARD_PROCESSING_FEE",
+              "DAMAGE_CHARGE",
+              "DAMAGE_WAIVER",
+              "DEPOSIT",
+              "DIRECT_SERVICE",
+              "DOCK_FEE",
+              "EARLY_CHECK_IN",
+              "EARLY_CHECKOUT",
+              "ELECTRICITY",
+              "EQUIPMENT_RENTAL",
+              "FLIGHTS",
+              "FOOD",
+              "GIFT_BASKET",
+              "GOLF_CART_RENTAL",
+              "GUEST_SERVICE",
+              "HEATING",
+              "HOMEOWNERS_ASSOCIATION",
+              "HOT_TUB",
+              "HOUSEKEEPING",
+              "INSURANCE",
+              "INTERNET",
+              "LATE_CHECK_IN",
+              "LATE_CHECKOUT",
+              "LAUNDRY",
+              "LINENS",
+              "MANAGEMENT",
+              "MEAL",
+              "MEET_AND_GREET",
+              "MINIBAR",
+              "MISCELLANEOUS",
+              "OIL",
+              "PARKING",
+              "PAYMENT_FEE",
+              "PET",
+              "POOL",
+              "POOL_HEATING",
+              "RESERVATION_FEE",
+              "RESORT",
+              "SERVICE",
+              "SHIPPING",
+              "SPA",
+              "TOILETRIES",
+              "TOUR",
+              "TOWELS",
+              "TRANSFER",
+              "TRANSPORTATION",
+              "UTILITY_FEE",
+              "VALET",
+              "VIP_SERVICES",
+              "WATER",
+              "WELLNESS",
+              "WIFI",
+              "WOOD",
+              "PF"
+            ],
+            "isAppliedByDefault": false,
+            "appliedByDefaultOnChannels": [],
+            "_id": "fb8af9205c948f7e9caee8ea"
+          }
+        ],
+        "monthlyPriceFactor": 0.65,
+        "weeklyPriceFactor": 0.75,
+        "useAccountRevenueShare": true,
+        "useAccountAdditionalFees": true,
+        "cleaningFeeFormula": {
+          "value": {
+            "_id": "fdb474b9d4aa232623375d23",
+            "multiplier": "PER_STAY",
+            "formula": 40,
+            "valueType": "FIXED"
+          },
+          "lastUpdated": "2026-11-13T07:31:41.790Z"
+        },
+        "additionalFees": [],
+        "channelAdditionalFees": [],
+        "currency": {
+          "from": "EUR",
+          "to": "EUR",
+          "rateDate": "2026-11-18T07:57:15.765Z",
+          "rate": 1
+        },
+        "markup": null,
+        "separateAfToSeveralInvoiceItems": true,
+        "useDeductedTaxesFormula": true,
+        "isTaxesPerLineItemReservation": true,
+        "isDeductedFeesV2Enabled": true,
+        "extractInclusiveTaxesEnabled": true,
+        "extractManualInclusiveTaxesEnabled": true,
+        "isDeductMarkupOnFeesEnabled": true,
+        "isMarkupsExtractDeductLogicEnabled": false,
+        "isChannelSpecificTaxesReservation": true,
+        "isChannelCommissionTaxBreakdownEnabled": true,
+        "isInclusiveTaxAdjustmentsEnabled": false,
+        "reservationId": "ff08cc3f251ecdbfd7324144",
+        "stayIndex": 0,
+        "listingId": "69849a19d793670014d4a11a",
+        "accountId": "f88d5b52a32dffd067b459e1",
+        "moneyId": "f5ae0adae5ed869a7d52306e",
+        "createdAt": "2026-11-18T07:57:15.911Z",
+        "updatedAt": "2026-11-18T21:03:31.998Z",
+        "__v": 0
+      }
+    }
+  }
+]

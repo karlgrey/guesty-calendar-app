@@ -21,6 +21,7 @@ import { generateReviewDraftsForProperty } from './generate-review-drafts.js';
 import { messageSyncLock, acquireMessageSyncLock } from './message-loop.js';
 import { getHostexClient } from '../services/hostex-client.js';
 import { syncVault } from '../services/vault-sync.js';
+import { guestyClient, diffRequestCounters } from '../services/guesty-client.js';
 import { syncAirbnbProperty } from './airbnb-mail/sync-properties.js';
 import { syncAirbnbMail } from './airbnb-mail/sync-mail.js';
 import { syncAirbnbIcal } from './airbnb-mail/sync-ical.js';
@@ -263,7 +264,7 @@ export async function runETLJobForProperty(
 
     // Step 3: Sync inquiries data
     logger.info({ propertySlug: slug }, 'Step 3/3: Syncing inquiries data...');
-    const inquiriesResult = await syncInquiries(guestyPropertyId!);
+    const inquiriesResult = await syncInquiries(guestyPropertyId!, { fullMoneyRefresh: force });
 
     // Step 4 (non-fatal): conversations → message_threads/messages + AI drafts.
     // Nachrichten-Sync + Draft-Gen laufen primär im Nachrichten-Loop (message-loop.ts, wird in
@@ -425,6 +426,9 @@ export async function runETLJob(force: boolean = false): Promise<ETLJobResult> {
     let totalConfirmed = 0;
 
     logger.info({ propertyCount: properties.length, force }, '🚀 Starting multi-property ETL job');
+    // #1099 (AK6): Guesty-Aufrufe je ETL-Lauf (prozessweiter Zähler, enthält auch parallele
+    // Aufrufe anderer Jobs wie des Nachrichten-Loops während des Laufs)
+    const guestyCountersBefore = guestyClient.getRequestCounters();
 
     for (const property of properties) {
       const result = await runETLJobForProperty(property, force);
@@ -447,6 +451,7 @@ export async function runETLJob(force: boolean = false): Promise<ETLJobResult> {
         totalAvailabilityRows,
         totalInquiries,
         totalConfirmed,
+        guestyRequests: diffRequestCounters(guestyClient.getRequestCounters(), guestyCountersBefore).total,
       },
       overallSuccess ? '✅ Multi-property ETL job completed successfully' : '⚠️  Multi-property ETL job completed with errors'
     );

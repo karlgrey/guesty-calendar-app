@@ -1,0 +1,107 @@
+{
+  "results": [
+    {
+      "reservationId": "ff08cc3f251ecdbfd7324144",
+      "confirmationCode": "HMTEST0001",
+      "status": "confirmed",
+      "guestId": "f55c0860d6ee620a2808ef9d",
+      "checkIn": "2026-11-25T15:00:00.000Z",
+      "checkOut": "2026-11-26T12:00:00.000Z",
+      "checkInDateLocalized": "2026-11-25",
+      "checkOutDateLocalized": "2026-11-26",
+      "source": "airbnb2",
+      "channel": "airbnb2",
+      "createdAt": "2026-11-18T07:57:15.751Z",
+      "bookingDate": "2026-11-18T07:56:44.378Z",
+      "lastUpdatedAt": "2026-11-18T21:03:31.726Z",
+      "notes": {},
+      "stay": [
+        {
+          "listingId": "69849a19d793670014d4a11a",
+          "checkIn": "2026-11-25T15:00:00.000Z",
+          "checkOut": "2026-11-26T12:00:00.000Z",
+          "checkInDateLocalized": "2026-11-25",
+          "checkOutDateLocalized": "2026-11-26",
+          "guestsCount": 2,
+          "numberOfGuests": {
+            "numberOfAdults": 2,
+            "numberOfChildren": 0,
+            "numberOfInfants": 0,
+            "numberOfPets": 0
+          }
+        }
+      ],
+      "guestStay": {
+        "status": "not_set",
+        "createdAt": "2026-11-18T07:57:15.752Z",
+        "updatedAt": "2026-11-18T07:57:15.752Z"
+      },
+      "unifiedId": "v1-f35d404b2fe69d540271106e-1101282662",
+      "channelMetadata": {
+        "externalReservationId": "HMTEST0001",
+        "externalListingId": "6017663116032696115",
+        "createdAt": "2026-11-18T07:56:44.378Z",
+        "hostRole": "OWNER",
+        "confirmedAt": "2026-11-18T07:56:53.445Z",
+        "cancellationTerms": {
+          "penaltyAmount": "45.48",
+          "reasons": [
+            {
+              "reason": "DECLINE_REASON_HOST_DOUBLE",
+              "sub_reasons": [
+                "DECLINE_REASON_HOST_EMERGENCY",
+                "DECLINE_REASON_HOST_HOST_UNAVAILABLE",
+                "DECLINE_REASON_HOST_DOUBLE_BOOKED"
+              ]
+            },
+            {
+              "reason": "DECLINE_REASON_HOST_CHANGE",
+              "sub_reasons": [
+                "DECLINE_REASON_HOST_RESERVATION_LENGTH",
+                "DECLINE_REASON_HOST_DIFFERENT_PRICE"
+              ]
+            },
+            {
+              "reason": "DECLINE_REASON_HOST_BAD_REVIEWS_SPARSE_PROFILE",
+              "sub_reasons": []
+            },
+            {
+              "reason": "DECLINE_REASON_HOST_UNAUTHORIZED_PARTY",
+              "sub_reasons": [
+                "DECLINE_REASON_HOST_PARTY_REVIEWS",
+                "DECLINE_REASON_HOST_PARTY_INDICATION"
+              ]
+            },
+            {
+              "reason": "DECLINE_REASON_HOST_BEHAVIOR",
+              "sub_reasons": [
+                "DECLINE_REASON_HOST_BEHAVIOR_REVIEWS",
+                "DECLINE_REASON_HOST_BEHAVIOR_INDICATION"
+              ]
+            },
+            {
+              "reason": "DECLINE_REASON_HOST_ASKED",
+              "sub_reasons": []
+            },
+            {
+              "reason": "DECLINE_REASON_HOST_OTHER",
+              "sub_reasons": []
+            }
+          ]
+        },
+        "cancellationPolicy": "flexible",
+        "guestContact": {
+          "state": "absent",
+          "phoneNumbers": [],
+          "hasTemporaryPhoneNumbers": false,
+          "updatedAt": "2026-11-18T07:57:15.752Z"
+        }
+      }
+    }
+  ],
+  "pagination": {
+    "skip": 0,
+    "limit": 25,
+    "hasMore": false
+  }
+}

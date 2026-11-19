@@ -4,7 +4,7 @@
  * Fetches all inquiries and reservations from Guesty API to track conversion rates
  */
 
-import { guestyClient } from '../services/guesty-client.js';
+import { guestyClient, diffRequestCounters } from '../services/guesty-client.js';
 import logger from '../utils/logger.js';
 import { getDatabase } from '../db/index.js';
 import { classifyGuestyGuestPrice, type PriceBasis } from '../services/guest-price.js';
@@ -177,20 +177,176 @@ export function upsertGuestyInquiries(reservations: any[], now: string = new Dat
   return upsertMany(reservations);
 }
 
+/** #1099: höchstens so viele guests-crud-Abrufe je Lauf (Rest folgt im nächsten Lauf). */
+export const MAX_GUEST_FETCHES_PER_RUN = 25;
+/** #1099: höchstens so viele Reservierungen je Lauf mit money nachladen (= 30 v3-Abrufe à 10). */
+export const MAX_MONEY_IDS_PER_RUN = 300;
+/** #1099: money auch für Aufenthalte nachladen, deren Check-out höchstens so lange zurückliegt. */
+export const MONEY_REFRESH_PAST_DAYS = 7;
+/** #1099: ein erfolglos nachgeladener Gastname wird so lange nicht erneut angefragt. */
+const GUEST_NAME_NEGATIVE_TTL_MS = 24 * 60 * 60 * 1000;
+const guestNameMisses = new Map<string, number>();
+
+/** Nur für Tests: Negativ-Cache der Gastnamen leeren. */
+export function resetGuestNameCacheForTests(): void {
+  guestNameMisses.clear();
+}
+
+/** Lokaler Stand einer inquiries-Zeile (für die sparsame Nachlade-Auswahl). */
+export interface LocalInquiryState {
+  status: string;
+  guest_name: string | null;
+}
+
+export interface EnrichDeps {
+  /** v3-Einzel-/Stapelabruf (roh, mit money), höchstens 10 IDs je Guesty-Aufruf */
+  getReservationsV3ByIds: (ids: string[]) => Promise<any[]>;
+  /** guests-crud */
+  getGuest: (guestId: string) => Promise<{ fullName?: string; firstName?: string } | null>;
+}
+
+export interface EnrichStats {
+  moneyRequested: number;
+  moneyFilled: number;
+  moneySkippedByCap: number;
+  guestFetched: number;
+  guestFromLocal: number;
+  guestSkippedByCap: number;
+  enrichErrors: number;
+}
+
+function isoDateMinusDays(today: string, days: number): string {
+  const d = new Date(`${today}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - days);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * #1099: Die v3-Liste (search) liefert weder money noch guest. Ergänzt beides gezielt und
+ * sparsam, damit die inquiries-Zeile wie mit der Legacy-Liste entsteht:
+ * - money (aus dem v3-Einzelabruf, wertgleich zur Legacy-API; Stapel à 10 IDs) nur für neue
+ *   Zeilen, geänderten Status, laufende/künftige Aufenthalte (Check-out ≥ heute − 7 Tage) oder
+ *   alle beim täglichen Voll-Lauf (`fullMoneyRefresh`). Sonst bleibt der bekannte Preis per
+ *   COALESCE im Upsert stehen.
+ * - Gastname: aus der lokalen Zeile; nachgeladen (guests-crud) nur bei neuer Zeile, geändertem
+ *   Status oder fehlendem/„Unknown"-Namen, je guestId höchstens einmal pro Lauf; ein
+ *   Fehlschlag wird 24 h nicht wiederholt. Obergrenzen je Lauf (Rest im nächsten Lauf).
+ * Wirft nicht: ein Nachladefehler lässt die Zeile ohne diese Felder (Upsert behält den Bestand).
+ */
+export async function enrichGuestyListReservations(
+  reservations: any[],
+  local: Map<string, LocalInquiryState>,
+  deps: EnrichDeps,
+  opts: { today: string; fullMoneyRefresh?: boolean; nowMs?: number },
+): Promise<EnrichStats> {
+  const stats: EnrichStats = {
+    moneyRequested: 0, moneyFilled: 0, moneySkippedByCap: 0,
+    guestFetched: 0, guestFromLocal: 0, guestSkippedByCap: 0, enrichErrors: 0,
+  };
+  const nowMs = opts.nowMs ?? Date.now();
+  const moneyCutoff = isoDateMinusDays(opts.today, MONEY_REFRESH_PAST_DAYS);
+
+  // money
+  const moneyIds: string[] = [];
+  for (const r of reservations) {
+    if (!r?._id || r.money) continue;
+    const prev = local.get(r._id);
+    const checkOut: string | undefined =
+      r.checkOutDateLocalized ?? (typeof r.checkOut === 'string' ? r.checkOut.slice(0, 10) : undefined);
+    const wanted = opts.fullMoneyRefresh || !prev || prev.status !== r.status || (checkOut !== undefined && checkOut >= moneyCutoff);
+    if (!wanted) continue;
+    if (moneyIds.length >= MAX_MONEY_IDS_PER_RUN) { stats.moneySkippedByCap++; continue; }
+    moneyIds.push(r._id);
+  }
+  if (moneyIds.length > 0) {
+    stats.moneyRequested = moneyIds.length;
+    try {
+      const full = await deps.getReservationsV3ByIds(moneyIds);
+      const byId = new Map<string, any>();
+      for (const v of full ?? []) if (v?._id && v.money) byId.set(v._id, v.money);
+      for (const r of reservations) {
+        const m = byId.get(r?._id);
+        if (m && !r.money) { r.money = m; stats.moneyFilled++; }
+      }
+    } catch (error) {
+      stats.enrichErrors++;
+      logger.warn({ error, count: moneyIds.length }, 'syncInquiries: money-Nachladen fehlgeschlagen (non-fatal), Preise bleiben auf Bestand');
+    }
+  }
+
+  // Gastnamen
+  const fetchedThisRun = new Map<string, string | null>();
+  for (const r of reservations) {
+    if (!r?._id || r.guest?.fullName || r.guest?.firstName) continue;
+    const prev = local.get(r._id);
+    const localName = prev?.guest_name && prev.guest_name !== 'Unknown' ? prev.guest_name : null;
+    const refresh = !prev || prev.status !== r.status || !localName;
+    const guestId: string | undefined = r.guestId;
+    if (!refresh || !guestId) {
+      if (localName) { r.guest = { fullName: localName }; stats.guestFromLocal++; }
+      continue;
+    }
+    let name: string | null | undefined = fetchedThisRun.get(guestId);
+    if (name === undefined) {
+      const missAt = guestNameMisses.get(guestId);
+      if (missAt !== undefined && nowMs - missAt < GUEST_NAME_NEGATIVE_TTL_MS) {
+        name = null;
+      } else if (stats.guestFetched >= MAX_GUEST_FETCHES_PER_RUN) {
+        stats.guestSkippedByCap++;
+        name = null;
+      } else {
+        stats.guestFetched++;
+        try {
+          const g = await deps.getGuest(guestId);
+          name = g?.fullName || g?.firstName || null;
+        } catch (error) {
+          stats.enrichErrors++;
+          logger.warn({ error, guestId }, 'syncInquiries: Gastname nicht abrufbar (non-fatal)');
+          name = null;
+        }
+        if (name) guestNameMisses.delete(guestId);
+        else guestNameMisses.set(guestId, nowMs);
+        fetchedThisRun.set(guestId, name);
+      }
+    }
+    if (name) r.guest = { fullName: name };
+    else if (localName) { r.guest = { fullName: localName }; stats.guestFromLocal++; }
+  }
+  return stats;
+}
+
+function loadLocalInquiryStates(listingId: string): Map<string, LocalInquiryState> {
+  const rows = getDatabase()
+    .prepare('SELECT inquiry_id, status, guest_name FROM inquiries WHERE listing_id = ?')
+    .all(listingId) as Array<{ inquiry_id: string; status: string; guest_name: string | null }>;
+  return new Map(rows.map((r) => [r.inquiry_id, { status: r.status, guest_name: r.guest_name }]));
+}
+
+const realEnrichDeps: EnrichDeps = {
+  getReservationsV3ByIds: (ids) => guestyClient.getReservationsV3ByIds(ids),
+  getGuest: (guestId) => guestyClient.getGuest(guestId),
+};
+
 /**
  * Sync all inquiries and reservations from Guesty API
  *
  * Fetches ALL reservation statuses (inquiry, confirmed, reserved, canceled, declined)
- * to enable accurate conversion rate tracking
+ * to enable accurate conversion rate tracking.
+ * #1099: Liste über v3 search (getReservationsPage), money und Gastname gezielt nachgeladen
+ * (enrichGuestyListReservations); `fullMoneyRefresh` (täglicher Force-Lauf) lädt money für alle.
+ * Logzeile „Inquiry sync completed successfully" trägt `guestyRequests` (Aufrufe dieses Laufs).
  */
-export async function syncInquiries(listingId: string): Promise<SyncInquiriesResult> {
+export async function syncInquiries(
+  listingId: string,
+  opts: { fullMoneyRefresh?: boolean } = {},
+): Promise<SyncInquiriesResult> {
   const startTime = Date.now();
+  const countersBefore = guestyClient.getRequestCounters?.();
 
   try {
     logger.info({ listingId }, 'Starting inquiry sync from Guesty API');
 
-    // Fetch ALL reservations from Guesty API (no status filter = all statuses).
-    // Note: Using limit=100 returns more results than limit=1000 (Guesty API quirk).
+    // Fetch ALL reservations (ohne Statusfilter = alle Status, siehe Client).
     // WICHTIG (#271, Fall Kemkes): mit Paginierung — ohne sie blieben Listings
     // mit >100 historischen Reservierungen bei den ältesten 100 hängen und neue
     // Buchungen/Stornos kamen nie in der inquiries-Tabelle an (Geister-Events
@@ -199,13 +355,13 @@ export async function syncInquiries(listingId: string): Promise<SyncInquiriesRes
     const maxPages = 50; // Sicherheitsgrenze (5.000 Reservierungen pro Listing)
     const allReservations: any[] = [];
     for (let page = 0; page < maxPages; page++) {
-      const batch = (await guestyClient.getReservations({
+      const { results, hasMore } = (await guestyClient.getReservationsPage({
         listingId,
         limit: pageSize,
         ...(page > 0 ? { skip: page * pageSize } : {}),
-      })) ?? [];
-      allReservations.push(...batch);
-      if (batch.length < pageSize) break;
+      })) ?? { results: [], hasMore: false };
+      allReservations.push(...results);
+      if (!hasMore) break;
       if (page === maxPages - 1) {
         logger.warn({ listingId, fetched: allReservations.length }, 'syncInquiries: Seiten-Sicherheitsgrenze erreicht — Liste evtl. unvollständig');
       }
@@ -214,6 +370,13 @@ export async function syncInquiries(listingId: string): Promise<SyncInquiriesRes
     logger.info(
       { count: allReservations.length, listingId },
       'Fetched reservations from Guesty API'
+    );
+
+    const enrich = await enrichGuestyListReservations(
+      allReservations,
+      loadLocalInquiryStates(listingId),
+      realEnrichDeps,
+      { today: new Date().toISOString().slice(0, 10), fullMoneyRefresh: opts.fullMoneyRefresh },
     );
 
     // Count by status
@@ -226,6 +389,11 @@ export async function syncInquiries(listingId: string): Promise<SyncInquiriesRes
     upsertGuestyInquiries(allReservations);
 
     const duration = Date.now() - startTime;
+    // #1099 (AK6): Guesty-Aufrufe dieses Laufs (alle HTTP-Versuche inkl. Retries)
+    const guestyRequests =
+      countersBefore && guestyClient.getRequestCounters
+        ? diffRequestCounters(guestyClient.getRequestCounters(), countersBefore).total
+        : null;
 
     logger.info(
       {
@@ -234,9 +402,15 @@ export async function syncInquiries(listingId: string): Promise<SyncInquiriesRes
         inquiriesCount: inquiries.length,
         confirmedCount: confirmed.length,
         duration,
+        guestyRequests,
+        fullMoneyRefresh: !!opts.fullMoneyRefresh,
+        ...enrich,
       },
       'Inquiry sync completed successfully'
     );
+    if (guestyRequests !== null && guestyRequests >= 100) {
+      logger.warn({ listingId, guestyRequests }, 'Inquiry sync: Guesty-Aufrufe je Lauf am Minutenlimit (100)');
+    }
 
     return {
       success: true,

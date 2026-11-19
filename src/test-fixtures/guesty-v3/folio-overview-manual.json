@@ -1,0 +1,25 @@
+{
+  "results": [
+    {
+      "reservationId": "f968c4967e199e2cb25c43fa",
+      "currency": "EUR",
+      "platform": "manual",
+      "source": "manual",
+      "rawAccommodationFare": 1460,
+      "accommodationFareNet": 1460,
+      "rawCleaningFee": 390,
+      "channelCommission": 0,
+      "channelCommissionIncTax": 0,
+      "subTotalPrice": 1850,
+      "hostPayout": 1979.5,
+      "totalTaxes": 129.5,
+      "totalFees": 390,
+      "netIncome": 1979.5,
+      "commission": 1979.5,
+      "accommodationFareIncTax": 1562.2,
+      "cleaningFeeIncTax": 417.3,
+      "totalFeesIncTax": 417.3
+    }
+  ],
+  "notFound": []
+}

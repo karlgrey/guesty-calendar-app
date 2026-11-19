@@ -29,7 +29,7 @@ import { reservationEventSpan } from './sync-google-calendar.js';
 import { addOneDay, addDays } from '../utils/date.js';
 import { getListingById } from '../repositories/listings-repository.js';
 import { getAvailabilityLastSyncedAt } from '../repositories/availability-repository.js';
-import { ACTIVE_RESERVATION_STATUSES } from '../repositories/reservation-repository.js';
+import { ACTIVE_RESERVATION_STATUSES, getLocalGuestName } from '../repositories/reservation-repository.js';
 import {
   getAllProperties,
   getListingId,
@@ -137,7 +137,8 @@ async function buildGuestyExpectedEvents(
       type: 'reservation',
       eventId: toGoogleEventId(r._id),
       reservationId: r._id,
-      guestName: r.guest?.fullName ?? null,
+      // #1099: v3-Liste ohne Gastname → lokaler Bestand (nur Anzeige im Alert)
+      guestName: r.guest?.fullName ?? getLocalGuestName(r._id),
       status: r.status,
       start,
       endExclusive,
@@ -502,7 +503,8 @@ async function listOpenGuestyReservations(statuses: string[], includePast: boole
       property: property ? propertyBadge(property) : null,
       listingId: r.listingId,
       status: r.status,
-      guestName: r.guest?.fullName ?? null,
+      // #1099: v3-Liste ohne Gastname → lokaler Bestand (nur Anzeige im Alert)
+      guestName: r.guest?.fullName ?? getLocalGuestName(r._id),
       checkIn,
       checkOut,
       source: r.source ?? null,
