@@ -2,6 +2,7 @@ import { callClaudeTool } from '../anthropic-client.js';
 import { config } from '../../config/index.js';
 import { JUDGE_DRAFT_TOOL, buildJudgeSystemPrompt } from './judge-prompt.js';
 import { JUDGE_CATEGORIES, JUDGE_RISK_FLAGS, type JudgeCategory, type JudgeResult, type JudgeRiskFlag } from './types.js';
+import logger from '../../utils/logger.js';
 import { LANGUAGE_LABEL, type SupportedLanguage } from '../../utils/language-detect.js';
 
 export interface JudgeInput {
@@ -22,6 +23,8 @@ export interface JudgeInput {
   // #1191: die zuletzt gesendeten Host-Nachrichten des Threads (chronologisch), damit das
   // Prüfmodell Wiederholungen eigener Formulierungen erkennen kann. Optional/leer → keine Änderung.
   hostMessages?: string[];
+  // #1251: nur für den Thread-Bezug im Log, geht nicht in den Prompt.
+  threadId?: string;
 }
 export interface JudgeDeps { call: typeof callClaudeTool; model: string }
 // deps-Default liest config.judgeModel erst beim tatsächlichen Aufruf (nicht beim Modul-Import) —
@@ -69,8 +72,21 @@ export async function judgeDraft(input: JudgeInput, deps: JudgeDeps = defaultDep
   }
   if (!out || typeof out !== 'object') return { kind: 'failed', error: 'Prüf-Output fehlt oder ist kein Objekt' };
   const o = out as Record<string, unknown>;
-  const category = o.category as JudgeCategory;
-  if (!JUDGE_CATEGORIES.includes(category)) return { kind: 'failed', error: `Unbekannte Kategorie: ${String(o.category)}` };
+  let category = o.category as JudgeCategory;
+  // #1251 (Fall 13.11.): nennt das Prüfmodell im Feld category den Namen eines Risiko-Flags
+  // (z. B. „multi_topic"), ist das Anliegen mehrdeutig → unklar + Flag statt technischem Fehlschlag.
+  // Jede andere unbekannte Kategorie bleibt failed.
+  let flagFromCategory: JudgeRiskFlag | null = null;
+  if (!JUDGE_CATEGORIES.includes(category)) {
+    if (typeof o.category === 'string' && JUDGE_RISK_FLAGS.includes(o.category as JudgeRiskFlag)) {
+      flagFromCategory = o.category as JudgeRiskFlag;
+      category = 'unklar';
+      logger.warn({ threadId: input.threadId ?? null, originalCategory: o.category },
+        `Judge: Risiko-Flag als Kategorie geliefert ("${o.category}") → unklar + Flag`);
+    } else {
+      return { kind: 'failed', error: `Unbekannte Kategorie: ${String(o.category)}` };
+    }
+  }
   if (typeof o.answerable_from_facts !== 'boolean') return { kind: 'failed', error: 'answerable_from_facts fehlt' };
   if (!['hoch', 'mittel', 'niedrig'].includes(String(o.confidence))) return { kind: 'failed', error: 'confidence fehlt/ungültig' };
   if (!Array.isArray(o.risk_flags)) return { kind: 'failed', error: 'risk_flags fehlt' };
@@ -86,6 +102,7 @@ export async function judgeDraft(input: JudgeInput, deps: JudgeDeps = defaultDep
     }
   }
   const riskFlags = o.risk_flags as JudgeRiskFlag[];
+  if (flagFromCategory && !riskFlags.includes(flagFromCategory)) riskFlags.push(flagFromCategory);
   // #696: promised_action ist nur relevant, wenn promises_action gesetzt ist — bei fehlendem/
   // leerem Text bleibt es null (fail-safe: die Zusagen-Fastlane in policy.ts greift dann
   // einfach nicht, der Entwurf fällt auf den normalen Risk-Flag-Wartepfad zurück, statt das
