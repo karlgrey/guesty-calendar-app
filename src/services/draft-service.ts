@@ -5,6 +5,8 @@ import { buildTodayBlock } from './auto-send/today-facts.js';
 import type { BookingRequestKind } from './booking-request.js';
 import type { AlterationSituation } from './alteration-request.js';
 import { buildHostExamplesBlock, findHostExamples, type HostExample, type HostExampleQuery } from './host-examples.js';
+import { GUEST_TOTAL_MARKER } from './guest-price.js';
+import { findGuestPriceTopic } from './price-topic.js';
 import logger from '../utils/logger.js';
 
 /** #758: zentrale Sonnet-Konstante (claude-sonnet-5-5) aus anthropic-client. */
@@ -99,6 +101,15 @@ export interface DraftDeps {
   findExamples?: (q: HostExampleQuery) => HostExample[];
 }
 const defaultDeps: DraftDeps = { call: callClaudeTool, findExamples: (q) => findHostExamples(q) };
+
+/** #1243: Gastnachrichten seit der letzten Host-Antwort (dieselbe Runde, die der Entwurf beantwortet). */
+function guestMessagesSinceLastHost(messages: Message[]): string[] {
+  const out: string[] = [];
+  for (let i = messages.length - 1; i >= 0 && messages[i].direction !== 'outbound'; i--) {
+    if (messages[i].direction === 'inbound') out.unshift(messages[i].body ?? '');
+  }
+  return out;
+}
 
 function lastInboundText(messages: Message[]): string {
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -236,7 +247,14 @@ const REQUEST_KIND_LABEL: Record<BookingRequestKind, string> = {
 // das Modell denselben Satz zweimal hintereinander. Jetzt: Einladung/Ankündigung höchstens einmal
 // je Thread (closingAlreadySent, erkannt in hostAlreadySentClosing), eigene Formulierung statt
 // festem Baustein.
-function buildBookingClosingRule(requestKind: BookingRequestKind | null, closingAlreadySent = false): string {
+function buildBookingClosingRule(requestKind: BookingRequestKind | null, closingAlreadySent = false, priceTopic = false): string {
+  // #1243 (Prüfer-Befund 3): bei Preis-/Rabattthema klang „die Bestätigung kommt in Kürze“ nach einer Zusage zum
+  // Nachlass bzw. zum Gegenangebot — deshalb hier im Code statt als Ausnahme in Punkt 5.
+  if (requestKind === 'request_to_book' && priceTopic) {
+    return '4. Schluss: die Gastnachricht spricht Preis oder Rabatt an — kündige KEINE Bestätigung an (auch nicht als ' +
+      'Substantiv) und schreib nichts, was nach angenommener Buchung, angenommenem Gegenangebot oder zugesagtem Nachlass ' +
+      'klingt. Schließe neutral und freundlich (z. B. dass du dich über eine Rückmeldung freust).';
+  }
   if (requestKind === 'request_to_book') {
     if (closingAlreadySent) {
       return '4. Schluss: eine frühere Host-Nachricht in diesem Gespräch hat bereits angekündigt, dass die Bestätigung ' +
@@ -284,17 +302,30 @@ export function hostAlreadySentClosing(messages: Message[], requestKind: Booking
 // Preis oder Nachlass geht auf wait (mechanischer Check price_discount/money), Micha gibt frei.
 export const PRICE_DISCOUNT_ANCHOR = '5. Preis, Rabattfrage, Gegenangebot';
 
-function buildPriceDiscountRule(discountRuleApplies: boolean): string {
-  const lines = [
-    `${PRICE_DISCOUNT_ANCHOR}:`,
-    '- Den Preis nennst du nur, wenn der Gast nach dem Preis fragt, um einen Nachlass bittet oder einen eigenen Betrag ' +
-      'nennt. Dann nennst du AUSSCHLIESSLICH den Gesamtpreis für den Gast aus dem BUCHUNGSKONTEXT — genau diesen Betrag, ' +
-      'mit „ca.“, wenn er dort als ungefähr steht, und mit „inkl. Steuern“. Keinen anderen Betrag: keine Aufschlüsselung, ' +
-      'keinen Preis pro Nacht, keinen selbst ausgerechneten neuen Endpreis oder Rabattbetrag in Euro, nie Auszahlung, ' +
-      'Gebühren, Steuersatz oder Rechenweg. Steht im BUCHUNGSKONTEXT kein Gesamtpreis für den Gast, nennst du keinen Preis.',
-    '- Nennt der Gast einen eigenen, niedrigeren Betrag (Gegenangebot), ordnest du ihn freundlich gegen diesen ' +
-      'Gesamtpreis ein. Du nimmst ein Gegenangebot NIE an und sagst nicht zu, dass es so geht.',
-  ];
+function buildPriceDiscountRule(discountRuleApplies: boolean, hasGuestTotal: boolean, priceTopic: boolean): string {
+  const lines = [`${PRICE_DISCOUNT_ANCHOR}:`];
+  // #1243 (Prüfer-Befund 2): ohne Gastbetrag im Kontext erfand Sonnet Preise (aus der Direktpreis-Tabelle
+  // im Vault gerechnet, bzw. Platzhalter „about €X“) — deshalb im Code verzweigt statt per Prompt-Bedingung.
+  if (hasGuestTotal) {
+    lines.push(
+      '- Den Preis nennst du nur, wenn der Gast nach dem Preis fragt, um einen Nachlass bittet oder einen eigenen Betrag ' +
+        'nennt. Dann nennst du AUSSCHLIESSLICH den Gesamtpreis für den Gast aus dem BUCHUNGSKONTEXT — genau diesen Betrag, ' +
+        'mit „ca.“, wenn er dort als ungefähr steht, und mit „inkl. Steuern“. Keinen anderen Betrag: keine Aufschlüsselung, ' +
+        'keinen Preis pro Nacht, keinen selbst ausgerechneten neuen Endpreis oder Rabattbetrag in Euro, nie Auszahlung, ' +
+        'Gebühren, Steuersatz oder Rechenweg.',
+      '- Nennt der Gast einen eigenen, niedrigeren Betrag (Gegenangebot), ordnest du ihn freundlich gegen diesen ' +
+        'Gesamtpreis ein. Du nimmst ein Gegenangebot NIE an und sagst nicht zu, dass es so geht.',
+    );
+  } else {
+    lines.push(
+      '- Für diese Anfrage ist KEIN Gesamtpreis für den Gast bekannt. Nenne deshalb KEINEN Betrag und keine Zahl mit ' +
+        'Währung — auch keinen geschätzten, keinen aus dem OBJEKTWISSEN (z. B. Preistabellen für Direktbuchungen) ' +
+        'gerechneten und keinen Platzhalter (wie „X €“). Brauchst du einen Bezug, verweise auf den Betrag, der dem Gast in ' +
+        'seiner Anfrage angezeigt wird.',
+      '- Nennt der Gast einen eigenen, niedrigeren Betrag (Gegenangebot), nimmst du ihn NIE an und sagst nicht zu, dass es so ' +
+        'geht; rechne keinen Abstand aus.',
+    );
+  }
   if (discountRuleApplies) {
     lines.push(
       '- Einen Nachlass nennst du NUR, wenn ALLES zutrifft: (a) der Gast fragt selbst nach einem Rabatt bzw. günstigeren ' +
@@ -317,11 +348,10 @@ function buildPriceDiscountRule(discountRuleApplies: boolean): string {
         'gelten hier nicht. Fragt der Gast nach Rabatt oder nennt einen niedrigeren Betrag, halte den Preis freundlich.',
     );
   }
-  lines.push(
-    '- Ohne Rabattfrage oder Gegenangebot des Gasts: KEIN Nachlass und kein Hinweis auf Verhandlungsspielraum.',
-    '- Geht es in der Gastnachricht um Preis oder Rabatt, kündigst du bei einem Request-to-Book KEINE Bestätigung an ' +
-      '(Punkt 4 entfällt dann); bei einer Inquiry darf die Einladung zur Buchungsanfrage bleiben.',
-  );
+  lines.push('- Ohne Rabattfrage oder Gegenangebot des Gasts: KEIN Nachlass und kein Hinweis auf Verhandlungsspielraum.');
+  if (priceTopic) {
+    lines.push('- Die Gastnachricht spricht Preis oder Rabatt an: beantworte das inhaltlich, übergehe es nicht.');
+  }
   return lines.join('\n');
 }
 
@@ -329,6 +359,8 @@ function buildBookingRequestBlock(
   requestKind: BookingRequestKind | null,
   closingAlreadySent = false,
   discountRuleApplies = false,
+  hasGuestTotal = false,
+  priceTopic = false,
 ): string {
   const kindLabel = requestKind ? REQUEST_KIND_LABEL[requestKind] : 'Inquiry oder Request-to-Book)';
   return [
@@ -353,8 +385,8 @@ function buildBookingRequestBlock(
     '3. Interne Prüfbedingungen NIEMALS als Aussage ("passt das für uns", "steht einer Bestätigung nichts im Weg", ' +
       '"eine Runde wie eure ist willkommen/passt gut") — ' +
       'Unsicheres nur als Frage an den Gast, nie als Aussage über den Ausgang der Prüfung.',
-    buildBookingClosingRule(requestKind, closingAlreadySent),
-    buildPriceDiscountRule(discountRuleApplies),
+    buildBookingClosingRule(requestKind, closingAlreadySent, priceTopic),
+    buildPriceDiscountRule(discountRuleApplies, hasGuestTotal, priceTopic),
     // #976: Kürze-Regel gilt auch hier (#1004-Abnahme: Tipps-Antwort war zu lang).
     'Länge: auch hier gilt die LÄNGE-Regel oben — insgesamt höchstens 3–4 kurze Sätze. Tipps-Fragen knapp ' +
       'beantworten: eine kleine Auswahl (höchstens zwei, drei Tipps) in EINEM Satz, keine Liste, keine Beschreibungen.',
@@ -463,7 +495,9 @@ export function buildSystemPrompt(
   // (hostAlreadySentClosing) → neutraler Schluss im Buchungsanfrage-Block. repeatRetrySentence:
   // automatischer Neuversuch nach repeats_own_sentence — der wiederholte Satz wird benannt.
   // #1243: discountRuleApplies — siehe DraftInput.discountRuleApplies (nur mit isBookingRequest wirksam).
-  extra: { closingAlreadySent?: boolean; repeatRetrySentence?: string | null; discountRuleApplies?: boolean } = {},
+  // priceTopic (#1243, Befund 3): Gastnachrichten seit der letzten Host-Antwort sprechen Preis/Rabatt an
+  // (price-topic.ts findGuestPriceTopic) — setzt generateDraftForThread selbst.
+  extra: { closingAlreadySent?: boolean; repeatRetrySentence?: string | null; discountRuleApplies?: boolean; priceTopic?: boolean } = {},
 ): string {
   const lines = [
     buildThreadFactsBlock(thread),
@@ -481,7 +515,11 @@ export function buildSystemPrompt(
     REPEAT_RULE_BLOCK,
   ];
   if (isBookingRequest) {
-    lines.push(buildBookingRequestBlock(requestKind, extra.closingAlreadySent ?? false, extra.discountRuleApplies ?? false));
+    // #1243 (Befund 2): Gastbetrag im Kontext? Marker aus guest-price.ts (dieselbe Konstante baut den Kontext).
+    const hasGuestTotal = !!bookingContext && bookingContext.includes(GUEST_TOTAL_MARKER);
+    lines.push(buildBookingRequestBlock(
+      requestKind, extra.closingAlreadySent ?? false, extra.discountRuleApplies ?? false, hasGuestTotal, extra.priceTopic ?? false,
+    ));
   }
   else if (alteration) lines.push(buildAlterationBlock(alteration));
   lines.push(
@@ -622,6 +660,7 @@ export async function generateDraftForThread(
           closingAlreadySent: hostAlreadySentClosing(input.messages, input.requestKind ?? null),
           repeatRetrySentence: input.repeatRetrySentence ?? null,
           discountRuleApplies: input.discountRuleApplies ?? false, // #1243
+          priceTopic: findGuestPriceTopic(guestMessagesSinceLastHost(input.messages)) !== null, // #1243
         },
       ),
       userMessage: buildConversation(input.messages, input.thread.guest_name),

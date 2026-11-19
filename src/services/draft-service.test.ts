@@ -612,8 +612,10 @@ describe('Satzwiederholungen (#1191)', () => {
 describe('buildSystemPrompt — Preis und Rabatt bei Buchungsanfragen (#1243)', () => {
   const t = { channel: 'airbnb' as const, reservation_status: 'inquiry' };
   const NOW = new Date('2026-11-19T12:00:00.000Z');
-  const build = (discountRuleApplies?: boolean, isBookingRequest = true) =>
-    buildSystemPrompt('v', 'f', null, t, 'de', false, isBookingRequest, NOW, 'inquiry', null, [],
+  const CTX = 'Buchungsanfrage (noch nicht bestätigt): Zeitraum 20.11.2026–22.11.2026, 2 Nächte, 10 Personen, ' +
+    'Gesamtpreis für den Gast laut Airbnb ca. 3.948,30 EUR inkl. Steuern — Daten stammen aus der Anfrage selbst.';
+  const build = (discountRuleApplies?: boolean, isBookingRequest = true, ctx: string | null = CTX) =>
+    buildSystemPrompt('v', 'f', ctx, t, 'de', false, isBookingRequest, NOW, 'inquiry', null, [],
       discountRuleApplies === undefined ? {} : { discountRuleApplies });
 
   it('erlaubt den Gesamtpreis aus dem Buchungskontext, verbietet andere Beträge und die Annahme eines Gegenangebots', () => {
@@ -661,5 +663,52 @@ describe('buildSystemPrompt — Preis und Rabatt bei Buchungsanfragen (#1243)', 
       { call },
     );
     expect(call.mock.calls[0][0].systemPrompt).toContain('Einen Nachlass nennst du NUR');
+  });
+});
+
+// #1243 Prüfer-Runde 1: Befund 2 (kein Gastbetrag im Kontext) und Befund 3 (Request-to-Book + Preisthema).
+describe('buildSystemPrompt — Preisregel im Code verzweigt (#1243, Prüfer-Runde 1)', () => {
+  const NOW = new Date('2026-11-19T12:00:00.000Z');
+  const NO_PRICE_CTX = 'Buchungsanfrage (noch nicht bestätigt): Zeitraum 15.12.2026–17.12.2026, 2 Nächte, 8 Personen — Daten stammen aus der Anfrage selbst.';
+  const PRICE_CTX = 'Buchungsanfrage (noch nicht bestätigt): Zeitraum 15.12.2026–17.12.2026, 2 Nächte, 8 Personen, Gesamtpreis für den Gast laut Airbnb ca. 3.745,00 EUR inkl. Steuern — Daten stammen aus der Anfrage selbst.';
+  const p = (ctx: string | null, kind: 'inquiry' | 'request_to_book', priceTopic = false) =>
+    buildSystemPrompt('v', 'f', ctx, { channel: 'airbnb', reservation_status: 'inquiry' }, 'de', false, true, NOW, kind, null, [],
+      { discountRuleApplies: true, priceTopic });
+
+  it('ohne Gastbetrag im Kontext: kein Betrag, kein Platzhalter, Verweis auf den angezeigten Betrag', () => {
+    for (const ctx of [NO_PRICE_CTX, null]) {
+      const prompt = p(ctx, 'inquiry');
+      expect(prompt).toContain('KEIN Gesamtpreis für den Gast bekannt');
+      expect(prompt).toContain('keinen Platzhalter');
+      expect(prompt).toContain('der dem Gast in seiner Anfrage angezeigt wird');
+      expect(prompt).not.toContain('AUSSCHLIESSLICH den Gesamtpreis für den Gast aus dem BUCHUNGSKONTEXT');
+    }
+  });
+  it('mit Gastbetrag im Kontext: genau diesen Betrag', () => {
+    const prompt = p(PRICE_CTX, 'inquiry');
+    expect(prompt).toContain('AUSSCHLIESSLICH den Gesamtpreis für den Gast aus dem BUCHUNGSKONTEXT');
+    expect(prompt).not.toContain('KEIN Gesamtpreis für den Gast bekannt');
+  });
+  it('Request-to-Book + Preisthema: keine Bestätigung ankündigen, im Schlusssatz selbst verankert', () => {
+    const prompt = p(PRICE_CTX, 'request_to_book', true);
+    expect(prompt).toContain('4. Schluss: die Gastnachricht spricht Preis oder Rabatt an — kündige KEINE Bestätigung an');
+    expect(prompt).not.toContain('kündige an, dass die Bestätigung in Kürze kommt');
+    expect(prompt).toContain('übergehe es nicht');
+  });
+  it('Request-to-Book ohne Preisthema: Ankündigung der Bestätigung wie bisher', () => {
+    const prompt = p(PRICE_CTX, 'request_to_book', false);
+    expect(prompt).toContain('kündige an, dass die Bestätigung in Kürze kommt');
+    expect(prompt).not.toContain('übergehe es nicht');
+  });
+  it('generateDraftForThread erkennt das Preisthema aus den Gastnachrichten seit der letzten Host-Antwort', async () => {
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'Hallo' });
+    const thread = { id: 'g:2', channel: 'airbnb', reservation_status: 'reserved', guest_name: 'Kim' } as MessageThread;
+    const run = async (bodies: Array<[Message['direction'], string]>) => {
+      const messages = bodies.map(([direction, body], i) => ({ id: `m${i}`, direction, body, sent_at: `2026-11-17T10:0${i}:00Z` })) as Message[];
+      await generateDraftForThread({ thread, messages, voice: 'v', facts: 'f', bookingContext: PRICE_CTX, isBookingRequest: true, requestKind: 'request_to_book', now: NOW }, { call });
+      return call.mock.calls.at(-1)![0].systemPrompt as string;
+    };
+    expect(await run([['inbound', 'Könntest du uns beim Betrag entgegenkommen?'], ['system', 'New guest reservation request HMX']])).toContain('kündige KEINE Bestätigung an');
+    expect(await run([['inbound', 'Gibt es Rabatt?'], ['outbound', 'Leider nein.'], ['inbound', 'Ok, gibt es einen See?']])).not.toContain('kündige KEINE Bestätigung an');
   });
 });

@@ -202,6 +202,9 @@ describe('buildJudgeSystemPrompt — Preis und Nachlass (#1243)', () => {
     expect(p).toContain('ist das KEIN Regelverstoß und KEIN invents_fact');
     expect(p).toContain('nimmt KEIN Gegenangebot des Gasts an');
     expect(p).toContain('Preis- oder Rabattfrage bzw. ein Gegenangebot');
+    // Prüfer-Runde 1: Befund 2 (kein Gastbetrag) und Befund 3 (RTB-Ankündigung bei Preisthema)
+    expect(p).toContain('ist JEDER Betrag im Entwurf invents_fact');
+    expect(p).toContain('KEINE erlaubte Ankündigung mehr, sondern promises_action');
     const block = p.split('PREIS UND NACHLASS')[1].split('HEUTE:')[0];
     expect(block).not.toMatch(/\d+\s?%|\d+\s?Prozent|\d+\s?Tage/);
   });
