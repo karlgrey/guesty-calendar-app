@@ -259,6 +259,10 @@ describe('price_discount (#1243)', () => {
     'Da kann ich euch leider nicht entgegenkommen, es bleibt bei dem Betrag, der dir angezeigt wird.',
     'Günstiger wird es leider nicht.', 'We cannot offer a cheaper rate.', 'Eine Reduzierung ist nicht drin.',
     'Die Hälfte geht leider nicht.', 'Weiter runter kann ich nicht.', 'Das passt nicht in euer Budget, verstehe ich.',
+    // Prüfer-Runde 2
+    'Ein anderes Angebot kann ich dir leider nicht machen.', 'Ein bisschen Spielraum habe ich.',
+    'Einen kleinen Abschlag auf die Unterkunft kann ich euch geben.', 'Sonderkonditionen gibt es bei uns nicht.',
+    'Eine Vergünstigung ist leider nicht drin.',
   ])('Buchungsanfrage, Entwurf ohne alte Trigger-Wörter: %s', (t) => {
     expect(run(t, true).length).toBeGreaterThan(0);
   });
@@ -275,6 +279,9 @@ describe('guest_price_topic (#1243)', () => {
     'Gibt es einen Rabatt?', 'Wären 300 Euro insgesamt möglich?', 'Any chance you could do a better rate for us?',
     'Wir würden gern anfragen, ob ihr uns preislich entgegenkommt.', 'Ist es etwas günstiger möglich?',
     'Could you do 10% off?', 'What would it cost for 8 people?', 'Ein bisschen teuer für uns.', '€2,600 would be our max.',
+    // Prüfer-Runde 2 (erste Zeile: echter Fall Henriette FH, 31.10.2026)
+    'Das kommt also auch etwas auf das finale Angebot an.', 'Könnt ihr uns da ein besseres Angebot machen?',
+    'Ist da noch etwas Spielraum für uns?', 'Gibt es Sonderkonditionen für Kurzentschlossene?',
   ])('Gastnachricht mit Preisthema: %s', (t) => {
     expect(guest([t])).toHaveLength(1);
   });

@@ -27,6 +27,10 @@ export const PRICE_TOPIC_RE = new RegExp(
     String.raw`\bzehntel\b`, String.raw`\bhälfte\b`, String.raw`\breduz\w*`, String.raw`\breduc\w*`, String.raw`\brates?\b`,
     String.raw`\babzieh\w*`, String.raw`\bnachlassen\b`, String.raw`\b(?:weiter|so\s?weit)\s+runter\b`,
     String.raw`\bbudget\w*`, String.raw`\bteuer\w*`, String.raw`\bexpensive\b`, String.raw`\bafford\w*`, String.raw`\bdeal\b`,
+    // Prüfer-Runde 2: Umschreibungen aus echten Threads und Proben („kommt aufs finale Angebot an“,
+    // „besseres Angebot“, „Spielraum“, „Sonderkonditionen“, „kleiner Abschlag“, „Vergünstigung“).
+    String.raw`\bangebot\w*`, String.raw`\bspielraum\w*`, String.raw`\b\w*konditionen\b`, String.raw`\babschlag\w*`,
+    String.raw`\bvergünstig\w*`,
   ].join('|'),
   'i',
 );

@@ -68,6 +68,8 @@ import {
 import { callClaudeTool, type CallClaudeToolInput } from '../services/anthropic-client.js';
 import { findHostExamples } from '../services/host-examples.js';
 import { detectLanguage } from '../utils/language-detect.js';
+import { findGuestPriceTopic } from '../services/price-topic.js';
+import { guestMessagesSinceLastHost } from '../services/auto-send/runner.js';
 import type { MessageThread, MessageChannel, Message, MessageDirection } from '../types/messages.js';
 
 const RESULTS_DIR = 'data/testplan-440-results';
@@ -206,7 +208,11 @@ async function dumpDirect(thread: MessageThread, messages: Message[], voice: str
   const systemPrompt = buildSystemPrompt(
     voice, facts, bookingContext, thread, undefined, undefined, br.isBookingRequest, undefined, br.requestKind, br.alteration,
     // #1191: wie generateDraftForThread — Einladung/Ankündigung höchstens einmal je Thread.
-    [], { closingAlreadySent: hostAlreadySentClosing(messages, br.requestKind), discountRuleApplies: br.discountRuleApplies },
+    [], {
+      closingAlreadySent: hostAlreadySentClosing(messages, br.requestKind), discountRuleApplies: br.discountRuleApplies,
+      // #1243: wie generateDraftForThread — sonst zeigt der Dump bei Preis-/Rabattfragen den falschen Prompt-Zweig.
+      priceTopic: findGuestPriceTopic(guestMessagesSinceLastHost(messages)) !== null,
+    },
   );
   const userMessage = buildConversation(messages, thread.guest_name);
   printSection('THREAD-FAKTEN', JSON.stringify({

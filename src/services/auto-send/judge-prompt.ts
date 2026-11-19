@@ -117,7 +117,11 @@ export function buildJudgeSystemPrompt(
       'zusätzlich senken.',
     // #1243 (Entscheidung Micha 17.11.2026, Fall Daniel FH): bewusst ohne Zahlen — Höhe, Bezug und
     // Bedingung eines Nachlasses stehen im OBJEKTWISSEN (Vault). Dass jeder Entwurf mit Preis oder
-    // Nachlass auf wait geht, stellt der mechanische Check (price_discount/money) sicher, nicht der Judge.
+    // Nachlass auf wait geht, sichern ZWEI Netze: die mechanischen Wortlisten (price_discount/money/
+    // guest_price_topic) und — Prüfer-Runde 2 — der letzte Punkt unten (confidence höchstens mittel bei
+    // Preis-/Rabattthema einer offenen Anfrage). Die Wortlisten allein ließen umschriebene Fälle durch
+    // („any flexibility?“ / „besseres Angebot?“ mit Preis-halten-Antwort: Gate-Ergebnis auto, live belegt).
+    // Die inhaltliche Richtigkeit bleibt an den Risiko-Flags ablesbar.
     'PREIS UND NACHLASS (gilt für alle Kategorien, vor allem buchungsanfrage):',
     '- Nennt der Entwurf den Gesamtpreis für den Gast genau so, wie er im BUCHUNGSKONTEXT steht (Rundung, „ca.“,',
     '  „inkl. Steuern“ ok), ist das KEIN Regelverstoß und KEIN invents_fact. Jeder andere Betrag (selbst gerechneter',
@@ -136,8 +140,13 @@ export function buildJudgeSystemPrompt(
     '- Spricht der Gast Preis oder Rabatt an, ist die Ankündigung „die Bestätigung kommt in Kürze“ (Request-to-Book)',
     '  KEINE erlaubte Ankündigung mehr, sondern promises_action — neben einem Nachlass oder Gegenangebot liest sie sich',
     '  wie eine Zusage. Übergeht der Entwurf die Preis- oder Rabattfrage des Gasts, ist confidence höchstens mittel.',
-    '- Ein Entwurf, der den Preis hält und freundlich auf die Rabattfrage eingeht, ist korrekt. Dass Micha jeden Entwurf',
-    '  mit Preis oder Nachlass selbst freigibt, ist bereits sichergestellt und darf confidence NICHT senken.',
+    '- Ein Entwurf, der den Preis hält und freundlich auf die Rabattfrage eingeht, ist inhaltlich korrekt: dafür KEIN',
+    '  Risiko-Flag.',
+    '- AUSNAHME zur confidence-Regel für buchungsanfrage oben: Geht es bei einer NOCH OFFENEN Anfrage in der Gastnachricht',
+    '  ODER im Entwurf um Preis, Rabatt, Nachlass, Gegenangebot, Budget oder Verhandlungsspielraum — auch nur umschrieben,',
+    '  ohne diese Wörter (z. B. „geht da noch was?“, „besseres Angebot“, „any flexibility?“, „da kann ich nichts machen“,',
+    '  „es bleibt so wie angezeigt“) —, ist confidence HÖCHSTENS mittel, auch wenn der Entwurf inhaltlich korrekt ist:',
+    '  solche Antworten gibt Micha immer selbst frei. Risiko-Flags setzt du trotzdem nur bei echten Fehlern.',
     // #698 (Fall Lorenzo U19, 20.09.2026): HEUTE-Fakt VOR VOICE — dasselbe Muster wie im
     // Entwurfs-Systemprompt (draft-service.ts), damit das Prüfmodell einen im Entwurf falsch
     // gespiegelten Wochentag/Tageszeitwunsch als contradicts_facts erkennen kann.
