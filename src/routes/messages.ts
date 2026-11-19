@@ -739,6 +739,7 @@ router.post('/:threadId/regenerate', async (req, res, next) => {
       isBookingRequest: openBookingRequest !== null,
       requestKind: openBookingRequest?.requestKind ?? null, // #1004
       alteration: resolveAlterationSituation(thread, messages, { isBookingRequest: openBookingRequest !== null }), // #976
+      discountRuleApplies: !!property?.airbnbDiscount, // #1243
     });
     let redirectSuffix = '';
     if (result.kind === 'text') {
