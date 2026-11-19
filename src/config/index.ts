@@ -55,13 +55,13 @@ const configSchema = z.object({
 
   // #1169: Token NUR für POST /api/meter/readings (Zählerstände aus Home Assistant). Eigener
   // Schlüssel, bewusst getrennt von den Agent-Keys. Leer/ungesetzt = Endpunkt deaktiviert (503).
+  // Bewusst KEINE Längenprüfung hier: ein zu kurzer Wert darf den App-Start nicht verhindern
+  // (Nebenfunktion). Die Mindestlänge prüft `meterTokenState()` in routes/meter-ingest.ts und
+  // schaltet dann nur den Endpunkt ab (503 + Log beim Start).
   meterIngestToken: z
     .string()
     .optional()
-    .transform((val) => (val && val.trim() ? val.trim() : undefined))
-    .refine((val) => val === undefined || val.length >= 32, {
-      message: 'METER_INGEST_TOKEN must be at least 32 characters',
-    }),
+    .transform((val) => (val && val.trim() ? val.trim() : undefined)),
 
   // Hostex API (optional — only required if hostex-provider properties exist)
   hostexAccessToken: z.string().optional(),

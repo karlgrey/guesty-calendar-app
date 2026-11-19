@@ -9,7 +9,9 @@
  *
  * - 201 {ok, stored: true,  slug, measuredAt (UTC), kwh} — neu gespeichert
  * - 200 {ok, stored: false, duplicate: true, …}           — Zeitpunkt schon vorhanden (erster Wert bleibt)
- * - 400 ungültiger Körper · 401 Token fehlt/falsch · 404 Objekt unbekannt · 503 Token nicht konfiguriert
+ * - 400 ungültiger Körper · 401 Token fehlt/falsch · 404 Objekt unbekannt · 413 Körper > 10 kB
+ * - 503 Token nicht nutzbar: fehlt, kürzer als 32 Zeichen oder identisch mit einem Agent-Key
+ *   (die App läuft in allen drei Fällen weiter, `app.ts` schreibt den Grund beim Start ins Log)
  *
  * Das Token schaltet ausschließlich diesen Endpunkt frei (eigener Router unter /api/meter,
  * vor dem globalen express.json() gemountet); Agent-Keys gelten hier nicht.
@@ -36,9 +38,28 @@ function tokenMatches(provided: string, expected: string): boolean {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
+/** Mindestlänge des Tokens; ein kürzerer Wert schaltet den Endpunkt ab (503). */
+export const METER_TOKEN_MIN_LENGTH = 32;
+
+export type MeterTokenState = 'ok' | 'missing' | 'too_short' | 'agent_key';
+
+/**
+ * Zustand der Token-Konfiguration. Alles außer `ok` schaltet NUR diesen Endpunkt ab (503):
+ * ein Konfigurationsfehler an der Zählerstand-Annahme darf den Start der App (Gäste-Messaging,
+ * Kalender) nicht verhindern. `agent_key`: der Wert ist zugleich ein Agent-Key — dann schaltete
+ * der Agent-Key diesen Endpunkt frei und das in Home Assistant hinterlegte Token die Agent-API.
+ */
+export function meterTokenState(): MeterTokenState {
+  const token = config.meterIngestToken;
+  if (!token) return 'missing';
+  if (token.length < METER_TOKEN_MIN_LENGTH) return 'too_short';
+  if (config.agentApiKeySet.includes(token)) return 'agent_key';
+  return 'ok';
+}
+
 function requireMeterToken(req: Request, res: Response, next: NextFunction): void {
   const expected = config.meterIngestToken;
-  if (!expected) {
+  if (!expected || meterTokenState() !== 'ok') {
     res.status(503).json({ error: 'Meter ingest is not configured' });
     return;
   }
@@ -78,10 +99,16 @@ function validate(body: unknown, now: number): { ok: true; value: ValidReading }
 
 router.use(requireMeterToken);
 router.use(express.json({ limit: '10kb' }));
-// JSON-Parse-Fehler dieses Routers als 400 (der globale Error-Handler machte daraus 500).
+// Fehler des JSON-Parsers dieses Routers als 4xx (der globale Error-Handler machte daraus 500):
+// kaputtes JSON → 400, sonst der Status des Parsers (z. B. 413 bei zu großem Körper).
 router.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
-  if (err && typeof err === 'object' && (err as { type?: string }).type === 'entity.parse.failed') {
+  const e = err && typeof err === 'object' ? (err as { type?: string; status?: number }) : null;
+  if (e?.type === 'entity.parse.failed') {
     res.status(400).json({ error: 'Ungültiges JSON' });
+    return;
+  }
+  if (typeof e?.status === 'number' && e.status >= 400 && e.status < 500) {
+    res.status(e.status).json({ error: 'Ungültige Anfrage' });
     return;
   }
   next(err);

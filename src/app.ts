@@ -27,7 +27,7 @@ import authRoutes from './routes/auth.js';
 import adminUsersRoutes from './routes/admin-users.js';
 import propertyRoutes from './routes/property-routes.js';
 import agentApiRoutes from './routes/agent-api.js';
-import meterIngestRoutes from './routes/meter-ingest.js';
+import meterIngestRoutes, { meterTokenState, METER_TOKEN_MIN_LENGTH } from './routes/meter-ingest.js';
 import powerRoutes from './routes/power.js';
 import { createGuestyWebhookRouter } from './routes/webhooks-guesty.js';
 import { handleGuestyInbound } from './jobs/handle-guesty-inbound.js';
@@ -55,6 +55,16 @@ export function createApp() {
   // #1169: Zählerstand-Annahme aus Home Assistant — eigenes Token, eigener JSON-Parser
   // (400 statt 500 bei kaputtem JSON), daher vor dem globalen express.json() gemountet.
   app.use('/api/meter', meterIngestRoutes);
+  // Token nicht nutzbar → nur dieser Endpunkt antwortet 503, die App läuft weiter.
+  const meterToken = meterTokenState();
+  if (meterToken === 'missing') {
+    logger.warn('Zählerstand-Annahme inaktiv (503): METER_INGEST_TOKEN fehlt');
+  } else if (meterToken !== 'ok') {
+    logger.error(
+      { reason: meterToken },
+      `Zählerstand-Annahme inaktiv (503): METER_INGEST_TOKEN ${meterToken === 'too_short' ? `ist kürzer als ${METER_TOKEN_MIN_LENGTH} Zeichen` : 'ist zugleich ein Agent-Key'}`,
+    );
+  }
 
   // Middleware
   app.use(express.json());

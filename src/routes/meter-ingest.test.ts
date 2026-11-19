@@ -19,7 +19,7 @@ vi.mock('../config/index.js', async (importOriginal) => {
   return { ...mod, config };
 });
 
-import meterIngestRoutes from './meter-ingest.js';
+import meterIngestRoutes, { meterTokenState } from './meter-ingest.js';
 import { getLatestMeterReading, getMeterReadings } from '../repositories/meter-reading-repository.js';
 
 const migrationsDir = join(dirname(fileURLToPath(import.meta.url)), '../db/migrations');
@@ -72,6 +72,20 @@ describe('POST /api/meter/readings — Auth', () => {
     expect(r.status).toBe(503);
     expect(count()).toBe(0);
   });
+  it('Token kürzer als 32 Zeichen → 503, auch wenn genau dieses Token geschickt wird', async () => {
+    cfg.token = 'kurz-0123456789';
+    expect(meterTokenState()).toBe('too_short');
+    const r = await post(valid, { Authorization: 'Bearer kurz-0123456789' });
+    expect(r.status).toBe(503);
+    expect(count()).toBe(0);
+  });
+  it('Token identisch mit einem Agent-Key → 503 (Agent-Key schaltet den Endpunkt nie frei)', async () => {
+    cfg.token = AGENT_KEY;
+    expect(meterTokenState()).toBe('agent_key');
+    const r = await post(valid, { Authorization: `Bearer ${AGENT_KEY}` });
+    expect(r.status).toBe(503);
+    expect(count()).toBe(0);
+  });
   it('gültiges Token → 201 und Stand gespeichert (UTC-normalisiert)', async () => {
     const r = await post(valid);
     expect(r.status).toBe(201);
@@ -117,6 +131,7 @@ describe('POST /api/meter/readings — Validierung', () => {
     ['unbekanntes Feld', { ...valid, unit: 'kWh' }, 400],
     ['Array statt Objekt', [valid], 400],
     ['kaputtes JSON', '{"slug": "farmhouse", ', 400],
+    ['Körper über 10 kB', { ...valid, slug: 'x'.repeat(11_000) }, 413],
   ];
   for (const [name, body, status] of cases) {
     it(`${name} → ${status}, nichts gespeichert`, async () => {
