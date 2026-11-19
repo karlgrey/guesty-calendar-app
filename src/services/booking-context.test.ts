@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Database from 'better-sqlite3';
 import { setDatabase, resetDatabase } from '../db/index.js';
 import { buildBookingContext, resolveBookingPeriod } from './booking-context.js';
+import { parseBookingPeriod } from './auto-send/today-facts.js';
 import type { MessageThread } from '../types/messages.js';
 
 let db: Database.Database;
@@ -198,6 +199,18 @@ describe('buildBookingContext', () => {
       insert({ source: 'website', total_price: 3000, price_basis: 'accommodation' });
       const ctx = buildBookingContext(thread({ inquiry_id: 'INQ-D' }), { rates: RATES, discountRule: { shortNoticeDays: 7, weekend: true } })!;
       expect(ctx).not.toContain('Nachlass-Bedingung');
+    });
+
+    // #1244 (Prüfer): Kernfall mit vollständigen Geld- und Rabattdaten. Dieselbe Zeile ergäbe als offene
+    // Anfrage Gesamtpreis, Anfrage-Zeitpunkt und „Nachlass-Bedingung … erfüllt" (Test weiter oben) — die
+    // Tests im #1244-Block laufen ohne Geld-/Kanal-Spalten und belegen das Weglassen deshalb nicht.
+    it('#1244: bestätigte Zeile mit Preis- und Rabattdaten → nur Buchungszeile; Zeitraum für today-facts lesbar', () => {
+      db.exec('ALTER TABLE inquiries ADD COLUMN created_at_guesty TEXT;');
+      insert({ status: 'confirmed', total_price: 3118.05, host_payout: 3118.05, price_basis: 'net_payout', created_at_guesty: '2026-11-17T10:00:00.000Z' });
+      const ctx = buildBookingContext(thread({ inquiry_id: 'INQ-D' }), { rates: RATES, discountRule: { shortNoticeDays: 7, weekend: true } })!;
+      expect(ctx).toMatch(/^Buchung \(bestätigt\): Zeitraum 20\.11\.2026–22\.11\.2026, 2 Nächte, 8 Personen — /);
+      expect(ctx).not.toMatch(/Gesamtpreis|Übernachtungspreis|3\.948|3\.690|3\.118|Nachlass-Bedingung|Anfrage gestellt|Übernachtungen in den Nächten|noch nicht bestätigt/);
+      expect(parseBookingPeriod(ctx)).toEqual({ checkIn: '2026-11-20', checkOut: '2026-11-22' });
     });
 
     it('#1243: ohne Objekt-Rabattlinie keine Bedingungszeile', () => {
