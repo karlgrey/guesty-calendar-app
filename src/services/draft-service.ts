@@ -299,16 +299,16 @@ function buildPriceDiscountRule(discountRuleApplies: boolean): string {
     lines.push(
       '- Einen Nachlass nennst du NUR, wenn ALLES zutrifft: (a) der Gast fragt selbst nach einem Rabatt bzw. günstigeren ' +
         'Preis oder nennt einen niedrigeren Betrag; (b) das OBJEKTWISSEN enthält eine ausdrückliche Regel für Rabattfragen ' +
-        'bei Plattform-Buchungsanfragen (z. B. „Rabattfragen bei Airbnb-Anfragen“); (c) deren Bedingung ist laut ' +
-        'BUCHUNGSKONTEXT und HEUTE-Fakt erfüllt (dort stehen Anfragedatum, Tage bis zur Anreise und die Wochentage der ' +
-        'Übernachtungen). Höhe und Bezug übernimmst du genau so, wie die Regel sie nennt (z. B. Prozentsatz und worauf er ' +
+        'bei Plattform-Buchungsanfragen (z. B. „Rabattfragen bei Airbnb-Anfragen“); (c) im BUCHUNGSKONTEXT steht ' +
+        '„Nachlass-Bedingung laut Objektregel: erfüllt“. Steht dort „nicht erfüllt“ oder fehlt die Zeile, gibt es KEINEN ' +
+        'Nachlass — prüfe die Bedingung nicht selbst nach. Höhe und Bezug übernimmst du genau so, wie die Regel sie nennt (z. B. Prozentsatz und worauf er ' +
         'sich bezieht) — nie mehr, und rechne dafür KEINEN Euro-Betrag aus. Was die Regel für den Fall vorsieht, dass der ' +
         'Gast mehr will, setzt du genau so um. Formuliere den Nachlass als Möglichkeit, die du anbieten kannst, nicht als ' +
         'bestätigte Buchung.',
       '- Regeln für Direktbuchungen und Angebote (Mehrnächte-Rabatt, Direktbuchungs-Rabatt, Stammgäste, ' +
         'Entgegenkommen bei Angeboten) gelten HIER NICHT.',
       '- Ist die Bedingung nicht erfüllt oder gibt es keine passende Regel: halte den Preis freundlich, ohne Nachlass ' +
-        'und ohne interne Bedingungen zu nennen.',
+        'und ohne interne Bedingungen oder Gründe zu nennen (keine Begründung mit der Bedingung der Regel).',
     );
   } else {
     lines.push(

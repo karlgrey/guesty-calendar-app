@@ -147,6 +147,27 @@ describe('buildBookingContext', () => {
       expect(ctx).toMatch(/Daten stammen aus der Anfrage selbst\. Anfrage gestellt am 17\.11\.2026, 3 Tage vor Anreise\. Übernachtungen in den Nächten ab Freitag, Samstag \(Wochenendnacht Fr\/Sa dabei: ja\)\.$/);
     });
 
+    // #1243: Bedingung der Objekt-Rabattlinie als Fakt (nur Objekte mit airbnbDiscount).
+    it('#1243: mit Objekt-Rabattlinie steht die ausgewertete Nachlass-Bedingung am Ende (Fall Daniel: erfüllt)', () => {
+      db.exec('ALTER TABLE inquiries ADD COLUMN created_at_guesty TEXT;');
+      insert({ total_price: 3118.05, host_payout: 3118.05, price_basis: 'net_payout', created_at_guesty: '2026-11-17T10:00:00.000Z' });
+      const ctx = buildBookingContext(thread({ inquiry_id: 'INQ-D' }), { rates: RATES, discountRule: { shortNoticeDays: 7, weekend: true } })!;
+      expect(ctx).toMatch(/\(Wochenendnacht Fr\/Sa dabei: ja\)\. Nachlass-Bedingung laut Objektregel: erfüllt \(Wochenende, Anfrage 3 Tage vor Anreise\)\.$/);
+    });
+
+    it('#1243: Bedingung nicht erfüllt (Wochentage, Anfrage weit vorher)', () => {
+      db.exec('ALTER TABLE inquiries ADD COLUMN created_at_guesty TEXT;');
+      insert({ check_in: '2026-12-15', check_out: '2026-12-17', total_price: 3118.05, host_payout: 3118.05, price_basis: 'net_payout', created_at_guesty: '2026-11-19T10:00:00.000Z' });
+      const ctx = buildBookingContext(thread({ inquiry_id: 'INQ-D' }), { rates: RATES, discountRule: { shortNoticeDays: 7, weekend: true } })!;
+      expect(ctx).toContain('Nachlass-Bedingung laut Objektregel: nicht erfüllt (kein Wochenende, Anfrage 26 Tage vor Anreise).');
+    });
+
+    it('#1243: ohne Objekt-Rabattlinie keine Bedingungszeile', () => {
+      insert({ total_price: 3118.05, host_payout: 3118.05, price_basis: 'net_payout' });
+      expect(buildBookingContext(thread({ inquiry_id: 'INQ-D' }), { rates: RATES, discountRule: null })).not.toContain('Nachlass-Bedingung');
+      expect(buildBookingContext(thread({ inquiry_id: 'INQ-D' }), { rates: RATES })).not.toContain('Nachlass-Bedingung');
+    });
+
     it('ohne Optionen gelten die Sätze aus data/properties.json (15,5 % / 7 %)', () => {
       insert({ total_price: 3118.05, host_payout: 3118.05, price_basis: 'net_payout' });
       expect(buildBookingContext(thread({ inquiry_id: 'INQ-D' }))).toContain('ca. 3.948,30 EUR inkl. Steuern');

@@ -629,6 +629,8 @@ describe('buildSystemPrompt — Preis und Rabatt bei Buchungsanfragen (#1243)', 
     const p = build(true);
     expect(p).toContain('Einen Nachlass nennst du NUR, wenn ALLES zutrifft');
     expect(p).toContain('ausdrückliche Regel für Rabattfragen');
+    expect(p).toContain('„Nachlass-Bedingung laut Objektregel: erfüllt“');
+    expect(p).toContain('prüfe die Bedingung nicht selbst nach');
     expect(p).toContain('Regeln für Direktbuchungen und Angebote');
     expect(p).toContain('Ohne Rabattfrage oder Gegenangebot des Gasts: KEIN Nachlass');
     expect(p).not.toContain('Einen Nachlass bietest du NICHT an');

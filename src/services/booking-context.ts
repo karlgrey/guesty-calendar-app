@@ -11,7 +11,8 @@ import { getReservationById, getInquiryById, getInquiryWithMoneyById } from '../
 import type { MessageThread } from '../types/messages.js';
 import { nightsBetween } from '../utils/date.js';
 import { getAirbnbGuestPriceConfig } from '../config/properties.js';
-import { computeStayFacts, formatStayFactsSentence } from './counter-offer.js';
+import { computeStayFacts, formatStayFactsSentence, formatDiscountConditionSentence, type DiscountCondition } from './counter-offer.js';
+import { getPropertyForThread } from '../utils/thread-property.js';
 import { resolveGuestPrice, type AirbnbGuestPriceRates, type GuestPrice } from './guest-price.js';
 
 /** ISO/localized date (YYYY-MM-DD…) → German TT.MM.JJJJ. */
@@ -38,6 +39,17 @@ function configuredRates(): AirbnbGuestPriceRates | undefined {
 export interface BookingContextOptions {
   /** #1242: Sätze für die Rückrechnung; weggelassen = aus properties.json, null = keine. */
   rates?: AirbnbGuestPriceRates | null;
+  /** #1243: Rabatt-Bedingung des Objekts; weggelassen = properties.json `airbnbDiscount` des Thread-Objekts, null = keine. */
+  discountRule?: DiscountCondition | null;
+}
+
+function discountRuleFrom(thread: MessageThread, opts: BookingContextOptions | undefined): DiscountCondition | null {
+  if (opts && 'discountRule' in opts) return opts.discountRule ?? null;
+  try {
+    return getPropertyForThread(thread)?.airbnbDiscount ?? null;
+  } catch {
+    return null;
+  }
 }
 
 function ratesFrom(opts: BookingContextOptions | undefined): AirbnbGuestPriceRates | undefined {
@@ -112,11 +124,17 @@ export function buildBookingContext(thread: MessageThread, opts?: BookingContext
 
     // #1243: Anfrage-Zeitpunkt und Wochentage der Nächte (Grundlage der Rabatt-Einordnung). Steht NACH
     // dem Zeitraum-Teil, damit today-facts.ts das Format "Zeitraum TT.MM.JJJJ–TT.MM.JJJJ" unverändert parst.
-    const stay = formatStayFactsSentence(computeStayFacts(inquiry.check_in, inquiry.check_out, inquiry.created_at_guesty));
+    const stayFacts = computeStayFacts(inquiry.check_in, inquiry.check_out, inquiry.created_at_guesty);
+    const stay = formatStayFactsSentence(stayFacts);
+    // #1243: nur bei Objekten mit Rabatt-Linie (Farmhouse) — die Bedingung wird hier ausgewertet, der
+    // Entwurf prüft sie nicht selbst (Live-Test: Sonnet bot sonst trotz nicht erfüllter Bedingung an).
+    const rule = discountRuleFrom(thread, opts);
+    const condition = rule ? formatDiscountConditionSentence(stayFacts, rule) : '';
+    const tail = [stay, condition].filter(Boolean).join(' ');
 
     return (
       `Buchungsanfrage (noch nicht bestätigt): Zeitraum ${checkIn}–${checkOut}, ${nights} Nächte, ${guests}${price} ` +
-      `— Daten stammen aus der Anfrage selbst.${stay ? ` ${stay}` : ''}`
+      `— Daten stammen aus der Anfrage selbst.${tail ? ` ${tail}` : ''}`
     );
   }
 

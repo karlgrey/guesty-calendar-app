@@ -2,7 +2,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   computeStayFacts, formatStayFactsSentence, detectCounterOfferAmount,
-  evaluateCounterOffer, formatCounterOfferNote, type StayFacts,
+  evaluateCounterOffer, formatCounterOfferNote, evaluateDiscountCondition, formatDiscountConditionSentence, type StayFacts,
 } from './counter-offer.js';
 
 // Fall Daniel: Anfrage 17.11.2026 (Di), Fr 20.11. – So 22.11.2026
@@ -138,5 +138,28 @@ describe('formatCounterOfferNote', () => {
   it('ohne Währung nur Zahl', () => {
     const e = evaluateCounterOffer({ offer: 100, guestTotal: 200, currency: null, stay: DANIEL, rule: null })!;
     expect(formatCounterOfferNote(e, false, DANIEL)).toContain('Betrag in der Gastnachricht 100 (');
+  });
+});
+
+// #1243: Bedingung der Objekt-Rabattlinie als eigener Fakt (Entwurfs-Kontext, nicht nur Gegenangebot).
+describe('evaluateDiscountCondition / formatDiscountConditionSentence', () => {
+  const RULE = { shortNoticeDays: 7, weekend: true };
+  it('Fall Daniel: erfüllt über Wochenende und Kurzfristigkeit', () => {
+    expect(evaluateDiscountCondition(DANIEL, RULE)).toEqual({ met: true, shortNotice: true, weekend: true });
+    expect(formatDiscountConditionSentence(DANIEL, RULE)).toBe('Nachlass-Bedingung laut Objektregel: erfüllt (Wochenende, Anfrage 3 Tage vor Anreise).');
+  });
+  it('Wochentage weit vorher: nicht erfüllt', () => {
+    const f = computeStayFacts('2026-12-15', '2026-12-17', '2026-11-19T10:00:00.000Z');
+    expect(evaluateDiscountCondition(f, RULE).met).toBe(false);
+    expect(formatDiscountConditionSentence(f, RULE)).toBe('Nachlass-Bedingung laut Objektregel: nicht erfüllt (kein Wochenende, Anfrage 26 Tage vor Anreise).');
+  });
+  it('Anfrage 5 Tage vorher, Wochentage: erfüllt über Kurzfristigkeit; Grenze inklusive', () => {
+    expect(evaluateDiscountCondition(computeStayFacts('2026-11-24', '2026-11-26', '2026-11-19T10:00:00.000Z'), RULE).met).toBe(true);
+    expect(evaluateDiscountCondition(computeStayFacts('2026-11-24', '2026-11-26', '2026-11-17T10:00:00.000Z'), RULE).met).toBe(true);
+    expect(evaluateDiscountCondition(computeStayFacts('2026-11-24', '2026-11-26', '2026-11-16T10:00:00.000Z'), RULE).met).toBe(false);
+  });
+  it('Abstand unbekannt und kein Wochenende: nicht erfüllt, ehrlich benannt', () => {
+    const f = computeStayFacts('2026-12-15', '2026-12-17', null);
+    expect(formatDiscountConditionSentence(f, RULE)).toBe('Nachlass-Bedingung laut Objektregel: nicht erfüllt (kein Wochenende, Abstand Anfrage–Anreise unbekannt).');
   });
 });

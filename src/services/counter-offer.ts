@@ -158,19 +158,42 @@ export interface CounterOfferEvaluation {
   condition: { met: boolean; shortNotice: boolean; weekend: boolean } | null;
 }
 
+/**
+ * #1243: Bedingung der Objekt-Rabattlinie (properties.json `airbnbDiscount`): Anreise höchstens
+ * shortNoticeDays Tage nach der Anfrage ODER (wenn weekend) eine Nacht ab Freitag/Samstag.
+ */
+export function evaluateDiscountCondition(
+  stay: StayFacts, rule: DiscountCondition,
+): { met: boolean; shortNotice: boolean; weekend: boolean } {
+  const days = stay.requestDaysBeforeArrival;
+  const shortNotice = days != null && days <= rule.shortNoticeDays;
+  const weekend = rule.weekend && stay.weekendNight;
+  return { met: shortNotice || weekend, shortNotice, weekend };
+}
+
+function conditionDetail(stay: StayFacts, weekend: boolean): string {
+  const days = stay.requestDaysBeforeArrival;
+  const daysPart = days != null ? `Anfrage ${daysBeforeLabel(days)}` : 'Abstand Anfrage–Anreise unbekannt';
+  return `${weekend ? 'Wochenende' : 'kein Wochenende'}, ${daysPart}`;
+}
+
+/**
+ * #1243: ausgewertete Bedingung als Fakt-Satz für den Entwurfs-/Judge-Kontext — der Entwurf prüft
+ * die Bedingung nicht selbst nach (Live-Test: Sonnet bot bei 26 Tagen Vorlauf ohne Wochenende
+ * trotzdem einen Nachlass an). Nennt keine Rabatthöhe; die steht nur im Objektwissen.
+ */
+export function formatDiscountConditionSentence(stay: StayFacts, rule: DiscountCondition): string {
+  const c = evaluateDiscountCondition(stay, rule);
+  return `Nachlass-Bedingung laut Objektregel: ${c.met ? 'erfüllt' : 'nicht erfüllt'} (${conditionDetail(stay, c.weekend)}).`;
+}
+
 export function evaluateCounterOffer(a: {
   offer: number; guestTotal: number; currency: string | null; stay: StayFacts; rule: DiscountCondition | null;
 }): CounterOfferEvaluation | null {
   if (!(a.guestTotal > 0) || a.offer >= a.guestTotal) return null;
   const diffAbs = Math.round((a.guestTotal - a.offer) * 100) / 100;
   const diffPct = Math.round((diffAbs / a.guestTotal) * 1000) / 10;
-  let condition: CounterOfferEvaluation['condition'] = null;
-  if (a.rule) {
-    const days = a.stay.requestDaysBeforeArrival;
-    const shortNotice = days != null && days <= a.rule.shortNoticeDays;
-    const weekend = a.rule.weekend && a.stay.weekendNight;
-    condition = { met: shortNotice || weekend, shortNotice, weekend };
-  }
+  const condition = a.rule ? evaluateDiscountCondition(a.stay, a.rule) : null;
   return { offer: a.offer, guestTotal: a.guestTotal, currency: a.currency, diffAbs, diffPct, condition };
 }
 
@@ -198,10 +221,7 @@ export function formatCounterOfferNote(e: CounterOfferEvaluation, estimated: boo
     `${formatMoney(e.diffAbs, e.currency)} bzw. ${pct} % unter dem Gastpreis ` +
     `${estimated ? 'ca. ' : ''}${formatMoney(e.guestTotal, e.currency)} inkl. Steuern`;
   if (e.condition) {
-    const days = stay.requestDaysBeforeArrival;
-    const daysPart = days != null ? `Anfrage ${daysBeforeLabel(days)}` : 'Abstand Anfrage–Anreise unbekannt';
-    const detail = `${e.condition.weekend ? 'Wochenende' : 'kein Wochenende'}, ${daysPart}`;
-    note += ` · Nachlass-Bedingung laut Objektregel: ${e.condition.met ? 'erfüllt' : 'nicht erfüllt'} (${detail})`;
+    note += ` · Nachlass-Bedingung laut Objektregel: ${e.condition.met ? 'erfüllt' : 'nicht erfüllt'} (${conditionDetail(stay, e.condition.weekend)})`;
   }
   return note;
 }
