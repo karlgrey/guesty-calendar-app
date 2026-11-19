@@ -922,6 +922,15 @@ der einfach nie wieder erfolgreich pollt (Florence stand so 10 Wochen unbemerkt 
 - Die BI-Report-Mail (`src/jobs/bi-email.ts` → `staleAirbnbMailSources` auf `BiReportModel`,
   gerendert in `src/services/bi-email-templates.ts`) zeigt eine Warnzeile, falls etwas stale ist
 
+### Stromverbrauch je Buchung (Migration 044, #1169)
+
+Home Assistant (Farmhouse) schickt den fortlaufenden kWh-Stand des Hauszählers; die App holt nichts ab (HA nur über Tailscale). Nur Erfassung und Auswertung in kWh — keine Euro, keine Abrechnung, keine Benachrichtigung.
+- **Annahme:** `POST /api/meter/readings` (`src/routes/meter-ingest.ts`, in `app.ts` VOR dem globalen `express.json()` gemountet, eigener Parser → kaputtes JSON = 400). Header `Authorization: Bearer <METER_INGEST_TOKEN>`; das Token schaltet nur diesen Endpunkt frei, Agent-Keys gelten hier nicht. Body genau `{"slug":"farmhouse","kwh":12345.678,"measuredAt":"2026-11-19T10:00:00+01:00"}` (unbekannte Felder → 400; `kwh` Zahl ≥ 0, auch als Zahl-String; `measuredAt` ISO 8601 MIT Zeitzone `Z`/`±HH:MM`, höchstens 10 min in der Zukunft). Antworten: 201 `{ok, stored:true, slug, measuredAt (UTC), kwh}` · 200 `{…, stored:false, duplicate:true}` (Zeitpunkt schon da, erster Wert bleibt) · 400 · 401 (Token fehlt/falsch) · 404 (Slug nicht in properties.json) · 413 (Körper > 10 kB) · 503 (Token nicht nutzbar). **503 statt Startabbruch:** fehlt das Token, ist es kürzer als 32 Zeichen oder identisch mit einem Agent-Key, antwortet nur dieser Endpunkt 503 (`meterTokenState()`), die App läuft weiter und `app.ts` schreibt den Grund beim Start ins Log — die Config prüft die Länge bewusst nicht (Nebenfunktion darf den Start nicht verhindern).
+- **Tabelle `meter_readings`** (044): `property_slug`, `measured_at` (UTC-ISO normalisiert → `+01:00` und `Z` desselben Moments sind Dubletten), `kwh`, `received_at`; `UNIQUE(property_slug, measured_at)` + `INSERT OR IGNORE`. Repository `meter-reading-repository.ts`.
+- **Berechnung** (`src/services/power-consumption.ts`, pure): Verbrauch = Stand Check-out − Stand Check-in; Stand zum Zeitpunkt linear interpoliert zwischen letztem Stand davor und erstem danach, wenn ≤ 3 h auseinander, sonst „unvollständig (Messlücke)“; sinkt der Stand im Zeitraum → „unvollständig (Zählerstand gesunken)“. Leerstand Check-out → nächster Check-in als eigene Zeile (kWh, kWh/Tag); nach dem letzten Check-out läuft ein Leerstand bis zum letzten Stand. Laufende Buchung: Verbrauch bis zum letzten Stand, kWh/Nacht erst ab 24 h, nicht im Median. Auffällig = kWh/Nacht > 1,5 × Median der vollständig erfassten Buchungen, erst ab 5 Vergleichsbuchungen.
+- **Daten** (`power-report-service.ts`): nur `status = 'confirmed'` (keine Stornos, keine `reserved`-Holds; Blocker liegen nicht in `reservations`), Check-out in den letzten 12 Monaten, Check-in ≤ heute. Zeiten wie `GET /api/agent/reservations/:id/times` (`getStayTimes`: Override → Provider → Listing-Standard), Rückfall properties.json `checkInTime`/`checkOutTime`, Zeitzone des Objekts. Hinweis: Reservierungen bleiben nur 13 Monate in der DB (ETL-Aufräumen).
+- **Admin:** `/admin/strom` (`src/routes/power.ts`, Nav „Strom“, `?property=<slug>`, Default `farmhouse`): oben letzter Zählerstand (Warnung, wenn älter als 3 h), Median-Zeile, Tabelle neueste zuerst mit Leerstand-Zeilen.
+
 ### LLM-Alarm (#907)
 Stiller Ausfall der Anthropic-Anbindung (leeres Guthaben, ungültiger Key, Outage) soll nicht
 unbemerkt bleiben — KI-Entwürfe, Bewertungen und Vault-Vorschläge fielen sonst einfach aus.
@@ -1092,6 +1101,7 @@ Optional:
 - `WA_WANJA_JID` - Empfänger-JID für die Zeit-Änderungs-Nachrichten (Default `380509566925@s.whatsapp.net`)
 - `TIMES_CHANGE_WHATSAPP` - `1`/`true`/`yes` schaltet die Wanja-WhatsApp bei Zeit-Änderungen wieder ein (Default AUS seit #799; Marker im Kalender ersetzt sie)
 - `LLM_ALARM_RECIPIENTS` - Komma-getrennte Empfänger der LLM-Alarm-/Entwarnungs-Mails (#907); leer → Fallback `CONSISTENCY_ALERT_RECIPIENTS`, sonst nur Log. In `.env.example` `# optional` (Code hat Fallback) — auf dem Server trotzdem setzen, sonst landet der Alarm nur im Log
+- `METER_INGEST_TOKEN` - Token (≥ 32 Zeichen) NUR für `POST /api/meter/readings` (#1169, Zählerstände aus Home Assistant). Leer, zu kurz oder gleich einem Agent-Key = nur dieser Endpunkt 503, App startet trotzdem. In `.env.example` bewusst Pflicht-Key (env-check erinnert beim Deploy); Wert nur in der Server-`.env`, nie im Repo/Task
 - `DRAFT_STALE_HOURS` - Ab wann ein pending-KI-Entwurf beim Öffnen im Admin-UI still neu generiert wird (default: 6, siehe Auto-Send-Gate-Abschnitt „Stale-Draft-Regeneration")
 
 ## Guesty API Quirks
