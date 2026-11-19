@@ -177,7 +177,7 @@ export async function runAutoSendGate(input: GateInput, deps: GateDeps = realGat
     const judge = await deps.judge({
       guestMessages, draft: input.body, voice: input.voice, facts: input.facts,
       bookingContext: input.bookingContext, guestName: input.thread.guest_name,
-      guestLanguage: input.guestLanguage, now, hostMessages,
+      guestLanguage: input.guestLanguage, now, hostMessages, threadId: input.thread.id,
     });
     // Kategorie-Override: ein erkannter System-Post erzwingt 'buchungsanfrage' — unabhängig
     // davon, was (oder ob überhaupt) der Judge klassifiziert hat (Spec: "der Judge darf sie

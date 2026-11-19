@@ -14,6 +14,17 @@ describe('judgeDraft', () => {
     const call = vi.fn().mockResolvedValue({ category: 'quatsch', answerable_from_facts: true, risk_flags: [], confidence: 'hoch', reasoning: 'x' });
     expect((await judgeDraft(input, { call, model: 'm' })).kind).toBe('failed');
   });
+  it('Risiko-Flag als Kategorie (multi_topic) → unklar + Flag, kein failed (#1251)', async () => {
+    const call = vi.fn().mockResolvedValue({ category: 'multi_topic', answerable_from_facts: false, risk_flags: ['tone_off'], confidence: 'mittel', reasoning: 'x' });
+    const r = await judgeDraft({ ...input, threadId: 't1' }, { call, model: 'm' });
+    expect(r.kind === 'verdict' && r.verdict.category).toBe('unklar');
+    expect(r.kind === 'verdict' && r.verdict.riskFlags).toEqual(['tone_off', 'multi_topic']);
+  });
+  it('Risiko-Flag als Kategorie, Flag schon gesetzt → keine Dublette (#1251)', async () => {
+    const call = vi.fn().mockResolvedValue({ category: 'multi_topic', answerable_from_facts: false, risk_flags: ['multi_topic'], confidence: 'mittel', reasoning: 'x' });
+    const r = await judgeDraft(input, { call, model: 'm' });
+    expect(r.kind === 'verdict' && r.verdict.riskFlags).toEqual(['multi_topic']);
+  });
   it('unbekanntes Flag → failed statt stillschweigend verworfen (Final-Review F4: fail closed)', async () => {
     const call = vi.fn().mockResolvedValue({ category: 'geld', answerable_from_facts: false, risk_flags: ['promises_action', 'wat'], confidence: 'mittel', reasoning: 'x' });
     const r = await judgeDraft(input, { call, model: 'm' });
