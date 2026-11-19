@@ -117,6 +117,15 @@ export function buildBookingContext(thread: MessageThread, opts?: BookingContext
     const nights = nightsBetween(inquiry.check_in, inquiry.check_out);
     // Guesty-Anfragen-Sync schreibt `guestsCount || 0` — 0 heißt dort "unbekannt" (#1234).
     const guests = positiveOrNull(inquiry.guests_count) != null ? `${inquiry.guests_count} Personen` : 'Personenzahl unbekannt';
+    // #1244: Der Einzelabruf schreibt auch schon bestätigte/reservierte Reservierungen nach `inquiries`,
+    // solange die reservations-Zeile fehlt. Das ist eine Buchung, keine offene Anfrage: kein Zusatz
+    // "noch nicht bestätigt", keine Preis-/Rabatt-/Gegenangebot-Einordnung (gilt nur für offene Anfragen).
+    // Format "Zeitraum TT.MM.JJJJ–TT.MM.JJJJ" bleibt für today-facts.ts parsebar.
+    const bookedLabel = inquiry.status === 'confirmed' ? 'Buchung (bestätigt)'
+      : inquiry.status === 'reserved' ? 'Buchung (reserviert)' : null;
+    if (bookedLabel) {
+      return `${bookedLabel}: Zeitraum ${checkIn}–${checkOut}, ${nights} Nächte, ${guests} — Daten stammen aus dem Einzelabruf der Buchung.`;
+    }
     // #1234/#1242 (Fall Daniel): Gastbetrag mitgeben, damit der Entwurf ein Gegenangebot des Gasts
     // einordnen kann. Bei Airbnb-Anfragen über Guesty ist total_price = host_payout = Netto-Auszahlung
     // — deshalb nie total_price blind nennen, sondern nach price_basis (resolveGuestPrice).

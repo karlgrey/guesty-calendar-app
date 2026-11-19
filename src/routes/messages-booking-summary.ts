@@ -20,7 +20,9 @@ const STATUS_LABEL: Record<string, string> = {
 
 /** Art mit Status: „Anfrage" (offene Anfrage ohne Zusatz), sonst „Buchung (bestätigt)" usw. */
 export function bookingKindLabel(s: ThreadBookingSummary): string {
-  const base = s.kind === 'reservation' ? 'Buchung' : 'Anfrage';
+  // #1244: bestätigte/reservierte Einzelabruf-Zeile (kind 'inquiry') ist eine Buchung
+  const booked = s.status === 'confirmed' || s.status === 'reserved';
+  const base = s.kind === 'reservation' || booked ? 'Buchung' : 'Anfrage';
   if (!s.status) return base;
   if (s.kind === 'inquiry' && s.status === 'inquiry') return base;
   return `${base} (${STATUS_LABEL[s.status] ?? s.status})`;

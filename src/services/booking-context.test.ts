@@ -75,6 +75,38 @@ describe('buildBookingContext', () => {
     expect(ctx).toContain('Daten stammen aus der Anfrage selbst');
   });
 
+  describe('#1244: bestätigte/reservierte Einzelabruf-Zeile ist eine Buchung', () => {
+    function insertStatus(id: string, status: string) {
+      db.prepare(`
+        INSERT INTO inquiries (inquiry_id, status, check_in, check_out, guest_name, guests_count)
+        VALUES (?,?,?,?,?,?)
+      `).run(id, status, '2026-12-15', '2026-12-17', 'Gast', 8);
+    }
+
+    it('confirmed: "Buchung (bestätigt)" ohne Anfrage-Zusatz, Rabatt und Gegenangebot-Kontext', () => {
+      insertStatus('INQ-C', 'confirmed');
+      const ctx = buildBookingContext(thread({ inquiry_id: 'INQ-C' }), { discountRule: { shortNoticeDays: 7, weekend: true } })!;
+      expect(ctx).toContain('Buchung (bestätigt): Zeitraum 15.12.2026–17.12.2026, 2 Nächte, 8 Personen');
+      expect(ctx).not.toContain('Buchungsanfrage');
+      expect(ctx).not.toContain('noch nicht bestätigt');
+      expect(ctx).not.toContain('Nachlass-Bedingung');
+      expect(ctx).not.toContain('Übernachtungen in den Nächten');
+      expect(ctx).not.toContain('Gesamtpreis');
+    });
+
+    it('reserved: "Buchung (reserviert)"', () => {
+      insertStatus('INQ-R', 'reserved');
+      const ctx = buildBookingContext(thread({ inquiry_id: 'INQ-R' }))!;
+      expect(ctx).toContain('Buchung (reserviert): Zeitraum 15.12.2026–17.12.2026, 2 Nächte, 8 Personen');
+      expect(ctx).not.toContain('noch nicht bestätigt');
+    });
+
+    it('canceled bleibt wie bisher Buchungsanfrage', () => {
+      insertStatus('INQ-X', 'canceled');
+      expect(buildBookingContext(thread({ inquiry_id: 'INQ-X' }))).toContain('Buchungsanfrage (noch nicht bestätigt)');
+    });
+  });
+
   describe('#1242: Gastbetrag laut Airbnb im Anfrage-Kontext', () => {
     const RATES = { hostServiceFeeRate: 0.155, taxRate: 0.07 };
     const PREFIX = 'Buchungsanfrage (noch nicht bestätigt): Zeitraum 20.11.2026–22.11.2026, 2 Nächte, 8 Personen';

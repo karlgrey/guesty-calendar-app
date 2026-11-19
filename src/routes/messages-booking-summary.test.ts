@@ -67,6 +67,11 @@ describe('bookingKindLabel', () => {
     expect(bookingKindLabel(s({ status: 'declined' }))).toBe('Anfrage (abgelehnt)');
     expect(bookingKindLabel(s({ kind: 'reservation', status: 'confirmed' }))).toBe('Buchung (bestätigt)');
     expect(bookingKindLabel(s({ kind: 'reservation', status: 'weird' }))).toBe('Buchung (weird)');
+    // #1244: bestätigte/reservierte Einzelabruf-Zeile (kind inquiry) ist eine Buchung
+    expect(bookingKindLabel(s({ status: 'confirmed' }))).toBe('Buchung (bestätigt)');
+    expect(bookingKindLabel(s({ status: 'reserved' }))).toBe('Buchung (reserviert)');
+    expect(bookingKindLabel(s({ status: 'canceled' }))).toBe('Anfrage (storniert)');
+    expect(bookingKindLabel(s({ status: 'expired' }))).toBe('Anfrage (abgelaufen)');
   });
 });
 
