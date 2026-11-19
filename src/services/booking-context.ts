@@ -117,14 +117,14 @@ export function buildBookingContext(thread: MessageThread, opts?: BookingContext
     const nights = nightsBetween(inquiry.check_in, inquiry.check_out);
     // Guesty-Anfragen-Sync schreibt `guestsCount || 0` — 0 heißt dort "unbekannt" (#1234).
     const guests = positiveOrNull(inquiry.guests_count) != null ? `${inquiry.guests_count} Personen` : 'Personenzahl unbekannt';
-    // #1244: Der Einzelabruf schreibt auch schon bestätigte/reservierte Reservierungen nach `inquiries`,
-    // solange die reservations-Zeile fehlt. Das ist eine Buchung, keine offene Anfrage: kein Zusatz
-    // "noch nicht bestätigt", keine Preis-/Rabatt-/Gegenangebot-Einordnung (gilt nur für offene Anfragen).
+    // #1244: Der Einzelabruf (und der Stunden-Sync) schreibt auch schon bestätigte Reservierungen nach
+    // `inquiries`, solange die reservations-Zeile fehlt. Status `confirmed` ist eine Buchung, keine offene
+    // Anfrage: kein Zusatz "noch nicht bestätigt", keine Preis-/Rabatt-/Gegenangebot-Einordnung.
+    // `reserved` bleibt bewusst Anfrage: in Guesty ist das der Status einer noch offenen Request-to-Book
+    // (siehe booking-request.ts), also weiter Preis, Anfrage-Zeitpunkt und Nachlass-Bedingung.
     // Format "Zeitraum TT.MM.JJJJ–TT.MM.JJJJ" bleibt für today-facts.ts parsebar.
-    const bookedLabel = inquiry.status === 'confirmed' ? 'Buchung (bestätigt)'
-      : inquiry.status === 'reserved' ? 'Buchung (reserviert)' : null;
-    if (bookedLabel) {
-      return `${bookedLabel}: Zeitraum ${checkIn}–${checkOut}, ${nights} Nächte, ${guests} — Daten stammen aus dem Einzelabruf der Buchung.`;
+    if (inquiry.status === 'confirmed') {
+      return `Buchung (bestätigt): Zeitraum ${checkIn}–${checkOut}, ${nights} Nächte, ${guests} — Daten stammen aus der Buchung selbst.`;
     }
     // #1234/#1242 (Fall Daniel): Gastbetrag mitgeben, damit der Entwurf ein Gegenangebot des Gasts
     // einordnen kann. Bei Airbnb-Anfragen über Guesty ist total_price = host_payout = Netto-Auszahlung

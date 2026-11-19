@@ -76,7 +76,7 @@ describe('buildBookingContext', () => {
     expect(ctx).toContain('Daten stammen aus der Anfrage selbst');
   });
 
-  describe('#1244: bestätigte/reservierte Einzelabruf-Zeile ist eine Buchung', () => {
+  describe('#1244: bestätigte Zeile aus inquiries ist eine Buchung', () => {
     function insertStatus(id: string, status: string) {
       db.prepare(`
         INSERT INTO inquiries (inquiry_id, status, check_in, check_out, guest_name, guests_count)
@@ -93,13 +93,6 @@ describe('buildBookingContext', () => {
       expect(ctx).not.toContain('Nachlass-Bedingung');
       expect(ctx).not.toContain('Übernachtungen in den Nächten');
       expect(ctx).not.toContain('Gesamtpreis');
-    });
-
-    it('reserved: "Buchung (reserviert)"', () => {
-      insertStatus('INQ-R', 'reserved');
-      const ctx = buildBookingContext(thread({ inquiry_id: 'INQ-R' }))!;
-      expect(ctx).toContain('Buchung (reserviert): Zeitraum 15.12.2026–17.12.2026, 2 Nächte, 8 Personen');
-      expect(ctx).not.toContain('noch nicht bestätigt');
     });
 
     it('canceled bleibt wie bisher Buchungsanfrage', () => {
@@ -208,9 +201,22 @@ describe('buildBookingContext', () => {
       db.exec('ALTER TABLE inquiries ADD COLUMN created_at_guesty TEXT;');
       insert({ status: 'confirmed', total_price: 3118.05, host_payout: 3118.05, price_basis: 'net_payout', created_at_guesty: '2026-11-17T10:00:00.000Z' });
       const ctx = buildBookingContext(thread({ inquiry_id: 'INQ-D' }), { rates: RATES, discountRule: { shortNoticeDays: 7, weekend: true } })!;
-      expect(ctx).toMatch(/^Buchung \(bestätigt\): Zeitraum 20\.11\.2026–22\.11\.2026, 2 Nächte, 8 Personen — /);
+      expect(ctx).toMatch(/^Buchung \(bestätigt\): Zeitraum 20\.11\.2026–22\.11\.2026, 2 Nächte, 8 Personen — Daten stammen aus der Buchung selbst\./);
       expect(ctx).not.toMatch(/Gesamtpreis|Übernachtungspreis|3\.948|3\.690|3\.118|Nachlass-Bedingung|Anfrage gestellt|Übernachtungen in den Nächten|noch nicht bestätigt/);
       expect(parseBookingPeriod(ctx)).toEqual({ checkIn: '2026-11-20', checkOut: '2026-11-22' });
+    });
+
+    // #1244 (Variante B): reserved = offene Request-to-Book → unverändertes Anfrage-Verhalten
+    it('#1244: reserved bleibt Buchungsanfrage mit Preis, Anfrage-Zeitpunkt und Nachlass-Bedingung', () => {
+      db.exec('ALTER TABLE inquiries ADD COLUMN created_at_guesty TEXT;');
+      insert({ status: 'reserved', source: 'airbnb2', total_price: 3118.05, host_payout: 3118.05, price_basis: 'net_payout', created_at_guesty: '2026-11-17T10:00:00.000Z' });
+      const ctx = buildBookingContext(thread({ inquiry_id: 'INQ-D' }), { rates: RATES, discountRule: { shortNoticeDays: 7, weekend: true } })!;
+      expect(ctx).toContain('Buchungsanfrage (noch nicht bestätigt): Zeitraum 20.11.2026–22.11.2026, 2 Nächte, 8 Personen');
+      expect(ctx).toContain('Daten stammen aus der Anfrage selbst');
+      expect(ctx).toContain('ca. 3.948,30 EUR inkl. Steuern');
+      expect(ctx).toContain('Anfrage gestellt');
+      expect(ctx).toContain('Nachlass-Bedingung laut Objektregel: erfüllt');
+      expect(ctx).not.toContain('Buchung (');
     });
 
     it('#1243: ohne Objekt-Rabattlinie keine Bedingungszeile', () => {
