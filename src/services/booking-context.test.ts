@@ -75,19 +75,73 @@ describe('buildBookingContext', () => {
     expect(ctx).toContain('Daten stammen aus der Anfrage selbst');
   });
 
-  it('#1234: Anfrage mit Preis (Migration 040) → Preis laut Plattform im Kontext, nie die Auszahlung', () => {
-    db.exec('ALTER TABLE inquiries ADD COLUMN currency TEXT; ALTER TABLE inquiries ADD COLUMN total_price REAL; ALTER TABLE inquiries ADD COLUMN host_payout REAL;');
-    db.prepare(`
-      INSERT INTO inquiries (inquiry_id, status, check_in, check_out, guest_name, guests_count, currency, total_price, host_payout)
-      VALUES (?,?,?,?,?,?,?,?,?)
-    `).run('INQ-D', 'inquiry', '2026-11-20', '2026-11-22', 'Daniel', 8, 'EUR', 3118.05, 2777.77);
+  describe('#1242: Gastbetrag laut Airbnb im Anfrage-Kontext', () => {
+    const RATES = { hostServiceFeeRate: 0.155, taxRate: 0.07 };
+    const PREFIX = 'Buchungsanfrage (noch nicht bestätigt): Zeitraum 20.11.2026–22.11.2026, 2 Nächte, 8 Personen';
+    const SUFFIX = ' — Daten stammen aus der Anfrage selbst.';
 
-    const ctx = buildBookingContext(thread({ inquiry_id: 'INQ-D' }));
-    expect(ctx).toBe(
-      'Buchungsanfrage (noch nicht bestätigt): Zeitraum 20.11.2026–22.11.2026, 2 Nächte, 8 Personen, ' +
-      'Preis laut Plattform 3.118,05 EUR — Daten stammen aus der Anfrage selbst.',
-    );
-    expect(ctx).not.toContain('2.777,77');
+    beforeEach(() => {
+      db.exec(`ALTER TABLE inquiries ADD COLUMN source TEXT; ALTER TABLE inquiries ADD COLUMN currency TEXT;
+        ALTER TABLE inquiries ADD COLUMN total_price REAL; ALTER TABLE inquiries ADD COLUMN host_payout REAL;
+        ALTER TABLE inquiries ADD COLUMN guest_total REAL; ALTER TABLE inquiries ADD COLUMN price_basis TEXT;`);
+    });
+
+    function insert(over: Record<string, unknown>) {
+      const row = {
+        inquiry_id: 'INQ-D', status: 'inquiry', check_in: '2026-11-20', check_out: '2026-11-22', guest_name: 'Daniel',
+        guests_count: 8, source: 'airbnb2', currency: 'EUR', total_price: null, host_payout: null, guest_total: null,
+        price_basis: null, ...over,
+      };
+      const cols = Object.keys(row);
+      db.prepare(`INSERT INTO inquiries (${cols.join(',')}) VALUES (${cols.map(() => '?').join(',')})`).run(...Object.values(row));
+    }
+
+    it('Fall Daniel (nur Netto-Auszahlung 3.118,05): berechneter Gastbetrag mit Steuer als Hauptwert, ohne Steuer daneben', () => {
+      insert({ total_price: 3118.05, host_payout: 3118.05, price_basis: 'net_payout' });
+      const ctx = buildBookingContext(thread({ inquiry_id: 'INQ-D' }), { rates: RATES });
+      expect(ctx).toBe(
+        `${PREFIX}, Gesamtpreis für den Gast laut Airbnb ca. 3.948,30 EUR inkl. Steuern ` +
+        `(berechnet, ungefähr; ohne Steuern ca. 3.690,00 EUR)${SUFFIX}`,
+      );
+    });
+
+    it('die Auszahlung erscheint nie im Kontext, auch nicht Gebührensatz oder Rechenweg', () => {
+      insert({ total_price: 3118.05, host_payout: 3118.05, price_basis: 'net_payout' });
+      const ctx = buildBookingContext(thread({ inquiry_id: 'INQ-D' }), { rates: RATES })!;
+      expect(ctx).not.toContain('3.118,05');
+      expect(ctx).not.toContain('3118');
+      expect(ctx).not.toMatch(/Auszahlung|Gebühr|15,5|0,845|Payout/i);
+    });
+
+    it('echter Gastbetrag (Anfrage inzwischen mit voller Aufstellung) → ohne „ca." und „berechnet"', () => {
+      insert({ total_price: 139, host_payout: 163.78, guest_total: 191.53, price_basis: 'guest_total' });
+      const ctx = buildBookingContext(thread({ inquiry_id: 'INQ-D' }), { rates: RATES })!;
+      expect(ctx).toBe(`${PREFIX}, Gesamtpreis für den Gast laut Airbnb 191,53 EUR inkl. Steuern${SUFFIX}`);
+      expect(ctx).not.toContain('163,78');
+    });
+
+    it('ohne Gastbetrag, aber echter Übernachtungspreis → Rückfall mit ehrlicher Bezeichnung', () => {
+      insert({ total_price: 4400, host_payout: 4750, price_basis: 'accommodation' });
+      const ctx = buildBookingContext(thread({ inquiry_id: 'INQ-D' }), { rates: RATES })!;
+      expect(ctx).toBe(`${PREFIX}, Übernachtungspreis laut Airbnb 4.400,00 EUR (ohne Reinigung, Steuern und Gebühren)${SUFFIX}`);
+      expect(ctx).not.toContain('4.750');
+    });
+
+    it('Netto-Auszahlung ohne konfigurierte Sätze → gar kein Preis (die Auszahlung ist kein Gastpreis)', () => {
+      insert({ total_price: 3118.05, host_payout: 3118.05, price_basis: 'net_payout' });
+      const ctx = buildBookingContext(thread({ inquiry_id: 'INQ-D' }), { rates: null })!;
+      expect(ctx).toBe(`${PREFIX}${SUFFIX}`);
+    });
+
+    it('Altbestand ohne price_basis (vor dem ersten Sync nach Migration 043) → kein Preis', () => {
+      insert({ total_price: 3118.05, host_payout: 3118.05 });
+      expect(buildBookingContext(thread({ inquiry_id: 'INQ-D' }), { rates: RATES })).toBe(`${PREFIX}${SUFFIX}`);
+    });
+
+    it('ohne Optionen gelten die Sätze aus data/properties.json (15,5 % / 7 %)', () => {
+      insert({ total_price: 3118.05, host_payout: 3118.05, price_basis: 'net_payout' });
+      expect(buildBookingContext(thread({ inquiry_id: 'INQ-D' }))).toContain('ca. 3.948,30 EUR inkl. Steuern');
+    });
   });
 
   it('#1234: Anfrage ohne Preis → kein Preis-Teil; 0 Personen (Guesty-Sync "unbekannt") → Personenzahl unbekannt', () => {

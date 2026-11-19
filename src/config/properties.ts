@@ -284,9 +284,29 @@ const propertyConfigSchema = z.object({
   }
 );
 
+/**
+ * #1242: Sätze für die Rückrechnung des Gast-Gesamtbetrags bei Airbnb-Anfragen (Guesty liefert dort
+ * nur die Netto-Auszahlung; Rechnung in services/guest-price.ts). Top-Level-Block, global für alle
+ * Objekte: die Guesty-Objekte haben keinen Steuersatz in properties.json (Steuern pflegt Guesty).
+ * Fehlt der Block, nennt die App bei solchen Anfragen keinen Gastpreis.
+ */
+const airbnbGuestPriceConfigSchema = z.object({
+  hostServiceFeeRate: z.number().min(0).lt(1),
+  taxRate: z.number().min(0).max(1),
+});
+
+export type AirbnbGuestPriceConfig = z.infer<typeof airbnbGuestPriceConfigSchema>;
+
+/** Validiert einen airbnbGuestPrice-Block; undefined, wenn er fehlt. Exportiert für Tests. */
+export function parseAirbnbGuestPriceConfig(raw: unknown): AirbnbGuestPriceConfig | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  return airbnbGuestPriceConfigSchema.parse(raw);
+}
+
 const propertiesFileSchema = z.object({
   properties: z.array(propertyConfigSchema).min(1, 'At least one property is required'),
   biReport: biReportConfigSchema.optional(),
+  airbnbGuestPrice: airbnbGuestPriceConfigSchema.optional(),
 });
 
 /**
@@ -294,6 +314,7 @@ const propertiesFileSchema = z.object({
  */
 let cachedProperties: PropertyConfig[] | null = null;
 let cachedBiReport: BiReportConfig | null | undefined = undefined; // undefined = not loaded yet
+let cachedAirbnbGuestPrice: AirbnbGuestPriceConfig | null | undefined = undefined;
 
 /**
  * Get the path to the properties config file
@@ -337,6 +358,7 @@ export function loadPropertiesConfig(): PropertyConfig[] {
 
     cachedProperties = validatedConfig.properties;
     cachedBiReport = validatedConfig.biReport ?? null;
+    cachedAirbnbGuestPrice = validatedConfig.airbnbGuestPrice ?? null;
 
     logger.info(
       {
@@ -458,6 +480,14 @@ export function getBiReportConfig(): BiReportConfig | undefined {
 }
 
 /**
+ * #1242: Sätze für den berechneten Gastbetrag bei Airbnb-Anfragen, undefined wenn nicht konfiguriert.
+ */
+export function getAirbnbGuestPriceConfig(): AirbnbGuestPriceConfig | undefined {
+  loadPropertiesConfig();
+  return cachedAirbnbGuestPrice ?? undefined;
+}
+
+/**
  * Get property slugs as an array
  */
 export function getPropertySlugs(): string[] {
@@ -479,4 +509,5 @@ export function isMultiPropertyMode(): boolean {
 export function clearPropertiesCache(): void {
   cachedProperties = null;
   cachedBiReport = undefined;
+  cachedAirbnbGuestPrice = undefined;
 }

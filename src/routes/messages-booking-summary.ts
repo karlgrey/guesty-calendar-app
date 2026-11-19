@@ -65,6 +65,35 @@ function nightsLabel(n: number | null): string {
   return `${n} ${n === 1 ? 'Nacht' : 'Nächte'}`;
 }
 
+/**
+ * #1242: Preis-Teil bei Anfragen. Hauptwert ist der Gastbetrag laut Plattform (derselbe wie im
+ * Entwurfs-Kontext, mit Steuer), damit Micha die Zahl sieht, auf die sich der Gast bezieht; die
+ * Auszahlung steht klein daneben. total_price wird bei Anfragen nie als „Gastpreis" gezeigt — bei
+ * Airbnb-Anfragen über Guesty ist es die Netto-Auszahlung.
+ */
+function inquiryPricePart(s: ThreadBookingSummary): string {
+  const p = s.guestPrice;
+  const payout = s.hostPayout != null ? `Auszahlung ${formatMoney(s.hostPayout, s.currency)}` : null;
+  const small = (items: Array<string | null>) => {
+    const text = items.filter((x): x is string => !!x).join(' · ');
+    return text ? ` <small style="opacity:.75">${esc(text)}</small>` : '';
+  };
+  if (p?.kind === 'estimated') {
+    return (
+      `<strong>${esc(`Gastpreis laut ${p.channel} ca. ${formatMoney(p.inclTax, p.currency)} inkl. Steuern`)}</strong>` +
+      small([`berechnet, ohne Steuern ca. ${formatMoney(p.exclTax, p.currency)}`, payout])
+    );
+  }
+  if (p?.kind === 'actual') {
+    return `<strong>${esc(`Gastpreis laut ${p.channel} ${formatMoney(p.total, p.currency)} inkl. Steuern`)}</strong>` + small([payout]);
+  }
+  if (p?.kind === 'accommodation') {
+    const accommodation = `Übernachtungspreis ${formatMoney(p.amount, p.currency)} (ohne Reinigung/Steuern)`;
+    return payout ? `<strong>${esc(payout)}</strong>` + small([accommodation]) : `<strong>${esc(accommodation)}</strong>`;
+  }
+  return payout ? `<strong>${esc(payout)}</strong>` + small(['Gastpreis unbekannt']) : 'Preis unbekannt';
+}
+
 /** Zeile unter der Thread-Unterzeile. Ohne Verknüpfung: Hinweis „keine Buchung/Anfrage verknüpft". */
 export function renderBookingSummaryLine(s: ThreadBookingSummary | null): string {
   if (!s) {
@@ -76,7 +105,9 @@ export function renderBookingSummaryLine(s: ThreadBookingSummary | null): string
     esc(nightsLabel(s.nights)),
     esc(personsLabel(s)),
   ];
-  if (s.hostPayout == null && s.totalPrice == null) {
+  if (s.kind === 'inquiry') {
+    parts.push(inquiryPricePart(s));
+  } else if (s.hostPayout == null && s.totalPrice == null) {
     parts.push('Preis unbekannt');
   } else {
     const payout = s.hostPayout != null ? formatMoney(s.hostPayout, s.currency) : '–';

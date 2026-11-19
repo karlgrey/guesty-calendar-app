@@ -10,6 +10,8 @@
 import { getReservationById, getInquiryById, getInquiryWithMoneyById } from '../repositories/reservation-repository.js';
 import type { MessageThread } from '../types/messages.js';
 import { nightsBetween } from '../utils/date.js';
+import { getAirbnbGuestPriceConfig } from '../config/properties.js';
+import { resolveGuestPrice, type AirbnbGuestPriceRates, type GuestPrice } from './guest-price.js';
 
 /** ISO/localized date (YYYY-MM-DD…) → German TT.MM.JJJJ. */
 function deDate(dateStr: string): string {
@@ -23,12 +25,51 @@ function formatMoney(amount: number, currency: string | null): string {
   return currency ? `${n} ${currency}` : n;
 }
 
+/** #1242: konfigurierte Sätze für den berechneten Gastbetrag; Fehler beim Laden → keine Sätze. */
+function configuredRates(): AirbnbGuestPriceRates | undefined {
+  try {
+    return getAirbnbGuestPriceConfig();
+  } catch {
+    return undefined;
+  }
+}
+
+export interface BookingContextOptions {
+  /** #1242: Sätze für die Rückrechnung; weggelassen = aus properties.json, null = keine. */
+  rates?: AirbnbGuestPriceRates | null;
+}
+
+function ratesFrom(opts: BookingContextOptions | undefined): AirbnbGuestPriceRates | undefined {
+  if (opts && 'rates' in opts) return opts.rates ?? undefined;
+  return configuredRates();
+}
+
+/**
+ * #1242: Preis-Teil der Anfrage-Zeile im Entwurfs-Kontext. Nennt den Betrag, den der Gast in Airbnb
+ * sieht, mit Steuer als Hauptwert (Entscheidung Micha 19.11.2026: Gäste rechnen mit Steuer).
+ * Nie die Auszahlung, nie Gebührensatz oder Rechenweg (sonst wäre die Auszahlung ablesbar).
+ */
+function contextPricePart(p: GuestPrice | null): string {
+  if (!p) return '';
+  switch (p.kind) {
+    case 'estimated':
+      return (
+        `, Gesamtpreis für den Gast laut ${p.channel} ca. ${formatMoney(p.inclTax, p.currency)} inkl. Steuern ` +
+        `(berechnet, ungefähr; ohne Steuern ca. ${formatMoney(p.exclTax, p.currency)})`
+      );
+    case 'actual':
+      return `, Gesamtpreis für den Gast laut ${p.channel} ${formatMoney(p.total, p.currency)} inkl. Steuern`;
+    case 'accommodation':
+      return `, Übernachtungspreis laut ${p.channel} ${formatMoney(p.amount, p.currency)} (ohne Reinigung, Steuern und Gebühren)`;
+  }
+}
+
 /**
  * Builds a short "what the platform already knows about this booking" block
  * for the draft-generation system prompt. Returns null when the thread isn't
  * linked to a reservation or inquiry (nothing to say).
  */
-export function buildBookingContext(thread: MessageThread): string | null {
+export function buildBookingContext(thread: MessageThread, opts?: BookingContextOptions): string | null {
   if (thread.reservation_id) {
     const res = getReservationById(thread.reservation_id);
     // No early return on a miss: guesty inquiry threads carry the same Guesty
@@ -63,11 +104,10 @@ export function buildBookingContext(thread: MessageThread): string | null {
     const nights = nightsBetween(inquiry.check_in, inquiry.check_out);
     // Guesty-Anfragen-Sync schreibt `guestsCount || 0` — 0 heißt dort "unbekannt" (#1234).
     const guests = positiveOrNull(inquiry.guests_count) != null ? `${inquiry.guests_count} Personen` : 'Personenzahl unbekannt';
-    // #1234 (Fall Daniel): Preis laut Plattform mitgeben, damit der Entwurf ein Gegenangebot des
-    // Gasts einordnen kann. Nur der Gastpreis (total_price), nie die Auszahlung (host_payout).
-    const price = inquiry.total_price != null
-      ? `, Preis laut Plattform ${formatMoney(inquiry.total_price, inquiry.currency)}`
-      : '';
+    // #1234/#1242 (Fall Daniel): Gastbetrag mitgeben, damit der Entwurf ein Gegenangebot des Gasts
+    // einordnen kann. Bei Airbnb-Anfragen über Guesty ist total_price = host_payout = Netto-Auszahlung
+    // — deshalb nie total_price blind nennen, sondern nach price_basis (resolveGuestPrice).
+    const price = contextPricePart(resolveGuestPrice(inquiry, ratesFrom(opts)));
 
     return (
       `Buchungsanfrage (noch nicht bestätigt): Zeitraum ${checkIn}–${checkOut}, ${nights} Nächte, ${guests}${price} ` +
@@ -115,8 +155,9 @@ export function resolveBookingPeriod(thread: MessageThread): { periodLabel: stri
  * null = Thread nicht verknüpft bzw. keine passende Zeile.
  *
  * Preis-Semantik wie die Sync-Mapper: hostPayout = Auszahlung an den Gastgeber;
- * totalPrice = reservations/inquiries.total_price (Guesty: fareAccommodationAdjusted,
- * Hostex: total_rate).
+ * totalPrice = reservations/inquiries.total_price (Guesty: fareAccommodationAdjusted — bei
+ * Airbnb-ANFRAGEN die Netto-Auszahlung, #1242; Hostex: total_rate).
+ * guestPrice (#1242, nur Anfragen): Gastbetrag wie im Entwurfs-Kontext (resolveGuestPrice).
  */
 export interface ThreadBookingSummary {
   kind: 'reservation' | 'inquiry';
@@ -131,6 +172,8 @@ export interface ThreadBookingSummary {
   totalPrice: number | null;
   currency: string | null;
   platform: string | null;
+  /** #1242: Gastbetrag laut Plattform (nur bei kind 'inquiry', sonst null) */
+  guestPrice: GuestPrice | null;
 }
 
 /** Guesty-Anfragen-Sync schreibt `guestsCount || 0` — 0 Personen heißt dort "unbekannt". */
@@ -138,7 +181,7 @@ function positiveOrNull(n: number | null | undefined): number | null {
   return typeof n === 'number' && n > 0 ? n : null;
 }
 
-export function resolveThreadBookingSummary(thread: MessageThread): ThreadBookingSummary | null {
+export function resolveThreadBookingSummary(thread: MessageThread, opts?: BookingContextOptions): ThreadBookingSummary | null {
   if (thread.reservation_id) {
     const res = getReservationById(thread.reservation_id);
     if (res) {
@@ -157,6 +200,7 @@ export function resolveThreadBookingSummary(thread: MessageThread): ThreadBookin
         totalPrice: res.total_price ?? null,
         currency: res.currency ?? null,
         platform: res.platform ?? res.source ?? null,
+        guestPrice: null,
       };
     }
   }
@@ -179,6 +223,7 @@ export function resolveThreadBookingSummary(thread: MessageThread): ThreadBookin
         totalPrice: inq.total_price,
         currency: inq.currency,
         platform: inq.source,
+        guestPrice: resolveGuestPrice(inq, ratesFrom(opts)),
       };
     }
   }

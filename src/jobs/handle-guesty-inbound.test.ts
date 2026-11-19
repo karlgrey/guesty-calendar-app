@@ -100,7 +100,11 @@ describe('handleGuestyInbound', () => {
       checkIn: '2026-11-20T14:00:00.000Z', checkOut: '2026-11-22T09:00:00.000Z',
       checkInDateLocalized: '2026-11-20', checkOutDateLocalized: '2026-11-22',
       guest: { fullName: 'Daniel Muster' }, guestsCount: 8, source: 'airbnb2', createdAt: '2026-11-17T08:13:10.000Z',
-      money: { currency: 'EUR', fareAccommodationAdjusted: 3118.05, hostPayout: 3118.05 },
+      // #1242: money wie GET /reservations/{id} am 19.11.2026 — nur die Netto-Position (AF, CHANNEL)
+      money: {
+        currency: 'EUR', fareAccommodation: 3118.05, fareAccommodationAdjusted: 3118.05, subTotalPrice: 3118.05,
+        hostPayout: 3118.05, fareCleaning: 0, totalTaxes: 0, hostServiceFee: 0,
+      },
     };
 
     beforeEach(() => {
@@ -117,6 +121,7 @@ describe('handleGuestyInbound', () => {
           id INTEGER PRIMARY KEY AUTOINCREMENT, inquiry_id TEXT NOT NULL UNIQUE, listing_id TEXT NOT NULL,
           status TEXT NOT NULL, check_in TEXT NOT NULL, check_out TEXT NOT NULL, guest_name TEXT,
           guests_count INTEGER, source TEXT, currency TEXT, total_price REAL, host_payout REAL,
+          guest_total REAL, price_basis TEXT,
           created_at_guesty TEXT, last_synced_at TEXT NOT NULL,
           created_at TEXT NOT NULL DEFAULT (datetime('now')), updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
@@ -165,10 +170,15 @@ describe('handleGuestyInbound', () => {
       expect(seen[0].summary).toMatchObject({
         kind: 'inquiry', checkIn: '2026-11-20', checkOut: '2026-11-22', nights: 2, guestsCount: 8,
         totalPrice: 3118.05, hostPayout: 3118.05, currency: 'EUR',
+        // #1242: Thread-Kopf zeigt denselben berechneten Gastbetrag wie der Kontext
+        guestPrice: { kind: 'estimated', inclTax: 3948.3, exclTax: 3690, currency: 'EUR', channel: 'Airbnb' },
       });
       expect(seen[0].context).toContain('Zeitraum 20.11.2026–22.11.2026');
       expect(seen[0].context).toContain('8 Personen');
-      expect(seen[0].context).toContain('3.118,05 EUR');
+      // #1242: Gastbetrag laut Airbnb (berechnet, mit Steuer), nie die Auszahlung 3.118,05
+      expect(seen[0].context).toContain('Gesamtpreis für den Gast laut Airbnb ca. 3.948,30 EUR inkl. Steuern');
+      expect(seen[0].context).toContain('ohne Steuern ca. 3.690,00 EUR');
+      expect(seen[0].context).not.toContain('3.118,05');
       expect(seen[0].title).toBe('Airbnb-Anfrage Daniel: FH 20.11.2026–22.11.2026, 8 P.');
     });
 
