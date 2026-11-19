@@ -57,6 +57,15 @@ describe('buildBookingTaskTitle', () => {
 });
 
 describe('buildBookingTaskDescription', () => {
+  it('#1243: Gegenangebot-Absatz nach dem Gastnachricht-Zitat, nur wenn gesetzt', () => {
+    const desc = buildBookingTaskDescription({ ...baseInput, counterOfferNote: 'Betrag in der Gastnachricht 2.600 € (mögliches Gegenangebot)' });
+    expect(desc).toContain('**Gegenangebot:** Betrag in der Gastnachricht 2.600 € (mögliches Gegenangebot)');
+    expect(desc.indexOf('**Gastnachricht:**')).toBeLessThan(desc.indexOf('**Gegenangebot:**'));
+    expect(desc.indexOf('**Gegenangebot:**')).toBeLessThan(desc.indexOf('**Automatische Antwort:**'));
+    expect(buildBookingTaskDescription(baseInput)).not.toContain('Gegenangebot');
+    expect(buildBookingTaskDescription({ ...baseInput, counterOfferNote: null })).not.toContain('Gegenangebot');
+  });
+
   it('enthält Anfrage-Art, Frist, Zitate, Thread-Link, Datum', () => {
     const desc = buildBookingTaskDescription(baseInput);
     expect(desc).toContain('Request-to-Book');
