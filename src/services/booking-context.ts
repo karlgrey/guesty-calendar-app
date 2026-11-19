@@ -11,6 +11,7 @@ import { getReservationById, getInquiryById, getInquiryWithMoneyById } from '../
 import type { MessageThread } from '../types/messages.js';
 import { nightsBetween } from '../utils/date.js';
 import { getAirbnbGuestPriceConfig } from '../config/properties.js';
+import { computeStayFacts, formatStayFactsSentence } from './counter-offer.js';
 import { resolveGuestPrice, type AirbnbGuestPriceRates, type GuestPrice } from './guest-price.js';
 
 /** ISO/localized date (YYYY-MM-DD…) → German TT.MM.JJJJ. */
@@ -109,9 +110,13 @@ export function buildBookingContext(thread: MessageThread, opts?: BookingContext
     // — deshalb nie total_price blind nennen, sondern nach price_basis (resolveGuestPrice).
     const price = contextPricePart(resolveGuestPrice(inquiry, ratesFrom(opts)));
 
+    // #1243: Anfrage-Zeitpunkt und Wochentage der Nächte (Grundlage der Rabatt-Einordnung). Steht NACH
+    // dem Zeitraum-Teil, damit today-facts.ts das Format "Zeitraum TT.MM.JJJJ–TT.MM.JJJJ" unverändert parst.
+    const stay = formatStayFactsSentence(computeStayFacts(inquiry.check_in, inquiry.check_out, inquiry.created_at_guesty));
+
     return (
       `Buchungsanfrage (noch nicht bestätigt): Zeitraum ${checkIn}–${checkOut}, ${nights} Nächte, ${guests}${price} ` +
-      `— Daten stammen aus der Anfrage selbst.`
+      `— Daten stammen aus der Anfrage selbst.${stay ? ` ${stay}` : ''}`
     );
   }
 
@@ -174,6 +179,8 @@ export interface ThreadBookingSummary {
   platform: string | null;
   /** #1242: Gastbetrag laut Plattform (nur bei kind 'inquiry', sonst null) */
   guestPrice: GuestPrice | null;
+  /** #1243: Zeitpunkt der Anfrage (ISO, nur bei kind 'inquiry'; sonst/unbekannt null) */
+  requestedAt: string | null;
 }
 
 /** Guesty-Anfragen-Sync schreibt `guestsCount || 0` — 0 Personen heißt dort "unbekannt". */
@@ -201,6 +208,7 @@ export function resolveThreadBookingSummary(thread: MessageThread, opts?: Bookin
         currency: res.currency ?? null,
         platform: res.platform ?? res.source ?? null,
         guestPrice: null,
+        requestedAt: null,
       };
     }
   }
@@ -224,6 +232,7 @@ export function resolveThreadBookingSummary(thread: MessageThread, opts?: Bookin
         currency: inq.currency,
         platform: inq.source,
         guestPrice: resolveGuestPrice(inq, ratesFrom(opts)),
+        requestedAt: inq.created_at_guesty,
       };
     }
   }

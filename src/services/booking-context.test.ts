@@ -78,7 +78,8 @@ describe('buildBookingContext', () => {
   describe('#1242: Gastbetrag laut Airbnb im Anfrage-Kontext', () => {
     const RATES = { hostServiceFeeRate: 0.155, taxRate: 0.07 };
     const PREFIX = 'Buchungsanfrage (noch nicht bestätigt): Zeitraum 20.11.2026–22.11.2026, 2 Nächte, 8 Personen';
-    const SUFFIX = ' — Daten stammen aus der Anfrage selbst.';
+    // #1243: ohne created_at_guesty nur der Nächte-Satz (Fr/Sa-Nacht), kein „Anfrage gestellt“
+    const SUFFIX = ' — Daten stammen aus der Anfrage selbst. Übernachtungen in den Nächten ab Freitag, Samstag (Wochenendnacht Fr/Sa dabei: ja).';
 
     beforeEach(() => {
       db.exec(`ALTER TABLE inquiries ADD COLUMN source TEXT; ALTER TABLE inquiries ADD COLUMN currency TEXT;
@@ -136,6 +137,14 @@ describe('buildBookingContext', () => {
     it('Altbestand ohne price_basis (vor dem ersten Sync nach Migration 043) → kein Preis', () => {
       insert({ total_price: 3118.05, host_payout: 3118.05 });
       expect(buildBookingContext(thread({ inquiry_id: 'INQ-D' }), { rates: RATES })).toBe(`${PREFIX}${SUFFIX}`);
+    });
+
+    it('#1243: Anfrage-Zeitpunkt und Wochentage der Nächte hinter dem Zeitraum-Satz (Fall Daniel)', () => {
+      db.exec('ALTER TABLE inquiries ADD COLUMN created_at_guesty TEXT;');
+      insert({ total_price: 3118.05, host_payout: 3118.05, price_basis: 'net_payout', created_at_guesty: '2026-11-17T10:00:00.000Z' });
+      const ctx = buildBookingContext(thread({ inquiry_id: 'INQ-D' }), { rates: RATES })!;
+      expect(ctx).toContain('Zeitraum 20.11.2026–22.11.2026');
+      expect(ctx).toMatch(/Daten stammen aus der Anfrage selbst\. Anfrage gestellt am 17\.11\.2026, 3 Tage vor Anreise\. Übernachtungen in den Nächten ab Freitag, Samstag \(Wochenendnacht Fr\/Sa dabei: ja\)\.$/);
     });
 
     it('ohne Optionen gelten die Sätze aus data/properties.json (15,5 % / 7 %)', () => {

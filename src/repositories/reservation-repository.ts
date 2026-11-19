@@ -280,6 +280,8 @@ export interface InquiryWithMoney extends Inquiry {
   guest_total: number | null;
   /** #1242: 'guest_total' | 'net_payout' | 'accommodation' | null (siehe services/guest-price.ts) */
   price_basis: string | null;
+  /** #1243: Zeitpunkt, an dem die Anfrage gestellt wurde (ISO, Guesty createdAt); null = unbekannt */
+  created_at_guesty: string | null;
 }
 
 export function getInquiryWithMoneyById(inquiryId: string): InquiryWithMoney | null {
@@ -305,6 +307,7 @@ export function getInquiryWithMoneyById(inquiryId: string): InquiryWithMoney | n
       host_payout: num(row.host_payout),
       guest_total: num(row.guest_total),
       price_basis: str(row.price_basis),
+      created_at_guesty: str(row.created_at_guesty),
     };
   } catch (error) {
     logger.error({ error, inquiryId }, 'Failed to get inquiry with money');

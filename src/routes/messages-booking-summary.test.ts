@@ -5,7 +5,7 @@ import type { ThreadBookingSummary } from '../services/booking-context.js';
 
 const s = (over: Partial<ThreadBookingSummary> = {}): ThreadBookingSummary => ({
   kind: 'inquiry', status: 'inquiry', checkIn: '2027-12-31', checkOut: '2028-01-01', nights: 1,
-  guestsCount: 1, adults: null, children: null, hostPayout: null, totalPrice: null, currency: null, platform: 'airbnb2', guestPrice: null, ...over,
+  guestsCount: 1, adults: null, children: null, hostPayout: null, totalPrice: null, currency: null, platform: 'airbnb2', guestPrice: null, requestedAt: null, ...over,
 });
 
 describe('renderBookingSummaryLine', () => {
