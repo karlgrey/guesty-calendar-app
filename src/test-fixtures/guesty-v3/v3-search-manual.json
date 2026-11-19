@@ -1,0 +1,44 @@
+{
+  "results": [
+    {
+      "reservationId": "f968c4967e199e2cb25c43fa",
+      "confirmationCode": "GY-TEST0001",
+      "status": "confirmed",
+      "guestId": "fce8f55d2c7b9530434160ca",
+      "checkIn": "2027-06-26T08:00:00.000Z",
+      "checkOut": "2027-06-27T12:00:00.000Z",
+      "checkInDateLocalized": "2027-06-26",
+      "checkOutDateLocalized": "2027-06-27",
+      "source": "manual",
+      "channel": "direct",
+      "createdAt": "2026-11-19T10:32:58.171Z",
+      "bookingDate": "2026-11-19T10:32:58.171Z",
+      "lastUpdatedAt": "2026-11-19T10:33:12.781Z",
+      "notes": {},
+      "stay": [
+        {
+          "listingId": "686d1e927ae7af00234115ad",
+          "checkIn": "2027-06-26T08:00:00.000Z",
+          "checkOut": "2027-06-27T12:00:00.000Z",
+          "checkInDateLocalized": "2027-06-26",
+          "checkOutDateLocalized": "2027-06-27",
+          "guestsCount": 15,
+          "ratePlanId": "default-rateplan-id",
+          "numberOfGuests": {
+            "numberOfAdults": 15
+          }
+        }
+      ],
+      "guestStay": {
+        "status": "not_set",
+        "createdAt": "2026-11-19T10:32:58.171Z",
+        "updatedAt": "2026-11-19T10:32:58.171Z"
+      }
+    }
+  ],
+  "pagination": {
+    "skip": 0,
+    "limit": 1,
+    "hasMore": true
+  }
+}

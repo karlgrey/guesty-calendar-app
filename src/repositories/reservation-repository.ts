@@ -267,6 +267,27 @@ export function getInquiryById(inquiryId: string): Inquiry | null {
 }
 
 /**
+ * #1099: lokal bekannter Gastname einer Guesty-Reservierung (reservations, sonst inquiries).
+ * Die v3-Liste (search) liefert keinen Gastnamen mehr; Anzeige-Zwecke (Konsistenz-Alert)
+ * nehmen ihn von hier statt je Reservierung guests-crud aufzurufen. Wirft nie (null).
+ */
+export function getLocalGuestName(reservationId: string): string | null {
+  try {
+    const db = getDatabase();
+    const r = db.prepare('SELECT guest_name FROM reservations WHERE reservation_id = ?').get(reservationId) as
+      | { guest_name: string | null }
+      | undefined;
+    if (r?.guest_name) return r.guest_name;
+    const i = db.prepare('SELECT guest_name FROM inquiries WHERE inquiry_id = ?').get(reservationId) as
+      | { guest_name: string | null }
+      | undefined;
+    return i?.guest_name && i.guest_name !== 'Unknown' ? i.guest_name : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * #1187: Anfrage inkl. Plattform und Preis (Migration 040) für die Nachrichten-App.
  * Eigene Abfrage statt getInquiryById zu erweitern: `SELECT *` + Feld-Auswahl, damit sie
  * auch auf Tabellen ohne die 040-Spalten (Tests, Altbestand) nicht bricht — Preis dann null.

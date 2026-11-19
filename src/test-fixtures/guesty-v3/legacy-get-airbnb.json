@@ -1,0 +1,1184 @@
+{
+  "_id": "ff08cc3f251ecdbfd7324144",
+  "accountId": "f88d5b52a32dffd067b459e1",
+  "checkIn": "2026-11-25T14:00:00.000Z",
+  "checkInDateLocalized": "2026-11-25",
+  "checkOut": "2026-11-26T11:00:00.000Z",
+  "checkOutDateLocalized": "2026-11-26",
+  "confirmationCode": "HMTEST0001",
+  "confirmedAt": "2026-11-18T07:57:15.752Z",
+  "createdAt": "2026-11-18T07:57:15.751Z",
+  "daysInAdvance": 7,
+  "guest": {
+    "_id": "f55c0860d6ee620a2808ef9d",
+    "firstName": "Max",
+    "lastName": "Beispiel",
+    "fullName": "Max Beispiel"
+  },
+  "guestId": "f55c0860d6ee620a2808ef9d",
+  "guestStay": {
+    "createdAt": "2026-11-18T07:57:15.752Z",
+    "status": "not_set",
+    "updatedAt": "2026-11-18T07:57:15.752Z"
+  },
+  "guestsCount": 2,
+  "integration": {
+    "_id": "f35d404b2fe69d540271106e",
+    "airbnb2": {
+      "cancellationPolicy": "flexible",
+      "cancellationTerms": {
+        "penaltyAmount": "45.48",
+        "reasons": [
+          {
+            "reason": "DECLINE_REASON_HOST_DOUBLE",
+            "sub_reasons": [
+              "DECLINE_REASON_HOST_EMERGENCY",
+              "DECLINE_REASON_HOST_HOST_UNAVAILABLE",
+              "DECLINE_REASON_HOST_DOUBLE_BOOKED"
+            ]
+          },
+          {
+            "reason": "DECLINE_REASON_HOST_CHANGE",
+            "sub_reasons": [
+              "DECLINE_REASON_HOST_RESERVATION_LENGTH",
+              "DECLINE_REASON_HOST_DIFFERENT_PRICE"
+            ]
+          },
+          {
+            "reason": "DECLINE_REASON_HOST_BAD_REVIEWS_SPARSE_PROFILE",
+            "sub_reasons": []
+          },
+          {
+            "reason": "DECLINE_REASON_HOST_UNAUTHORIZED_PARTY",
+            "sub_reasons": [
+              "DECLINE_REASON_HOST_PARTY_REVIEWS",
+              "DECLINE_REASON_HOST_PARTY_INDICATION"
+            ]
+          },
+          {
+            "reason": "DECLINE_REASON_HOST_BEHAVIOR",
+            "sub_reasons": [
+              "DECLINE_REASON_HOST_BEHAVIOR_REVIEWS",
+              "DECLINE_REASON_HOST_BEHAVIOR_INDICATION"
+            ]
+          },
+          {
+            "reason": "DECLINE_REASON_HOST_ASKED",
+            "sub_reasons": []
+          },
+          {
+            "reason": "DECLINE_REASON_HOST_OTHER",
+            "sub_reasons": []
+          }
+        ]
+      },
+      "externalListingId": "6017663116032696115",
+      "hostRole": "OWNER",
+      "id": "HMTEST0001",
+      "alterationsData": {
+        "alterations": [
+          {
+            "id": "1045410753719555923",
+            "alterationRequestId": "fa21a3842cb29844d2bdb454",
+            "initiatedBy": "guest",
+            "status": "ACCEPTED",
+            "listingId": "6017663116032696115",
+            "startDate": "2026-11-25",
+            "endDate": "2026-11-26",
+            "guestDetails": {
+              "numberOfAdults": 2,
+              "numberOfChildren": 0,
+              "numberOfInfants": 0,
+              "numberOfPets": 0
+            },
+            "nights": 1,
+            "money": {
+              "transientOccupancyTax": 12.53,
+              "hostOriginalPayout": 163.78,
+              "fareAccommodation": 139,
+              "hostServiceFee": 27.75,
+              "hostServiceFeeTax": 0,
+              "fareCleaning": 40,
+              "invoiceItems": [
+                {
+                  "name": "pass_through_vat_gst",
+                  "type": "TAX",
+                  "channel": "AirBnbOfficial",
+                  "title": "Goods and services tax",
+                  "normalType": "GST",
+                  "currency": "EUR",
+                  "amount": 12.53,
+                  "isLocked": true,
+                  "origin": "CHANNEL"
+                },
+                {
+                  "name": "ACCOMMODATION",
+                  "type": "ACCOMMODATION_FARE",
+                  "normalType": "AF",
+                  "channel": "AirBnbOfficial",
+                  "title": "Accommodation fare",
+                  "amount": 139,
+                  "isLocked": true,
+                  "currency": "EUR",
+                  "origin": "CHANNEL"
+                },
+                {
+                  "name": "CLEANING_FEE",
+                  "type": "CLEANING_FEE",
+                  "normalType": "CF",
+                  "channel": "AirBnbOfficial",
+                  "title": "Cleaning fee",
+                  "amount": 40,
+                  "isLocked": true,
+                  "currency": "EUR",
+                  "origin": "CHANNEL"
+                },
+                {
+                  "normalType": "PCM",
+                  "amount": 27.75,
+                  "title": "Host channel fee",
+                  "channel": "AirBnbOfficial",
+                  "name": "HOST_SERVICE_FEE",
+                  "type": "ADDITIONAL",
+                  "isLocked": true,
+                  "currency": "EUR",
+                  "origin": "CHANNEL"
+                }
+              ],
+              "currency": "EUR",
+              "guestFeeBase": 0,
+              "guestFeeVat": 0
+            },
+            "createdAt": "2026-11-18T07:58:00.402Z",
+            "responseAt": "2026-11-18T21:03:35.347Z",
+            "updatedAt": "2026-11-18T21:03:35.347Z"
+          }
+        ]
+      }
+    },
+    "platform": "airbnb2",
+    "limitations": {
+      "availableStatuses": []
+    }
+  },
+  "isMidStay": false,
+  "isReturningGuest": false,
+  "lastStayListingId": "69849a19d793670014d4a11a",
+  "listing": {
+    "_id": "69849a19d793670014d4a11a",
+    "prices": {
+      "currency": "EUR"
+    },
+    "type": "SINGLE",
+    "title": "Ruhige, nachhaltige Ferienwohnung nahe Wandlitzsee",
+    "address": {
+      "full": "Uferstraße 19, Wandlitz, Brandenburg 16348, Germany"
+    },
+    "timezone": "Europe/Berlin",
+    "nickname": "Uferstrasse 19",
+    "picture": {
+      "thumbnail": "https://example.com/listing-thumbnail.jpg"
+    }
+  },
+  "listingId": "69849a19d793670014d4a11a",
+  "manuallyCreated": false,
+  "money": {
+    "__v": 0,
+    "_id": "f5ae0adae5ed869a7d52306e",
+    "accountId": "f88d5b52a32dffd067b459e1",
+    "altered": false,
+    "bundledFees": [],
+    "channelCommissionRules": null,
+    "channelInvoiceItems": [
+      {
+        "name": "pass_through_vat_gst",
+        "type": "TAX",
+        "title": "Goods and services tax",
+        "normalType": "GST",
+        "channel": "AirBnbOfficial",
+        "currency": "EUR",
+        "amount": 12.53,
+        "isLocked": true,
+        "origin": "CHANNEL"
+      },
+      {
+        "name": "ACCOMMODATION",
+        "type": "ACCOMMODATION_FARE",
+        "title": "Accommodation fare",
+        "normalType": "AF",
+        "channel": "AirBnbOfficial",
+        "currency": "EUR",
+        "amount": 139,
+        "isLocked": true,
+        "origin": "CHANNEL"
+      },
+      {
+        "name": "CLEANING_FEE",
+        "type": "CLEANING_FEE",
+        "title": "Cleaning fee",
+        "normalType": "CF",
+        "channel": "AirBnbOfficial",
+        "currency": "EUR",
+        "amount": 40,
+        "isLocked": true,
+        "origin": "CHANNEL"
+      },
+      {
+        "name": "HOST_SERVICE_FEE",
+        "type": "ADDITIONAL",
+        "title": "Host channel fee",
+        "normalType": "PCM",
+        "channel": "AirBnbOfficial",
+        "currency": "EUR",
+        "amount": 27.75,
+        "isLocked": true,
+        "origin": "CHANNEL"
+      }
+    ],
+    "commission": 163.78,
+    "commissionFormula": "net_income",
+    "commissionIncTax": 163.78,
+    "commissionTax": 0,
+    "commissionTaxPercentage": 0,
+    "createdAt": "2026-11-18T07:57:15.904Z",
+    "currency": "EUR",
+    "currencyConversionRateToAccount": 1,
+    "deductedFees": [],
+    "fareAccommodation": 139,
+    "fareAccommodationAdjusted": 139,
+    "fareAccommodationAdjustment": 0,
+    "fareAccommodationBundleFeesApplied": 0,
+    "fareAccommodationDiscount": 0,
+    "fareCleaning": 40,
+    "guestFeeBase": 0,
+    "guestFeeVat": 0,
+    "hostOriginalPayout": 163.78,
+    "hostPayout": 163.78,
+    "hostPayoutUsd": 179.56,
+    "hostServiceFee": 27.75,
+    "hostServiceFeeIncTax": 27.75,
+    "hostServiceFeeTax": 0,
+    "invoiceItems": [
+      {
+        "title": "Accommodation fare",
+        "amount": 139,
+        "currency": "EUR",
+        "isLocked": true,
+        "type": "ACCOMMODATION_FARE",
+        "normalType": "AF",
+        "refId": "00000000-0000-4000-8000-771514955125",
+        "origin": "CHANNEL",
+        "internalIndex": 0,
+        "originalGrosses": {
+          "amount": 139,
+          "baseAmount": 139,
+          "breakdown": [
+            {
+              "date": "2026-11-25",
+              "price": 139
+            }
+          ]
+        },
+        "_id": "f15ae75ad3d66c40f87481f2"
+      },
+      {
+        "title": "Cleaning fee",
+        "amount": 40,
+        "baseAmount": 40,
+        "currency": "EUR",
+        "isLocked": true,
+        "type": "CLEANING_FEE",
+        "normalType": "CF",
+        "refId": "00000000-0000-4000-8000-771514955125",
+        "origin": "CHANNEL",
+        "internalIndex": 0,
+        "originalGrosses": {
+          "amount": 40,
+          "baseAmount": 40
+        },
+        "_id": "f8fa0d112bf1541a58c34286"
+      },
+      {
+        "title": "Host channel fee",
+        "amount": -27.75,
+        "baseAmount": -27.75,
+        "currency": "EUR",
+        "isLocked": true,
+        "normalType": "PCM",
+        "refId": "00000000-0000-4000-8000-771514955125",
+        "origin": "CHANNEL",
+        "internalIndex": 0,
+        "_id": "fe5afda82f2eda14e13550e6"
+      },
+      {
+        "title": "Goods and services tax",
+        "amount": 12.53,
+        "baseAmount": 12.53,
+        "currency": "EUR",
+        "isLocked": true,
+        "isTax": true,
+        "type": "TAX",
+        "normalType": "GST",
+        "refId": "00000000-0000-4000-8000-771514955125",
+        "origin": "CHANNEL",
+        "internalIndex": 0,
+        "_id": "fac5bf88ea4119529668784a"
+      }
+    ],
+    "listingId": "69849a19d793670014d4a11a",
+    "netIncome": 163.78,
+    "netIncomeFormula": "host_payout",
+    "nightlyRateInvoiceItems": [
+      {
+        "_id": "f15ae75ad3d66c40f87481f2",
+        "adjustments": [],
+        "includedAdjustments": [],
+        "internalIndex": 0,
+        "isCalculatedByGuesty": true,
+        "nightsBreakdown": [
+          {
+            "date": "2026-11-25",
+            "basePrice": 139,
+            "_id": "f738a6d99c2740edbe9a0884"
+          }
+        ],
+        "normalType": "AF",
+        "origin": "CHANNEL",
+        "refId": "00000000-0000-4000-8000-771514955125",
+        "title": "Accommodation fare",
+        "totalNightsPrice": 139,
+        "totalPrice": 139
+      },
+      {
+        "_id": "f8fa0d112bf1541a58c34286",
+        "adjustments": [],
+        "includedAdjustments": [],
+        "internalIndex": 0,
+        "isCalculatedByGuesty": true,
+        "multiplier": "PER_STAY",
+        "nightsBreakdown": [
+          {
+            "date": "2026-11-25",
+            "basePrice": 40,
+            "_id": "f137649edb8fe95baac68d82"
+          }
+        ],
+        "normalType": "CF",
+        "origin": "CHANNEL",
+        "refId": "00000000-0000-4000-8000-771514955125",
+        "title": "Cleaning fee",
+        "totalNightsPrice": 40,
+        "totalPrice": 40
+      },
+      {
+        "_id": "fe5afda82f2eda14e13550e6",
+        "adjustments": [],
+        "includedAdjustments": [],
+        "internalIndex": 0,
+        "isCalculatedByGuesty": true,
+        "multiplier": "PER_NIGHT",
+        "nightsBreakdown": [
+          {
+            "date": "2026-11-25",
+            "basePrice": -27.75,
+            "_id": "f6c8239e118b6742540078c3"
+          }
+        ],
+        "normalType": "PCM",
+        "origin": "CHANNEL",
+        "refId": "00000000-0000-4000-8000-771514955125",
+        "title": "Host channel fee",
+        "totalNightsPrice": -27.75,
+        "totalPrice": -27.75
+      },
+      {
+        "_id": "fac5bf88ea4119529668784a",
+        "adjustments": [],
+        "includedAdjustments": [],
+        "internalIndex": 0,
+        "isCalculatedByGuesty": true,
+        "multiplier": "PER_STAY",
+        "nightsBreakdown": [
+          {
+            "date": "2026-11-25",
+            "basePrice": 12.53,
+            "_id": "fc92cfc9eada81b8860de2d1"
+          }
+        ],
+        "normalType": "GST",
+        "origin": "CHANNEL",
+        "refId": "00000000-0000-4000-8000-771514955125",
+        "title": "Goods and services tax",
+        "totalNightsPrice": 12.53,
+        "totalPrice": 12.53
+      }
+    ],
+    "ownerRevenue": 0,
+    "ownerRevenueFormula": "net_income - pm_commission",
+    "payments": [
+      {
+        "_id": "f00fd2545ebee66ecb721c5f",
+        "paymentMethodStatus": "ACTIVE",
+        "paymentMethodId": "f03837709fe5c553661abc52",
+        "isAuthorizationHold": false,
+        "isSecurityDeposit": false,
+        "status": "PENDING",
+        "chargebacksData": {
+          "chargebacks": []
+        },
+        "refunds": [],
+        "amount": 163.78,
+        "currency": "EUR",
+        "shouldBePaidAt": "2026-11-26T00:00:00.000Z",
+        "authorizationHoldCaptures": [],
+        "attempts": [],
+        "receiptTargets": [],
+        "createdAt": "2026-11-18T07:57:15.962Z",
+        "updatedAt": "2026-11-18T07:57:15.963Z"
+      }
+    ],
+    "platform": "airbnb2",
+    "reservationId": "ff08cc3f251ecdbfd7324144",
+    "settingsSnapshot": {
+      "__v": 0,
+      "_id": "f9cabaa7c53ad5fd27d4eec6",
+      "accountId": "f88d5b52a32dffd067b459e1",
+      "additionalFees": [],
+      "channelAdditionalFees": [],
+      "channelCommission": {
+        "manual": []
+      },
+      "cleaningFeeFormula": {
+        "lastUpdated": "2026-11-13T07:31:41.790Z",
+        "value": {
+          "_id": "fdb474b9d4aa232623375d23",
+          "formula": 40,
+          "multiplier": "PER_STAY",
+          "valueType": "FIXED"
+        }
+      },
+      "createdAt": "2026-11-18T07:57:15.911Z",
+      "currency": {
+        "from": "EUR",
+        "rate": 1,
+        "rateDate": "2026-11-18T07:57:15.765Z",
+        "to": "EUR"
+      },
+      "extractInclusiveTaxesEnabled": true,
+      "extractManualInclusiveTaxesEnabled": true,
+      "isChannelCommissionTaxBreakdownEnabled": true,
+      "isChannelSpecificTaxesReservation": true,
+      "isDeductMarkupOnFeesEnabled": true,
+      "isDeductedFeesV2Enabled": true,
+      "isInclusiveTaxAdjustmentsEnabled": false,
+      "isMarkupsExtractDeductLogicEnabled": false,
+      "isTaxesPerLineItemReservation": true,
+      "listingId": "69849a19d793670014d4a11a",
+      "markup": null,
+      "moneyId": "f5ae0adae5ed869a7d52306e",
+      "monthlyPriceFactor": 0.65,
+      "reservationId": "ff08cc3f251ecdbfd7324144",
+      "separateAfToSeveralInvoiceItems": true,
+      "stayIndex": 0,
+      "taxes": [
+        {
+          "name": "VAT",
+          "type": "VAT",
+          "units": "PERCENTAGE",
+          "quantifier": "PER_STAY",
+          "amount": 7,
+          "appliedToAllFees": true,
+          "appliedOnFees": [
+            "AF",
+            "ACTIVITIES",
+            "ADDITIONAL_BED",
+            "ADDITIONAL_CHARGE",
+            "AIR_CONDITIONING",
+            "BABY_BED",
+            "BEVERAGE",
+            "BOOKING_FEE",
+            "BREAKFAST",
+            "BUSINESS_CENTER",
+            "CAR_RENTAL",
+            "CHEF",
+            "CLEANING",
+            "CF",
+            "CLUB_CARD",
+            "COMMISSION_CHARGE",
+            "COMMUNITY",
+            "CONCIERGE",
+            "CREDIT_CARD_PROCESSING_FEE",
+            "DAMAGE_CHARGE",
+            "DAMAGE_WAIVER",
+            "DEPOSIT",
+            "DIRECT_SERVICE",
+            "DOCK_FEE",
+            "EARLY_CHECK_IN",
+            "EARLY_CHECKOUT",
+            "ELECTRICITY",
+            "EQUIPMENT_RENTAL",
+            "FLIGHTS",
+            "FOOD",
+            "GIFT_BASKET",
+            "GOLF_CART_RENTAL",
+            "GUEST_SERVICE",
+            "HEATING",
+            "HOMEOWNERS_ASSOCIATION",
+            "HOT_TUB",
+            "HOUSEKEEPING",
+            "INSURANCE",
+            "INTERNET",
+            "LATE_CHECK_IN",
+            "LATE_CHECKOUT",
+            "LAUNDRY",
+            "LINENS",
+            "MANAGEMENT",
+            "MEAL",
+            "MEET_AND_GREET",
+            "MINIBAR",
+            "MISCELLANEOUS",
+            "OIL",
+            "PARKING",
+            "PAYMENT_FEE",
+            "PET",
+            "POOL",
+            "POOL_HEATING",
+            "RESERVATION_FEE",
+            "RESORT",
+            "SERVICE",
+            "SHIPPING",
+            "SPA",
+            "TOILETRIES",
+            "TOUR",
+            "TOWELS",
+            "TRANSFER",
+            "TRANSPORTATION",
+            "UTILITY_FEE",
+            "VALET",
+            "VIP_SERVICES",
+            "WATER",
+            "WELLNESS",
+            "WIFI",
+            "WOOD",
+            "PF"
+          ],
+          "isAppliedByDefault": false,
+          "appliedByDefaultOnChannels": [],
+          "_id": "fb8af9205c948f7e9caee8ea"
+        }
+      ],
+      "updatedAt": "2026-11-18T21:03:31.998Z",
+      "useAccountAdditionalFees": true,
+      "useAccountRevenueShare": true,
+      "useDeductedTaxesFormula": true,
+      "weeklyPriceFactor": 0.75
+    },
+    "source": "airbnb2",
+    "subTotalPrice": 151.25,
+    "totalFees": 40,
+    "totalTaxes": 12.53,
+    "transientOccupancyTax": 12.53,
+    "updatedAt": "2026-11-18T21:03:31.977Z",
+    "useAccountRevenueShare": true,
+    "version": 4,
+    "balanceDue": 163.78,
+    "isFullyPaid": false,
+    "paymentsDue": 163.78,
+    "totalPaid": 0,
+    "totalPaymentFees": 0,
+    "totalRefunded": 0
+  },
+  "nightsCount": 1,
+  "numberOfGuests": {
+    "numberOfAdults": 2,
+    "numberOfChildren": 0,
+    "numberOfInfants": 0,
+    "numberOfPets": 0
+  },
+  "plannedArrival": "15:00",
+  "plannedDeparture": "12:00",
+  "review": {
+    "shouldReview": true
+  },
+  "source": "airbnb2",
+  "status": "confirmed",
+  "stay": [
+    {
+      "checkInDateLocalized": "2026-11-25",
+      "checkOutDateLocalized": "2026-11-26",
+      "guestsCount": 2,
+      "numberOfGuests": {
+        "numberOfAdults": 2,
+        "numberOfChildren": 0,
+        "numberOfInfants": 0,
+        "numberOfPets": 0
+      },
+      "unitTypeId": "69849a19d793670014d4a11a",
+      "unitId": "69849a19d793670014d4a11a",
+      "eta": "2026-11-25T15:00:00.000Z",
+      "etd": "2026-11-26T12:00:00.000Z"
+    }
+  ],
+  "log": [
+    {
+      "_id": "fd3fbd8636228dff34cc83dd",
+      "reservationId": "ff08cc3f251ecdbfd7324144",
+      "event": "Reservation alteration was approved",
+      "activityType": 12,
+      "at": "2026-11-18T21:03:35.347Z",
+      "changes": [],
+      "by": "Guest",
+      "__v": 0
+    },
+    {
+      "_id": "f3b08358898b7c4ae9054978",
+      "reservationId": "ff08cc3f251ecdbfd7324144",
+      "event": "Financial information update",
+      "activityType": 11,
+      "at": "2026-11-18T21:03:31.726Z",
+      "changes": [
+        {
+          "field": "money payments 0 reservationId",
+          "diff": [
+            {
+              "removed": true,
+              "value": "ff08cc3f251ecdbfd7324144"
+            }
+          ]
+        },
+        {
+          "field": "money payments 0 accountId",
+          "diff": [
+            {
+              "removed": true,
+              "value": "f88d5b52a32dffd067b459e1"
+            }
+          ]
+        }
+      ],
+      "by": "payments-v2.reservations-service",
+      "__v": 0
+    },
+    {
+      "_id": "fd2ad58dc23933ebc572aa09",
+      "reservationId": "ff08cc3f251ecdbfd7324144",
+      "event": "Guests age breakdown changed from 1 adult(s), 0 children, 0 infant(s) to 2 adult(s), 0 children, 0 infant(s)",
+      "activityType": 8,
+      "at": "2026-11-18T21:03:31.726Z",
+      "changes": [
+        {
+          "field": "stay[0].numberOfGuests.numberOfAdults",
+          "diff": [
+            {
+              "removed": true,
+              "value": "1"
+            },
+            {
+              "added": true,
+              "value": "2"
+            }
+          ]
+        }
+      ],
+      "by": "ChannelService",
+      "context": {
+        "domainEvent": "ChannelReservationUpdated",
+        "writer": "reservation-logs-consumer",
+        "requestId": "97c36bd9fb7ace9a",
+        "accountId": "f88d5b52a32dffd067b459e1",
+        "logSegment": "number-of-guests"
+      },
+      "__v": 0
+    },
+    {
+      "_id": "f8a4e71cff563f4c3c8bd326",
+      "reservationId": "ff08cc3f251ecdbfd7324144",
+      "event": "Financial information update",
+      "activityType": 11,
+      "at": "2026-11-18T21:03:31.726Z",
+      "changes": [
+        {
+          "field": "money invoiceItems 0 refId",
+          "diff": [
+            {
+              "removed": true,
+              "value": "00000000-0000-4000-8000-771514955125"
+            },
+            {
+              "added": true,
+              "value": "00000000-0000-4000-8000-771514955125"
+            }
+          ]
+        },
+        {
+          "field": "money invoiceItems 1 refId",
+          "diff": [
+            {
+              "removed": true,
+              "value": "00000000-0000-4000-8000-771514955125"
+            },
+            {
+              "added": true,
+              "value": "00000000-0000-4000-8000-771514955125"
+            }
+          ]
+        },
+        {
+          "field": "money invoiceItems 2 refId",
+          "diff": [
+            {
+              "removed": true,
+              "value": "00000000-0000-4000-8000-771514955125"
+            },
+            {
+              "added": true,
+              "value": "00000000-0000-4000-8000-771514955125"
+            }
+          ]
+        },
+        {
+          "field": "money invoiceItems 3 refId",
+          "diff": [
+            {
+              "removed": true,
+              "value": "00000000-0000-4000-8000-771514955125"
+            },
+            {
+              "added": true,
+              "value": "00000000-0000-4000-8000-771514955125"
+            }
+          ]
+        },
+        {
+          "field": "money nightlyRateInvoiceItems 0 refId",
+          "diff": [
+            {
+              "removed": true,
+              "value": "00000000-0000-4000-8000-771514955125"
+            },
+            {
+              "added": true,
+              "value": "00000000-0000-4000-8000-771514955125"
+            }
+          ]
+        },
+        {
+          "field": "money nightlyRateInvoiceItems 1 refId",
+          "diff": [
+            {
+              "removed": true,
+              "value": "00000000-0000-4000-8000-771514955125"
+            },
+            {
+              "added": true,
+              "value": "00000000-0000-4000-8000-771514955125"
+            }
+          ]
+        },
+        {
+          "field": "money nightlyRateInvoiceItems 2 refId",
+          "diff": [
+            {
+              "removed": true,
+              "value": "00000000-0000-4000-8000-771514955125"
+            },
+            {
+              "added": true,
+              "value": "00000000-0000-4000-8000-771514955125"
+            }
+          ]
+        },
+        {
+          "field": "money nightlyRateInvoiceItems 3 nightsBreakdown 0 _id",
+          "diff": [
+            {
+              "removed": true,
+              "value": "f5f42cc5cd41fb44cc283ed7"
+            },
+            {
+              "added": true,
+              "value": "fc92cfc9eada81b8860de2d1"
+            }
+          ]
+        },
+        {
+          "field": "money nightlyRateInvoiceItems 3 refId",
+          "diff": [
+            {
+              "removed": true,
+              "value": "00000000-0000-4000-8000-771514955125"
+            },
+            {
+              "added": true,
+              "value": "00000000-0000-4000-8000-771514955125"
+            }
+          ]
+        },
+        {
+          "field": "money payments 0 reservationId",
+          "diff": [
+            {
+              "added": true,
+              "value": "ff08cc3f251ecdbfd7324144"
+            }
+          ]
+        },
+        {
+          "field": "money payments 0 accountId",
+          "diff": [
+            {
+              "added": true,
+              "value": "f88d5b52a32dffd067b459e1"
+            }
+          ]
+        }
+      ],
+      "by": "ChannelService",
+      "__v": 0
+    },
+    {
+      "_id": "f26003d8143e4f6ac4eb991a",
+      "reservationId": "ff08cc3f251ecdbfd7324144",
+      "event": "Financial information update",
+      "activityType": 11,
+      "at": "2026-11-18T07:57:15.959Z",
+      "changes": [
+        {
+          "field": "money payments 0 reservationId",
+          "diff": [
+            {
+              "removed": true,
+              "value": "ff08cc3f251ecdbfd7324144"
+            }
+          ]
+        },
+        {
+          "field": "money payments 0 accountId",
+          "diff": [
+            {
+              "removed": true,
+              "value": "f88d5b52a32dffd067b459e1"
+            }
+          ]
+        }
+      ],
+      "by": "payments-v2.reservations-service",
+      "__v": 0
+    },
+    {
+      "_id": "f764088a3157f19e542b6dea",
+      "reservationId": "ff08cc3f251ecdbfd7324144",
+      "event": "Reservation alteration was requested",
+      "activityType": 12,
+      "at": "2026-11-18T07:58:00.402Z",
+      "changes": [],
+      "by": "Guest",
+      "__v": 0
+    },
+    {
+      "_id": "fe0662ea632dfacf52e81665",
+      "reservationId": "ff08cc3f251ecdbfd7324144",
+      "event": "Financial information update",
+      "activityType": 11,
+      "at": "2026-11-18T07:57:15.959Z",
+      "changes": [
+        {
+          "field": "money invoiceItems 0 refId",
+          "diff": [
+            {
+              "removed": true,
+              "value": "00000000-0000-4000-8000-771514955125"
+            },
+            {
+              "added": true,
+              "value": "00000000-0000-4000-8000-771514955125"
+            }
+          ]
+        },
+        {
+          "field": "money invoiceItems 1 refId",
+          "diff": [
+            {
+              "removed": true,
+              "value": "00000000-0000-4000-8000-771514955125"
+            },
+            {
+              "added": true,
+              "value": "00000000-0000-4000-8000-771514955125"
+            }
+          ]
+        },
+        {
+          "field": "money invoiceItems 2 refId",
+          "diff": [
+            {
+              "removed": true,
+              "value": "00000000-0000-4000-8000-771514955125"
+            },
+            {
+              "added": true,
+              "value": "00000000-0000-4000-8000-771514955125"
+            }
+          ]
+        },
+        {
+          "field": "money invoiceItems 3 refId",
+          "diff": [
+            {
+              "removed": true,
+              "value": "00000000-0000-4000-8000-771514955125"
+            },
+            {
+              "added": true,
+              "value": "00000000-0000-4000-8000-771514955125"
+            }
+          ]
+        },
+        {
+          "field": "money nightlyRateInvoiceItems 0 refId",
+          "diff": [
+            {
+              "removed": true,
+              "value": "00000000-0000-4000-8000-771514955125"
+            },
+            {
+              "added": true,
+              "value": "00000000-0000-4000-8000-771514955125"
+            }
+          ]
+        },
+        {
+          "field": "money nightlyRateInvoiceItems 1 refId",
+          "diff": [
+            {
+              "removed": true,
+              "value": "00000000-0000-4000-8000-771514955125"
+            },
+            {
+              "added": true,
+              "value": "00000000-0000-4000-8000-771514955125"
+            }
+          ]
+        },
+        {
+          "field": "money nightlyRateInvoiceItems 2 refId",
+          "diff": [
+            {
+              "removed": true,
+              "value": "00000000-0000-4000-8000-771514955125"
+            },
+            {
+              "added": true,
+              "value": "00000000-0000-4000-8000-771514955125"
+            }
+          ]
+        },
+        {
+          "field": "money nightlyRateInvoiceItems 3 nightsBreakdown 0 _id",
+          "diff": [
+            {
+              "removed": true,
+              "value": "f5c0d7226e1c25b624b80ce8"
+            },
+            {
+              "added": true,
+              "value": "f5f42cc5cd41fb44cc283ed7"
+            }
+          ]
+        },
+        {
+          "field": "money nightlyRateInvoiceItems 3 refId",
+          "diff": [
+            {
+              "removed": true,
+              "value": "00000000-0000-4000-8000-771514955125"
+            },
+            {
+              "added": true,
+              "value": "00000000-0000-4000-8000-771514955125"
+            }
+          ]
+        },
+        {
+          "field": "money payments 0 reservationId",
+          "diff": [
+            {
+              "added": true,
+              "value": "ff08cc3f251ecdbfd7324144"
+            }
+          ]
+        },
+        {
+          "field": "money payments 0 accountId",
+          "diff": [
+            {
+              "added": true,
+              "value": "f88d5b52a32dffd067b459e1"
+            }
+          ]
+        }
+      ],
+      "by": "ChannelService",
+      "__v": 0
+    },
+    {
+      "_id": "fd235aff30013b0a5da306de",
+      "reservationId": "ff08cc3f251ecdbfd7324144",
+      "event": "Reservation was updated",
+      "activityType": 12,
+      "at": "2026-11-18T07:57:15.959Z",
+      "changes": [],
+      "by": "ChannelService",
+      "context": {
+        "domainEvent": "ChannelReservationUpdated",
+        "writer": "reservation-logs-consumer",
+        "requestId": "81ca2cb034940c9f",
+        "accountId": "f88d5b52a32dffd067b459e1",
+        "logSegment": "fallback"
+      },
+      "__v": 0
+    },
+    {
+      "_id": "ff05a68e2244ce4a086fe499",
+      "reservationId": "ff08cc3f251ecdbfd7324144",
+      "event": "Financial information update",
+      "activityType": 11,
+      "at": "2026-11-18T07:57:15.959Z",
+      "changes": [
+        {
+          "field": "money payments 0 _id",
+          "diff": [
+            {
+              "added": true,
+              "value": "f00fd2545ebee66ecb721c5f"
+            }
+          ]
+        },
+        {
+          "field": "money payments 0 paymentMethodStatus",
+          "diff": [
+            {
+              "added": true,
+              "value": "ACTIVE"
+            }
+          ]
+        },
+        {
+          "field": "money payments 0 isAuthorizationHold",
+          "diff": [
+            {
+              "added": true,
+              "value": "false"
+            }
+          ]
+        },
+        {
+          "field": "money payments 0 isSecurityDeposit",
+          "diff": [
+            {
+              "added": true,
+              "value": "false"
+            }
+          ]
+        },
+        {
+          "field": "money paymentsDue",
+          "diff": [
+            {
+              "removed": true,
+              "value": "0"
+            },
+            {
+              "added": true,
+              "value": "163.78"
+            }
+          ]
+        }
+      ],
+      "by": "payments-v2.reservations-service",
+      "__v": 0
+    },
+    {
+      "_id": "fc952e8ab653619c30a2fc5e",
+      "reservationId": "ff08cc3f251ecdbfd7324144",
+      "event": "Financial information update",
+      "activityType": 11,
+      "at": "2026-11-18T07:57:15.959Z",
+      "changes": [
+        {
+          "field": "money balanceDue",
+          "diff": [
+            {
+              "added": true,
+              "value": "163.78"
+            }
+          ]
+        },
+        {
+          "field": "money isFullyPaid",
+          "diff": [
+            {
+              "added": true,
+              "value": "false"
+            }
+          ]
+        },
+        {
+          "field": "money paymentsDue",
+          "diff": [
+            {
+              "added": true,
+              "value": "0"
+            }
+          ]
+        },
+        {
+          "field": "money totalPaid",
+          "diff": [
+            {
+              "added": true,
+              "value": "0"
+            }
+          ]
+        },
+        {
+          "field": "money totalPaymentFees",
+          "diff": [
+            {
+              "added": true,
+              "value": "0"
+            }
+          ]
+        },
+        {
+          "field": "money totalRefunded",
+          "diff": [
+            {
+              "added": true,
+              "value": "0"
+            }
+          ]
+        }
+      ],
+      "by": "payments-v2.reservations-service",
+      "__v": 0
+    },
+    {
+      "_id": "f9b7ac3dce42cb64afd9166a",
+      "reservationId": "ff08cc3f251ecdbfd7324144",
+      "event": "The reservation was created. The status is: \"confirmed\"",
+      "activityType": 1,
+      "at": "2026-11-18T07:57:15.752Z",
+      "changes": [],
+      "by": "airbnb2",
+      "context": {
+        "domainEvent": "ChannelReservationCreated",
+        "writer": "reservation-logs-consumer",
+        "requestId": "af453e9910a941ef",
+        "accountId": "f88d5b52a32dffd067b459e1",
+        "logSegment": "created-confirmed"
+      },
+      "__v": 0
+    }
+  ]
+}

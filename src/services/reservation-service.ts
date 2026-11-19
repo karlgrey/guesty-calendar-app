@@ -299,7 +299,8 @@ const ALREADY_RELEASED_STATUSES = ['canceled', 'cancelled', 'closed'];
  * beim nächsten Sync).
  */
 export async function cancelReservation(reservationId: string, reason?: string, canceledBy?: CanceledBy): Promise<CancelReservationResult> {
-  const reservation = await guestyClient.getReservation(reservationId);
+  // #1099: nur der Status zählt (kein Zahlungs-/Gastabruf)
+  const reservation = await guestyClient.getReservation(reservationId, { payments: false, guest: false });
   const previousStatus: string = reservation?.status ?? 'unknown';
 
   let newStatus: 'closed' | 'canceled';

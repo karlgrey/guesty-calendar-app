@@ -1,0 +1,39 @@
+{
+  "payments": [
+    {
+      "_id": "f3f5c028ea3f107da49d93e8",
+      "actionId": "f454d5d9a3b94ecfe20990ec",
+      "workflowTemplateId": "fc852c9eb47f31d7cad17766",
+      "actionTemplateId": "00000000-0000-4000-8000-771514955125",
+      "reservationId": "f968c4967e199e2cb25c43fa",
+      "accountId": "f88d5b52a32dffd067b459e1",
+      "paymentMethodStatus": "ACTIVE",
+      "paymentMethodId": "f4893d932a44017fb428b4c4",
+      "isAuthorizationHold": false,
+      "isSecurityDeposit": false,
+      "status": "PENDING",
+      "chargebacksData": {
+        "chargebacks": []
+      },
+      "amount": 1979.5,
+      "currency": "EUR",
+      "shouldBePaidAt": "2026-11-19T10:33:12.779Z",
+      "refunds": [],
+      "createdAt": "2026-11-19T10:33:19.164Z",
+      "authorizationHoldCaptures": [],
+      "attempts": [],
+      "receiptTargets": [],
+      "updatedAt": "2026-11-19T10:33:19.164Z",
+      "__v": 0
+    }
+  ],
+  "balanceDue": 1979.5,
+  "paymentsDue": 1979.5,
+  "totalPaid": 0,
+  "totalRefunded": 0,
+  "totalPaymentFees": 0,
+  "isFullyPaid": false,
+  "isTouchedPayments": false,
+  "currency": "EUR",
+  "hostPayout": 1979.5
+}

@@ -6,7 +6,8 @@
 
 import Bottleneck from 'bottleneck';
 import { config } from '../config/index.js';
-import { getDefaultProperty } from '../config/properties.js';
+import { getDefaultProperty, getPropertyByGuestyId } from '../config/properties.js';
+import { adaptV3Reservation, adaptV3SearchResult, type GuestyPaymentsSummary } from './guesty-v3-adapter.js';
 import { ExternalApiError } from '../utils/errors.js';
 import { logApiCall } from '../utils/logger.js';
 import logger from '../utils/logger.js';
@@ -141,6 +142,19 @@ export function createGuestyLimiter(limits: GuestyLimits = GUESTY_LIMITS): Bottl
 const MAX_OAUTH_RETRY_WAIT_MS = 60 * 1000;
 /** Sperre nach 400/401 am Token-Endpunkt (falsche Client-ID/Secret) */
 const OAUTH_CREDENTIAL_ERROR_BLOCK_MS = 15 * 60 * 1000;
+
+/** #1099: Guesty-Maximum je v3-Einzel-/Stapelabruf (`reservationIds[]`). */
+export const RESERVATIONS_V3_BY_IDS_MAX = 10;
+
+/**
+ * #1099: alle Status laut Guesty-Doku (Response-Enum von `/reservations-v3/search`). Die
+ * Legacy-Liste ohne Statusfilter lieferte alle Status; das v3-Default ist nicht dokumentiert,
+ * deshalb filtert getReservations ohne `status` explizit auf diese Liste.
+ */
+export const ALL_RESERVATION_STATUSES: readonly string[] = [
+  'inquiry', 'reserved', 'confirmed', 'awaiting_payment', 'canceled', 'closed', 'declined',
+  'expired', 'alteration', 'completed', 'checked_in', 'checked_out',
+];
 
 /** Guesty PUT /reservations-v3/:id/status — Enum canceledBy (Default bei Guesty: TEAM_MEMBER). */
 export type CanceledBy = 'OWNER' | 'GUEST' | 'TEAM_MEMBER' | 'HOST';
@@ -629,8 +643,15 @@ export class GuestyClient {
   }
 
   /**
-   * Fetch reservations with optional filters
-   * Uses Guesty's filter syntax for proper querying
+   * #1099: Reservierungsliste über `GET /reservations-v3/search` (Legacy `GET /reservations`
+   * endet 01.03.2027), adaptiert in die bisherige Listenform (adaptV3SearchResult).
+   *
+   * ACHTUNG gegenüber der Legacy-Liste: search liefert KEIN `money` und KEIN `guest`-Objekt
+   * (nur `guestId`). Wer Preise oder Gastnamen braucht, ergänzt sie gezielt
+   * (getReservationsV3ByIds für money, getGuest bzw. lokale DB für Namen, siehe
+   * sync-inquiries.ts), nie je Reservierung und Lauf.
+   * Ohne `status` filtert die Methode explizit auf ALLE Status (Legacy-Verhalten ohne Filter;
+   * das v3-Default ist nicht dokumentiert). `limit` höchstens 100 (Guesty-Maximum).
    */
   async getReservations(params?: {
     listingId?: string;
@@ -639,76 +660,93 @@ export class GuestyClient {
     skip?: number;
     checkOutGte?: string;
   }): Promise<any[]> {
-    logger.debug({ params }, 'Fetching reservations from Guesty API');
+    return (await this.getReservationsPage(params)).results;
+  }
 
-    const queryParams = new URLSearchParams();
-    const filters: any[] = [];
+  /**
+   * Wie getReservations, plus `hasMore` für die Paginierung. Paginierende Aufrufer nehmen
+   * `hasMore` statt „Seite < limit": der listingId-Filter wird zusätzlich clientseitig
+   * angewandt, eine gefilterte Seite kann also kürzer sein, obwohl weitere folgen.
+   */
+  async getReservationsPage(params?: {
+    listingId?: string;
+    status?: string[];
+    limit?: number;
+    skip?: number;
+    checkOutGte?: string;
+  }): Promise<{ results: any[]; hasMore: boolean }> {
+    logger.debug({ params }, 'Fetching reservations from Guesty API (v3 search)');
+    const limit = Math.min(params?.limit ?? 100, 100);
+    const page = await this.searchReservationsV3({ ...params, limit });
+    const listingId = params?.listingId;
+    const results = page.results
+      .map((item) => adaptV3SearchResult(item, { timezoneFor: (id) => this.timezoneForListing(id) }))
+      // Sicherheitsnetz: ignoriert der Server den listingId-Filter (wie den Parameter
+      // `fields`), bleibt die Liste trotzdem auf das Objekt beschränkt.
+      .filter((r) => !listingId || r.listingId === listingId);
+    const hasMore = typeof page.pagination?.hasMore === 'boolean' ? page.pagination.hasMore : page.results.length >= limit;
+    logger.debug({ count: results.length, hasMore }, 'Reservations fetched successfully');
+    return { results, hasMore };
+  }
 
-    // Add listingId filter
-    if (params?.listingId) {
-      filters.push({
-        operator: '$eq',
-        field: 'listingId',
-        value: params.listingId,
-      });
+  /**
+   * #1099: eine Seite `GET /reservations-v3/search`, roh. Filter-Syntax laut Guesty-Doku
+   * `filter[<feld>]=<wert>` bzw. `filter[<feld>][<op>]=<wert>` (Komma = in). Probe 19.11.:
+   * `filter[status]=confirmed,reserved`, `filter[checkOut][gte]=JJJJ-MM-TT` und
+   * `filter[reservationId][in]=<id>` funktionieren, `fields` wird ignoriert.
+   * `hasMore` der Antwort steht in `pagination`.
+   */
+  async searchReservationsV3(params?: {
+    listingId?: string;
+    status?: string[];
+    limit?: number;
+    skip?: number;
+    checkOutGte?: string;
+    reservationIds?: string[];
+  }): Promise<{ results: any[]; pagination?: { skip?: number; limit?: number; hasMore?: boolean } }> {
+    const q: string[] = [];
+    const add = (key: string, value: string) => q.push(`${key}=${encodeURIComponent(value)}`);
+    if (params?.listingId) add('filter[listingId]', params.listingId);
+    const statuses = params?.status && params.status.length > 0 ? params.status : ALL_RESERVATION_STATUSES;
+    add('filter[status]', statuses.join(','));
+    if (params?.checkOutGte) add('filter[checkOut][gte]', params.checkOutGte.slice(0, 10));
+    if (params?.reservationIds && params.reservationIds.length > 0) {
+      add('filter[reservationId][in]', params.reservationIds.join(','));
     }
+    add('limit', String(Math.min(params?.limit ?? 100, 100)));
+    if (params?.skip) add('skip', String(params.skip));
+    const res = await this.request<any>(`/reservations-v3/search?${q.join('&')}`);
+    return { results: Array.isArray(res?.results) ? res.results : [], pagination: res?.pagination };
+  }
 
-    // Add status filter (use $in for multiple statuses)
-    if (params?.status && params.status.length > 0) {
-      if (params.status.length === 1) {
-        filters.push({
-          operator: '$eq',
-          field: 'status',
-          value: params.status[0],
-        });
-      } else {
-        filters.push({
-          operator: '$in',
-          field: 'status',
-          value: params.status,
-        });
-      }
+  /**
+   * #1099: v3-Einzel-/Stapelabruf `GET /reservations-v3?reservationIds[]=…` (Guesty: höchstens
+   * 10 IDs je Aufruf, ohne `[]` kommt 400), roh. Enthält das volle `money`-Objekt (wertgleich
+   * zur Legacy-API bis auf die Zahlungsfelder), aber kein `guest`, kein `listingId` oben und
+   * keine UTC-checkIn/checkOut (dafür adaptV3Reservation). Mehr als 10 IDs → mehrere Aufrufe.
+   */
+  async getReservationsV3ByIds(ids: string[]): Promise<any[]> {
+    const unique = [...new Set(ids.filter(Boolean))];
+    const out: any[] = [];
+    for (let i = 0; i < unique.length; i += RESERVATIONS_V3_BY_IDS_MAX) {
+      const chunk = unique.slice(i, i + RESERVATIONS_V3_BY_IDS_MAX);
+      const q = chunk.map((id) => `reservationIds[]=${encodeURIComponent(id)}`).join('&');
+      const res = await this.request<any>(`/reservations-v3?${q}`);
+      const list = Array.isArray(res) ? res : Array.isArray(res?.results) ? res.results : Array.isArray(res?.data) ? res.data : [];
+      out.push(...list);
     }
+    return out;
+  }
 
-    // F5: begrenzt die Historie (z. B. auf das Konsistenz-Check-Fenster) —
-    // in-house-Aufenthalte (check-out in der Zukunft) bleiben drin.
-    if (params?.checkOutGte) {
-      filters.push({
-        operator: '$gte',
-        field: 'checkOut',
-        value: params.checkOutGte,
-      });
-    }
+  /** #1099: Zahlungsstand `GET /payments?reservationId=<id>` (balanceDue, totalPaid, isFullyPaid …). */
+  async getReservationPayments(reservationId: string): Promise<GuestyPaymentsSummary> {
+    return this.request<GuestyPaymentsSummary>(`/payments?reservationId=${encodeURIComponent(reservationId)}`);
+  }
 
-    // Add filters to query params (JSON stringified)
-    if (filters.length > 0) {
-      queryParams.append('filters', JSON.stringify(filters));
-    }
-
-    // Specify fields using space-separated format per Guesty API docs
-    // Example from docs: fields=_id confirmationCode status checkInDateLocalized...
-    // #1187: money.* (Punkt-Syntax) für Preisdaten an Anfragen (sync-inquiries.ts)
-    // #1242: fareCleaning/totalTaxes/hostServiceFee für den Gastbetrag (classifyGuestyGuestPrice) —
-    // fehlen sie, bleibt price_basis unbekannt (kein falsch bezeichneter Preis)
-    const fieldsString = '_id listingId status checkIn checkOut checkInDateLocalized checkOutDateLocalized guest guestsCount source createdAt confirmedAt confirmationCode integration money.currency money.hostPayout money.fareAccommodationAdjusted money.fareCleaning money.totalTaxes money.hostServiceFee';
-    queryParams.append('fields', fieldsString);
-
-    // Set limit
-    queryParams.append('limit', (params?.limit || 100).toString());
-
-    if (params?.skip) {
-      queryParams.append('skip', params.skip.toString());
-    }
-
-    const url = `/reservations?${queryParams.toString()}`;
-    const response = await this.request<{ results: any[] }>(url);
-
-    logger.debug(
-      { count: response.results?.length || 0 },
-      'Reservations fetched successfully'
-    );
-
-    return response.results || [];
+  /** IANA-Zeitzone eines Guesty-Listings aus properties.json (null = unbekannt, dann keine Umrechnung). */
+  private timezoneForListing(listingId: string | undefined): string | null {
+    if (!listingId) return null;
+    return getPropertyByGuestyId(listingId)?.timezone ?? null;
   }
 
   /**
@@ -742,12 +780,42 @@ export class GuestyClient {
   }
 
   /**
-   * Fetch reservation details by ID (includes money and guest data)
+   * Reservierung per ID in der bisherigen Form von `GET /reservations/{id}` (#1099: intern
+   * v3-Einzelabruf + `/payments` + guests-crud, zusammengesetzt von adaptV3Reservation).
+   * Unbekannte ID → ExternalApiError 404 (wie bisher). Zahlungs- und Gastabruf sind
+   * best effort (Warnung, Felder fehlen dann) und lassen sich abwählen, wo sie nicht
+   * gebraucht werden (`payments: false` / `guest: false`, spart je einen Guesty-Aufruf).
    */
-  async getReservation(reservationId: string): Promise<any> {
-    logger.debug({ reservationId }, 'Fetching reservation from Guesty API');
+  async getReservation(
+    reservationId: string,
+    opts: { payments?: boolean; guest?: boolean } = {},
+  ): Promise<any> {
+    logger.debug({ reservationId }, 'Fetching reservation from Guesty API (v3)');
 
-    const reservation = await this.request<any>(`/reservations/${reservationId}`);
+    const [v3] = await this.getReservationsV3ByIds([reservationId]);
+    if (!v3) {
+      throw new ExternalApiError('Guesty API error: 404 Not Found', 404, 'Guesty', { reservationId, message: 'Reservation not found' });
+    }
+    const guestId: string | undefined = v3.bookerId ?? v3.guests?.[0]?.id;
+    const [payments, guest] = await Promise.all([
+      opts.payments === false
+        ? Promise.resolve(null)
+        : this.getReservationPayments(reservationId).catch((error) => {
+            logger.warn({ error, reservationId }, 'Guesty: Zahlungsstand nicht abrufbar (non-fatal), balanceDue/totalPaid fehlen');
+            return null;
+          }),
+      opts.guest === false || !guestId
+        ? Promise.resolve(null)
+        : this.getGuest(guestId).catch((error) => {
+            logger.warn({ error, reservationId, guestId }, 'Guesty: Gast nicht abrufbar (non-fatal), guest-Objekt fehlt');
+            return null;
+          }),
+    ]);
+    const reservation = adaptV3Reservation(v3, {
+      payments,
+      guest,
+      timezoneFor: (id) => this.timezoneForListing(id),
+    });
 
     logger.debug({ reservationId, status: reservation.status }, 'Reservation fetched successfully');
 

@@ -78,7 +78,8 @@ router.post('/reservations', async (req, res) => {
 
 router.get('/reservations/:id', async (req, res) => {
   try {
-    const r = await guestyClient.getReservation(req.params.id);
+    // #1099: die Sicht braucht weder Zahlungsstand noch Gast-Objekt (spart 2 Guesty-Aufrufe)
+    const r = await guestyClient.getReservation(req.params.id, { payments: false, guest: false });
     // #799: effektive Zeiten aus unserer DB dazu (Lookup non-fatal; keine lokale Zeile -> null)
     let times = null;
     try { times = getStayTimes(req.params.id)?.times ?? null; } catch (error) {

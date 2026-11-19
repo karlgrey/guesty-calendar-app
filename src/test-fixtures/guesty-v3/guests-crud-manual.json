@@ -1,0 +1,13 @@
+{
+  "_id": "fce8f55d2c7b9530434160ca",
+  "firstName": "Erika",
+  "lastName": "Muster",
+  "fullName": "Erika Muster",
+  "emails": [
+    "gast@example.com"
+  ],
+  "phones": [
+    "490000000000"
+  ],
+  "contactType": "guest"
+}

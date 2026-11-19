@@ -1,0 +1,28 @@
+{
+  "results": [
+    {
+      "reservationId": "ff08cc3f251ecdbfd7324144",
+      "hostOriginalPayout": 163.78,
+      "currency": "EUR",
+      "platform": "airbnb2",
+      "source": "airbnb2",
+      "rawAccommodationFare": 139,
+      "accommodationFareNet": 139,
+      "rawCleaningFee": 40,
+      "guestFeeBase": 0,
+      "guestFeeVat": 0,
+      "channelCommission": 27.75,
+      "channelCommissionIncTax": 27.75,
+      "subTotalPrice": 151.25,
+      "hostPayout": 163.78,
+      "totalTaxes": 12.53,
+      "totalFees": 40,
+      "netIncome": 163.78,
+      "commission": 163.78,
+      "accommodationFareIncTax": 139,
+      "cleaningFeeIncTax": 40,
+      "totalFeesIncTax": 40
+    }
+  ],
+  "notFound": []
+}

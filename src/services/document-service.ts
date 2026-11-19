@@ -364,6 +364,21 @@ async function fetchDocumentDataFromGuesty(reservationId: string, documentType: 
   // Get listing from local DB for pricing info
   const listing = getListingById(reservation.listingId);
 
+  return buildDocumentDataFromReservation(reservationId, documentType, reservation, guest, listing);
+}
+
+/**
+ * Belegdaten aus Guesty-Reservierung + Gast + lokalem Listing (rein, ohne I/O; #1099:
+ * herausgelöst, damit der Vorher/Nachher-Vergleich Legacy-API ↔ v3-Adapter testbar ist).
+ */
+export function buildDocumentDataFromReservation(
+  reservationId: string,
+  documentType: DocumentType,
+  reservation: any,
+  guest: GuestyGuest | null,
+  listing: any,
+  today: Date = new Date(),
+): DocumentData {
   // Extract pricing from Guesty reservation data
   const pricing = extractPricingFromReservation(reservation, listing);
 
@@ -371,7 +386,6 @@ async function fetchDocumentDataFromGuesty(reservationId: string, documentType: 
   const nights = reservation.nightsCount || calculateNights(reservation.checkIn, reservation.checkOut);
 
   // Prepare document data
-  const today = new Date();
   const validUntil = new Date(today);
   validUntil.setDate(validUntil.getDate() + 7);
 
