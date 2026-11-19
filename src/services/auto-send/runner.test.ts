@@ -469,7 +469,7 @@ describe('runAutoSendGate: Preis/Nachlass im Entwurf (#1243)', () => {
     const r = await runAutoSendGate(inq('Hi! Ich kann dir 10 % Nachlass auf die Unterkunft anbieten.'), d);
     expect(r.decision.decision).toBe('wait');
     expect(r.decision.flags).toContain('mech:price_discount');
-    expect(r.decision.reason).toContain('Preis oder Nachlass im Text');
+    expect(r.decision.reason).toBe('Mechanischer Check: Preis oder Nachlass im Text (10 %)');
     expect(r.sent).toBe(false);
     expect(d.send).not.toHaveBeenCalled();
   });

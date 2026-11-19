@@ -42,7 +42,7 @@ const MECH_LABEL: Record<MechanicalFlag, string> = {
   confirmation_words: 'Bestätigungswort in einer Buchungsanfrage-Rückfrage', // #697
   zeitbezug_veraltet: 'Wochentag passt nicht zu heute/Buchung', // #698
   repeats_own_sentence: 'wiederholt eigenen Satz', // #1191
-  price_discount: 'Preis oder Nachlass im Text', // #1243
+  price_discount: 'Preis oder Nachlass', // #1243 (das „im Text" hängt die Grund-Zeile selbst an)
 };
 
 /**
