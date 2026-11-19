@@ -85,6 +85,11 @@ export interface DraftInput {
   // ersten Entwurf (mechanical-checks.ts findRepeatedOwnSentence). Optional, null/fehlend = kein
   // Neuversuch.
   repeatRetrySentence?: string | null;
+  // #1243: hat das Objekt eine Rabatt-Linie für Plattform-Buchungsanfragen (properties.json
+  // `airbnbDiscount`, nur Farmhouse)? Nur dann darf der Buchungsanfrage-Block auf eine Rabattfrage
+  // einen Nachlass nennen — Höhe und Bedingung kommen ausschließlich aus dem Objektwissen (Vault).
+  // Optional, fehlend/false = kein Nachlass (Preis halten).
+  discountRuleApplies?: boolean;
 }
 export interface DraftDeps {
   call: typeof callClaudeTool;
