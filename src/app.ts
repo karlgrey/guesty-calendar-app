@@ -27,6 +27,8 @@ import authRoutes from './routes/auth.js';
 import adminUsersRoutes from './routes/admin-users.js';
 import propertyRoutes from './routes/property-routes.js';
 import agentApiRoutes from './routes/agent-api.js';
+import meterIngestRoutes from './routes/meter-ingest.js';
+import powerRoutes from './routes/power.js';
 import { createGuestyWebhookRouter } from './routes/webhooks-guesty.js';
 import { handleGuestyInbound } from './jobs/handle-guesty-inbound.js';
 import logger from './utils/logger.js';
@@ -49,6 +51,10 @@ export function createApp() {
   if (!config.guestyWebhookSecret) {
     logger.warn('Guesty-Webhook inaktiv: GUESTY_WEBHOOK_SECRET fehlt — Poll bleibt das Netz');
   }
+
+  // #1169: Zählerstand-Annahme aus Home Assistant — eigenes Token, eigener JSON-Parser
+  // (400 statt 500 bei kaputtem JSON), daher vor dem globalen express.json() gemountet.
+  app.use('/api/meter', meterIngestRoutes);
 
   // Middleware
   app.use(express.json());
@@ -111,6 +117,7 @@ export function createApp() {
   app.use('/admin/reviews', requireAuth, reviewsRoutes);
   app.use('/admin/suggestions', requireAuth, suggestionsRoutes);
   app.use('/admin/reporting', requireAuth, reportingRoutes);
+  app.use('/admin/strom', requireAuth, powerRoutes); // #1169 Stromverbrauch je Buchung
   app.use('/admin', requireAuth, adminRoutes);
   app.use('/api/admin-users', adminUsersRoutes); // requireAuth is applied within the router
 

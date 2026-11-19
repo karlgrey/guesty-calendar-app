@@ -141,7 +141,7 @@ form { margin: 0; }
 // source of truth für die Nav-Leiste — bei neuen Admin-Seiten hier ergänzen.
 export type AdminNavKey =
   | 'dashboard' | 'messages' | 'reviews' | 'suggestions'
-  | 'conversions' | 'reservations' | 'reporting' | 'system' | 'users';
+  | 'conversions' | 'reservations' | 'power' | 'reporting' | 'system' | 'users';
 
 const ADMIN_NAV_ITEMS: Array<{ key: AdminNavKey; href: string; label: string }> = [
   { key: 'dashboard', href: '/admin', label: 'Übersicht' },
@@ -150,6 +150,7 @@ const ADMIN_NAV_ITEMS: Array<{ key: AdminNavKey; href: string; label: string }> 
   { key: 'suggestions', href: '/admin/suggestions', label: 'Vault-Vorschläge' },
   { key: 'conversions', href: '/admin/conversions', label: 'Conversions' },
   { key: 'reservations', href: '/admin/reservations/new', label: 'Reservierungen' },
+  { key: 'power', href: '/admin/strom', label: 'Strom' },
   { key: 'reporting', href: '/admin/reporting', label: 'Reporting' },
   { key: 'system', href: '/admin/system', label: 'System' },
   { key: 'users', href: '/admin/users', label: 'Nutzer' },

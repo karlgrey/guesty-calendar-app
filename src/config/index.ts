@@ -53,6 +53,16 @@ const configSchema = z.object({
       message: 'Each entry in AGENT_API_KEYS must be at least 32 characters',
     }),
 
+  // #1169: Token NUR für POST /api/meter/readings (Zählerstände aus Home Assistant). Eigener
+  // Schlüssel, bewusst getrennt von den Agent-Keys. Leer/ungesetzt = Endpunkt deaktiviert (503).
+  meterIngestToken: z
+    .string()
+    .optional()
+    .transform((val) => (val && val.trim() ? val.trim() : undefined))
+    .refine((val) => val === undefined || val.length >= 32, {
+      message: 'METER_INGEST_TOKEN must be at least 32 characters',
+    }),
+
   // Hostex API (optional — only required if hostex-provider properties exist)
   hostexAccessToken: z.string().optional(),
   hostexApiUrl: z.string().url().default('https://api.hostex.io/v3'),
@@ -202,6 +212,7 @@ function parseConfig() {
     vaultPath: process.env.VAULT_PATH,
     agentApiKey: process.env.AGENT_API_KEY,
     agentApiKeys: process.env.AGENT_API_KEYS,
+    meterIngestToken: process.env.METER_INGEST_TOKEN,
     hostexAccessToken: process.env.HOSTEX_ACCESS_TOKEN,
     hostexApiUrl: process.env.HOSTEX_API_URL,
     airbnbMailHost: process.env.AIRBNB_MAIL_HOST,
