@@ -9,6 +9,7 @@
       "shortCode": "FH",
       "smartTasksProjectId": 5,
       "smartTasksAirbnbProjectId": 37,
+      "airbnbDiscount": { "shortNoticeDays": 7, "weekend": true },
       "uiColor": "#FBF3E4",
       "vaultNote": "Gästekommunikation Farmhouse Prasser.md",
       "blocksNextDayOnLateCheckout": true,

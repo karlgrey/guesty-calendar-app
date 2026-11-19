@@ -129,6 +129,10 @@ export interface PropertyConfig {
    *  BH → 34, AS → 35). Ohne Wert legt booking-request-task-service.ts den Task ebenfalls ohne
    *  Projekt-Zuordnung an. */
   smartTasksAirbnbProjectId?: number;
+  /** #1243: nur das Gate, OB dieses Objekt eine Rabatt-Linie für Plattform-Anfragen hat, plus die
+   *  Bedingung für die Anzeige (Anfrage höchstens `shortNoticeDays` Tage vor Anreise ODER
+   *  Wochenendnacht). Höhe und Wortlaut der Linie stehen ausschließlich im Vault. */
+  airbnbDiscount?: { shortNoticeDays: number; weekend: boolean };
   timezone: string;
   currency: string;
   bookingRecipientEmail: string;
@@ -233,6 +237,11 @@ const propertyStaticConfigSchema = z.object({
   rampMonths: z.number().int().min(1).optional(),
 });
 
+const airbnbDiscountSchema = z.object({
+  shortNoticeDays: z.number().int().positive(),
+  weekend: z.boolean(),
+});
+
 const propertyConfigSchema = z.object({
   slug: z.string().min(1).regex(/^[a-z0-9-]+$/, 'Slug must be lowercase alphanumeric with hyphens'),
   provider: z.enum(['guesty', 'hostex', 'airbnb-mail']).default('guesty'),
@@ -250,6 +259,7 @@ const propertyConfigSchema = z.object({
   blocksNextDayOnLateCheckout: z.boolean().optional(),
   smartTasksProjectId: z.number().int().positive().optional(),
   smartTasksAirbnbProjectId: z.number().int().positive().optional(),
+  airbnbDiscount: airbnbDiscountSchema.optional(),
   timezone: z.string().default('Europe/Berlin'),
   currency: z.string().length(3).toUpperCase().default('EUR'),
   bookingRecipientEmail: z.string().email(),
