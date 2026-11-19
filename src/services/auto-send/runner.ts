@@ -200,6 +200,8 @@ export async function runAutoSendGate(input: GateInput, deps: GateDeps = realGat
       guestLanguage: input.guestLanguage,
       isBookingRequest,
       now, bookingContext: input.bookingContext, recentHostMessages: hostMessages,
+      // #1243 (Prüfer-Befund 1): Preis-/Rabattfrage des Gasts → nie auto, unabhängig vom Entwurfstext.
+      guestMessages,
     });
     const baseInput: Omit<PolicyInput, 'promiseTask' | 'bookingTask'> = {
       mode, paused: deps.isPaused(), judge: effectiveJudge, mechanical,

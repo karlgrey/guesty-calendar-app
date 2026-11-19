@@ -70,7 +70,10 @@ export type MechanicalFlag =
   | 'repeats_own_sentence'
   // #1243: Entwurf nennt Prozent/Rabatt-Wörter (immer) bzw. Preiswörter (nur bei Buchungsanfragen) —
   // kein Entwurf mit Preis oder Nachlass geht automatisch raus (siehe mechanical-checks.ts).
-  | 'price_discount';
+  | 'price_discount'
+  // #1243 (Prüfer-Befund 1): Gastnachricht einer Buchungsanfrage fragt nach Preis/Rabatt bzw. nennt
+  // einen Betrag — unabhängig von der Wortwahl des Entwurfs nie automatisch.
+  | 'guest_price_topic';
 export interface MechanicalFinding { flag: MechanicalFlag; match: string }
 
 export interface AutoSendDecision {

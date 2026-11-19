@@ -43,7 +43,14 @@ const MECH_LABEL: Record<MechanicalFlag, string> = {
   zeitbezug_veraltet: 'Wochentag passt nicht zu heute/Buchung', // #698
   repeats_own_sentence: 'wiederholt eigenen Satz', // #1191
   price_discount: 'Preis oder Nachlass', // #1243 (das „im Text" hängt die Grund-Zeile selbst an)
+  guest_price_topic: 'Preis- oder Rabattfrage in der Gastnachricht', // #1243, Prüfer-Befund 1
 };
+
+/** Grund-Zeile für den ersten mechanischen Treffer; die Gastnachrichten-Prüfung (#1243) betrifft nicht den Entwurfstext. */
+function mechReason(m: MechanicalFinding): string {
+  if (m.flag === 'guest_price_topic') return `Mechanischer Check: ${MECH_LABEL[m.flag]} (${m.match})`;
+  return `Mechanischer Check: ${MECH_LABEL[m.flag]} im Text (${m.match})`;
+}
 
 /**
  * Zusage (#696): riskFlags trägt AUSSCHLIESSLICH 'promises_action' (kein weiteres Risiko)
@@ -85,7 +92,7 @@ function decideByGates(i: PolicyInput): AutoSendDecision {
   // (siehe runner.ts) — ohne ihn bleibt es bei 'wait', auch wenn sonst alles grün wäre.
   if (v.category === 'buchungsanfrage') {
     if (v.riskFlags.length) return wait(`Prüfmodell: ${v.riskFlags.map((f) => RISK_LABEL[f]).join(', ')}`);
-    if (i.mechanical.length) { const m = i.mechanical[0]; return wait(`Mechanischer Check: ${MECH_LABEL[m.flag]} im Text (${m.match})`); }
+    if (i.mechanical.length) { return wait(mechReason(i.mechanical[0])); }
     if (v.confidence !== 'hoch') return wait(`Sicherheit des Prüfmodells nur „${v.confidence}"`);
     if (i.threadHasHumanIntervention) return wait('Micha hat in diesem Thread schon eingegriffen');
     if (i.threadHasFailedSend) return wait('Vorheriger Versand in diesem Thread ist fehlgeschlagen — bitte manuell prüfen');
@@ -107,7 +114,7 @@ function decideByGates(i: PolicyInput): AutoSendDecision {
   if (v.category === 'playbook_fakt' && !v.answerableFromFacts) return wait('Antwort nicht eindeutig aus dem Playbook belegt');
   const promiseOnly = isPromiseOnlyRisk(v);
   if (v.riskFlags.length && !promiseOnly) return wait(`Prüfmodell: ${v.riskFlags.map((f) => RISK_LABEL[f]).join(', ')}`);
-  if (i.mechanical.length) { const m = i.mechanical[0]; return wait(`Mechanischer Check: ${MECH_LABEL[m.flag]} im Text (${m.match})`); }
+  if (i.mechanical.length) { return wait(mechReason(i.mechanical[0])); }
   if (v.confidence !== 'hoch') return wait(`Sicherheit des Prüfmodells nur „${v.confidence}"`);
   if (i.threadHasHumanIntervention) return wait('Micha hat in diesem Thread schon eingegriffen');
   if (i.threadHasFailedSend) return wait('Vorheriger Versand in diesem Thread ist fehlgeschlagen — bitte manuell prüfen');

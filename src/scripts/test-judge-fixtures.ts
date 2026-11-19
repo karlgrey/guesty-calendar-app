@@ -59,6 +59,8 @@ for (const c of cases) {
     isBookingRequest: v.category === 'buchungsanfrage',
     now, bookingContext: c.bookingContext ?? null,
     recentHostMessages: c.hostMessages,
+    // #1243: wie im Runner — Preis-/Rabattfrage des Gasts macht den Entwurf freigabepflichtig.
+    guestMessages: c.guestMessages,
   });
   const baseInput = { mode: 'live' as const, paused: false, judge: r, mechanical, threadHasHumanIntervention: false, threadHasFailedSend: false, autoSentToday: 0, dailyCap: 10, canSend: true };
   const d = decide({ ...baseInput, promiseTask: null });

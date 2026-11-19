@@ -480,12 +480,36 @@ describe('runAutoSendGate: Preis/Nachlass im Entwurf (#1243)', () => {
     expect(r.decision.flags).toContain('mech:price_discount');
     expect(d.send).not.toHaveBeenCalled();
   });
-  it('(c) Gegenprobe ohne Preis/Rabatt → auto wie bisher', async () => {
+  // Prüfer-Befund 1: die Gastnachricht fragt nach Preis → nie auto, auch wenn der Entwurf das übergeht.
+  it('(c) Preisfrage des Gasts, Entwurf ohne Preis/Rabatt → wait mit mech:guest_price_topic, kein Send', async () => {
     const d = mk();
     const r = await runAutoSendGate(inq('Hi! Gern. Wie viele Personen seid ihr?'), d);
+    expect(r.decision.decision).toBe('wait');
+    expect(r.decision.flags).toContain('mech:guest_price_topic');
+    expect(r.decision.reason).toBe('Mechanischer Check: Preis- oder Rabattfrage in der Gastnachricht (preislich)');
+    expect(d.send).not.toHaveBeenCalled();
+  });
+  it('(d) Gegenprobe: Gast ohne Preisthema, Entwurf ohne Preis/Rabatt → auto wie bisher', async () => {
+    const d = mk();
+    const plain = [
+      { id: 'm1', direction: 'inbound', body: 'Gibt es in der Nähe einen See zum Baden?', sent_at: '2026-11-17T10:00:00.000Z' },
+      { id: 'm2', direction: 'system', body: 'New guest inquiry', sent_at: '2026-11-17T10:00:06.000Z' },
+    ] as Message[];
+    const r = await runAutoSendGate({ ...inq('Hi! Ja, ein Badesee liegt ganz in der Nähe.'), messages: plain }, d);
     expect(r.decision.decision).toBe('auto');
     expect(r.decision.flags).not.toContain('mech:price_discount');
+    expect(r.decision.flags).not.toContain('mech:guest_price_topic');
     expect(d.send).toHaveBeenCalledTimes(1);
+  });
+  it.each([
+    'So weit runter kann ich leider nicht gehen, aber ein Zehntel auf die Unterkunft kann ich euch entgegenkommen.',
+    'Da kann ich euch leider nicht entgegenkommen, es bleibt bei dem Betrag, der dir angezeigt wird.',
+  ])('(e) Prüfer-Live-Fälle ohne alte Trigger-Wörter → wait, kein Send: %s', async (body) => {
+    const d = mk();
+    const r = await runAutoSendGate(inq(body), d);
+    expect(r.decision.decision).toBe('wait');
+    expect(r.decision.flags).toContain('mech:price_discount');
+    expect(d.send).not.toHaveBeenCalled();
   });
   it('playbook_fakt mit „10 % Rabatt“ → wait', async () => {
     const d = deps({ judge: vi.fn().mockResolvedValue({ kind: 'verdict', verdict: { category: 'playbook_fakt', answerableFromFacts: true, riskFlags: [], confidence: 'hoch', reasoning: 'r', promisedAction: null } }) });

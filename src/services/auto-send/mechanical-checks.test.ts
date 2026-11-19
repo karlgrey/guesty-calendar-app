@@ -238,15 +238,55 @@ describe('price_discount (#1243)', () => {
     expect(r[1].match).toBe('Preis');
   });
 
-  // Regression: bestehende Auto-Fälle der Judge-Fixtures dürfen nie feuern.
+  // Regression: bestehende Auto-Fälle der Judge-Fixtures dürfen nie feuern (Entwurf UND Gastnachricht).
   it('feuert bei keinem Fixture-Fall mit expected.auto === true', () => {
     const cases = JSON.parse(readFileSync(new URL('../../test-fixtures/judge/cases.json', import.meta.url), 'utf8')) as
-      Array<{ name: string; draft: string; expected: { auto: boolean } }>;
+      Array<{ name: string; draft: string; guestMessages: string[]; expected: { auto: boolean } }>;
     const autos = cases.filter((c) => c.expected.auto === true);
     expect(autos.length).toBeGreaterThan(0);
     for (const c of autos) {
       expect(run(c.draft, true), `${c.name} (Buchungsanfrage)`).toHaveLength(0);
       expect(run(c.draft, false), `${c.name}`).toHaveLength(0);
+      const guest = runMechanicalChecks(c.draft, { knownDigitRuns: [], isBookingRequest: true, guestMessages: c.guestMessages })
+        .filter((f) => f.flag === 'guest_price_topic');
+      expect(guest, `${c.name} (Gastnachricht)`).toHaveLength(0);
     }
+  });
+
+  // Prüfer-Befund 1: Preis/Nachlass ohne die bisherigen Trigger-Wörter.
+  it.each([
+    'So weit runter kann ich leider nicht gehen, aber ein Zehntel auf die Unterkunft kann ich euch entgegenkommen.',
+    'Da kann ich euch leider nicht entgegenkommen, es bleibt bei dem Betrag, der dir angezeigt wird.',
+    'Günstiger wird es leider nicht.', 'We cannot offer a cheaper rate.', 'Eine Reduzierung ist nicht drin.',
+    'Die Hälfte geht leider nicht.', 'Weiter runter kann ich nicht.', 'Das passt nicht in euer Budget, verstehe ich.',
+  ])('Buchungsanfrage, Entwurf ohne alte Trigger-Wörter: %s', (t) => {
+    expect(run(t, true).length).toBeGreaterThan(0);
+  });
+});
+
+// #1243 (Prüfer-Befund 1): zweites Netz über die Gastnachrichten — unabhängig vom Entwurfstext.
+describe('guest_price_topic (#1243)', () => {
+  const guest = (msgs: string[], isBookingRequest = true) =>
+    runMechanicalChecks('Hi! Gern. Wie viele Personen seid ihr?', { knownDigitRuns: [], isBookingRequest, guestMessages: msgs })
+      .filter((f) => f.flag === 'guest_price_topic');
+
+  it.each([
+    'Könnt ihr uns da noch ein Stück entgegenkommen?', 'Geht da noch was? Ist etwas über unserem Budget.',
+    'Gibt es einen Rabatt?', 'Wären 300 Euro insgesamt möglich?', 'Any chance you could do a better rate for us?',
+    'Wir würden gern anfragen, ob ihr uns preislich entgegenkommt.', 'Ist es etwas günstiger möglich?',
+    'Could you do 10% off?', 'What would it cost for 8 people?', 'Ein bisschen teuer für uns.', '€2,600 would be our max.',
+  ])('Gastnachricht mit Preisthema: %s', (t) => {
+    expect(guest([t])).toHaveLength(1);
+  });
+
+  it('harmlose Gastnachrichten → kein Treffer', () => {
+    for (const t of ['Gibt es in der Nähe einen See zum Baden?', 'Wir sind 15 Personen inkl. Tagesgäste.', 'Ist Bettwäsche dabei?']) {
+      expect(guest([t])).toHaveLength(0);
+    }
+  });
+
+  it('nur bei Buchungsanfragen, nur mit übergebenen Gastnachrichten', () => {
+    expect(guest(['Gibt es einen Rabatt?'], false)).toHaveLength(0);
+    expect(runMechanicalChecks('Hi!', { knownDigitRuns: [], isBookingRequest: true }).filter((f) => f.flag === 'guest_price_topic')).toHaveLength(0);
   });
 });
