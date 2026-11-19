@@ -114,6 +114,13 @@ describe('evaluateCounterOffer', () => {
     expect(evaluateCounterOffer({ offer: 100, guestTotal: 200, currency: 'EUR', stay, rule })!.condition)
       .toEqual({ met: false, shortNotice: false, weekend: false });
   });
+  // Prüfer-Befund 4: Nebenbeträge sind kein Gegenangebot.
+  it('Plausibilitätsgrenze: Betrag unter der Hälfte des Gastbetrags → nichts anzeigen', () => {
+    for (const offer of [30, 390, 1974]) {
+      expect(evaluateCounterOffer({ offer, guestTotal: 3948.3, currency: 'EUR', stay: DANIEL, rule }), String(offer)).toBeNull();
+    }
+    expect(evaluateCounterOffer({ offer: 1975, guestTotal: 3948.3, currency: 'EUR', stay: DANIEL, rule })).not.toBeNull();
+  });
 });
 
 describe('formatCounterOfferNote', () => {

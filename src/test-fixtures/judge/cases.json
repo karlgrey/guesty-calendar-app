@@ -668,5 +668,101 @@
       ],
       "auto": true
     }
+  },
+  {
+    "name": "Kim — Nachlass ohne Trigger-Wörter („ein Zehntel … entgegenkommen“) (#1243, Prüfer-Runde 1)",
+    "guestMessages": [
+      "Hallo Micha, wir sind sechs Freundinnen und wollen Ende November kommen. Könnt ihr uns da noch ein Stück entgegenkommen?"
+    ],
+    "draft": "Hey Kim,\n\nso weit runter kann ich leider nicht gehen, aber ein Zehntel auf die Unterkunft kann ich euch entgegenkommen. Wenn das für euch passt, stellt gern die Buchungsanfrage.\n\nLiebe Grüße, Micha",
+    "facts": "Preise (alle netto; + 7 % MwSt auf die Gesamtsumme inkl. Reinigung). Rabatt gilt nur auf die Unterkunftskosten, nicht auf die Reinigung. Rabattfragen bei Airbnb-Anfragen (Entscheid Micha, 17.11.2026): Eine feste Linie gibt es bei Airbnb nicht. Fragt ein Gast nach Rabatt oder nennt ein Gegenangebot, sind bis zu 10 % Nachlass auf die Unterkunftskosten möglich, wenn die Buchung kurzfristig ist (Anreise innerhalb von 7 Tagen) oder ein Wochenende betrifft (Wochenenden sind seltener gebucht). Will der Gast mehr als 10 %, nennt die Antwort die 10 % als Gegenangebot, freundlich und als klare Grenze; ob sie rausgeht, entscheidet Micha bei der Freigabe. Bezugsgröße im Gespräch ist der Betrag, den der Gast bei Airbnb sieht. Gilt nur fürs Farmhouse. Mehrnächte-Rabatt bei Direktbuchung: 10 % ab 2 Nächten, 15 % ab 3 Nächten. Hartes Limit: 15 Personen. Umgebung: ein Badesee liegt rund 2 km entfernt.",
+    "guestName": "Kim",
+    "bookingContext": "Buchungsanfrage (noch nicht bestätigt): Zeitraum 27.11.2026–29.11.2026, 2 Nächte, 6 Personen, Gesamtpreis für den Gast laut Airbnb ca. 3.745,00 EUR inkl. Steuern (berechnet, ungefähr; ohne Steuern ca. 3.500,00 EUR) — Daten stammen aus der Anfrage selbst. Anfrage gestellt am 19.11.2026, 8 Tage vor Anreise. Übernachtungen in den Nächten ab Freitag, Samstag (Wochenendnacht Fr/Sa dabei: ja). Nachlass-Bedingung laut Objektregel: erfüllt (Wochenende, Anfrage 8 Tage vor Anreise).",
+    "now": "2026-11-19T10:00:00Z",
+    "expected": {
+      "category": [
+        "buchungsanfrage",
+        "geld"
+      ],
+      "auto": false
+    }
+  },
+  {
+    "name": "Kim — Preis gehalten ohne Trigger-Wörter („bleibt bei dem Betrag“) (#1243, Prüfer-Runde 1)",
+    "guestMessages": [
+      "Hallo Micha, wir sind acht Leute und würden gern im Dezember kommen. Könnt ihr uns da noch ein Stück entgegenkommen?"
+    ],
+    "draft": "Hey Kim,\n\nda kann ich euch leider nicht entgegenkommen, es bleibt bei dem Betrag, der dir angezeigt wird. Wenn es für euch trotzdem passt, stell gern die Buchungsanfrage.\n\nLiebe Grüße, Micha",
+    "facts": "Preise (alle netto; + 7 % MwSt auf die Gesamtsumme inkl. Reinigung). Rabatt gilt nur auf die Unterkunftskosten, nicht auf die Reinigung. Rabattfragen bei Airbnb-Anfragen (Entscheid Micha, 17.11.2026): Eine feste Linie gibt es bei Airbnb nicht. Fragt ein Gast nach Rabatt oder nennt ein Gegenangebot, sind bis zu 10 % Nachlass auf die Unterkunftskosten möglich, wenn die Buchung kurzfristig ist (Anreise innerhalb von 7 Tagen) oder ein Wochenende betrifft (Wochenenden sind seltener gebucht). Will der Gast mehr als 10 %, nennt die Antwort die 10 % als Gegenangebot, freundlich und als klare Grenze; ob sie rausgeht, entscheidet Micha bei der Freigabe. Bezugsgröße im Gespräch ist der Betrag, den der Gast bei Airbnb sieht. Gilt nur fürs Farmhouse. Mehrnächte-Rabatt bei Direktbuchung: 10 % ab 2 Nächten, 15 % ab 3 Nächten. Hartes Limit: 15 Personen. Umgebung: ein Badesee liegt rund 2 km entfernt.",
+    "guestName": "Kim",
+    "bookingContext": "Buchungsanfrage (noch nicht bestätigt): Zeitraum 15.12.2026–17.12.2026, 2 Nächte, 8 Personen, Gesamtpreis für den Gast laut Airbnb ca. 3.745,00 EUR inkl. Steuern (berechnet, ungefähr; ohne Steuern ca. 3.500,00 EUR) — Daten stammen aus der Anfrage selbst. Anfrage gestellt am 19.11.2026, 26 Tage vor Anreise. Übernachtungen in den Nächten ab Dienstag, Mittwoch (Wochenendnacht Fr/Sa dabei: nein). Nachlass-Bedingung laut Objektregel: nicht erfüllt (kein Wochenende, Anfrage 26 Tage vor Anreise).",
+    "now": "2026-11-19T10:00:00Z",
+    "expected": {
+      "category": [
+        "buchungsanfrage",
+        "geld"
+      ],
+      "auto": false
+    }
+  },
+  {
+    "name": "Kim — Preisfrage übergangen, Entwurf ohne Preis (#1243, Prüfer-Runde 1)",
+    "guestMessages": [
+      "Hallo Micha, wir sind acht Leute und würden gern im Dezember kommen. Könnt ihr uns da noch ein Stück entgegenkommen?"
+    ],
+    "draft": "Hey Kim,\n\nschön, dass ihr im Dezember zu acht kommen wollt! Stell gern die Buchungsanfrage, wenn es für euch passt.\n\nLiebe Grüße, Micha",
+    "facts": "Preise (alle netto; + 7 % MwSt auf die Gesamtsumme inkl. Reinigung). Rabatt gilt nur auf die Unterkunftskosten, nicht auf die Reinigung. Rabattfragen bei Airbnb-Anfragen (Entscheid Micha, 17.11.2026): Eine feste Linie gibt es bei Airbnb nicht. Fragt ein Gast nach Rabatt oder nennt ein Gegenangebot, sind bis zu 10 % Nachlass auf die Unterkunftskosten möglich, wenn die Buchung kurzfristig ist (Anreise innerhalb von 7 Tagen) oder ein Wochenende betrifft (Wochenenden sind seltener gebucht). Will der Gast mehr als 10 %, nennt die Antwort die 10 % als Gegenangebot, freundlich und als klare Grenze; ob sie rausgeht, entscheidet Micha bei der Freigabe. Bezugsgröße im Gespräch ist der Betrag, den der Gast bei Airbnb sieht. Gilt nur fürs Farmhouse. Mehrnächte-Rabatt bei Direktbuchung: 10 % ab 2 Nächten, 15 % ab 3 Nächten. Hartes Limit: 15 Personen. Umgebung: ein Badesee liegt rund 2 km entfernt.",
+    "guestName": "Kim",
+    "bookingContext": "Buchungsanfrage (noch nicht bestätigt): Zeitraum 15.12.2026–17.12.2026, 2 Nächte, 8 Personen, Gesamtpreis für den Gast laut Airbnb ca. 3.745,00 EUR inkl. Steuern (berechnet, ungefähr; ohne Steuern ca. 3.500,00 EUR) — Daten stammen aus der Anfrage selbst. Anfrage gestellt am 19.11.2026, 26 Tage vor Anreise. Übernachtungen in den Nächten ab Dienstag, Mittwoch (Wochenendnacht Fr/Sa dabei: nein). Nachlass-Bedingung laut Objektregel: nicht erfüllt (kein Wochenende, Anfrage 26 Tage vor Anreise).",
+    "now": "2026-11-19T10:00:00Z",
+    "expected": {
+      "category": [
+        "buchungsanfrage",
+        "geld"
+      ],
+      "auto": false
+    }
+  },
+  {
+    "name": "Kim — kein Gastbetrag im Kontext, Entwurf schätzt einen Preis (#1243, Prüfer-Runde 1)",
+    "guestMessages": [
+      "Hallo Micha, wir sind acht Leute und würden gern im Dezember kommen. Könnt ihr uns da noch ein Stück entgegenkommen?"
+    ],
+    "draft": "Hey Kim,\n\nvielen Dank für deine Anfrage! Für euren Zeitraum liegt der Gesamtpreis bei ca. 3.000 € inkl. Steuern. Einen Nachlass kann ich dir dafür leider nicht anbieten. Stell gern die Buchungsanfrage, wenn es passt.\n\nLiebe Grüße, Micha",
+    "facts": "Preise (alle netto; + 7 % MwSt auf die Gesamtsumme inkl. Reinigung). Rabatt gilt nur auf die Unterkunftskosten, nicht auf die Reinigung. Rabattfragen bei Airbnb-Anfragen (Entscheid Micha, 17.11.2026): Eine feste Linie gibt es bei Airbnb nicht. Fragt ein Gast nach Rabatt oder nennt ein Gegenangebot, sind bis zu 10 % Nachlass auf die Unterkunftskosten möglich, wenn die Buchung kurzfristig ist (Anreise innerhalb von 7 Tagen) oder ein Wochenende betrifft (Wochenenden sind seltener gebucht). Will der Gast mehr als 10 %, nennt die Antwort die 10 % als Gegenangebot, freundlich und als klare Grenze; ob sie rausgeht, entscheidet Micha bei der Freigabe. Bezugsgröße im Gespräch ist der Betrag, den der Gast bei Airbnb sieht. Gilt nur fürs Farmhouse. Mehrnächte-Rabatt bei Direktbuchung: 10 % ab 2 Nächten, 15 % ab 3 Nächten. Hartes Limit: 15 Personen. Umgebung: ein Badesee liegt rund 2 km entfernt.",
+    "guestName": "Kim",
+    "bookingContext": "Buchungsanfrage (noch nicht bestätigt): Zeitraum 15.12.2026–17.12.2026, 2 Nächte, 8 Personen — Daten stammen aus der Anfrage selbst. Anfrage gestellt am 19.11.2026, 26 Tage vor Anreise. Übernachtungen in den Nächten ab Dienstag, Mittwoch (Wochenendnacht Fr/Sa dabei: nein). Nachlass-Bedingung laut Objektregel: nicht erfüllt (kein Wochenende, Anfrage 26 Tage vor Anreise).",
+    "now": "2026-11-19T10:00:00Z",
+    "expected": {
+      "category": [
+        "buchungsanfrage",
+        "geld"
+      ],
+      "auto": false,
+      "riskFlagsIncludeAny": [
+        "invents_fact"
+      ]
+    }
+  },
+  {
+    "name": "Lars — Request-to-Book, Nachlass plus Ankündigung der Bestätigung (#1243, Prüfer-Runde 1)",
+    "guestMessages": [
+      "Hallo Micha, wir haben gerade angefragt. Könntest du uns beim Betrag noch etwas entgegenkommen? 3.200 Euro wären unser Maximum."
+    ],
+    "draft": "Hey Lars,\n\ndanke für eure Anfrage! Der Gesamtpreis liegt bei ca. 3.745,00 € inkl. Steuern, 3.200 € schaffe ich leider nicht. Da ihr am Wochenende kommt, kann ich euch bis zu 10 % Nachlass auf die Unterkunftskosten anbieten. Die Bestätigung bekommst du in Kürze.\n\nLiebe Grüße, Micha",
+    "facts": "Preise (alle netto; + 7 % MwSt auf die Gesamtsumme inkl. Reinigung). Rabatt gilt nur auf die Unterkunftskosten, nicht auf die Reinigung. Rabattfragen bei Airbnb-Anfragen (Entscheid Micha, 17.11.2026): Eine feste Linie gibt es bei Airbnb nicht. Fragt ein Gast nach Rabatt oder nennt ein Gegenangebot, sind bis zu 10 % Nachlass auf die Unterkunftskosten möglich, wenn die Buchung kurzfristig ist (Anreise innerhalb von 7 Tagen) oder ein Wochenende betrifft (Wochenenden sind seltener gebucht). Will der Gast mehr als 10 %, nennt die Antwort die 10 % als Gegenangebot, freundlich und als klare Grenze; ob sie rausgeht, entscheidet Micha bei der Freigabe. Bezugsgröße im Gespräch ist der Betrag, den der Gast bei Airbnb sieht. Gilt nur fürs Farmhouse. Mehrnächte-Rabatt bei Direktbuchung: 10 % ab 2 Nächten, 15 % ab 3 Nächten. Hartes Limit: 15 Personen. Umgebung: ein Badesee liegt rund 2 km entfernt.",
+    "guestName": "Lars",
+    "bookingContext": "Buchungsanfrage (noch nicht bestätigt): Zeitraum 27.11.2026–29.11.2026, 2 Nächte, 8 Personen, Gesamtpreis für den Gast laut Airbnb ca. 3.745,00 EUR inkl. Steuern (berechnet, ungefähr; ohne Steuern ca. 3.500,00 EUR) — Daten stammen aus der Anfrage selbst. Anfrage gestellt am 19.11.2026, 8 Tage vor Anreise. Übernachtungen in den Nächten ab Freitag, Samstag (Wochenendnacht Fr/Sa dabei: ja). Nachlass-Bedingung laut Objektregel: erfüllt (Wochenende, Anfrage 8 Tage vor Anreise).",
+    "now": "2026-11-19T10:00:00Z",
+    "expected": {
+      "category": [
+        "buchungsanfrage",
+        "geld"
+      ],
+      "auto": false,
+      "riskFlagsIncludeAny": [
+        "promises_action"
+      ]
+    }
   }
 ]

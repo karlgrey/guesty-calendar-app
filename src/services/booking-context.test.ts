@@ -162,6 +162,12 @@ describe('buildBookingContext', () => {
       expect(ctx).toContain('Nachlass-Bedingung laut Objektregel: nicht erfüllt (kein Wochenende, Anfrage 26 Tage vor Anreise).');
     });
 
+    it('#1243 (Prüfer-Befund 5): Nicht-Airbnb-Anfrage am Objekt mit Rabattlinie → keine Bedingungszeile', () => {
+      insert({ source: 'website', total_price: 3000, price_basis: 'accommodation' });
+      const ctx = buildBookingContext(thread({ inquiry_id: 'INQ-D' }), { rates: RATES, discountRule: { shortNoticeDays: 7, weekend: true } })!;
+      expect(ctx).not.toContain('Nachlass-Bedingung');
+    });
+
     it('#1243: ohne Objekt-Rabattlinie keine Bedingungszeile', () => {
       insert({ total_price: 3118.05, host_payout: 3118.05, price_basis: 'net_payout' });
       expect(buildBookingContext(thread({ inquiry_id: 'INQ-D' }), { rates: RATES, discountRule: null })).not.toContain('Nachlass-Bedingung');

@@ -13,7 +13,7 @@ import { nightsBetween } from '../utils/date.js';
 import { getAirbnbGuestPriceConfig } from '../config/properties.js';
 import { computeStayFacts, formatStayFactsSentence, formatDiscountConditionSentence, type DiscountCondition } from './counter-offer.js';
 import { getPropertyForThread } from '../utils/thread-property.js';
-import { resolveGuestPrice, type AirbnbGuestPriceRates, type GuestPrice } from './guest-price.js';
+import { resolveGuestPrice, channelName, GUEST_TOTAL_MARKER, type AirbnbGuestPriceRates, type GuestPrice } from './guest-price.js';
 
 /** ISO/localized date (YYYY-MM-DD…) → German TT.MM.JJJJ. */
 function deDate(dateStr: string): string {
@@ -67,11 +67,11 @@ function contextPricePart(p: GuestPrice | null): string {
   switch (p.kind) {
     case 'estimated':
       return (
-        `, Gesamtpreis für den Gast laut ${p.channel} ca. ${formatMoney(p.inclTax, p.currency)} inkl. Steuern ` +
+        `, ${GUEST_TOTAL_MARKER} laut ${p.channel} ca. ${formatMoney(p.inclTax, p.currency)} inkl. Steuern ` +
         `(berechnet, ungefähr; ohne Steuern ca. ${formatMoney(p.exclTax, p.currency)})`
       );
     case 'actual':
-      return `, Gesamtpreis für den Gast laut ${p.channel} ${formatMoney(p.total, p.currency)} inkl. Steuern`;
+      return `, ${GUEST_TOTAL_MARKER} laut ${p.channel} ${formatMoney(p.total, p.currency)} inkl. Steuern`;
     case 'accommodation':
       return `, Übernachtungspreis laut ${p.channel} ${formatMoney(p.amount, p.currency)} (ohne Reinigung, Steuern und Gebühren)`;
   }
@@ -128,7 +128,8 @@ export function buildBookingContext(thread: MessageThread, opts?: BookingContext
     const stay = formatStayFactsSentence(stayFacts);
     // #1243: nur bei Objekten mit Rabatt-Linie (Farmhouse) — die Bedingung wird hier ausgewertet, der
     // Entwurf prüft sie nicht selbst (Live-Test: Sonnet bot sonst trotz nicht erfüllter Bedingung an).
-    const rule = discountRuleFrom(thread, opts);
+    // #1243 (Prüfer-Befund 5): die Linie gilt nur für Airbnb-Anfragen — am Kanal der Anfrage, nicht nur am Objekt.
+    const rule = channelName(inquiry.source) === 'Airbnb' ? discountRuleFrom(thread, opts) : null;
     const condition = rule ? formatDiscountConditionSentence(stayFacts, rule) : '';
     const tail = [stay, condition].filter(Boolean).join(' ');
 

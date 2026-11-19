@@ -187,10 +187,17 @@ export function formatDiscountConditionSentence(stay: StayFacts, rule: DiscountC
   return `Nachlass-Bedingung laut Objektregel: ${c.met ? 'erfüllt' : 'nicht erfüllt'} (${conditionDetail(stay, c.weekend)}).`;
 }
 
+/** #1243: kleinster Anteil am Gastbetrag, ab dem ein erkannter Betrag als Gesamtgebot gilt. */
+export const MIN_OFFER_SHARE = 0.5;
+
 export function evaluateCounterOffer(a: {
   offer: number; guestTotal: number; currency: string | null; stay: StayFacts; rule: DiscountCondition | null;
 }): CounterOfferEvaluation | null {
   if (!(a.guestTotal > 0) || a.offer >= a.guestTotal) return null;
+  // #1243 (Prüfer-Befund 4): Nebenbeträge („Kostet der Hund 30 € extra?“, „Endreinigung 390 € ist ok“) sind kein
+  // Gegenangebot — „wenn nicht sicher erkennbar, nichts anzeigen“. Plausibilitätsgrenze relativ zum Gastbetrag,
+  // reine Erkennungs-Heuristik (keine Rabattzahl): ein Gesamtgebot unter der Hälfte gilt als nicht sicher erkannt.
+  if (a.offer < a.guestTotal * MIN_OFFER_SHARE) return null;
   const diffAbs = Math.round((a.guestTotal - a.offer) * 100) / 100;
   const diffPct = Math.round((diffAbs / a.guestTotal) * 1000) / 10;
   const condition = a.rule ? evaluateDiscountCondition(a.stay, a.rule) : null;

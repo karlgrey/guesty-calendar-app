@@ -37,7 +37,9 @@ export function resolveCounterOfferNote(
 
     const stay = computeStayFacts(summary.checkIn, summary.checkOut, summary.requestedAt);
     const evaluation = evaluateCounterOffer({
-      offer, guestTotal, currency: price.currency, stay, rule: property?.airbnbDiscount ?? null,
+      // #1243 (Prüfer-Befund 5): Bedingung nur bei Airbnb-Anfragen (Linie gilt nur dort).
+      offer, guestTotal, currency: price.currency, stay,
+      rule: price.channel === 'Airbnb' ? (property?.airbnbDiscount ?? null) : null,
     });
     return evaluation ? formatCounterOfferNote(evaluation, estimated, stay) : null;
   } catch (err) {

@@ -53,6 +53,17 @@ describe('resolveCounterOfferNote', () => {
     const ms = [msg('1', 'inbound', 'Wir bieten 3.000 €'), msg('2', 'outbound', 'Wie wäre 3.500 €?'), msg('3', 'inbound', 'Dann 2.600 €'), msg('4', 'inbound', 'Danke!')];
     expect(resolveCounterOfferNote(thread, ms, farmhouse)).toContain('2.600 €');
   });
+  // Prüfer-Befund 4 und 5
+  it('Nebenbeträge in der Gastnachricht („Kostet der Hund 30 € extra?“, „Endreinigung 390 € ist ok“) → keine Notiz', () => {
+    expect(resolveCounterOfferNote(thread, [msg('1', 'inbound', 'Kostet der Hund 30 € extra?')], farmhouse)).toBeNull();
+    expect(resolveCounterOfferNote(thread, [msg('1', 'inbound', 'Die Endreinigung 390 € ist ok.')], farmhouse)).toBeNull();
+  });
+  it('Nicht-Airbnb-Anfrage: Abstand ja, aber keine Bedingungszeile', () => {
+    summaryMock.mockReturnValue(daniel({ platform: 'homeaway', guestPrice: { kind: 'actual', total: 3948.3, currency: 'EUR', channel: 'Plattform' } }));
+    const n = resolveCounterOfferNote(thread, messages, farmhouse)!;
+    expect(n).toContain('34,1 %');
+    expect(n).not.toContain('Nachlass-Bedingung');
+  });
   it('onlyLatestGuestMessage: nur die letzte inbound-Nachricht', () => {
     const ms = [msg('1', 'inbound', 'Dann 2.600 €'), msg('2', 'inbound', 'Danke!')];
     expect(resolveCounterOfferNote(thread, ms, farmhouse, { onlyLatestGuestMessage: true })).toBeNull();
