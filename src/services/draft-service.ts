@@ -274,13 +274,70 @@ export function hostAlreadySentClosing(messages: Message[], requestKind: Booking
   return messages.some((m) => m.direction === 'outbound' && re.test(m.body ?? ''));
 }
 
-function buildBookingRequestBlock(requestKind: BookingRequestKind | null, closingAlreadySent = false): string {
+// #1243 (Entscheidung Micha 17.11.2026, Fall Daniel FH): der Entwurf darf bei Buchungsanfragen den
+// Gesamtpreis für den Gast aus dem BUCHUNGSKONTEXT (#1242, mit Steuer) nennen und eine Rabattfrage
+// bzw. ein Gegenangebot dagegen einordnen. Bewusst OHNE Zahlen: Höhe, Bezug und Bedingung des
+// Nachlasses stehen ausschließlich im Objektwissen (Vault, Farmhouse: „Rabattfragen bei
+// Airbnb-Anfragen"), hier steht nur, WIE damit umzugehen ist. discountRuleApplies (properties.json
+// `airbnbDiscount`) entscheidet nur, OB das Objekt überhaupt eine solche Linie hat — ohne sie gibt es
+// keinen Nachlass (Voice enthält einen Direktbuchungs-Rabatt, der hier NICHT gilt). Jeder Entwurf mit
+// Preis oder Nachlass geht auf wait (mechanischer Check price_discount/money), Micha gibt frei.
+export const PRICE_DISCOUNT_ANCHOR = '5. Preis, Rabattfrage, Gegenangebot';
+
+function buildPriceDiscountRule(discountRuleApplies: boolean): string {
+  const lines = [
+    `${PRICE_DISCOUNT_ANCHOR}:`,
+    '- Den Preis nennst du nur, wenn der Gast nach dem Preis fragt, um einen Nachlass bittet oder einen eigenen Betrag ' +
+      'nennt. Dann nennst du AUSSCHLIESSLICH den Gesamtpreis für den Gast aus dem BUCHUNGSKONTEXT — genau diesen Betrag, ' +
+      'mit „ca.“, wenn er dort als ungefähr steht, und mit „inkl. Steuern“. Keinen anderen Betrag: keine Aufschlüsselung, ' +
+      'keinen Preis pro Nacht, keinen selbst ausgerechneten neuen Endpreis oder Rabattbetrag in Euro, nie Auszahlung, ' +
+      'Gebühren, Steuersatz oder Rechenweg. Steht im BUCHUNGSKONTEXT kein Gesamtpreis für den Gast, nennst du keinen Preis.',
+    '- Nennt der Gast einen eigenen, niedrigeren Betrag (Gegenangebot), ordnest du ihn freundlich gegen diesen ' +
+      'Gesamtpreis ein. Du nimmst ein Gegenangebot NIE an und sagst nicht zu, dass es so geht.',
+  ];
+  if (discountRuleApplies) {
+    lines.push(
+      '- Einen Nachlass nennst du NUR, wenn ALLES zutrifft: (a) der Gast fragt selbst nach einem Rabatt bzw. günstigeren ' +
+        'Preis oder nennt einen niedrigeren Betrag; (b) das OBJEKTWISSEN enthält eine ausdrückliche Regel für Rabattfragen ' +
+        'bei Plattform-Buchungsanfragen (z. B. „Rabattfragen bei Airbnb-Anfragen“); (c) deren Bedingung ist laut ' +
+        'BUCHUNGSKONTEXT und HEUTE-Fakt erfüllt (dort stehen Anfragedatum, Tage bis zur Anreise und die Wochentage der ' +
+        'Übernachtungen). Höhe und Bezug übernimmst du genau so, wie die Regel sie nennt (z. B. Prozentsatz und worauf er ' +
+        'sich bezieht) — nie mehr, und rechne dafür KEINEN Euro-Betrag aus. Was die Regel für den Fall vorsieht, dass der ' +
+        'Gast mehr will, setzt du genau so um. Formuliere den Nachlass als Möglichkeit, die du anbieten kannst, nicht als ' +
+        'bestätigte Buchung.',
+      '- Regeln für Direktbuchungen und Angebote (Mehrnächte-Rabatt, Direktbuchungs-Rabatt, Stammgäste, ' +
+        'Entgegenkommen bei Angeboten) gelten HIER NICHT.',
+      '- Ist die Bedingung nicht erfüllt oder gibt es keine passende Regel: halte den Preis freundlich, ohne Nachlass ' +
+        'und ohne interne Bedingungen zu nennen.',
+    );
+  } else {
+    lines.push(
+      '- Einen Nachlass bietest du NICHT an, auch nicht auf Nachfrage — für dieses Objekt gibt es bei solchen Anfragen ' +
+        'keine Rabatt-Linie. Regeln aus Voice oder Objektwissen zu Direktbuchungs-, Mehrnächte- oder Stammgast-Rabatten ' +
+        'gelten hier nicht. Fragt der Gast nach Rabatt oder nennt einen niedrigeren Betrag, halte den Preis freundlich.',
+    );
+  }
+  lines.push(
+    '- Ohne Rabattfrage oder Gegenangebot des Gasts: KEIN Nachlass und kein Hinweis auf Verhandlungsspielraum.',
+    '- Geht es in der Gastnachricht um Preis oder Rabatt, kündigst du bei einem Request-to-Book KEINE Bestätigung an ' +
+      '(Punkt 4 entfällt dann); bei einer Inquiry darf die Einladung zur Buchungsanfrage bleiben.',
+  );
+  return lines.join('\n');
+}
+
+function buildBookingRequestBlock(
+  requestKind: BookingRequestKind | null,
+  closingAlreadySent = false,
+  discountRuleApplies = false,
+): string {
   const kindLabel = requestKind ? REQUEST_KIND_LABEL[requestKind] : 'Inquiry oder Request-to-Book)';
   return [
     '### BUCHUNGSANFRAGE — Sonderregeln für DIESE Antwort (haben Vorrang vor allgemeinen Regeln unten) ###',
     `Dies ist eine Airbnb-Buchungsanfrage (${kindLabel}.`,
+    // #1243: Preis und Nachlass sind nicht mehr pauschal verboten, sondern nur nach Punkt 5 erlaubt.
     'Die Entscheidung (Annehmen/Ablehnen) trifft ausschließlich Micha. Deine Antwort enthält deshalb KEINE Zusage ' +
-      'und KEINE Bestätigung als Fakt, KEIN Angebot, KEIN Preis, KEIN Hold.',
+      'und KEINE Bestätigung als Fakt, KEIN Hold und nimmt KEIN Gegenangebot des Gasts an. Preis und Nachlass nur nach ' +
+      'Punkt 5 unten.',
     'Baue die Antwort so auf:',
     '1. Kurzer Dank für die Anfrage. Geh auf den INHALT der Gastnachricht ein: spiegle die Vorfreude bzw. das, was ' +
       'der Gast über sich und seinen Aufenthalt erzählt, und beantworte seine Fragen (z. B. Tipps zur Umgebung, ' +
@@ -297,6 +354,7 @@ function buildBookingRequestBlock(requestKind: BookingRequestKind | null, closin
       '"eine Runde wie eure ist willkommen/passt gut") — ' +
       'Unsicheres nur als Frage an den Gast, nie als Aussage über den Ausgang der Prüfung.',
     buildBookingClosingRule(requestKind, closingAlreadySent),
+    buildPriceDiscountRule(discountRuleApplies),
     // #976: Kürze-Regel gilt auch hier (#1004-Abnahme: Tipps-Antwort war zu lang).
     'Länge: auch hier gilt die LÄNGE-Regel oben — insgesamt höchstens 3–4 kurze Sätze. Tipps-Fragen knapp ' +
       'beantworten: eine kleine Auswahl (höchstens zwei, drei Tipps) in EINEM Satz, keine Liste, keine Beschreibungen.',
@@ -404,7 +462,8 @@ export function buildSystemPrompt(
   // closingAlreadySent: Einladung/Bestätigungs-Ankündigung steht schon in einer Host-Nachricht
   // (hostAlreadySentClosing) → neutraler Schluss im Buchungsanfrage-Block. repeatRetrySentence:
   // automatischer Neuversuch nach repeats_own_sentence — der wiederholte Satz wird benannt.
-  extra: { closingAlreadySent?: boolean; repeatRetrySentence?: string | null } = {},
+  // #1243: discountRuleApplies — siehe DraftInput.discountRuleApplies (nur mit isBookingRequest wirksam).
+  extra: { closingAlreadySent?: boolean; repeatRetrySentence?: string | null; discountRuleApplies?: boolean } = {},
 ): string {
   const lines = [
     buildThreadFactsBlock(thread),
@@ -421,7 +480,9 @@ export function buildSystemPrompt(
     // #1191: Wiederholungsregel für ALLE Antworten.
     REPEAT_RULE_BLOCK,
   ];
-  if (isBookingRequest) lines.push(buildBookingRequestBlock(requestKind, extra.closingAlreadySent ?? false));
+  if (isBookingRequest) {
+    lines.push(buildBookingRequestBlock(requestKind, extra.closingAlreadySent ?? false, extra.discountRuleApplies ?? false));
+  }
   else if (alteration) lines.push(buildAlterationBlock(alteration));
   lines.push(
     'Du entwirfst eine Antwort auf eine Gastnachricht für eine Ferienunterkunft, in Michas Stimme.',
@@ -560,6 +621,7 @@ export async function generateDraftForThread(
           // #1191: Einladung/Ankündigung höchstens einmal je Thread.
           closingAlreadySent: hostAlreadySentClosing(input.messages, input.requestKind ?? null),
           repeatRetrySentence: input.repeatRetrySentence ?? null,
+          discountRuleApplies: input.discountRuleApplies ?? false, // #1243
         },
       ),
       userMessage: buildConversation(input.messages, input.thread.guest_name),

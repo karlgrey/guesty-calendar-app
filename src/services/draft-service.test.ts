@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { generateDraftForThread, buildSystemPrompt, hostAlreadySentClosing } from './draft-service.js';
+import { generateDraftForThread, buildSystemPrompt, hostAlreadySentClosing, PRICE_DISCOUNT_ANCHOR } from './draft-service.js';
 import type { MessageThread, Message } from '../types/messages.js';
 
 function thread(): MessageThread {
@@ -402,12 +402,13 @@ describe('buildSystemPrompt — Buchungsanfrage ohne Pflicht-Rückfrage (#1004)'
     expect(p).toContain('GENAU EINE gezielte Rückfrage');
   });
 
-  it('verbietet den Verweis auf nicht gestellte Fragen und die Plattformnennung, weiterhin kein Preis/Angebot/Hold', () => {
+  // #1243: Preis/Nachlass nicht mehr pauschal verboten (Punkt 5), Hold/Zusage/Annahme weiterhin.
+  it('verbietet den Verweis auf nicht gestellte Fragen und die Plattformnennung, weiterhin kein Hold/keine Annahme', () => {
     const p = prompt('request_to_book');
     expect(p).toContain('„deine Antworten“');
-    expect(p).toContain('KEIN Preis');
-    expect(p).toContain('KEIN Angebot');
+    expect(p).not.toContain('KEIN Preis');
     expect(p).toContain('KEIN Hold');
+    expect(p).toContain('KEIN Gegenangebot des Gasts an');
     expect(p).toContain('Plattform');
   });
 
@@ -602,5 +603,61 @@ describe('Satzwiederholungen (#1191)', () => {
     const call2 = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'x' });
     await generateDraftForThread({ thread: noraThread(), messages: noraMessages, voice: 'v', facts: 'f' }, { call: call2 });
     expect(call2.mock.calls[0][0].systemPrompt).not.toContain('Schreibe die Antwort neu');
+  });
+});
+
+// #1243 (Entscheidung Micha 17.11.2026, Fall Daniel FH): Preis aus dem Buchungskontext nennen,
+// Rabattfrage/Gegenangebot einordnen — Nachlass nur mit Objekt-Linie (discountRuleApplies) und
+// nur nach Objektwissen, nie fest verdrahtete Zahlen im Prompt.
+describe('buildSystemPrompt — Preis und Rabatt bei Buchungsanfragen (#1243)', () => {
+  const t = { channel: 'airbnb' as const, reservation_status: 'inquiry' };
+  const NOW = new Date('2026-11-19T12:00:00.000Z');
+  const build = (discountRuleApplies?: boolean, isBookingRequest = true) =>
+    buildSystemPrompt('v', 'f', null, t, 'de', false, isBookingRequest, NOW, 'inquiry', null, [],
+      discountRuleApplies === undefined ? {} : { discountRuleApplies });
+
+  it('erlaubt den Gesamtpreis aus dem Buchungskontext, verbietet andere Beträge und die Annahme eines Gegenangebots', () => {
+    const p = build(true);
+    expect(p).toContain(PRICE_DISCOUNT_ANCHOR);
+    expect(p).toContain('AUSSCHLIESSLICH den Gesamtpreis für den Gast aus dem BUCHUNGSKONTEXT');
+    expect(p).toContain('keinen selbst ausgerechneten neuen Endpreis oder Rabattbetrag in Euro');
+    expect(p).toContain('nie Auszahlung');
+    expect(p).toContain('Du nimmst ein Gegenangebot NIE an');
+  });
+
+  it('mit Objekt-Linie: Nachlass nur auf Rabattfrage, nach Objektwissen und erfüllter Bedingung', () => {
+    const p = build(true);
+    expect(p).toContain('Einen Nachlass nennst du NUR, wenn ALLES zutrifft');
+    expect(p).toContain('ausdrückliche Regel für Rabattfragen');
+    expect(p).toContain('Regeln für Direktbuchungen und Angebote');
+    expect(p).toContain('Ohne Rabattfrage oder Gegenangebot des Gasts: KEIN Nachlass');
+    expect(p).not.toContain('Einen Nachlass bietest du NICHT an');
+  });
+
+  it('ohne Objekt-Linie (Default): nie ein Nachlass, Preis halten', () => {
+    for (const p of [build(false), build(undefined)]) {
+      expect(p).toContain('Einen Nachlass bietest du NICHT an, auch nicht auf Nachfrage');
+      expect(p).not.toContain('Einen Nachlass nennst du NUR');
+    }
+  });
+
+  it('keine fest verdrahteten Rabattzahlen oder Fristen im Prompt-Block', () => {
+    const block = build(true).split(PRICE_DISCOUNT_ANCHOR)[1].split('### ENDE BUCHUNGSANFRAGE-REGELN')[0];
+    expect(block).not.toMatch(/\d+\s?%|\d+\s?Prozent|\d+\s?Tage/);
+  });
+
+  it('außerhalb von Buchungsanfragen kein Preis-/Rabatt-Block', () => {
+    expect(build(true, false)).not.toContain(PRICE_DISCOUNT_ANCHOR);
+  });
+
+  it('generateDraftForThread reicht discountRuleApplies an den Prompt durch', async () => {
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'Hallo' });
+    const thread = { id: 'g:1', channel: 'airbnb', reservation_status: 'inquiry', guest_name: 'Daniel' } as MessageThread;
+    const messages = [{ id: 'm1', direction: 'inbound', body: 'Geht 2.600 Euro?', sent_at: '2026-11-17T10:00:00Z' }] as Message[];
+    await generateDraftForThread(
+      { thread, messages, voice: 'v', facts: 'f', bookingContext: null, isBookingRequest: true, requestKind: 'inquiry', discountRuleApplies: true, now: NOW },
+      { call },
+    );
+    expect(call.mock.calls[0][0].systemPrompt).toContain('Einen Nachlass nennst du NUR');
   });
 });
