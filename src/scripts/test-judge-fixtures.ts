@@ -31,6 +31,10 @@ interface Case {
     category: string | string[]; auto: boolean;
     // #696: optional — nur für Fälle mit Zusage gesetzt (Fixture "Lorenzo").
     riskFlags?: string[]; promisedActionContains?: string;
+    // #1243: mindestens eines dieser Flags muss gesetzt sein (statt exakter Liste).
+    riskFlagsIncludeAny?: string[];
+    // #1243: das Prüfmodell muss Einwände haben (ein Flag ODER confidence ≠ hoch).
+    objection?: boolean;
   };
 }
 const cases = JSON.parse(readFileSync(new URL('../test-fixtures/judge/cases.json', import.meta.url), 'utf8')) as Case[];
@@ -55,6 +59,8 @@ for (const c of cases) {
     isBookingRequest: v.category === 'buchungsanfrage',
     now, bookingContext: c.bookingContext ?? null,
     recentHostMessages: c.hostMessages,
+    // #1243: wie im Runner — Preis-/Rabattfrage des Gasts macht den Entwurf freigabepflichtig.
+    guestMessages: c.guestMessages,
   });
   const baseInput = { mode: 'live' as const, paused: false, judge: r, mechanical, threadHasHumanIntervention: false, threadHasFailedSend: false, autoSentToday: 0, dailyCap: 10, canSend: true };
   const d = decide({ ...baseInput, promiseTask: null });
@@ -69,6 +75,12 @@ for (const c of cases) {
   let ok = expectedCategories.includes(v.category) && wouldAuto === c.expected.auto;
   if (c.expected.riskFlags) {
     ok = ok && JSON.stringify([...v.riskFlags].sort()) === JSON.stringify([...c.expected.riskFlags].sort());
+  }
+  if (c.expected.riskFlagsIncludeAny) {
+    ok = ok && c.expected.riskFlagsIncludeAny.some((f) => (v.riskFlags as string[]).includes(f));
+  }
+  if (c.expected.objection) {
+    ok = ok && (v.riskFlags.length > 0 || v.confidence !== 'hoch');
   }
   if (c.expected.promisedActionContains) {
     ok = ok && !!v.promisedAction && v.promisedAction.toLowerCase().includes(c.expected.promisedActionContains.toLowerCase());

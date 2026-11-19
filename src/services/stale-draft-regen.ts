@@ -44,6 +44,7 @@ export interface StaleDraftRegenDeps {
   buildBookingContext: (thread: MessageThread) => string | null;
   generate: (input: {
     thread: MessageThread; messages: Message[]; voice: string; facts: string; bookingContext: string | null;
+    discountRuleApplies?: boolean; // #1243
     guestLanguage?: SupportedLanguage; isBookingRequest?: boolean;
     languageRetry?: boolean; repeatRetrySentence?: string | null; // #1191 Neuversuch
     requestKind?: BookingRequestKind | null; // #1004
@@ -138,9 +139,10 @@ export async function regenerateStaleDraftIfNeeded(
   const requestKind = openBookingRequest?.requestKind ?? null; // #1004
   const alteration = deps.resolveAlteration?.(thread, messages, isBookingRequest) ?? null; // #976
 
+  const discountRuleApplies = !!property.airbnbDiscount; // #1243
   let result: DraftResult;
   try {
-    result = await deps.generate({ thread, messages, voice, facts, bookingContext, guestLanguage, isBookingRequest, requestKind, alteration });
+    result = await deps.generate({ thread, messages, voice, facts, bookingContext, guestLanguage, isBookingRequest, requestKind, alteration, discountRuleApplies });
   } catch (err) {
     logger.warn({ threadId: thread.id, draftId: draft.id, err: err instanceof Error ? err.message : String(err) }, 'stale-draft-regen: Generierung fehlgeschlagen — alter Entwurf bleibt');
     return { kind: 'failed', reason: 'Generierung fehlgeschlagen' };
@@ -171,7 +173,7 @@ export async function regenerateStaleDraftIfNeeded(
     // sie im selben Neuversuch mitkorrigiert.
     const retry = deps.updateBody ? planDraftRetry(gateResult, result.body, messages) : null;
     if (retry?.repeatRetrySentence && deps.updateBody) {
-      const retryResult = await deps.generate({ thread, messages, voice, facts, bookingContext, guestLanguage, ...retry, isBookingRequest, requestKind, alteration });
+      const retryResult = await deps.generate({ thread, messages, voice, facts, bookingContext, guestLanguage, ...retry, isBookingRequest, requestKind, alteration, discountRuleApplies });
       if (retryResult.kind === 'text') {
         deps.updateBody(draft.id, retryResult.body);
         await deps.gate({ draftId: draft.id, body: retryResult.body, thread, messages, voice, facts, bookingContext: gateContext, property, guestLanguage, attempt: 2 });

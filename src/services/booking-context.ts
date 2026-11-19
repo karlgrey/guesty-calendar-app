@@ -11,7 +11,9 @@ import { getReservationById, getInquiryById, getInquiryWithMoneyById } from '../
 import type { MessageThread } from '../types/messages.js';
 import { nightsBetween } from '../utils/date.js';
 import { getAirbnbGuestPriceConfig } from '../config/properties.js';
-import { resolveGuestPrice, type AirbnbGuestPriceRates, type GuestPrice } from './guest-price.js';
+import { computeStayFacts, formatStayFactsSentence, formatDiscountConditionSentence, type DiscountCondition } from './counter-offer.js';
+import { getPropertyForThread } from '../utils/thread-property.js';
+import { resolveGuestPrice, channelName, GUEST_TOTAL_MARKER, type AirbnbGuestPriceRates, type GuestPrice } from './guest-price.js';
 
 /** ISO/localized date (YYYY-MM-DD…) → German TT.MM.JJJJ. */
 function deDate(dateStr: string): string {
@@ -37,6 +39,17 @@ function configuredRates(): AirbnbGuestPriceRates | undefined {
 export interface BookingContextOptions {
   /** #1242: Sätze für die Rückrechnung; weggelassen = aus properties.json, null = keine. */
   rates?: AirbnbGuestPriceRates | null;
+  /** #1243: Rabatt-Bedingung des Objekts; weggelassen = properties.json `airbnbDiscount` des Thread-Objekts, null = keine. */
+  discountRule?: DiscountCondition | null;
+}
+
+function discountRuleFrom(thread: MessageThread, opts: BookingContextOptions | undefined): DiscountCondition | null {
+  if (opts && 'discountRule' in opts) return opts.discountRule ?? null;
+  try {
+    return getPropertyForThread(thread)?.airbnbDiscount ?? null;
+  } catch {
+    return null;
+  }
 }
 
 function ratesFrom(opts: BookingContextOptions | undefined): AirbnbGuestPriceRates | undefined {
@@ -54,11 +67,11 @@ function contextPricePart(p: GuestPrice | null): string {
   switch (p.kind) {
     case 'estimated':
       return (
-        `, Gesamtpreis für den Gast laut ${p.channel} ca. ${formatMoney(p.inclTax, p.currency)} inkl. Steuern ` +
+        `, ${GUEST_TOTAL_MARKER} laut ${p.channel} ca. ${formatMoney(p.inclTax, p.currency)} inkl. Steuern ` +
         `(berechnet, ungefähr; ohne Steuern ca. ${formatMoney(p.exclTax, p.currency)})`
       );
     case 'actual':
-      return `, Gesamtpreis für den Gast laut ${p.channel} ${formatMoney(p.total, p.currency)} inkl. Steuern`;
+      return `, ${GUEST_TOTAL_MARKER} laut ${p.channel} ${formatMoney(p.total, p.currency)} inkl. Steuern`;
     case 'accommodation':
       return `, Übernachtungspreis laut ${p.channel} ${formatMoney(p.amount, p.currency)} (ohne Reinigung, Steuern und Gebühren)`;
   }
@@ -109,9 +122,20 @@ export function buildBookingContext(thread: MessageThread, opts?: BookingContext
     // — deshalb nie total_price blind nennen, sondern nach price_basis (resolveGuestPrice).
     const price = contextPricePart(resolveGuestPrice(inquiry, ratesFrom(opts)));
 
+    // #1243: Anfrage-Zeitpunkt und Wochentage der Nächte (Grundlage der Rabatt-Einordnung). Steht NACH
+    // dem Zeitraum-Teil, damit today-facts.ts das Format "Zeitraum TT.MM.JJJJ–TT.MM.JJJJ" unverändert parst.
+    const stayFacts = computeStayFacts(inquiry.check_in, inquiry.check_out, inquiry.created_at_guesty);
+    const stay = formatStayFactsSentence(stayFacts);
+    // #1243: nur bei Objekten mit Rabatt-Linie (Farmhouse) — die Bedingung wird hier ausgewertet, der
+    // Entwurf prüft sie nicht selbst (Live-Test: Sonnet bot sonst trotz nicht erfüllter Bedingung an).
+    // #1243 (Prüfer-Befund 5): die Linie gilt nur für Airbnb-Anfragen — am Kanal der Anfrage, nicht nur am Objekt.
+    const rule = channelName(inquiry.source) === 'Airbnb' ? discountRuleFrom(thread, opts) : null;
+    const condition = rule ? formatDiscountConditionSentence(stayFacts, rule) : '';
+    const tail = [stay, condition].filter(Boolean).join(' ');
+
     return (
       `Buchungsanfrage (noch nicht bestätigt): Zeitraum ${checkIn}–${checkOut}, ${nights} Nächte, ${guests}${price} ` +
-      `— Daten stammen aus der Anfrage selbst.`
+      `— Daten stammen aus der Anfrage selbst.${tail ? ` ${tail}` : ''}`
     );
   }
 
@@ -174,6 +198,8 @@ export interface ThreadBookingSummary {
   platform: string | null;
   /** #1242: Gastbetrag laut Plattform (nur bei kind 'inquiry', sonst null) */
   guestPrice: GuestPrice | null;
+  /** #1243: Zeitpunkt der Anfrage (ISO, nur bei kind 'inquiry'; sonst/unbekannt null) */
+  requestedAt: string | null;
 }
 
 /** Guesty-Anfragen-Sync schreibt `guestsCount || 0` — 0 Personen heißt dort "unbekannt". */
@@ -201,6 +227,7 @@ export function resolveThreadBookingSummary(thread: MessageThread, opts?: Bookin
         currency: res.currency ?? null,
         platform: res.platform ?? res.source ?? null,
         guestPrice: null,
+        requestedAt: null,
       };
     }
   }
@@ -224,6 +251,7 @@ export function resolveThreadBookingSummary(thread: MessageThread, opts?: Bookin
         currency: inq.currency,
         platform: inq.source,
         guestPrice: resolveGuestPrice(inq, ratesFrom(opts)),
+        requestedAt: inq.created_at_guesty,
       };
     }
   }

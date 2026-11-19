@@ -76,7 +76,7 @@ describe('resolveThreadBookingSummary', () => {
     expect(s).toEqual({
       kind: 'reservation', status: 'confirmed', checkIn: '2026-12-01', checkOut: '2026-12-04', nights: 3,
       guestsCount: 3, adults: 2, children: 1, hostPayout: 1234, totalPrice: 1450, currency: 'EUR', platform: 'airbnb2',
-      guestPrice: null,
+      guestPrice: null, requestedAt: null,
     });
   });
 
@@ -95,6 +95,7 @@ describe('resolveThreadBookingSummary', () => {
       kind: 'inquiry', status: 'inquiry', checkIn: '2027-12-31', checkOut: '2028-01-01', nights: 1,
       guestsCount: 1, adults: null, children: null, hostPayout: 1234, totalPrice: 1450, currency: 'EUR', platform: 'airbnb2',
       guestPrice: null, // ohne price_basis (Altbestand vor Migration 043) kein Gastpreis
+      requestedAt: null,
     });
   });
 
@@ -104,6 +105,12 @@ describe('resolveThreadBookingSummary', () => {
     const s = resolveThreadBookingSummary(thread({ inquiry_id: 'D1' }), { rates: { hostServiceFeeRate: 0.155, taxRate: 0.07 } });
     expect(s?.guestPrice).toEqual({ kind: 'estimated', inclTax: 3948.3, exclTax: 3690, currency: 'EUR', channel: 'Airbnb' });
     expect(resolveThreadBookingSummary(thread({ inquiry_id: 'D1' }), { rates: null })?.guestPrice).toBeNull();
+  });
+
+  it('#1243: Anfrage liefert requestedAt aus created_at_guesty', () => {
+    db.exec('ALTER TABLE inquiries ADD COLUMN created_at_guesty TEXT;');
+    insertInquiry({ inquiry_id: 'R9', created_at_guesty: '2026-11-17T10:00:00.000Z' });
+    expect(resolveThreadBookingSummary(thread({ inquiry_id: 'R9' }))?.requestedAt).toBe('2026-11-17T10:00:00.000Z');
   });
 
   it('inquiry without price yields null price fields', () => {

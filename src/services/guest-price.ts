@@ -16,6 +16,12 @@
  * (`inquiries.guest_total`, `inquiries.price_basis`, Migration 043).
  */
 
+/**
+ * #1243: Wortlaut, an dem draft-service.ts erkennt, dass der Kontext einen Gastbetrag nennt (sonst darf der
+ * Entwurf keinen Betrag nennen). booking-context.ts baut den Satz mit genau dieser Konstante.
+ */
+export const GUEST_TOTAL_MARKER = 'Gesamtpreis für den Gast';
+
 export interface AirbnbGuestPriceRates {
   /** Host-Servicegebühr von Airbnb als Anteil, z. B. 0.155 */
   hostServiceFeeRate: number;

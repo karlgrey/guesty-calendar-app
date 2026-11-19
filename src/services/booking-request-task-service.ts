@@ -40,6 +40,8 @@ export interface BookingRequestTaskInput {
   guestsCount: number | null;
   property: PropertyConfig;
   mode: AutoSendMode;
+  /** #1243: Klartext-Notiz zu einem Gegenangebot des Gasts (counter-offer-context.ts); nur bei NEUEN Tasks. */
+  counterOfferNote?: string | null;
 }
 
 export interface BookingRequestTaskResult {
@@ -96,6 +98,7 @@ export function buildBookingTaskDescription(i: BookingRequestTaskInput): string 
     '**Gastnachricht:**',
     quote(i.guestMessage),
     '',
+    ...(i.counterOfferNote ? [`**Gegenangebot:** ${i.counterOfferNote}`, ''] : []),
     '**Automatische Antwort:**',
     quote(i.draftBody),
     '',

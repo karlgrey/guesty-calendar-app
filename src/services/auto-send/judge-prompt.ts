@@ -60,7 +60,8 @@ export function buildJudgeSystemPrompt(
     '  zu einer NOCH OFFENEN (nicht bestätigten) Buchungsanfrage, auch wenn diese Folgenachricht',
     '  selbst nur Details zum Anlass/Event nennt. Die Annahme/Ablehnung der Buchung entscheidet',
     '  IMMER Micha selbst in Airbnb, NIE der Entwurf — auch wenn der Entwurf selbst keine Zusage',
-    '  enthält.',
+    '  enthält. Auch eine Preis- oder Rabattfrage bzw. ein Gegenangebot des Gasts zu einer NOCH OFFENEN',
+    '  Anfrage ist buchungsanfrage.',
     '- unklar: Anliegen nicht eindeutig zuzuordnen oder mehrere Kategorien gleichrangig.',
     '',
     'RISIKO-FLAGS (alle zutreffenden setzen):',
@@ -100,8 +101,11 @@ export function buildJudgeSystemPrompt(
       'braucht dafür KEINEN Beleg im Objektwissen — sie wird separat als Aufgabe nachgehalten, senkt confidence also nicht. ' +
       // #1004 (Fall #1002, 02.11.2026): früher „ist die Antwort eine REINE RÜCKFRAGE" — die
       // Pflicht-Rückfrage nach Anlass/Ablauf ist abgeschafft, die Antwort geht auf den Inhalt ein.
+      // #1243: Preis und gedeckter Nachlass sind kein Regelverstoß mehr (Kriterium PREIS UND NACHLASS unten);
+      // Zusage, Annahme eines Gegenangebots und Hold bleiben verboten.
       'Bei buchungsanfrage bewertet confidence AUSSCHLIESSLICH, ob die Antwort selbst fehlerfrei ist: sie enthält KEINE ' +
-      'Zusage oder Bestätigung der Buchung als Fakt, KEINEN Preis, KEIN Angebot, nennt KEINE Plattform (Airbnb, Guesty ' +
+      'Zusage oder Bestätigung der Buchung als Fakt, nimmt KEIN Gegenangebot des Gasts an, hält nichts fest (kein Hold), ' +
+      'nennt Preis oder Nachlass nur nach dem Kriterium PREIS UND NACHLASS unten, nennt KEINE Plattform (Airbnb, Guesty ' +
       'o. ä.) und verweist NICHT auf Antworten oder Rückfragen, die der Entwurf gar nicht gestellt hat (z. B. „sobald ich ' +
       'deine Antworten habe" ohne eine Frage im Entwurf → confidence niedrig). Eine Rückfrage ist NICHT erforderlich: eine ' +
       'Antwort, die auf die Gastnachricht eingeht, Fragen aus dem OBJEKTWISSEN beantwortet und ankündigt, dass die ' +
@@ -111,6 +115,38 @@ export function buildJudgeSystemPrompt(
       'Event-Arten) müssen dem OBJEKTWISSEN entsprechen. Dass die eigentliche Buchungsentscheidung bei Micha bleibt, ist ' +
       'bereits durch die Kategorie selbst sichergestellt (Annahme/Ablehnung geht immer an Micha) und darf confidence NICHT ' +
       'zusätzlich senken.',
+    // #1243 (Entscheidung Micha 17.11.2026, Fall Daniel FH): bewusst ohne Zahlen — Höhe, Bezug und
+    // Bedingung eines Nachlasses stehen im OBJEKTWISSEN (Vault). Dass jeder Entwurf mit Preis oder
+    // Nachlass auf wait geht, sichern ZWEI Netze: die mechanischen Wortlisten (price_discount/money/
+    // guest_price_topic) und — Prüfer-Runde 2 — der letzte Punkt unten (confidence höchstens mittel bei
+    // Preis-/Rabattthema einer offenen Anfrage). Die Wortlisten allein ließen umschriebene Fälle durch
+    // („any flexibility?“ / „besseres Angebot?“ mit Preis-halten-Antwort: Gate-Ergebnis auto, live belegt).
+    // Die inhaltliche Richtigkeit bleibt an den Risiko-Flags ablesbar.
+    'PREIS UND NACHLASS (gilt für alle Kategorien, vor allem buchungsanfrage):',
+    '- Nennt der Entwurf den Gesamtpreis für den Gast genau so, wie er im BUCHUNGSKONTEXT steht (Rundung, „ca.“,',
+    '  „inkl. Steuern“ ok), ist das KEIN Regelverstoß und KEIN invents_fact. Jeder andere Betrag (selbst gerechneter',
+    '  Endpreis, Rabattbetrag in Euro, Preis pro Nacht, Auszahlung, Gebühren, Steuersatz) ist invents_fact. Nennt der',
+    '  BUCHUNGSKONTEXT keinen Gesamtpreis für den Gast, ist JEDER Betrag im Entwurf invents_fact, auch ein geschätzter',
+    '  („ca. …“), ein aus dem OBJEKTWISSEN gerechneter oder ein Platzhalter („X €“).',
+    '- Ein Nachlass im Entwurf ist KEIN Regelverstoß, wenn ALLES zutrifft: der Gast fragt nach Rabatt oder nennt einen',
+    '  niedrigeren Betrag; das OBJEKTWISSEN enthält eine ausdrückliche Regel für Rabattfragen bei solchen Anfragen; Höhe',
+    '  und Bezug im Entwurf entsprechen dieser Regel (nicht mehr); im BUCHUNGSKONTEXT steht „Nachlass-Bedingung laut',
+    '  Objektregel: erfüllt“. Fehlt eine solche Regel, ist der Nachlass invents_fact; steht dort „nicht erfüllt“ oder',
+    '  fehlt die Zeile oder',
+    '  geht der Nachlass über die Regel hinaus, ist er contradicts_facts. Regeln für Direktbuchungen oder Angebote',
+    '  (Mehrnächte-, Direktbuchungs-, Stammgast-Rabatt) decken einen Nachlass bei einer Plattform-Anfrage NICHT.',
+    '- Bietet der Entwurf einen Nachlass an, obwohl der Gast weder nach Rabatt fragt noch einen niedrigeren Betrag nennt,',
+    '  ist confidence niedrig. Nimmt der Entwurf ein Gegenangebot an oder sagt einen Preis zu, ist das promises_action.',
+    '- Spricht der Gast Preis oder Rabatt an, ist die Ankündigung „die Bestätigung kommt in Kürze“ (Request-to-Book)',
+    '  KEINE erlaubte Ankündigung mehr, sondern promises_action — neben einem Nachlass oder Gegenangebot liest sie sich',
+    '  wie eine Zusage. Übergeht der Entwurf die Preis- oder Rabattfrage des Gasts, ist confidence höchstens mittel.',
+    '- Ein Entwurf, der den Preis hält und freundlich auf die Rabattfrage eingeht, ist inhaltlich korrekt: dafür KEIN',
+    '  Risiko-Flag.',
+    '- AUSNAHME zur confidence-Regel für buchungsanfrage oben: Geht es bei einer NOCH OFFENEN Anfrage in der Gastnachricht',
+    '  ODER im Entwurf um Preis, Rabatt, Nachlass, Gegenangebot, Budget oder Verhandlungsspielraum — auch nur umschrieben,',
+    '  ohne diese Wörter (z. B. „geht da noch was?“, „besseres Angebot“, „any flexibility?“, „da kann ich nichts machen“,',
+    '  „es bleibt so wie angezeigt“) —, ist confidence HÖCHSTENS mittel, auch wenn der Entwurf inhaltlich korrekt ist:',
+    '  solche Antworten gibt Micha immer selbst frei. Risiko-Flags setzt du trotzdem nur bei echten Fehlern.',
     // #698 (Fall Lorenzo U19, 20.09.2026): HEUTE-Fakt VOR VOICE — dasselbe Muster wie im
     // Entwurfs-Systemprompt (draft-service.ts), damit das Prüfmodell einen im Entwurf falsch
     // gespiegelten Wochentag/Tageszeitwunsch als contradicts_facts erkennen kann.

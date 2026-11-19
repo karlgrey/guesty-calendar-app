@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { runMechanicalChecks, collectDigitRuns, normalizeSentence, findRepeatedOwnSentence } from './mechanical-checks.js';
 
@@ -199,5 +200,100 @@ describe('repeats_own_sentence (#1191)', () => {
   it('normalizeSentence/findRepeatedOwnSentence: Grundverhalten', () => {
     expect(normalizeSentence('  Hallo,  „Welt“ 😊!  ')).toBe('hallo welt');
     expect(findRepeatedOwnSentence('Das ist ein ganz neuer Satz hier.', [host])).toBeNull();
+  });
+});
+
+// #1243: kein Entwurf mit Preis oder Nachlass geht automatisch raus
+describe('price_discount (#1243)', () => {
+  const run = (body: string, isBookingRequest = false) =>
+    runMechanicalChecks(body, { knownDigitRuns: [], isBookingRequest }).filter((f) => f.flag === 'price_discount');
+
+  it.each([
+    'Ich kann dir 10 % Nachlass anbieten.', 'Das wären 10% weniger.', 'Wir geben 10 Prozent.',
+    'We can do 10 percent off.', 'Wir geben zehn Prozent.', 'Ein Rabatt ist möglich.', 'Gibt es einen Frühbucherrabatt?',
+    'Wir machen einen Preisnachlass.', 'Eine Ermäßigung ist drin.', 'Any discount possible?', 'Uno sconto, grazie.',
+  ])('immer (auch ohne Buchungsanfrage): %s', (t) => {
+    expect(run(t, false)).toHaveLength(1);
+    expect(run(t, true)).toHaveLength(1);
+  });
+
+  it.each([
+    'Der Gesamtpreis liegt bei ca. 3.948,30 EUR.', 'Die Preise findest du in Airbnb.', 'Das kostet extra.',
+    'The price is fixed.', 'Das ist ein Gegenangebot.', 'A counter-offer is possible.', 'Der Gesamtbetrag steht in Airbnb.',
+  ])('Preiswort nur bei Buchungsanfrage: %s', (t) => {
+    expect(run(t, false)).toHaveLength(0);
+    expect(run(t, true)).toHaveLength(1);
+  });
+
+  it('kein „total“, kein „Kosten“ allein, harmlose Sätze → kein Treffer', () => {
+    for (const t of ['Total schön, dass ihr kommt.', 'Die Kosten für Holz tragen wir.', 'Wir freuen uns sehr auf euch.']) {
+      expect(run(t, true)).toHaveLength(0);
+    }
+  });
+
+  it('ein Finding je Check, match = Fundstelle', () => {
+    const r = run('Der Preis passt, 10 % Rabatt gibt es.', true);
+    expect(r).toHaveLength(2);
+    expect(r[0].match).toBe('10 %');
+    expect(r[1].match).toBe('Preis');
+  });
+
+  // Regression: bestehende Auto-Fälle der Judge-Fixtures dürfen nie feuern (Entwurf UND Gastnachricht).
+  it('feuert bei keinem Fixture-Fall mit expected.auto === true', () => {
+    const cases = JSON.parse(readFileSync(new URL('../../test-fixtures/judge/cases.json', import.meta.url), 'utf8')) as
+      Array<{ name: string; draft: string; guestMessages: string[]; expected: { auto: boolean } }>;
+    const autos = cases.filter((c) => c.expected.auto === true);
+    expect(autos.length).toBeGreaterThan(0);
+    for (const c of autos) {
+      expect(run(c.draft, true), `${c.name} (Buchungsanfrage)`).toHaveLength(0);
+      expect(run(c.draft, false), `${c.name}`).toHaveLength(0);
+      const guest = runMechanicalChecks(c.draft, { knownDigitRuns: [], isBookingRequest: true, guestMessages: c.guestMessages })
+        .filter((f) => f.flag === 'guest_price_topic');
+      expect(guest, `${c.name} (Gastnachricht)`).toHaveLength(0);
+    }
+  });
+
+  // Prüfer-Befund 1: Preis/Nachlass ohne die bisherigen Trigger-Wörter.
+  it.each([
+    'So weit runter kann ich leider nicht gehen, aber ein Zehntel auf die Unterkunft kann ich euch entgegenkommen.',
+    'Da kann ich euch leider nicht entgegenkommen, es bleibt bei dem Betrag, der dir angezeigt wird.',
+    'Günstiger wird es leider nicht.', 'We cannot offer a cheaper rate.', 'Eine Reduzierung ist nicht drin.',
+    'Die Hälfte geht leider nicht.', 'Weiter runter kann ich nicht.', 'Das passt nicht in euer Budget, verstehe ich.',
+    // Prüfer-Runde 2
+    'Ein anderes Angebot kann ich dir leider nicht machen.', 'Ein bisschen Spielraum habe ich.',
+    'Einen kleinen Abschlag auf die Unterkunft kann ich euch geben.', 'Sonderkonditionen gibt es bei uns nicht.',
+    'Eine Vergünstigung ist leider nicht drin.',
+  ])('Buchungsanfrage, Entwurf ohne alte Trigger-Wörter: %s', (t) => {
+    expect(run(t, true).length).toBeGreaterThan(0);
+  });
+});
+
+// #1243 (Prüfer-Befund 1): zweites Netz über die Gastnachrichten — unabhängig vom Entwurfstext.
+describe('guest_price_topic (#1243)', () => {
+  const guest = (msgs: string[], isBookingRequest = true) =>
+    runMechanicalChecks('Hi! Gern. Wie viele Personen seid ihr?', { knownDigitRuns: [], isBookingRequest, guestMessages: msgs })
+      .filter((f) => f.flag === 'guest_price_topic');
+
+  it.each([
+    'Könnt ihr uns da noch ein Stück entgegenkommen?', 'Geht da noch was? Ist etwas über unserem Budget.',
+    'Gibt es einen Rabatt?', 'Wären 300 Euro insgesamt möglich?', 'Any chance you could do a better rate for us?',
+    'Wir würden gern anfragen, ob ihr uns preislich entgegenkommt.', 'Ist es etwas günstiger möglich?',
+    'Could you do 10% off?', 'What would it cost for 8 people?', 'Ein bisschen teuer für uns.', '€2,600 would be our max.',
+    // Prüfer-Runde 2 (erste Zeile: echter Fall Henriette FH, 31.10.2026)
+    'Das kommt also auch etwas auf das finale Angebot an.', 'Könnt ihr uns da ein besseres Angebot machen?',
+    'Ist da noch etwas Spielraum für uns?', 'Gibt es Sonderkonditionen für Kurzentschlossene?',
+  ])('Gastnachricht mit Preisthema: %s', (t) => {
+    expect(guest([t])).toHaveLength(1);
+  });
+
+  it('harmlose Gastnachrichten → kein Treffer', () => {
+    for (const t of ['Gibt es in der Nähe einen See zum Baden?', 'Wir sind 15 Personen inkl. Tagesgäste.', 'Ist Bettwäsche dabei?']) {
+      expect(guest([t])).toHaveLength(0);
+    }
+  });
+
+  it('nur bei Buchungsanfragen, nur mit übergebenen Gastnachrichten', () => {
+    expect(guest(['Gibt es einen Rabatt?'], false)).toHaveLength(0);
+    expect(runMechanicalChecks('Hi!', { knownDigitRuns: [], isBookingRequest: true }).filter((f) => f.flag === 'guest_price_topic')).toHaveLength(0);
   });
 });

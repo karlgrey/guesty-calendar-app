@@ -17,7 +17,8 @@ import { getPropertyForThread, propertyForBadge } from '../utils/thread-property
 import { loadVoice, loadPropertyFacts } from '../services/vault-knowledge.js';
 import { generateDraftForThread, DRAFT_MODEL } from '../services/draft-service.js';
 import { buildBookingContext, resolveThreadBookingSummary, type ThreadBookingSummary } from '../services/booking-context.js';
-import { renderBookingSummaryLine, renderBookingSummaryBadge } from './messages-booking-summary.js';
+import { renderBookingSummaryLine, renderBookingSummaryBadge, renderCounterOfferLine } from './messages-booking-summary.js';
+import { resolveCounterOfferNote } from '../services/counter-offer-context.js';
 import { findOpenBookingRequest } from '../services/booking-request.js';
 import { resolveAlterationSituation, alterationAdminHint, pendingAlterationFromRawMeta, type AlterationSituation } from '../services/alteration-request.js';
 import { sendClaimedDraft } from '../services/draft-send-service.js';
@@ -516,10 +517,13 @@ router.get('/:threadId', async (req, res) => {
   // #1187: Zeitraum, Personen, Preis der Anfrage/Buchung (nur DB, non-fatal).
   const bookingSummary = safeBookingSummary(thread);
   const bookingSummaryLine = bookingSummary === undefined ? '' : renderBookingSummaryLine(bookingSummary);
+  // #1243: Betrag in der Gastnachricht als mögliches Gegenangebot (non-fatal, resolveCounterOfferNote wirft nie).
+  const counterOfferLine = renderCounterOfferLine(resolveCounterOfferNote(thread, msgs, property ?? null));
   const body = `<a class="back-link" href="/admin/messages">&larr; Alle Nachrichten</a>
     <h1>${name}</h1>
     <p class="subtitle"><span class="badge">${esc(thread.channel)}</span>${property ? ` · <strong>${esc(property.name)}</strong>` : ''} · Provider: ${esc(thread.source)}</p>
     ${bookingSummaryLine}
+    ${counterOfferLine}
     ${alterationHint}
     <div class="section"><h3>Verlauf</h3>${history}</div>
     ${timesPanel}
@@ -735,6 +739,7 @@ router.post('/:threadId/regenerate', async (req, res, next) => {
       isBookingRequest: openBookingRequest !== null,
       requestKind: openBookingRequest?.requestKind ?? null, // #1004
       alteration: resolveAlterationSituation(thread, messages, { isBookingRequest: openBookingRequest !== null }), // #976
+      discountRuleApplies: !!property?.airbnbDiscount, // #1243
     });
     let redirectSuffix = '';
     if (result.kind === 'text') {

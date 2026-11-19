@@ -452,3 +452,100 @@ describe('runAutoSendGate: Inquiry-Task nur, wenn die Antwort auf Micha wartet (
     await expect(runAutoSendGate(inquiryInput, d)).resolves.toMatchObject({ sent: false });
   });
 });
+
+// #1243: kein Entwurf mit Preis oder Nachlass geht automatisch raus (Gate-Ergebnis, nicht nur Regex).
+describe('runAutoSendGate: Preis/Nachlass im Entwurf (#1243)', () => {
+  const bookingVerdict = { kind: 'verdict', verdict: { category: 'buchungsanfrage', answerableFromFacts: true, riskFlags: [], confidence: 'hoch', reasoning: 'r', promisedAction: null } } as const;
+  const inquiryMessages = [
+    { id: 'm1', direction: 'inbound', body: 'Wir würden gern anfragen, ob ihr uns preislich entgegenkommt.', sent_at: '2026-11-17T10:00:00.000Z' },
+    { id: 'm2', direction: 'system', body: 'New guest inquiry', sent_at: '2026-11-17T10:00:06.000Z' },
+  ] as Message[];
+  const openThread = { ...thread, reservation_status: 'inquiry' } as MessageThread;
+  const inq = (body: string): GateInput => ({ ...input, thread: openThread, body, messages: inquiryMessages });
+  const mk = (over: Partial<GateDeps> = {}) => deps({ judge: vi.fn().mockResolvedValue(bookingVerdict), ...over });
+
+  it('(a) Nachlass ohne Eurobetrag → wait mit mech:price_discount, kein Send', async () => {
+    const d = mk();
+    const r = await runAutoSendGate(inq('Hi! Ich kann dir 10 % Nachlass auf die Unterkunft anbieten.'), d);
+    expect(r.decision.decision).toBe('wait');
+    expect(r.decision.flags).toContain('mech:price_discount');
+    expect(r.decision.reason).toBe('Mechanischer Check: Preis oder Nachlass im Text (10 %)');
+    expect(r.sent).toBe(false);
+    expect(d.send).not.toHaveBeenCalled();
+  });
+  it('(b) Gesamtpreis im Text → wait, kein Send', async () => {
+    const d = mk();
+    const r = await runAutoSendGate(inq('Hi! Der Gesamtpreis liegt bei ca. 3.948,30 EUR inkl. Steuern.'), d);
+    expect(r.decision.decision).toBe('wait');
+    expect(r.decision.flags).toContain('mech:price_discount');
+    expect(d.send).not.toHaveBeenCalled();
+  });
+  // Prüfer-Befund 1: die Gastnachricht fragt nach Preis → nie auto, auch wenn der Entwurf das übergeht.
+  it('(c) Preisfrage des Gasts, Entwurf ohne Preis/Rabatt → wait mit mech:guest_price_topic, kein Send', async () => {
+    const d = mk();
+    const r = await runAutoSendGate(inq('Hi! Gern. Wie viele Personen seid ihr?'), d);
+    expect(r.decision.decision).toBe('wait');
+    expect(r.decision.flags).toContain('mech:guest_price_topic');
+    expect(r.decision.reason).toBe('Mechanischer Check: Preis- oder Rabattfrage in der Gastnachricht (preislich)');
+    expect(d.send).not.toHaveBeenCalled();
+  });
+  it('(d) Gegenprobe: Gast ohne Preisthema, Entwurf ohne Preis/Rabatt → auto wie bisher', async () => {
+    const d = mk();
+    const plain = [
+      { id: 'm1', direction: 'inbound', body: 'Gibt es in der Nähe einen See zum Baden?', sent_at: '2026-11-17T10:00:00.000Z' },
+      { id: 'm2', direction: 'system', body: 'New guest inquiry', sent_at: '2026-11-17T10:00:06.000Z' },
+    ] as Message[];
+    const r = await runAutoSendGate({ ...inq('Hi! Ja, ein Badesee liegt ganz in der Nähe.'), messages: plain }, d);
+    expect(r.decision.decision).toBe('auto');
+    expect(r.decision.flags).not.toContain('mech:price_discount');
+    expect(r.decision.flags).not.toContain('mech:guest_price_topic');
+    expect(d.send).toHaveBeenCalledTimes(1);
+  });
+  it.each([
+    'So weit runter kann ich leider nicht gehen, aber ein Zehntel auf die Unterkunft kann ich euch entgegenkommen.',
+    'Da kann ich euch leider nicht entgegenkommen, es bleibt bei dem Betrag, der dir angezeigt wird.',
+  ])('(e) Prüfer-Live-Fälle ohne alte Trigger-Wörter → wait, kein Send: %s', async (body) => {
+    const d = mk();
+    const r = await runAutoSendGate(inq(body), d);
+    expect(r.decision.decision).toBe('wait');
+    expect(r.decision.flags).toContain('mech:price_discount');
+    expect(d.send).not.toHaveBeenCalled();
+  });
+  it('playbook_fakt mit „10 % Rabatt“ → wait', async () => {
+    const d = deps({ judge: vi.fn().mockResolvedValue({ kind: 'verdict', verdict: { category: 'playbook_fakt', answerableFromFacts: true, riskFlags: [], confidence: 'hoch', reasoning: 'r', promisedAction: null } }) });
+    const r = await runAutoSendGate({ ...input, body: 'Ja, bei uns gibt es 10 % Rabatt.' }, d);
+    expect(r.decision.decision).toBe('wait');
+    expect(r.decision.flags).toContain('mech:price_discount');
+    expect(d.send).not.toHaveBeenCalled();
+  });
+});
+
+// #1243: Gegenangebot-Notiz geht in den Buchungsanfrage-Task (nur neue Anlagen, non-fatal).
+describe('runAutoSendGate: Gegenangebot-Notiz im Task (#1243)', () => {
+  const bookingVerdict = { kind: 'verdict', verdict: { category: 'buchungsanfrage', answerableFromFacts: true, riskFlags: [], confidence: 'mittel', reasoning: 'r', promisedAction: null } } as const;
+  const msgsInq = [
+    { id: 'm1', direction: 'inbound', body: 'Wir könnten 2.600 Euro anbieten', sent_at: '2026-11-17T10:00:00.000Z' },
+    { id: 'm2', direction: 'system', body: 'New guest inquiry', sent_at: '2026-11-17T10:00:06.000Z' },
+  ] as Message[];
+  const gi: GateInput = { ...input, thread: { ...thread, reservation_status: 'inquiry' } as MessageThread, body: 'Hi!', messages: msgsInq };
+
+  it('reicht die Notiz an taskInput.counterOfferNote durch', async () => {
+    const task = vi.fn().mockResolvedValue({ created: true, taskNumber: 900, reused: false });
+    const note = vi.fn().mockReturnValue('Notiz X');
+    await runAutoSendGate(gi, deps({ judge: vi.fn().mockResolvedValue(bookingVerdict), resolveBookingRequestTask: task, resolveCounterOfferNote: note }));
+    expect(note).toHaveBeenCalledWith(gi.thread, msgsInq, property);
+    expect(task.mock.calls[0][0].counterOfferNote).toBe('Notiz X');
+  });
+  it('wirft die Notiz, wird der Task trotzdem angelegt (ohne Notiz)', async () => {
+    const task = vi.fn().mockResolvedValue({ created: true, taskNumber: 901, reused: false });
+    const note = vi.fn(() => { throw new Error('boom'); });
+    await runAutoSendGate(gi, deps({ judge: vi.fn().mockResolvedValue(bookingVerdict), resolveBookingRequestTask: task, resolveCounterOfferNote: note }));
+    expect(task).toHaveBeenCalledTimes(1);
+    expect(task.mock.calls[0][0].counterOfferNote).toBeNull();
+  });
+  it('ohne Dep bleibt alles wie bisher (null)', async () => {
+    const task = vi.fn().mockResolvedValue({ created: true, taskNumber: 902, reused: false });
+    await runAutoSendGate(gi, deps({ judge: vi.fn().mockResolvedValue(bookingVerdict), resolveBookingRequestTask: task }));
+    expect(task.mock.calls[0][0].counterOfferNote).toBeNull();
+  });
+});

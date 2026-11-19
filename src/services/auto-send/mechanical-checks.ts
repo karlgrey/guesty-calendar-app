@@ -3,6 +3,7 @@ import type { MechanicalFinding } from './types.js';
 import { detectLanguage, type SupportedLanguage } from '../../utils/language-detect.js';
 import { allowedWeekdays } from './today-facts.js';
 import { stripGreetingAndClosing } from '../draft-fixture-check.js';
+import { PERCENT_RE, DISCOUNT_RE, PRICE_TOPIC_RE, findGuestPriceTopic } from '../price-topic.js';
 
 export const MAX_DRAFT_LENGTH = 1200;
 const DIGIT_RUN = /\d{4,}/g;
@@ -36,6 +37,10 @@ const WEEKDAY_NAMES: Array<{ name: string; index: number }> = [
   { name: 'Wednesday', index: 3 }, { name: 'Thursday', index: 4 }, { name: 'Friday', index: 5 },
   { name: 'Saturday', index: 6 },
 ];
+
+// #1243: kein Entwurf mit Preis oder Nachlass geht automatisch raus. Wörterlisten in price-topic.ts
+// (gemeinsam mit der Gastnachrichten-Prüfung und draft-service.ts). Immer: Prozent und Rabatt-Wörter;
+// nur bei Buchungsanfragen zusätzlich Preis-/Verhandlungswörter (PRICE_TOPIC_RE).
 
 export function collectDigitRuns(texts: string[]): string[] {
   const out = new Set<string>();
@@ -117,6 +122,9 @@ export function runMechanicalChecks(
     now?: Date; bookingContext?: string | null;
     // #1191: die zuletzt gesendeten Host-Nachrichten — fehlt/leer → kein Wiederholungs-Check.
     recentHostMessages?: string[];
+    // #1243 (Prüfer-Befund 1): Gastnachrichten seit der letzten Host-Antwort — bei Buchungsanfragen
+    // macht eine Preis-/Rabattfrage des Gasts den Entwurf freigabepflichtig, egal wie er formuliert ist.
+    guestMessages?: string[];
   },
 ): MechanicalFinding[] {
   const f: MechanicalFinding[] = [];
@@ -145,6 +153,15 @@ export function runMechanicalChecks(
   if (context.isBookingRequest) {
     const match = text.match(CONFIRMATION_WORDS) ?? text.match(NOTHING_IN_THE_WAY);
     if (match) f.push({ flag: 'confirmation_words', match: match[0] });
+  }
+  // #1243: ein Finding je Check (Fundstelle als match)
+  const percent = text.match(PERCENT_RE) ?? text.match(DISCOUNT_RE);
+  if (percent) f.push({ flag: 'price_discount', match: percent[0] });
+  if (context.isBookingRequest) {
+    const priceWord = text.match(PRICE_TOPIC_RE);
+    if (priceWord) f.push({ flag: 'price_discount', match: priceWord[0] });
+    const guestTopic = context.guestMessages?.length ? findGuestPriceTopic(context.guestMessages) : null;
+    if (guestTopic) f.push({ flag: 'guest_price_topic', match: guestTopic });
   }
   if (context.now) {
     const allowed = allowedWeekdays(context.now, context.bookingContext ?? null);

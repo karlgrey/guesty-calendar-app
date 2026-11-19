@@ -191,3 +191,24 @@ describe('buildJudgeSystemPrompt — Wiederholung eigener Formulierungen (#1191)
     expect(p).toContain('Grußzeile');
   });
 });
+
+// #1243: Preis aus dem Buchungskontext und gedeckter Nachlass sind kein Regelverstoß mehr.
+describe('buildJudgeSystemPrompt — Preis und Nachlass (#1243)', () => {
+  it('Kriterium steht im Prompt, ohne fest verdrahtete Rabattzahlen', async () => {
+    const { buildJudgeSystemPrompt } = await import('./judge-prompt.js');
+    const p = buildJudgeSystemPrompt('V', 'F', null, new Date('2026-11-19T10:00:00.000Z'));
+    expect(p).not.toContain('KEINEN Preis, KEIN Angebot');
+    expect(p).toContain('PREIS UND NACHLASS');
+    expect(p).toContain('ist das KEIN Regelverstoß und KEIN invents_fact');
+    expect(p).toContain('nimmt KEIN Gegenangebot des Gasts an');
+    expect(p).toContain('Preis- oder Rabattfrage bzw. ein Gegenangebot');
+    // Prüfer-Runde 1: Befund 2 (kein Gastbetrag) und Befund 3 (RTB-Ankündigung bei Preisthema)
+    expect(p).toContain('ist JEDER Betrag im Entwurf invents_fact');
+    expect(p).toContain('KEINE erlaubte Ankündigung mehr, sondern promises_action');
+    // Prüfer-Runde 2: zweites Netz neben den Wortlisten — Preis-/Rabattthema einer offenen Anfrage nie „hoch“.
+    expect(p).toContain('ist confidence HÖCHSTENS mittel, auch wenn der Entwurf inhaltlich korrekt ist');
+    expect(p).not.toContain('darf confidence NICHT senken.');
+    const block = p.split('PREIS UND NACHLASS')[1].split('HEUTE:')[0];
+    expect(block).not.toMatch(/\d+\s?%|\d+\s?Prozent|\d+\s?Tage/);
+  });
+});

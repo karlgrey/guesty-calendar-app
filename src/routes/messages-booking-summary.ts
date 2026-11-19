@@ -117,6 +117,12 @@ export function renderBookingSummaryLine(s: ThreadBookingSummary | null): string
   return `<p class="subtitle booking-summary" style="margin-top:-4px">${parts.join(' · ')}</p>`;
 }
 
+/** #1243: Zeile „Betrag in der Gastnachricht …“ unter der Kopfzeile; leer ohne Notiz. */
+export function renderCounterOfferLine(note: string | null): string {
+  if (!note) return '';
+  return `<p class="subtitle counter-offer" style="margin-top:-4px">${esc(note)}</p>`;
+}
+
 /** Kompaktes Listen-Badge „31.12.–01.01. · 1 P." (ohne Preis); leer ohne Verknüpfung. */
 export function renderBookingSummaryBadge(s: ThreadBookingSummary | null): string {
   if (!s || (!s.checkIn && !s.checkOut)) return '';

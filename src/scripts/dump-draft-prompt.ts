@@ -68,6 +68,8 @@ import {
 import { callClaudeTool, type CallClaudeToolInput } from '../services/anthropic-client.js';
 import { findHostExamples } from '../services/host-examples.js';
 import { detectLanguage } from '../utils/language-detect.js';
+import { findGuestPriceTopic } from '../services/price-topic.js';
+import { guestMessagesSinceLastHost } from '../services/auto-send/runner.js';
 import type { MessageThread, MessageChannel, Message, MessageDirection } from '../types/messages.js';
 
 const RESULTS_DIR = 'data/testplan-440-results';
@@ -173,7 +175,7 @@ function messagesFromFixture(fixture: Fixture, threadId: string, source: 'guesty
 // stale-draft-regen.ts, routes/messages.ts) — ohne sie zeigte der Dump bei Buchungsanfragen
 // den normalen Prompt statt des Buchungsanfrage-Blocks. Fixtures lösen sie über eine
 // System-Nachricht „New guest reservation request …" bzw. „New guest inquiry" aus.
-interface BookingRequestInfo { isBookingRequest: boolean; requestKind: BookingRequestKind | null; alteration: AlterationSituation | null }
+interface BookingRequestInfo { isBookingRequest: boolean; requestKind: BookingRequestKind | null; alteration: AlterationSituation | null; discountRuleApplies: boolean }
 
 // `fixtureAlteration`: im Fixture-Modus das Fixture-Feld (undefined = Fixture ohne Feld → null);
 // im DB-Thread-Modus nicht übergeben → resolveAlterationSituation (#976).
@@ -183,7 +185,9 @@ function resolveBookingRequest(thread: MessageThread, messages: Message[], fixtu
   const alteration = fixtureMode
     ? (fixtureAlteration ?? null)
     : resolveAlterationSituation(thread, messages, { isBookingRequest });
-  return { isBookingRequest, requestKind: open?.requestKind ?? null, alteration };
+  // #1243: Rabatt-Linie wie im echten Pfad nur bei Objekten mit airbnbDiscount (properties.json).
+  const discountRuleApplies = !!getPropertyForThread(thread)?.airbnbDiscount;
+  return { isBookingRequest, requestKind: open?.requestKind ?? null, alteration, discountRuleApplies };
 }
 
 // #1082: Sprache der letzten Gastnachricht wie im echten Pfad (generate-drafts.ts) — sonst würden
@@ -204,7 +208,11 @@ async function dumpDirect(thread: MessageThread, messages: Message[], voice: str
   const systemPrompt = buildSystemPrompt(
     voice, facts, bookingContext, thread, undefined, undefined, br.isBookingRequest, undefined, br.requestKind, br.alteration,
     // #1191: wie generateDraftForThread — Einladung/Ankündigung höchstens einmal je Thread.
-    [], { closingAlreadySent: hostAlreadySentClosing(messages, br.requestKind) },
+    [], {
+      closingAlreadySent: hostAlreadySentClosing(messages, br.requestKind), discountRuleApplies: br.discountRuleApplies,
+      // #1243: wie generateDraftForThread — sonst zeigt der Dump bei Preis-/Rabattfragen den falschen Prompt-Zweig.
+      priceTopic: findGuestPriceTopic(guestMessagesSinceLastHost(messages)) !== null,
+    },
   );
   const userMessage = buildConversation(messages, thread.guest_name);
   printSection('THREAD-FAKTEN', JSON.stringify({

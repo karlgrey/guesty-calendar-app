@@ -78,7 +78,8 @@ describe('buildBookingContext', () => {
   describe('#1242: Gastbetrag laut Airbnb im Anfrage-Kontext', () => {
     const RATES = { hostServiceFeeRate: 0.155, taxRate: 0.07 };
     const PREFIX = 'Buchungsanfrage (noch nicht bestätigt): Zeitraum 20.11.2026–22.11.2026, 2 Nächte, 8 Personen';
-    const SUFFIX = ' — Daten stammen aus der Anfrage selbst.';
+    // #1243: ohne created_at_guesty nur der Nächte-Satz (Fr/Sa-Nacht), kein „Anfrage gestellt“
+    const SUFFIX = ' — Daten stammen aus der Anfrage selbst. Übernachtungen in den Nächten ab Freitag, Samstag (Wochenendnacht Fr/Sa dabei: ja).';
 
     beforeEach(() => {
       db.exec(`ALTER TABLE inquiries ADD COLUMN source TEXT; ALTER TABLE inquiries ADD COLUMN currency TEXT;
@@ -136,6 +137,41 @@ describe('buildBookingContext', () => {
     it('Altbestand ohne price_basis (vor dem ersten Sync nach Migration 043) → kein Preis', () => {
       insert({ total_price: 3118.05, host_payout: 3118.05 });
       expect(buildBookingContext(thread({ inquiry_id: 'INQ-D' }), { rates: RATES })).toBe(`${PREFIX}${SUFFIX}`);
+    });
+
+    it('#1243: Anfrage-Zeitpunkt und Wochentage der Nächte hinter dem Zeitraum-Satz (Fall Daniel)', () => {
+      db.exec('ALTER TABLE inquiries ADD COLUMN created_at_guesty TEXT;');
+      insert({ total_price: 3118.05, host_payout: 3118.05, price_basis: 'net_payout', created_at_guesty: '2026-11-17T10:00:00.000Z' });
+      const ctx = buildBookingContext(thread({ inquiry_id: 'INQ-D' }), { rates: RATES })!;
+      expect(ctx).toContain('Zeitraum 20.11.2026–22.11.2026');
+      expect(ctx).toMatch(/Daten stammen aus der Anfrage selbst\. Anfrage gestellt am 17\.11\.2026, 3 Tage vor Anreise\. Übernachtungen in den Nächten ab Freitag, Samstag \(Wochenendnacht Fr\/Sa dabei: ja\)\.$/);
+    });
+
+    // #1243: Bedingung der Objekt-Rabattlinie als Fakt (nur Objekte mit airbnbDiscount).
+    it('#1243: mit Objekt-Rabattlinie steht die ausgewertete Nachlass-Bedingung am Ende (Fall Daniel: erfüllt)', () => {
+      db.exec('ALTER TABLE inquiries ADD COLUMN created_at_guesty TEXT;');
+      insert({ total_price: 3118.05, host_payout: 3118.05, price_basis: 'net_payout', created_at_guesty: '2026-11-17T10:00:00.000Z' });
+      const ctx = buildBookingContext(thread({ inquiry_id: 'INQ-D' }), { rates: RATES, discountRule: { shortNoticeDays: 7, weekend: true } })!;
+      expect(ctx).toMatch(/\(Wochenendnacht Fr\/Sa dabei: ja\)\. Nachlass-Bedingung laut Objektregel: erfüllt \(Wochenende, Anfrage 3 Tage vor Anreise\)\.$/);
+    });
+
+    it('#1243: Bedingung nicht erfüllt (Wochentage, Anfrage weit vorher)', () => {
+      db.exec('ALTER TABLE inquiries ADD COLUMN created_at_guesty TEXT;');
+      insert({ check_in: '2026-12-15', check_out: '2026-12-17', total_price: 3118.05, host_payout: 3118.05, price_basis: 'net_payout', created_at_guesty: '2026-11-19T10:00:00.000Z' });
+      const ctx = buildBookingContext(thread({ inquiry_id: 'INQ-D' }), { rates: RATES, discountRule: { shortNoticeDays: 7, weekend: true } })!;
+      expect(ctx).toContain('Nachlass-Bedingung laut Objektregel: nicht erfüllt (kein Wochenende, Anfrage 26 Tage vor Anreise).');
+    });
+
+    it('#1243 (Prüfer-Befund 5): Nicht-Airbnb-Anfrage am Objekt mit Rabattlinie → keine Bedingungszeile', () => {
+      insert({ source: 'website', total_price: 3000, price_basis: 'accommodation' });
+      const ctx = buildBookingContext(thread({ inquiry_id: 'INQ-D' }), { rates: RATES, discountRule: { shortNoticeDays: 7, weekend: true } })!;
+      expect(ctx).not.toContain('Nachlass-Bedingung');
+    });
+
+    it('#1243: ohne Objekt-Rabattlinie keine Bedingungszeile', () => {
+      insert({ total_price: 3118.05, host_payout: 3118.05, price_basis: 'net_payout' });
+      expect(buildBookingContext(thread({ inquiry_id: 'INQ-D' }), { rates: RATES, discountRule: null })).not.toContain('Nachlass-Bedingung');
+      expect(buildBookingContext(thread({ inquiry_id: 'INQ-D' }), { rates: RATES })).not.toContain('Nachlass-Bedingung');
     });
 
     it('ohne Optionen gelten die Sätze aus data/properties.json (15,5 % / 7 %)', () => {

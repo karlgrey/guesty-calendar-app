@@ -98,6 +98,8 @@ async function main(): Promise<void> {
           thread, messages, voice, facts, bookingContext: c.bookingContext ?? null,
           alteration: c.alteration, now: c.now ? new Date(c.now) : undefined, guestLanguage,
           isBookingRequest: openRequest !== null, requestKind: openRequest?.requestKind ?? null,
+          // #1243: wie im echten Pfad (generate-drafts.ts) — Rabatt-Linie nur bei Objekten mit airbnbDiscount.
+          discountRuleApplies: !!property.airbnbDiscount,
         },
         { call: callClaudeTool },
       );

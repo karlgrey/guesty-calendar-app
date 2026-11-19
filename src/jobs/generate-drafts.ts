@@ -90,6 +90,8 @@ export interface DraftGenDeps {
   loadFacts: (vaultNote: string) => string | null;
   generate: (input: {
     thread: MessageThread; messages: Message[]; voice: string; facts: string; bookingContext: string | null;
+    // #1243: das Objekt hat eine Rabatt-Linie für Plattform-Anfragen (properties.json airbnbDiscount).
+    discountRuleApplies?: boolean;
     // #695: Sprach-Pin — Fakt statt Prosa-Regel im Prompt (Spec Punkt 1) + Flag für den
     // Neuversuch-Prompt-Zusatz (Spec Punkt 3).
     guestLanguage?: SupportedLanguage; languageRetry?: boolean;
@@ -162,6 +164,7 @@ export async function generateDraftsForProperty(
   const selected = opts.onlyThreadIds ? threads.filter((t) => opts.onlyThreadIds!.includes(t.id)) : threads;
   let generated = 0;
   let skipped = 0;
+  const discountRuleApplies = !!property.airbnbDiscount; // #1243
   for (const thread of selected) {
     try {
       const bookingContext = deps.buildBookingContext(thread);
@@ -184,7 +187,7 @@ export async function generateDraftsForProperty(
       const requestKind = openBookingRequest?.requestKind ?? null; // #1004
       const alteration = deps.resolveAlteration?.(thread, messages, isBookingRequest) ?? null; // #976
       const gateContext = withAlterationFact(bookingContext, alteration);
-      const result = await deps.generate({ thread, messages, voice, facts, bookingContext, guestLanguage, isBookingRequest, requestKind, alteration });
+      const result = await deps.generate({ thread, messages, voice, facts, bookingContext, guestLanguage, isBookingRequest, requestKind, alteration, discountRuleApplies });
       if (result.kind === 'text') {
         const draftId = randomUUID();
         deps.create({ id: draftId, thread_id: thread.id, provider: target.source, body: result.body, generated_by: 'llm', model: DRAFT_MODEL });
@@ -196,7 +199,7 @@ export async function generateDraftsForProperty(
             // #695 Spec Punkt 3 / #1191 Spec Punkt 4: genau EIN automatischer Neuversuch mit
             // expliziter Korrektur-Anweisung (falsche Sprache und/oder wiederholter eigener Satz) —
             // derselbe Draft-Datensatz wird überschrieben, nicht neu angelegt.
-            const retryResult = await deps.generate({ thread, messages, voice, facts, bookingContext, guestLanguage, ...retry, isBookingRequest, requestKind, alteration });
+            const retryResult = await deps.generate({ thread, messages, voice, facts, bookingContext, guestLanguage, ...retry, isBookingRequest, requestKind, alteration, discountRuleApplies });
             if (retryResult.kind === 'text') {
               deps.updateDraftBody(draftId, retryResult.body);
               try {

@@ -435,3 +435,30 @@ describe('generateDraftsForProperty — Inquiry-Task-Selbstschluss (#1210)', () 
     expect(close).toHaveBeenCalled();
   });
 });
+
+// #1243: discountRuleApplies = Objekt hat airbnbDiscount (Erst- UND Neuversuch).
+describe('generateDraftsForProperty — discountRuleApplies (#1243)', () => {
+  const withDiscount = { ...property, airbnbDiscount: { shortNoticeDays: 7, weekend: true } } as unknown as PropertyConfig;
+  it('true mit airbnbDiscount, false ohne', async () => {
+    const d1 = deps();
+    await generateDraftsForProperty(withDiscount, d1);
+    expect((d1.generate as any).mock.calls[0][0].discountRuleApplies).toBe(true);
+    const d2 = deps();
+    await generateDraftsForProperty(property, d2);
+    expect((d2.generate as any).mock.calls[0][0].discountRuleApplies).toBe(false);
+  });
+  it('auch im Neuversuch', async () => {
+    const generate = vi.fn().mockResolvedValue({ kind: 'text', body: 'Hallo, danke dir!' });
+    const gate = vi.fn()
+      .mockResolvedValueOnce({ decision: { decision: 'wait', reason: 'x', category: null, flags: ['mech:language_mismatch'] }, mode: 'live', sent: false })
+      .mockResolvedValue({});
+    const d = deps({
+      getThreads: vi.fn().mockReturnValue([mkThread('hostex:a')]),
+      getMessages: vi.fn().mockReturnValue([{ id: 'm1', direction: 'inbound', body: 'Hi, is the house free in May? Thanks a lot for your help!', sent_at: '2026-09-19T10:00:00Z' }]),
+      generate, gate,
+    });
+    await generateDraftsForProperty(withDiscount, d);
+    expect(generate).toHaveBeenCalledTimes(2);
+    expect(generate.mock.calls[1][0].discountRuleApplies).toBe(true);
+  });
+});

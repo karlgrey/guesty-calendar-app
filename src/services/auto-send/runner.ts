@@ -17,6 +17,7 @@ import { resolvePromiseTask, type PromiseTaskInput, type PromiseTaskResult } fro
 import { findOpenBookingRequest } from '../booking-request.js';
 import { resolveBookingRequestTask, type BookingRequestTaskInput, type BookingRequestTaskResult } from '../booking-request-task-service.js';
 import { resolveBookingPeriod } from '../booking-context.js';
+import { resolveCounterOfferNote } from '../counter-offer-context.js';
 import logger from '../../utils/logger.js';
 
 export const PAUSE_KEY = 'auto_send_paused';
@@ -56,6 +57,9 @@ export interface GateDeps {
   resolveBookingPeriod: (thread: MessageThread) => { periodLabel: string | null; guestsCount: number | null };
   // #697: persistiert request_kind/platform_deadline_at am Draft — unabhängig vom Gate-Ergebnis.
   persistBookingRequest: (draftId: string, requestKind: 'inquiry' | 'request_to_book', platformDeadlineAt: string) => void;
+  // #1243: Gegenangebot-Notiz für die Task-Beschreibung — optional, damit bestehende Harnesses
+  // unverändert laufen; fehlt sie, bleibt die Beschreibung wie bisher.
+  resolveCounterOfferNote?: (thread: MessageThread, messages: Message[], property: PropertyConfig) => string | null;
 }
 export function realGateDeps(): GateDeps {
   return {
@@ -73,6 +77,7 @@ export function realGateDeps(): GateDeps {
     resolveBookingRequestTask: (i) => resolveBookingRequestTask(i),
     resolveBookingPeriod: (thread) => resolveBookingPeriod(thread),
     persistBookingRequest: setBookingRequestContext,
+    resolveCounterOfferNote: (t, m, p) => resolveCounterOfferNote(t, m, p, { onlyLatestGuestMessage: true }),
   };
 }
 
@@ -195,6 +200,8 @@ export async function runAutoSendGate(input: GateInput, deps: GateDeps = realGat
       guestLanguage: input.guestLanguage,
       isBookingRequest,
       now, bookingContext: input.bookingContext, recentHostMessages: hostMessages,
+      // #1243 (Prüfer-Befund 1): Preis-/Rabattfrage des Gasts → nie auto, unabhängig vom Entwurfstext.
+      guestMessages,
     });
     const baseInput: Omit<PolicyInput, 'promiseTask' | 'bookingTask'> = {
       mode, paused: deps.isPaused(), judge: effectiveJudge, mechanical,
@@ -216,11 +223,18 @@ export async function runAutoSendGate(input: GateInput, deps: GateDeps = realGat
     if (bookingRequest) {
       deps.persistBookingRequest(input.draftId, bookingRequest.requestKind, bookingRequest.platformDeadlineAt);
       const { periodLabel, guestsCount } = deps.resolveBookingPeriod(input.thread);
+      // #1243: Gegenangebot-Notiz (non-fatal — Zusatzinfo, darf die Task-Anlage nie verhindern)
+      let counterOfferNote: string | null = null;
+      try {
+        counterOfferNote = deps.resolveCounterOfferNote?.(input.thread, input.messages, input.property) ?? null;
+      } catch (err) {
+        logger.warn({ draftId: input.draftId, err: err instanceof Error ? err.message : String(err) }, 'auto-send: Gegenangebot-Notiz fehlgeschlagen');
+      }
       const taskInput: BookingRequestTaskInput = {
         draftId: input.draftId, threadId: input.thread.id, systemMessageId: bookingRequest.systemMessageId,
         requestKind: bookingRequest.requestKind, platformDeadlineAt: bookingRequest.platformDeadlineAt,
         guestName: input.thread.guest_name, guestMessage: lastGuestMessage, draftBody: input.body,
-        periodLabel, guestsCount, property: input.property, mode,
+        periodLabel, guestsCount, property: input.property, mode, counterOfferNote,
       };
       const deadlineLabel = formatBerlinDeadline(bookingRequest.platformDeadlineAt);
       // #1210 (Entscheidung Micha 17.11.2026): geht die Antwort auf eine INQUIRY automatisch raus

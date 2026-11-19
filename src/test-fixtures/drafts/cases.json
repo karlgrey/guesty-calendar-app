@@ -168,5 +168,292 @@
       "noRepeatOfHost": true
     },
     "now": "2026-11-14T13:30:00Z"
+  },
+  {
+    "name": "David — Gegenangebot über 10 % unter dem Gastbetrag, Wochenende (#1243)",
+    "description": "Anonymisierter Fall Daniel FH (17.11.2026): Inquiry Fr–So, Anfrage 3 Tage vor Anreise, Gast bietet 2.600 Euro gegen ca. 3.948,30 EUR (rund 34 % darunter). Erwartet: Gastbetrag als Bezugsgröße, 10 % auf die Unterkunft als Gegenangebot laut Objektwissen, keine Annahme, kein selbst gerechneter Betrag.",
+    "propertySlug": "farmhouse",
+    "thread": {
+      "channel": "airbnb",
+      "reservation_status": "inquiry",
+      "guest_name": "David"
+    },
+    "bookingContext": "Buchungsanfrage (noch nicht bestätigt): Zeitraum 20.11.2026–22.11.2026, 2 Nächte, 10 Personen, Gesamtpreis für den Gast laut Airbnb ca. 3.948,30 EUR inkl. Steuern (berechnet, ungefähr; ohne Steuern ca. 3.690,00 EUR) — Daten stammen aus der Anfrage selbst. Anfrage gestellt am 17.11.2026, 3 Tage vor Anreise. Übernachtungen in den Nächten ab Freitag, Samstag (Wochenendnacht Fr/Sa dabei: ja). Nachlass-Bedingung laut Objektregel: erfüllt (Wochenende, Anfrage 3 Tage vor Anreise).",
+    "alteration": null,
+    "messages": [
+      {
+        "direction": "inbound",
+        "body": "Hallo Micha, wir sind zehn Freunde und würden gern dieses Wochenende bei dir verbringen. Euer Haus ist toll, aber etwas über unserem Budget. Wäre es für 2.600 Euro insgesamt möglich?"
+      },
+      {
+        "direction": "system",
+        "body": "New guest inquiry"
+      }
+    ],
+    "expect": {
+      "mustContainAllOf": [
+        [
+          "10 %",
+          "10%",
+          "zehn prozent"
+        ],
+        [
+          "unterkunft"
+        ]
+      ],
+      "mustNotContain": [
+        "einverstanden",
+        "2.600 euro passt",
+        "2.600 € passt",
+        "geht klar",
+        "bestätig"
+      ],
+      "allowedAmounts": [
+        "3.948,30",
+        "3.948",
+        "2.600"
+      ]
+    },
+    "now": "2026-11-17T15:00:00Z"
+  },
+  {
+    "name": "Jana — Rabattfrage ohne Zahl, Anreise in 5 Tagen (#1243)",
+    "description": "Inquiry Di–Do, Anfrage 5 Tage vor Anreise (kurzfristig), Gast fragt ohne Betrag nach einem kleinen Rabatt. Erwartet: Nachlass laut Objektwissen (10 % auf die Unterkunft) als Möglichkeit, kein selbst gerechneter Betrag.",
+    "propertySlug": "farmhouse",
+    "thread": {
+      "channel": "airbnb",
+      "reservation_status": "inquiry",
+      "guest_name": "Jana"
+    },
+    "bookingContext": "Buchungsanfrage (noch nicht bestätigt): Zeitraum 24.11.2026–26.11.2026, 2 Nächte, 8 Personen, Gesamtpreis für den Gast laut Airbnb ca. 3.745,00 EUR inkl. Steuern (berechnet, ungefähr; ohne Steuern ca. 3.500,00 EUR) — Daten stammen aus der Anfrage selbst. Anfrage gestellt am 19.11.2026, 5 Tage vor Anreise. Übernachtungen in den Nächten ab Dienstag, Mittwoch (Wochenendnacht Fr/Sa dabei: nein). Nachlass-Bedingung laut Objektregel: erfüllt (kein Wochenende, Anfrage 5 Tage vor Anreise).",
+    "alteration": null,
+    "messages": [
+      {
+        "direction": "inbound",
+        "body": "Hi! Wir würden ganz spontan nächste Woche mit acht Leuten zu dir kommen. Ist da preislich vielleicht noch ein kleiner Rabatt drin?"
+      },
+      {
+        "direction": "system",
+        "body": "New guest inquiry"
+      }
+    ],
+    "expect": {
+      "mustContainAllOf": [
+        [
+          "10 %",
+          "10%",
+          "zehn prozent"
+        ],
+        [
+          "unterkunft"
+        ]
+      ],
+      "mustNotContain": [
+        "bestätig",
+        "einverstanden"
+      ],
+      "allowedAmounts": [
+        "3.745,00",
+        "3.745"
+      ]
+    },
+    "now": "2026-11-19T10:00:00Z"
+  },
+  {
+    "name": "Ole — Rabattfrage ohne erfüllte Bedingung, Preis halten (#1243)",
+    "description": "Inquiry Di–Do im Dezember, Anfrage 26 Tage vor Anreise, kein Wochenende. Gast fragt nach Rabatt. Erwartet: kein Nachlass, Preis freundlich halten, keine internen Bedingungen.",
+    "propertySlug": "farmhouse",
+    "thread": {
+      "channel": "airbnb",
+      "reservation_status": "inquiry",
+      "guest_name": "Ole"
+    },
+    "bookingContext": "Buchungsanfrage (noch nicht bestätigt): Zeitraum 15.12.2026–17.12.2026, 2 Nächte, 8 Personen, Gesamtpreis für den Gast laut Airbnb ca. 3.745,00 EUR inkl. Steuern (berechnet, ungefähr; ohne Steuern ca. 3.500,00 EUR) — Daten stammen aus der Anfrage selbst. Anfrage gestellt am 19.11.2026, 26 Tage vor Anreise. Übernachtungen in den Nächten ab Dienstag, Mittwoch (Wochenendnacht Fr/Sa dabei: nein). Nachlass-Bedingung laut Objektregel: nicht erfüllt (kein Wochenende, Anfrage 26 Tage vor Anreise).",
+    "alteration": null,
+    "messages": [
+      {
+        "direction": "inbound",
+        "body": "Hallo, wir planen ein Team-Wochenende unter der Woche im Dezember mit acht Personen. Der Preis ist für uns recht hoch – gibt es da noch einen Rabatt?"
+      },
+      {
+        "direction": "system",
+        "body": "New guest inquiry"
+      }
+    ],
+    "expect": {
+      "mustNotContain": [
+        "%",
+        "prozent",
+        "rabatt von",
+        "nachlass von",
+        "nachlass auf",
+        "rabatt auf",
+        "kurzfristig",
+        "7 tage",
+        "sieben tage"
+      ],
+      "allowedAmounts": [
+        "3.745,00",
+        "3.745"
+      ]
+    },
+    "now": "2026-11-19T10:00:00Z"
+  },
+  {
+    "name": "Pia — Anfrage ohne Rabattfrage, kein Nachlass im Entwurf (#1243)",
+    "description": "Inquiry Fr–So (Bedingung wäre erfüllt), Gast fragt nur nach Sauna und Badesee. Erwartet: kein Nachlass, kein Preis.",
+    "propertySlug": "farmhouse",
+    "thread": {
+      "channel": "airbnb",
+      "reservation_status": "inquiry",
+      "guest_name": "Pia"
+    },
+    "bookingContext": "Buchungsanfrage (noch nicht bestätigt): Zeitraum 27.11.2026–29.11.2026, 2 Nächte, 6 Personen, Gesamtpreis für den Gast laut Airbnb ca. 3.745,00 EUR inkl. Steuern (berechnet, ungefähr; ohne Steuern ca. 3.500,00 EUR) — Daten stammen aus der Anfrage selbst. Anfrage gestellt am 19.11.2026, 8 Tage vor Anreise. Übernachtungen in den Nächten ab Freitag, Samstag (Wochenendnacht Fr/Sa dabei: ja). Nachlass-Bedingung laut Objektregel: erfüllt (Wochenende, Anfrage 8 Tage vor Anreise).",
+    "alteration": null,
+    "messages": [
+      {
+        "direction": "inbound",
+        "body": "Hallo Micha, wir sind sechs Freundinnen und freuen uns riesig auf ein ruhiges Wochenende. Gibt es in der Nähe einen See zum Baden?"
+      },
+      {
+        "direction": "system",
+        "body": "New guest inquiry"
+      }
+    ],
+    "expect": {
+      "mustNotContain": [
+        "%",
+        "prozent",
+        "rabatt von",
+        "nachlass von",
+        "nachlass auf",
+        "rabatt auf",
+        "rabatt",
+        "nachlass",
+        "günstiger",
+        "preis"
+      ],
+      "allowedAmounts": []
+    },
+    "now": "2026-11-19T10:00:00Z"
+  },
+  {
+    "name": "Kim — Rabattfrage ohne Gastbetrag im Kontext, DE (#1243, Prüfer-Runde 1)",
+    "description": "Farmhouse, Inquiry Di–Do im Dezember, Kontext OHNE Gesamtpreis für den Gast (z. B. fehlende inquiries-Zeile), Bedingung nicht erfüllt. Erwartet: kein Betrag, auch kein geschätzter, kein Platzhalter, kein Nachlass.",
+    "propertySlug": "farmhouse",
+    "thread": {
+      "channel": "airbnb",
+      "reservation_status": "inquiry",
+      "guest_name": "Kim"
+    },
+    "bookingContext": "Buchungsanfrage (noch nicht bestätigt): Zeitraum 15.12.2026–17.12.2026, 2 Nächte, 8 Personen — Daten stammen aus der Anfrage selbst. Anfrage gestellt am 19.11.2026, 26 Tage vor Anreise. Übernachtungen in den Nächten ab Dienstag, Mittwoch (Wochenendnacht Fr/Sa dabei: nein). Nachlass-Bedingung laut Objektregel: nicht erfüllt (kein Wochenende, Anfrage 26 Tage vor Anreise).",
+    "alteration": null,
+    "messages": [
+      {
+        "direction": "inbound",
+        "body": "Hallo Micha, wir sind acht Leute und würden gern im Dezember kommen. Könnt ihr uns da noch ein Stück entgegenkommen?"
+      },
+      {
+        "direction": "system",
+        "body": "New guest inquiry"
+      }
+    ],
+    "expect": {
+      "mustNotContain": [
+        "€x",
+        "x €",
+        "€ x",
+        "x eur",
+        "eur x",
+        "[betrag",
+        "xxx",
+        "%",
+        "prozent"
+      ],
+      "allowedAmounts": []
+    },
+    "now": "2026-11-19T10:00:00Z"
+  },
+  {
+    "name": "Kim — Rabattfrage ohne Gastbetrag im Kontext, EN (#1243, Prüfer-Runde 1)",
+    "description": "Wie DE, Gast schreibt Englisch („better rate“). Erwartet: kein Betrag, kein Platzhalter wie „about €X“.",
+    "propertySlug": "farmhouse",
+    "thread": {
+      "channel": "airbnb",
+      "reservation_status": "inquiry",
+      "guest_name": "Kim"
+    },
+    "bookingContext": "Buchungsanfrage (noch nicht bestätigt): Zeitraum 15.12.2026–17.12.2026, 2 Nächte, 8 Personen — Daten stammen aus der Anfrage selbst. Anfrage gestellt am 19.11.2026, 26 Tage vor Anreise. Übernachtungen in den Nächten ab Dienstag, Mittwoch (Wochenendnacht Fr/Sa dabei: nein). Nachlass-Bedingung laut Objektregel: nicht erfüllt (kein Wochenende, Anfrage 26 Tage vor Anreise).",
+    "alteration": null,
+    "messages": [
+      {
+        "direction": "inbound",
+        "body": "Hi Micha, we are a group of eight and would love to stay mid-December. Any chance you could do a better rate for us?"
+      },
+      {
+        "direction": "system",
+        "body": "New guest inquiry"
+      }
+    ],
+    "expect": {
+      "mustNotContain": [
+        "€x",
+        "x €",
+        "€ x",
+        "x eur",
+        "eur x",
+        "[betrag",
+        "xxx",
+        "%",
+        "percent"
+      ],
+      "allowedAmounts": []
+    },
+    "now": "2026-11-19T10:00:00Z"
+  },
+  {
+    "name": "Lars — Request-to-Book mit Gegenangebot, keine Bestätigung ankündigen (#1243, Prüfer-Runde 1)",
+    "description": "Farmhouse, Request-to-Book Fr–So, Bedingung erfüllt, Gast bietet 3.200 Euro gegen ca. 3.745,00 EUR. Erwartet: 10 % auf die Unterkunft als Grenze, KEINE Ankündigung der Bestätigung.",
+    "propertySlug": "farmhouse",
+    "thread": {
+      "channel": "airbnb",
+      "reservation_status": "reserved",
+      "guest_name": "Lars"
+    },
+    "bookingContext": "Buchungsanfrage (noch nicht bestätigt): Zeitraum 27.11.2026–29.11.2026, 2 Nächte, 8 Personen, Gesamtpreis für den Gast laut Airbnb ca. 3.745,00 EUR inkl. Steuern (berechnet, ungefähr; ohne Steuern ca. 3.500,00 EUR) — Daten stammen aus der Anfrage selbst. Anfrage gestellt am 19.11.2026, 8 Tage vor Anreise. Übernachtungen in den Nächten ab Freitag, Samstag (Wochenendnacht Fr/Sa dabei: ja). Nachlass-Bedingung laut Objektregel: erfüllt (Wochenende, Anfrage 8 Tage vor Anreise).",
+    "alteration": null,
+    "messages": [
+      {
+        "direction": "inbound",
+        "body": "Hallo Micha, wir haben gerade angefragt. Könntest du uns beim Betrag noch etwas entgegenkommen? 3.200 Euro wären unser Maximum."
+      },
+      {
+        "direction": "system",
+        "body": "New guest reservation request HMABCDEF12"
+      }
+    ],
+    "expect": {
+      "mustContainAllOf": [
+        [
+          "10 %",
+          "10%",
+          "zehn prozent"
+        ],
+        [
+          "unterkunft"
+        ]
+      ],
+      "mustNotContain": [
+        "bestätigung",
+        "bestätig",
+        "confirmation"
+      ],
+      "allowedAmounts": [
+        "3.745,00",
+        "3.745",
+        "3.200"
+      ]
+    },
+    "now": "2026-11-19T10:00:00Z"
   }
 ]

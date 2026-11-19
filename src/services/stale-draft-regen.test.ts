@@ -307,3 +307,16 @@ describe('regenerateStaleDraftIfNeeded — Satzwiederholung (#1191)', () => {
     expect(d.generate).toHaveBeenCalledTimes(1);
   });
 });
+
+// #1243: discountRuleApplies = Objekt hat airbnbDiscount.
+describe('regenerateStaleDraftIfNeeded — discountRuleApplies (#1243)', () => {
+  it('true mit airbnbDiscount, false ohne', async () => {
+    const withDiscount = { ...property, airbnbDiscount: { shortNoticeDays: 7, weekend: true } } as unknown as PropertyConfig;
+    const d1 = deps({ getPropertyForThread: vi.fn().mockReturnValue(withDiscount) });
+    await regenerateStaleDraftIfNeeded(mkThread(), d1);
+    expect((d1.generate as any).mock.calls[0][0].discountRuleApplies).toBe(true);
+    const d2 = deps();
+    await regenerateStaleDraftIfNeeded(mkThread(), d2);
+    expect((d2.generate as any).mock.calls[0][0].discountRuleApplies).toBe(false);
+  });
+});
