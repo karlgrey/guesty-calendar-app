@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import Database from 'better-sqlite3';
 import { readFileSync } from 'node:fs';
 import { setDatabase, resetDatabase } from '../db/index.js';
+import { ValidationError } from '../utils/errors.js';
 import {
   addRecipient,
   getActiveRecipientEmails,
@@ -42,7 +43,7 @@ describe('report-recipient-repository', () => {
     expect(getActiveRecipientEmails('weekly-summary', 'farmhouse')).toEqual(['m@example.com', 'c@example.com']);
     expect(getActiveRecipientEmails('weekly-summary', 'u19')).toEqual(['c@example.com']);
     expect(getActiveRecipientEmails('portfolio-weekly')).toEqual(['m@example.com']);
-    expect(getActiveRecipientEmails('calendar-weekly')).toEqual([]);
+    expect(getActiveRecipientEmails('portfolio-monthly')).toEqual([]);
 
     setSubscription(c.id, 'weekly-summary', 'farmhouse', false);
     expect(getActiveRecipientEmails('weekly-summary', 'farmhouse')).toEqual(['m@example.com']);
@@ -54,6 +55,18 @@ describe('report-recipient-repository', () => {
     expect(getActiveRecipientEmails('portfolio-monthly')).toEqual(['m@example.com']);
     expect(() => setSubscription(m.id, 'weekly-summary', '', true)).toThrow();
     expect(() => getActiveRecipientEmails('weekly-summary')).toThrow();
+  });
+
+  it('calendar-weekly ist ein Objekt-Typ (#1284): ohne Slug ValidationError, mit Slug je Objekt getrennt', () => {
+    const m = addRecipient('m@example.com');
+    const c = addRecipient('c@example.com');
+    expect(() => setSubscription(m.id, 'calendar-weekly', '', true)).toThrow(ValidationError);
+    expect(() => getActiveRecipientEmails('calendar-weekly')).toThrow(ValidationError);
+    setSubscription(m.id, 'calendar-weekly', 'farmhouse', true);
+    setSubscription(c.id, 'calendar-weekly', 'u19', true);
+    expect(getActiveRecipientEmails('calendar-weekly', 'farmhouse')).toEqual(['m@example.com']);
+    expect(getActiveRecipientEmails('calendar-weekly', 'u19')).toEqual(['c@example.com']);
+    expect(getActiveRecipientEmails('calendar-weekly', 'firenze-loft')).toEqual([]);
   });
 
   it('listRecipients liefert die Häkchen je Empfänger', () => {
@@ -70,14 +83,16 @@ describe('report-recipient-repository', () => {
 
   it('removeRecipient löscht Empfänger samt Häkchen', () => {
     const m = addRecipient('m@example.com');
-    setSubscription(m.id, 'calendar-weekly', '', true);
+    setSubscription(m.id, 'portfolio-weekly', '', true);
+    setSubscription(m.id, 'calendar-weekly', 'farmhouse', true);
     expect(removeRecipient(m.id)).toBe(true);
     expect(removeRecipient(m.id)).toBe(false);
-    expect(getActiveRecipientEmails('calendar-weekly')).toEqual([]);
+    expect(getActiveRecipientEmails('portfolio-weekly')).toEqual([]);
+    expect(getActiveRecipientEmails('calendar-weekly', 'farmhouse')).toEqual([]);
     expect(db.prepare('SELECT COUNT(*) AS n FROM report_subscriptions').get()).toEqual({ n: 0 });
   });
 
   it('setSubscription auf unbekannten Empfänger wirft', () => {
-    expect(() => setSubscription(999, 'calendar-weekly', '', true)).toThrow();
+    expect(() => setSubscription(999, 'portfolio-weekly', '', true)).toThrow();
   });
 });

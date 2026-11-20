@@ -58,7 +58,14 @@ describe('bootstrapReportRecipients', () => {
     expect(getActiveRecipientEmails('weekly-summary', 'firenze-loft')).toEqual([M]);
     expect(getActiveRecipientEmails('portfolio-weekly')).toEqual([M, H]);
     expect(getActiveRecipientEmails('portfolio-monthly')).toEqual([C]);
-    expect(getActiveRecipientEmails('calendar-weekly').sort()).toEqual([A, H, U].sort());
+    // calendar-weekly je Objekt, nur dort, wo die Adresse nach dem Import weekly-summary aktiv hat
+    expect(getActiveRecipientEmails('calendar-weekly', 'farmhouse')).toEqual([H]);
+    expect(getActiveRecipientEmails('calendar-weekly', 'u19')).toEqual([H]);
+    expect(getActiveRecipientEmails('calendar-weekly', 'alte-schilderwerkstatt')).toEqual([H, U, A]);
+    expect(getActiveRecipientEmails('calendar-weekly', 'bootshaus-alte-oder')).toEqual([H, U, A]);
+    expect(getActiveRecipientEmails('calendar-weekly', 'firenze-loft')).toEqual([]);
+    expect(res.seeds).toContain(`calendar-weekly: ${H} (alte-schilderwerkstatt, bootshaus-alte-oder, farmhouse, u19)`);
+    expect(res.seeds).toContain(`calendar-weekly: ${U} (alte-schilderwerkstatt, bootshaus-alte-oder)`);
     expect(getSchedulerState('report_recipients_bootstrap_v1')).not.toBeNull();
   });
 
@@ -78,13 +85,13 @@ describe('bootstrapReportRecipients', () => {
     expect(warn).toHaveBeenCalled();
     expect(JSON.stringify(warn.mock.calls)).toContain('christian');
     expect(getActiveRecipientEmails('portfolio-monthly')).toEqual([]);
-    expect(getActiveRecipientEmails('calendar-weekly').sort()).toEqual([H, U].sort());
+    expect(getActiveRecipientEmails('calendar-weekly', 'farmhouse')).toEqual([H, U]);
   });
 
   it('mehrere Treffer mit verschiedenen Domains: Seed übersprungen und Warnung', () => {
     const p = [prop('farmhouse', [M, 'holger@example.com', 'holger@other.org'])];
     bootstrapReportRecipients(p, bi([]));
-    expect(getActiveRecipientEmails('calendar-weekly')).toEqual([]);
+    expect(getActiveRecipientEmails('calendar-weekly', 'farmhouse')).toEqual([]);
     expect(JSON.stringify(warn.mock.calls)).toContain('holger');
   });
 

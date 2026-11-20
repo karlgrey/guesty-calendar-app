@@ -58,11 +58,24 @@ describe('GET /admin/reporting', () => {
     expect(html).toContain('Weekly Summary · Florenz Loft (bis 23.11.2026)');
     expect(html).toContain('Portfolio wöchentlich');
     expect(html).toContain('Portfolio monatlich');
-    expect(html).toContain('Kalender (Nächste Gäste)');
+    expect(html).toContain('Kalender (Nächste Gäste) · Farmhouse Prasser');
+    expect(html).toContain('Kalender (Nächste Gäste) · Florenz Loft (bis 23.11.2026)');
+    // Reihenfolge: Weekly Summary je Objekt, Kalender je Objekt, dann objektübergreifende Typen
+    expect(html.indexOf('Weekly Summary · Florenz Loft')).toBeLessThan(html.indexOf('Kalender (Nächste Gäste) · Farmhouse Prasser'));
+    expect(html.indexOf('Kalender (Nächste Gäste) · Florenz Loft')).toBeLessThan(html.indexOf('Portfolio wöchentlich'));
     expect(html).toContain('/admin/reporting/recipients/1/delete');
     // genau zwei Häkchen gesetzt
     expect((html.match(/ checked/g) ?? []).length).toBe(2);
     expect(html).toMatch(/data-recipient="1" data-type="weekly-summary" data-slug="u19" checked/);
+  });
+
+  it('calendar-weekly-Häkchen je Objekt erscheint an der richtigen Zelle', async () => {
+    const m = addRecipient('m@example.com');
+    setSubscription(m.id, 'calendar-weekly', 'u19', true);
+    const html = await (await fetch(`${base}/admin/reporting`)).text();
+    expect((html.match(/ checked/g) ?? []).length).toBe(1);
+    expect(html).toMatch(/data-recipient="1" data-type="calendar-weekly" data-slug="u19" checked/);
+    expect(html).toMatch(/data-recipient="1" data-type="calendar-weekly" data-slug="farmhouse"(?! checked)/);
   });
 
   it('escaped Mailadressen', async () => {
@@ -105,6 +118,16 @@ describe('POST /admin/reporting/subscriptions', () => {
     expect((await postJson({ recipientId: m.id, reportType: 'weekly-summary', propertySlug: '', active: true })).status).toBe(400);
     expect((await postJson({ recipientId: m.id, reportType: 'portfolio-weekly', propertySlug: '', active: 'ja' })).status).toBe(400);
     expect((await postJson({ recipientId: 'x', reportType: 'portfolio-weekly', propertySlug: '', active: true })).status).toBe(400);
+  });
+
+  it('calendar-weekly wird je Objekt gespeichert; ohne oder mit unbekanntem Slug 400', async () => {
+    const m = addRecipient('m@example.com');
+    const r = await postJson({ recipientId: m.id, reportType: 'calendar-weekly', propertySlug: 'u19', active: true });
+    expect(r.status).toBe(200);
+    expect(getActiveRecipientEmails('calendar-weekly', 'u19')).toEqual(['m@example.com']);
+    expect(getActiveRecipientEmails('calendar-weekly', 'farmhouse')).toEqual([]);
+    expect((await postJson({ recipientId: m.id, reportType: 'calendar-weekly', propertySlug: '', active: true })).status).toBe(400);
+    expect((await postJson({ recipientId: m.id, reportType: 'calendar-weekly', propertySlug: 'gibts-nicht', active: true })).status).toBe(400);
   });
 
   it('404 bei unbekanntem Empfänger', async () => {
