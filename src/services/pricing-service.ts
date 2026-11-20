@@ -137,6 +137,13 @@ export function planWriteRuns(target: PricingTarget, changes: PricingChange[]): 
   ];
 }
 
+/**
+ * Obergrenze der Schreibläufe je PUT bei Guesty (#1304/#1305): je Lauf ein PUT nacheinander,
+ * `tools/agent-api.sh` wartet 90 s. Darüber lehnt die Route mit 400 ab und schreibt nichts
+ * (nicht selbst teilen: `factor` ist nicht wiederholbar). Hostex hat keine Grenze.
+ */
+export const GUESTY_MAX_RUNS_PER_CALL = 40;
+
 /** Läufe je Hostex-Schreibaufruf (deckt sich mit der Stapelgröße im Client). */
 const HOSTEX_WRITE_BATCH = 100;
 

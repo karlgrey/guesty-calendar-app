@@ -3,6 +3,7 @@
  *
  *   GET /api/agent/pricing/:slug?from=&to=   → je Tag {date, price, minNights, occupied, …}
  *   PUT /api/agent/pricing/:slug             → Body {from, to, price?|factor?, minNights?, weekdays?, dryRun?, caller?}
+ *                                              oder {basePrice, dryRun?, caller?} (#1305, nur Guesty: Grundpreis des Listings)
  *
  * Gilt für provider=guesty (Farmhouse, U19) und provider=hostex (Bootshaus, Schilderwerkstatt).
  * Eingehängt in agent-api.ts (hinter requireAgentKey). Planlogik: services/pricing-plan.ts,
@@ -10,17 +11,19 @@
  */
 
 import express from 'express';
-import { getPropertyBySlug, getPropertySlugs } from '../config/properties.js';
+import { getListingId, getPropertyBySlug, getPropertySlugs, type PropertyConfig } from '../config/properties.js';
 import { config } from '../config/index.js';
 import { berlinCalendarDay } from '../services/auto-send/berlin-day.js';
 import {
-  addDays, parsePricingRequest, planPricingChanges, validatePricingRange,
+  addDays, isBasePriceBody, parseBasePriceRequest, parsePricingRequest, planPricingChanges, validatePricingRange,
   type PricingChange, type PricingDay,
 } from '../services/pricing-plan.js';
 import {
-  findNotApplied, planWriteRuns, readPricingDays, resolvePricingTarget, writePricingChanges,
+  GUESTY_MAX_RUNS_PER_CALL, findNotApplied, planWriteRuns, readPricingDays, resolvePricingTarget, writePricingChanges,
   type PricingTarget, type WrittenRun,
 } from '../services/pricing-service.js';
+import { guestyClient } from '../services/guesty-client.js';
+import { syncListing } from '../jobs/sync-listing.js';
 import { triggerPropertyCalendarRefresh } from '../services/property-calendar-refresh.js';
 import { AppError, ExternalApiError, NotFoundError, ValidationError } from '../utils/errors.js';
 import logger from '../utils/logger.js';
@@ -106,9 +109,89 @@ function oldValues(changes: PricingChange[], run: WrittenRun, field: 'price' | '
   return [...new Set(vals)];
 }
 
+/** Grundpreis aus Guesty Financials (oberste Ebene, Zahl); fehlt er, null. */
+function basePriceOf(financials: unknown): number | null {
+  const v = (financials as { basePrice?: unknown } | null | undefined)?.basePrice;
+  return typeof v === 'number' && Number.isFinite(v) ? v : null;
+}
+
+const BASE_PRICE_NOTE = 'Grundpreis des Listings (Guesty Financials). Tagespreise im Kalender haben Vorrang; '
+  + 'bestehende Tageswerte werden nicht verändert, nur Tage ohne eigenen Preis folgen dem Grundpreis';
+
+/**
+ * #1305: Grundpreis eines Guesty-Listings setzen. Allein im Aufruf (ohne from/to/Tageswerte).
+ * dryRun liest den Ist-Wert frisch von Guesty (GET /financials/listing/{id}). Vollzug: PUT Financials
+ * {basePrice}, Nachlesen, Änderungslog, danach Listing-Cache (syncListing force) und Kalender-Refresh.
+ */
+async function putBasePrice(req: express.Request, res: express.Response, property: PropertyConfig): Promise<void> {
+  const request = parseBasePriceRequest(req.body);
+  if (property.provider !== 'guesty') {
+    throw new ValidationError(`basePrice nur für provider=guesty (Objekt ${property.slug}: ${property.provider})`);
+  }
+  const listingId = getListingId(property);
+  const caller = callerOf(req, request.caller);
+  const target: PricingTarget = { property, provider: 'guesty', listingId };
+
+  const financials = await guestyClient.getListingFinancials(listingId);
+  const old = basePriceOf(financials);
+  const weekend = (financials as { weekendBasePrice?: unknown } | null)?.weekendBasePrice;
+  const base = {
+    property: summary(target), provider: target.provider,
+    requested: { basePrice: request.basePrice },
+    dryRun: request.dryRun,
+    basePrice: { old, new: request.basePrice },
+    unchanged: old === request.basePrice,
+    ...(typeof weekend === 'number' && weekend > 0 ? { weekendBasePrice: weekend } : {}),
+    note: BASE_PRICE_NOTE,
+  };
+
+  if (request.dryRun) {
+    logger.info({ slug: property.slug, basePrice: base.basePrice, caller }, 'Agent pricing base price dry run');
+    res.json(base);
+    return;
+  }
+  if (base.unchanged) {
+    // Nichts zu schreiben, aber der Listing-Cache kann veraltet sein (Änderung direkt in Guesty, TTL 24 h).
+    const sync = await syncListing(listingId, true);
+    res.json({ ...base, applied: true, written: false, current: old, listingCacheRefreshed: sync.success, calendarSync: 'nicht nötig' });
+    return;
+  }
+
+  await guestyClient.updateListingBasePrice(listingId, request.basePrice);
+  logger.info({ slug: property.slug, provider: target.provider, listingId, basePrice: base.basePrice, caller }, 'Agent pricing base price change');
+
+  // Ab hier ist geschrieben: Fehler beim Nachlesen machen die Antwort nicht zum Fehler.
+  let current: number | null = null;
+  let verifyError: string | undefined;
+  try {
+    current = basePriceOf(await guestyClient.getListingFinancials(listingId));
+  } catch (err) {
+    verifyError = err instanceof Error ? err.message : String(err);
+    logger.warn({ slug: property.slug, listingId, err }, 'Base price written, but re-reading Guesty failed');
+  }
+  const sync = await syncListing(listingId, true);
+  const calendarSync = triggerPropertyCalendarRefresh(property, listingId);
+  res.json({
+    ...base,
+    applied: true,
+    written: true,
+    current,
+    ...(verifyError !== undefined ? { verifyFailed: true, verifyError } : {}),
+    ...(verifyError === undefined && current !== request.basePrice
+      ? { notApplied: true, notAppliedNote: 'Guesty zeigt noch einen anderen Grundpreis, mit dryRun prüfen' }
+      : {}),
+    listingCacheRefreshed: sync.success,
+    calendarSync,
+  });
+}
+
 router.put('/pricing/:slug', async (req, res) => {
   try {
     const property = requireProperty(req.params.slug);
+    if (isBasePriceBody(req.body)) {
+      await putBasePrice(req, res, property);
+      return;
+    }
     const todayBerlin = today();
     const request = parsePricingRequest(req.body, todayBerlin);
     const target = await resolvePricingTarget(property);
@@ -120,6 +203,8 @@ router.put('/pricing/:slug', async (req, res) => {
     const before = await readPricingDays(target, request.from, request.to, todayBerlin);
     const plan = planPricingChanges(before, request, todayBerlin);
     const runs = planWriteRuns(target, plan.changes);
+    const maxRuns = target.provider === 'guesty' ? GUESTY_MAX_RUNS_PER_CALL : null;
+    const exceedsMaxRuns = maxRuns !== null && runs.length > maxRuns;
     const base = {
       property: summary(target), provider: target.provider,
       from: request.from, to: request.to,
@@ -139,7 +224,18 @@ router.put('/pricing/:slug', async (req, res) => {
 
     if (request.dryRun) {
       logger.info({ slug: property.slug, from: request.from, to: request.to, changedDays: plan.changes.length, caller }, 'Agent pricing dry run');
-      res.json({ ...base, runs });
+      res.json({ ...base, runs, maxRuns, exceedsMaxRuns });
+      return;
+    }
+    if (exceedsMaxRuns) {
+      // #1304: nicht selbst teilen (factor ist nicht wiederholbar), nichts schreiben.
+      logger.warn({ slug: property.slug, from: request.from, to: request.to, runs: runs.length, maxRuns, caller }, 'Agent pricing rejected: too many runs');
+      res.status(400).json({
+        error: `Zu viele Schreibläufe für Guesty: ${runs.length} (maximal ${maxRuns} je Aufruf). `
+          + 'Zeitraum teilen und nacheinander aufrufen (vorher mit dryRun die Zahl der runs prüfen); geschrieben wurde nichts',
+        runs: runs.length,
+        maxRuns,
+      });
       return;
     }
     if (plan.changes.length === 0) {

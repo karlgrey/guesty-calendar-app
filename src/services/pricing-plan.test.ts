@@ -3,6 +3,7 @@ import { ValidationError } from '../utils/errors.js';
 import {
   addDays, daysInclusive, isoWeekday, selectDates, validatePricingRange,
   parsePricingRequest, applyFactor, planPricingChanges, groupWriteRuns,
+  isBasePriceBody, parseBasePriceRequest,
   type PricingDay, type PricingRequest,
 } from './pricing-plan.js';
 
@@ -187,5 +188,33 @@ describe('groupWriteRuns', () => {
       { date: '2027-05-02', payload: { minNights: 2, price: 140 } },
     ]);
     expect(runs.map((r) => [r.from, r.to, r.nights])).toEqual([['2027-05-01', '2027-05-02', 2], ['2027-05-03', '2027-05-03', 1]]);
+  });
+});
+
+describe('parseBasePriceRequest (#1305)', () => {
+  it('basePrice allein, mit dryRun und caller', () => {
+    expect(parseBasePriceRequest({ basePrice: 1600 })).toEqual({ basePrice: 1600, dryRun: false });
+    expect(parseBasePriceRequest({ basePrice: 1599.5, dryRun: true, caller: ' bot ' }))
+      .toEqual({ basePrice: 1599.5, dryRun: true, caller: 'bot' });
+  });
+  it('Grenzen wie bei price: > 0, ≤ 10000, zwei Nachkommastellen', () => {
+    for (const p of [0, -1, 10000.01, 1.234, NaN, '1600', null]) {
+      expect(() => parseBasePriceRequest({ basePrice: p })).toThrow(ValidationError);
+    }
+    expect(parseBasePriceRequest({ basePrice: 10000 }).basePrice).toBe(10000);
+  });
+  it.each(['from', 'to', 'price', 'factor', 'minNights', 'weekdays', 'foo'])('%s zusammen mit basePrice → 400', (key) => {
+    expect(() => parseBasePriceRequest({ basePrice: 1600, [key]: 1 })).toThrow(/basePrice wird allein gesetzt/);
+  });
+  it('dryRun und caller werden wie bei Tageswerten geprüft', () => {
+    expect(() => parseBasePriceRequest({ basePrice: 1600, dryRun: 'ja' })).toThrow(ValidationError);
+    expect(() => parseBasePriceRequest({ basePrice: 1600, caller: 'x'.repeat(101) })).toThrow(ValidationError);
+  });
+  it('isBasePriceBody erkennt den Schlüssel', () => {
+    expect(isBasePriceBody({ basePrice: 1 })).toBe(true);
+    expect(isBasePriceBody({ basePrice: undefined })).toBe(true);
+    expect(isBasePriceBody({ from: '2027-01-01' })).toBe(false);
+    expect(isBasePriceBody(null)).toBe(false);
+    expect(isBasePriceBody([])).toBe(false);
   });
 });

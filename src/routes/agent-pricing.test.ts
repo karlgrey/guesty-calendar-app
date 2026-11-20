@@ -16,11 +16,19 @@ vi.mock('../config/index.js', async (importOriginal) => {
 
 const getCalendarMock = vi.fn();
 const setPricingMock = vi.fn();
+const getFinancialsMock = vi.fn();
+const setBasePriceMock = vi.fn();
 vi.mock('../services/guesty-client.js', () => ({
   guestyClient: {
     getCalendar: (...a: unknown[]) => getCalendarMock(...a),
     setListingCalendarPricing: (...a: unknown[]) => setPricingMock(...a),
+    getListingFinancials: (...a: unknown[]) => getFinancialsMock(...a),
+    updateListingBasePrice: (...a: unknown[]) => setBasePriceMock(...a),
   },
+}));
+const syncListingMock = vi.fn();
+vi.mock('../jobs/sync-listing.js', () => ({
+  syncListing: (...a: unknown[]) => syncListingMock(...a),
 }));
 
 const getPropertiesMock = vi.fn();
@@ -51,6 +59,7 @@ vi.mock('../utils/logger.js', () => ({
 }));
 
 import agentPricingRouter, { pricingVerifyDelays } from './agent-pricing.js';
+import { GUESTY_MAX_RUNS_PER_CALL } from '../services/pricing-service.js';
 import { ExternalApiError } from '../utils/errors.js';
 
 let server: Server; let base: string;
@@ -102,7 +111,10 @@ beforeEach(() => {
   pricingVerifyDelays.hostex = [0];
   pricingVerifyDelays.guesty = [0];
   for (const m of [getCalendarMock, setPricingMock, getPropertiesMock, getListingCalendarsMock, getReservationsMock,
-    updatePricesMock, updateRestrictionsMock, triggerRefreshMock, loggerInfoMock]) m.mockReset();
+    updatePricesMock, updateRestrictionsMock, triggerRefreshMock, loggerInfoMock,
+    getFinancialsMock, setBasePriceMock, syncListingMock]) m.mockReset();
+  setBasePriceMock.mockResolvedValue({ basePrice: 1600 });
+  syncListingMock.mockResolvedValue({ success: true, listingId: FARMHOUSE_ID });
   setPricingMock.mockResolvedValue(undefined);
   triggerRefreshMock.mockReturnValue('angestoßen');
   getPropertiesMock.mockResolvedValue([
@@ -372,5 +384,179 @@ describe('PUT /pricing/:slug Hostex', () => {
     expect(r.body.notApplied).toBeUndefined();
     expect(r.body.calendarSync).toBe('angestoßen');
     expect(order).toEqual(['read', 'write', 'read', 'refresh']);
+  });
+});
+
+/** n einzelne, nicht zusammenhängende Läufe (jeder zweite Tag) ab 2027-05-01. */
+function alternatingDays(n: number) {
+  const ds = dates('2027-05-01', '2027-12-31').slice(0, 2 * n - 1);
+  return { from: ds[0], to: ds[ds.length - 1], days: ds.map((d, i) => gDay(d, i % 2 === 0 ? 139 : 160, 1)) };
+}
+
+describe('PUT /pricing/:slug Obergrenze Läufe bei Guesty (#1304/#1305)', () => {
+  it('Grenze 40 an einer Stelle', () => {
+    expect(GUESTY_MAX_RUNS_PER_CALL).toBe(40);
+  });
+
+  it('41 Läufe ohne dryRun: 400 mit runs/maxRuns/Hinweis, kein Schreiben, kein Refresh, kein Änderungslog', async () => {
+    const { from, to, days } = alternatingDays(41);
+    getCalendarMock.mockResolvedValue(days);
+    const r = await req('PUT', '/pricing/u19', { from, to, price: 160 });
+    expect(r.status).toBe(400);
+    expect(r.body.runs).toBe(41);
+    expect(r.body.maxRuns).toBe(40);
+    expect(r.body.error).toMatch(/Zeitraum.*teilen/);
+    expect(setPricingMock).not.toHaveBeenCalled();
+    expect(triggerRefreshMock).not.toHaveBeenCalled();
+    expect(loggerInfoMock.mock.calls.filter((c) => c[1] === 'Agent pricing change')).toHaveLength(0);
+  });
+
+  it('genau 40 Läufe: wird geschrieben (40 PUTs)', async () => {
+    const { from, to, days } = alternatingDays(40);
+    const after = days.map((d) => ({ ...d, price: 160 }));
+    getCalendarMock.mockResolvedValueOnce(days).mockResolvedValueOnce(after);
+    const r = await req('PUT', '/pricing/u19', { from, to, price: 160 });
+    expect(r.status).toBe(200);
+    expect(setPricingMock).toHaveBeenCalledTimes(40);
+    expect(r.body.applied).toBe(true);
+    expect(triggerRefreshMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('dryRun mit 41 Läufen: 200, Plan wie bisher, maxRuns 40, exceedsMaxRuns true', async () => {
+    const { from, to, days } = alternatingDays(41);
+    getCalendarMock.mockResolvedValue(days);
+    const r = await req('PUT', '/pricing/u19', { from, to, price: 160, dryRun: true });
+    expect(r.status).toBe(200);
+    expect(r.body.runs).toHaveLength(41);
+    expect(r.body.maxRuns).toBe(40);
+    expect(r.body.exceedsMaxRuns).toBe(true);
+    expect(setPricingMock).not.toHaveBeenCalled();
+  });
+
+  it('dryRun mit 40 Läufen: exceedsMaxRuns false', async () => {
+    const { from, to, days } = alternatingDays(40);
+    getCalendarMock.mockResolvedValue(days);
+    const r = await req('PUT', '/pricing/u19', { from, to, price: 160, dryRun: true });
+    expect(r.body.maxRuns).toBe(40);
+    expect(r.body.exceedsMaxRuns).toBe(false);
+  });
+
+  it('Hostex unverändert: 60 Läufe werden geschrieben (ein Stapel), dryRun ohne Grenze', async () => {
+    const ds = dates('2027-05-01', '2027-12-31').slice(0, 119);
+    const before = ds.map((d, i) => hDay(d, i % 2 === 0 ? 129 : 140, 2));
+    const after = ds.map((d) => hDay(d, 140, 2));
+    getListingCalendarsMock.mockResolvedValueOnce(hostexCal(before)).mockResolvedValueOnce(hostexCal(before))
+      .mockResolvedValueOnce(hostexCal(after));
+    const dry = await req('PUT', '/pricing/bootshaus-alte-oder', { from: ds[0], to: ds[118], price: 140, dryRun: true });
+    expect(dry.status).toBe(200);
+    expect(dry.body.runs).toHaveLength(60);
+    expect(dry.body.maxRuns).toBeNull();
+    expect(dry.body.exceedsMaxRuns).toBe(false);
+    const r = await req('PUT', '/pricing/bootshaus-alte-oder', { from: ds[0], to: ds[118], price: 140 });
+    expect(r.status).toBe(200);
+    expect(updatePricesMock).toHaveBeenCalledTimes(1);
+    expect(updatePricesMock.mock.calls[0][0].prices).toHaveLength(60);
+    expect(r.body.written).toHaveLength(60);
+  });
+});
+
+describe('PUT /pricing/:slug basePrice (#1305)', () => {
+  it('farmhouse dryRun: liest alt frisch von Guesty, zeigt alt 1500 und neu 1600, schreibt nichts', async () => {
+    getFinancialsMock.mockResolvedValue({ basePrice: 1500, weekendBasePrice: null, currency: 'EUR' });
+    const r = await req('PUT', '/pricing/farmhouse', { basePrice: 1600, dryRun: true });
+    expect(r.status).toBe(200);
+    expect(getFinancialsMock).toHaveBeenCalledWith(FARMHOUSE_ID);
+    expect(r.body.basePrice).toEqual({ old: 1500, new: 1600 });
+    expect(r.body.unchanged).toBe(false);
+    expect(r.body.dryRun).toBe(true);
+    expect(setBasePriceMock).not.toHaveBeenCalled();
+    expect(syncListingMock).not.toHaveBeenCalled();
+    expect(triggerRefreshMock).not.toHaveBeenCalled();
+    expect(getCalendarMock).not.toHaveBeenCalled();
+    expect(setPricingMock).not.toHaveBeenCalled();
+  });
+
+  it('Vollzug: PUT Financials, Nachlesen, Änderungslog mit alt/neu/Aufrufer, Listing-Cache und Kalender auffrischen', async () => {
+    const order: string[] = [];
+    getFinancialsMock
+      .mockImplementationOnce(async () => { order.push('read'); return { basePrice: 1500 }; })
+      .mockImplementationOnce(async () => { order.push('read'); return { basePrice: 1600 }; });
+    setBasePriceMock.mockImplementation(async () => { order.push('write'); return { basePrice: 1600 }; });
+    syncListingMock.mockImplementation(async () => { order.push('listing-sync'); return { success: true }; });
+    triggerRefreshMock.mockImplementation(() => { order.push('refresh'); return 'angestoßen'; });
+    const r = await req('PUT', '/pricing/farmhouse', { basePrice: 1600, caller: 'preise-2027' });
+    expect(r.status).toBe(200);
+    expect(setBasePriceMock).toHaveBeenCalledWith(FARMHOUSE_ID, 1600);
+    expect(r.body).toMatchObject({ applied: true, written: true, basePrice: { old: 1500, new: 1600 }, current: 1600, listingCacheRefreshed: true, calendarSync: 'angestoßen' });
+    expect(r.body.notApplied).toBeUndefined();
+    expect(order).toEqual(['read', 'write', 'read', 'listing-sync', 'refresh']);
+    expect(syncListingMock).toHaveBeenCalledWith(FARMHOUSE_ID, true);
+    const log = loggerInfoMock.mock.calls.find((c) => c[1] === 'Agent pricing base price change');
+    expect(log?.[0]).toMatchObject({ slug: 'farmhouse', basePrice: { old: 1500, new: 1600 } });
+    expect(log?.[0].caller).toMatch(/^preise-2027 \(key #1\)$/);
+    expect(getCalendarMock).not.toHaveBeenCalled();
+    expect(setPricingMock).not.toHaveBeenCalled();
+  });
+
+  it('schon gesetzt: kein Schreiben, aber Listing-Cache auffrischen (veralteter Cache)', async () => {
+    getFinancialsMock.mockResolvedValue({ basePrice: 1600 });
+    const r = await req('PUT', '/pricing/farmhouse', { basePrice: 1600 });
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ applied: true, written: false, unchanged: true, listingCacheRefreshed: true, calendarSync: 'nicht nötig' });
+    expect(setBasePriceMock).not.toHaveBeenCalled();
+    expect(syncListingMock).toHaveBeenCalledWith(FARMHOUSE_ID, true);
+    expect(triggerRefreshMock).not.toHaveBeenCalled();
+  });
+
+  it('Nachlesen zeigt alten Wert: notApplied, Nachlesefehler: verifyFailed (beides 200, geschrieben)', async () => {
+    getFinancialsMock.mockResolvedValueOnce({ basePrice: 1500 }).mockResolvedValueOnce({ basePrice: 1500 });
+    const a = await req('PUT', '/pricing/farmhouse', { basePrice: 1600 });
+    expect(a.status).toBe(200);
+    expect(a.body.notApplied).toBe(true);
+    expect(a.body.current).toBe(1500);
+    getFinancialsMock.mockReset().mockResolvedValueOnce({ basePrice: 1500 }).mockRejectedValueOnce(new Error('timeout'));
+    const b = await req('PUT', '/pricing/farmhouse', { basePrice: 1600 });
+    expect(b.status).toBe(200);
+    expect(b.body).toMatchObject({ written: true, verifyFailed: true, verifyError: 'timeout' });
+  });
+
+  it('Schreibfehler bei Guesty: Fehlerstatus, kein Änderungslog, kein Refresh', async () => {
+    getFinancialsMock.mockResolvedValue({ basePrice: 1500 });
+    setBasePriceMock.mockRejectedValue(new ExternalApiError('Guesty 403', 502, 'guesty'));
+    const r = await req('PUT', '/pricing/farmhouse', { basePrice: 1600 });
+    expect(r.status).toBe(502);
+    expect(loggerInfoMock.mock.calls.filter((c) => c[1] === 'Agent pricing base price change')).toHaveLength(0);
+    expect(syncListingMock).not.toHaveBeenCalled();
+    expect(triggerRefreshMock).not.toHaveBeenCalled();
+  });
+
+  it('Hostex-Objekt: 400 ohne Anbieteraufruf', async () => {
+    const r = await req('PUT', '/pricing/bootshaus-alte-oder', { basePrice: 150, dryRun: true });
+    expect(r.status).toBe(400);
+    expect(r.body.error).toMatch(/nur für provider=guesty/);
+    expect(getPropertiesMock).not.toHaveBeenCalled();
+    expect(getFinancialsMock).not.toHaveBeenCalled();
+  });
+
+  it('airbnb-mail: 400; unbekannter Slug: 404', async () => {
+    expect((await req('PUT', '/pricing/firenze-loft', { basePrice: 150 })).status).toBe(400);
+    expect((await req('PUT', '/pricing/gibtsnicht', { basePrice: 150 })).status).toBe(404);
+  });
+
+  it.each([
+    [{ basePrice: 0 }], [{ basePrice: 10001 }], [{ basePrice: 1600.123 }], [{ basePrice: '1600' }],
+    [{ basePrice: 1600, from: '2027-01-01', to: '2027-01-31' }], [{ basePrice: 1600, price: 1600 }],
+  ])('Validierung %j → 400 ohne Guesty-Aufruf', async (body) => {
+    const r = await req('PUT', '/pricing/farmhouse', body);
+    expect(r.status).toBe(400);
+    expect(getFinancialsMock).not.toHaveBeenCalled();
+    expect(setBasePriceMock).not.toHaveBeenCalled();
+  });
+
+  it('Guesty liefert keinen basePrice: alt null, Schreiben möglich', async () => {
+    getFinancialsMock.mockResolvedValue({});
+    const r = await req('PUT', '/pricing/farmhouse', { basePrice: 1600, dryRun: true });
+    expect(r.status).toBe(200);
+    expect(r.body.basePrice).toEqual({ old: null, new: 1600 });
   });
 });
