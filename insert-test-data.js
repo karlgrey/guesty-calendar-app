@@ -48,7 +48,7 @@ for (let i = 0; i < 90; i++) {
   // Weekend pricing (Fri-Sun)
   const dayOfWeek = date.getDay();
   const isWeekend = dayOfWeek === 5 || dayOfWeek === 6 || dayOfWeek === 0;
-  const price = isWeekend ? 1800 : 1500;
+  const price = isWeekend ? 1800 : 1600;
 
   testData.push({
     listing_id: listingId,

@@ -209,7 +209,7 @@ Fetches property information:
   "currency": "EUR",
   "accommodates": 15,
   "pricing": {
-    "basePrice": 1500,
+    "basePrice": 1600,
     "guestsIncluded": 5,
     "extraGuestFee": 100,
     "weeklyDiscount": 15,
@@ -226,7 +226,7 @@ Fetches availability for date range:
     {
       "date": "2025-04-15",
       "status": "available",
-      "price": 1500,
+      "price": 1600,
       "minNights": 3
     }
   ]
