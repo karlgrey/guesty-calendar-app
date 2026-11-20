@@ -1281,6 +1281,27 @@ export class GuestyClient {
     return res;
   }
 
+  /** Preis/Mindestnächte je Datumsbereich (#1299): PUT /availability-pricing/api/calendar/listings/{id}, Body {startDate, endDate, price?, minNights?} (Open API, endDate inklusiv, max. 730 Tage). Status wird NICHT gesendet (bleibt unverändert). */
+  async setListingCalendarPricing(listingId: string, fields: {
+    startDate: string;
+    endDate: string;
+    price?: number;
+    minNights?: number;
+  }): Promise<any> {
+    if (fields.price === undefined && fields.minNights === undefined) {
+      throw new Error('setListingCalendarPricing: price oder minNights erforderlich');
+    }
+    const body: Record<string, unknown> = { startDate: fields.startDate, endDate: fields.endDate };
+    if (fields.price !== undefined) body.price = fields.price;
+    if (fields.minNights !== undefined) body.minNights = fields.minNights;
+    const res = await this.request<any>(`/availability-pricing/api/calendar/listings/${listingId}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    });
+    logger.info({ listingId, startDate: fields.startDate, endDate: fields.endDate, price: fields.price, minNights: fields.minNights }, 'Updated Guesty listing calendar pricing');
+    return res;
+  }
+
   /**
    * Health check: verify API credentials and connectivity
    */

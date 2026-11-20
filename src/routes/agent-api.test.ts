@@ -1270,6 +1270,18 @@ describe('agent-api', () => {
       expect(r.status).toBe(401);
     });
   });
+  describe('GET/PUT /pricing/:slug eingehängt (#1299, Logik in agent-pricing.test.ts)', () => {
+    it('ohne Key 401, mit Key unbekannter Slug 404', async () => {
+      expect((await fetch(`${base}/api/agent/pricing/u19`)).status).toBe(401);
+      const r = await fetch(`${base}/api/agent/pricing/gibt-es-nicht`, { headers: KEY });
+      expect(r.status).toBe(404);
+      const p = await fetch(`${base}/api/agent/pricing/gibt-es-nicht`, {
+        method: 'PUT', headers: KEY, body: JSON.stringify({ from: '2027-05-01', to: '2027-05-02', price: 100 }),
+      });
+      expect(p.status).toBe(404);
+    });
+  });
+
   describe('POST /availability/:slug/sync (#1055)', () => {
     const farmhouseListingId = getListingId(getPropertyBySlug('farmhouse')!);
     const post = (slug: string, qs = '', headers: Record<string, string> = KEY) =>

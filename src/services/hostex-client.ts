@@ -316,6 +316,63 @@ export class HostexClient {
     return { ok: true };
   }
 
+  /** POST /v3/listings/prices (#1299). Preis je Datumsbereich, Ganzzahl in Euro. start_date/end_date inklusive (Live-Probe 20.11.2026). Asynchron verarbeitet: 200 = eingereiht. */
+  async updateListingPrices(opts: {
+    channelType: string;
+    listingId: string;
+    prices: Array<{ startDate: string; endDate: string; price: number }>;
+  }): Promise<{ ok: true }> {
+    for (const p of opts.prices) {
+      if (!Number.isInteger(p.price) || p.price <= 0) {
+        throw new Error(`Hostex-Preis muss eine positive Ganzzahl sein (${p.startDate}..${p.endDate}: ${p.price})`);
+      }
+    }
+    for (let i = 0; i < opts.prices.length; i += 100) {
+      const batch = opts.prices.slice(i, i + 100);
+      await this.call<unknown>('POST', '/listings/prices', {
+        channel_type: opts.channelType,
+        listing_id: opts.listingId,
+        prices: batch.map((p) => ({ start_date: p.startDate, end_date: p.endDate, price: p.price })),
+      });
+    }
+    if (opts.prices.length > 0) {
+      logger.info({ listingId: opts.listingId, ranges: opts.prices.length }, 'Hostex listing prices updated');
+    }
+    return { ok: true };
+  }
+
+  /** POST /v3/listings/restrictions (#1299). start_date/end_date inklusive. Nicht gesendete Felder bleiben laut Probe erhalten, deshalb sendet der Aufrufer closed_on_arrival/closed_on_departure explizit mit. */
+  async updateListingRestrictions(opts: {
+    channelType: string;
+    listingId: string;
+    restrictions: Array<{
+      startDate: string;
+      endDate: string;
+      minStayOnArrival?: number;
+      closedOnArrival?: boolean;
+      closedOnDeparture?: boolean;
+    }>;
+  }): Promise<{ ok: true }> {
+    for (let i = 0; i < opts.restrictions.length; i += 100) {
+      const batch = opts.restrictions.slice(i, i + 100);
+      await this.call<unknown>('POST', '/listings/restrictions', {
+        channel_type: opts.channelType,
+        listing_id: opts.listingId,
+        restrictions: batch.map((r) => ({
+          start_date: r.startDate,
+          end_date: r.endDate,
+          ...(r.minStayOnArrival !== undefined ? { min_stay_on_arrival: r.minStayOnArrival } : {}),
+          ...(r.closedOnArrival !== undefined ? { closed_on_arrival: r.closedOnArrival } : {}),
+          ...(r.closedOnDeparture !== undefined ? { closed_on_departure: r.closedOnDeparture } : {}),
+        })),
+      });
+    }
+    if (opts.restrictions.length > 0) {
+      logger.info({ listingId: opts.listingId, ranges: opts.restrictions.length }, 'Hostex listing restrictions updated');
+    }
+    return { ok: true };
+  }
+
   /**
    * GET /v3/conversations — list conversations (offset required by API)
    */

@@ -1,6 +1,6 @@
 /**
- * Nach einer Kalender-Mutation über die Agent-API (#1167, Guesty-Blocker): lokale Availability
- * frisch von Guesty ziehen (Website) und danach den Google-Kalender des Objekts nachziehen.
+ * Nach einer Kalender-Mutation über die Agent-API (#1167, Guesty-Blocker; #1299 Preise, auch
+ * Hostex): lokale Availability frisch vom Anbieter ziehen (Website) und danach den Google-Kalender des Objekts nachziehen.
  * Fire-and-forget per setImmediate NACH dem Senden der Antwort (ein Objekt-Sync dauert Minuten).
  * In-Memory-Guard je Slug: läuft schon ein Refresh, wird genau ein Nachlauf vermerkt.
  */
@@ -8,6 +8,8 @@
 import type { PropertyConfig } from '../config/properties.js';
 import { syncAvailability } from '../jobs/sync-availability.js';
 import { syncGoogleCalendarForProperty } from '../jobs/sync-google-calendar.js';
+import { syncHostexProperty } from '../jobs/hostex/sync-properties.js';
+import { syncHostexCalendar } from '../jobs/hostex/sync-calendar.js';
 import logger from '../utils/logger.js';
 
 const running = new Map<string, { again: boolean }>();
@@ -24,7 +26,9 @@ export async function runPropertyCalendarRefresh(property: PropertyConfig, listi
     do {
       cur.again = false;
       try {
-        const r = await syncAvailability(listingId, true);
+        const r = property.provider === 'hostex'
+          ? await syncHostexAvailability(property)
+          : await syncAvailability(listingId, true);
         if (!r.success) logger.warn({ slug: property.slug, error: r.error }, 'Availability-Sync nach Kalender-Mutation fehlgeschlagen (non-fatal)');
       } catch (error) {
         logger.warn({ slug: property.slug, error }, 'Availability-Sync nach Kalender-Mutation geworfen (non-fatal)');
@@ -41,6 +45,18 @@ export async function runPropertyCalendarRefresh(property: PropertyConfig, listi
   } finally {
     running.delete(property.slug);
   }
+}
+
+/**
+ * #1299 Hostex-Objekte (Preis-/Mindestnächte-Änderung): Property frisch holen, dann den
+ * Kanal-Kalender (Preis, min_stay) in die lokale availability spiegeln. Reservierungen
+ * bleiben unberührt (eigener Sync), der Kalender-Sync liest sie lokal für die Belegung.
+ */
+async function syncHostexAvailability(property: PropertyConfig): Promise<{ success: boolean; error?: string }> {
+  const p = await syncHostexProperty(property);
+  if (!p.success || !p.hostexProperty) return { success: false, error: p.error ?? 'Hostex-Property nicht geladen' };
+  const cal = await syncHostexCalendar(property, p.hostexProperty);
+  return { success: cal.success, error: cal.error };
 }
 
 /** Startet den Refresh nach dem aktuellen Tick; Rückgabe = Antwortfeld `calendarSync`. */
