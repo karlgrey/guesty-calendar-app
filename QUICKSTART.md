@@ -81,8 +81,8 @@ node test-auth.js
 ## Current Configuration
 
 ```env
-GUESTY_CLIENT_ID=0oaqsin3xcWX8kt035d7
-GUESTY_CLIENT_SECRET=jzoBKqiLR4w4u2ZH9PG-tfrwTjsIxIMzs-U0IGgoqJ7yjL4iQi9V_kfr2y5Gn8NF
+GUESTY_CLIENT_ID=your_client_id_here
+GUESTY_CLIENT_SECRET=your_client_secret_here
 GUESTY_PROPERTY_ID=686d1e927ae7af00234115ad
 BOOKING_RECIPIENT_EMAIL=booking@farmhouse-prasser.de
 ```
