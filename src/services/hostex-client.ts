@@ -25,6 +25,30 @@ import type {
   HostexListingsData,
 } from '../types/hostex.js';
 
+/**
+ * Maximale Check-in-Spanne je Reservierungsaufruf (Tage, beide Grenzen inklusiv):
+ * Live belegt (20.11.2026) — 2027-01-01..2027-06-29 geht, ..06-30 scheitert mit
+ * "The check-in range cannot exceed 180 days." (#1305).
+ */
+export const HOSTEX_RESERVATION_WINDOW_DAYS = 180;
+
+const DAY_MS = 86_400_000;
+const utcDay = (s: string): number => Date.parse(`${s}T00:00:00Z`) / DAY_MS;
+const fromUtcDay = (d: number): string => new Date(d * DAY_MS).toISOString().slice(0, 10);
+
+/** Teilt [start,end] in lückenlose Fenster ≤ 180 Tage; sonst (eine Grenze fehlt, start>end, ≤180) ein Fenster. */
+function splitCheckInRange(start?: string, end?: string): Array<[string | undefined, string | undefined]> {
+  if (!start || !end) return [[start, end]];
+  const s = utcDay(start);
+  const e = utcDay(end);
+  if (!Number.isFinite(s) || !Number.isFinite(e) || e - s + 1 <= HOSTEX_RESERVATION_WINDOW_DAYS) return [[start, end]];
+  const out: Array<[string, string]> = [];
+  for (let ws = s; ws <= e; ws += HOSTEX_RESERVATION_WINDOW_DAYS) {
+    out.push([fromUtcDay(ws), fromUtcDay(Math.min(ws + HOSTEX_RESERVATION_WINDOW_DAYS - 1, e))]);
+  }
+  return out;
+}
+
 // ── Conversation / Messaging types ───────────────────────────────────────────
 
 export interface HostexGuest {
@@ -234,6 +258,31 @@ export class HostexClient {
     startCheckIn?: string;
     endCheckIn?: string;
   } = {}): Promise<HostexReservation[]> {
+    const windows = splitCheckInRange(opts.startCheckIn, opts.endCheckIn);
+    if (windows.length <= 1) return this.getReservationsWindow(opts);
+
+    const seen = new Set<string>();
+    const merged: HostexReservation[] = [];
+    for (const [start, end] of windows) {
+      const batch = await this.getReservationsWindow({ propertyId: opts.propertyId, startCheckIn: start, endCheckIn: end });
+      for (const r of batch) {
+        const key = r.reservation_code || (r as { id?: string }).id;
+        if (key) {
+          if (seen.has(String(key))) continue;
+          seen.add(String(key));
+        }
+        merged.push(r);
+      }
+    }
+    return merged;
+  }
+
+  /** Ein Hostex-Reservierungsaufruf (ein Check-in-Fenster) mit limit/offset-Paginierung. */
+  private async getReservationsWindow(opts: {
+    propertyId?: string;
+    startCheckIn?: string;
+    endCheckIn?: string;
+  }): Promise<HostexReservation[]> {
     const limit = 100;
     let offset = 0;
     const all: HostexReservation[] = [];
