@@ -98,6 +98,14 @@ export function validatePricingRange(from: unknown, to: unknown, label = ''): { 
 }
 
 const ALLOWED_KEYS = ['from', 'to', 'price', 'factor', 'minNights', 'weekdays', 'dryRun', 'caller'];
+/** #1305: Grundpreis des Listings wird allein gesetzt, ohne Datumsbereich und ohne Tageswerte. */
+const BASE_PRICE_KEYS = ['basePrice', 'dryRun', 'caller'];
+
+export interface BasePriceRequest {
+  basePrice: number;
+  dryRun: boolean;
+  caller?: string;
+}
 
 function isFiniteNumber(v: unknown): v is number {
   return typeof v === 'number' && Number.isFinite(v);
@@ -110,7 +118,7 @@ export function parsePricingRequest(body: unknown, todayBerlin: string): Pricing
   const b = body as Record<string, unknown>;
   for (const key of Object.keys(b)) {
     if (!ALLOWED_KEYS.includes(key)) {
-      throw new ValidationError(`Unbekannter Schlüssel "${key}". Erlaubt: ${ALLOWED_KEYS.join(', ')}`);
+      throw new ValidationError(`Unbekannter Schlüssel "${key}". Erlaubt: ${ALLOWED_KEYS.join(', ')} (Grundpreis: basePrice allein, mit dryRun/caller)`);
     }
   }
   const { from, to } = validatePricingRange(b.from, b.to);
@@ -125,16 +133,7 @@ export function parsePricingRequest(body: unknown, todayBerlin: string): Pricing
   }
   const req: PricingRequest = { from, to, dryRun: false };
 
-  if (b.price !== undefined) {
-    const p = b.price;
-    if (!isFiniteNumber(p) || p <= 0 || p > PRICING_MAX_PRICE) {
-      throw new ValidationError(`price muss eine Zahl > 0 und ≤ ${PRICING_MAX_PRICE} sein`);
-    }
-    if (Math.abs(p * 100 - Math.round(p * 100)) >= 1e-9) {
-      throw new ValidationError('price darf höchstens zwei Nachkommastellen haben');
-    }
-    req.price = p;
-  }
+  if (b.price !== undefined) req.price = parseAmount(b.price, 'price');
   if (b.factor !== undefined) {
     const f = b.factor;
     if (!isFiniteNumber(f) || f <= 0 || f > PRICING_MAX_FACTOR) {
@@ -156,18 +155,61 @@ export function parsePricingRequest(body: unknown, todayBerlin: string): Pricing
     }
     req.weekdays = [...new Set(w as number[])].sort((a, c) => a - c);
   }
-  if (b.dryRun !== undefined) {
-    if (typeof b.dryRun !== 'boolean') throw new ValidationError('dryRun muss ein Boolean sein');
-    req.dryRun = b.dryRun;
+  req.dryRun = parseDryRun(b.dryRun);
+  const caller = parseCaller(b.caller);
+  if (caller) req.caller = caller;
+  return req;
+}
+
+/** Betrag in Euro: > 0, ≤ PRICING_MAX_PRICE, höchstens zwei Nachkommastellen (price und basePrice). */
+function parseAmount(p: unknown, name: string): number {
+  if (!isFiniteNumber(p) || p <= 0 || p > PRICING_MAX_PRICE) {
+    throw new ValidationError(`${name} muss eine Zahl > 0 und ≤ ${PRICING_MAX_PRICE} sein`);
   }
-  if (b.caller !== undefined) {
-    if (typeof b.caller !== 'string') {
-      throw new ValidationError('caller muss ein String mit höchstens 100 Zeichen sein');
+  if (Math.abs(p * 100 - Math.round(p * 100)) >= 1e-9) {
+    throw new ValidationError(`${name} darf höchstens zwei Nachkommastellen haben`);
+  }
+  return p;
+}
+
+function parseDryRun(v: unknown): boolean {
+  if (v === undefined) return false;
+  if (typeof v !== 'boolean') throw new ValidationError('dryRun muss ein Boolean sein');
+  return v;
+}
+
+function parseCaller(v: unknown): string | undefined {
+  if (v === undefined) return undefined;
+  if (typeof v !== 'string') throw new ValidationError('caller muss ein String mit höchstens 100 Zeichen sein');
+  const c = v.trim();
+  if (c.length > 100) throw new ValidationError('caller muss ein String mit höchstens 100 Zeichen sein');
+  return c || undefined;
+}
+
+/** Enthält der Body `basePrice`? Dann gilt parseBasePriceRequest statt parsePricingRequest (#1305). */
+export function isBasePriceBody(body: unknown): boolean {
+  return typeof body === 'object' && body !== null && !Array.isArray(body) && 'basePrice' in body;
+}
+
+/**
+ * #1305: Grundpreis des Listings (Guesty Financials `basePrice`). Wird allein gesetzt:
+ * from/to/price/factor/minNights/weekdays im selben Aufruf → 400 (Tageswerte bleiben unberührt,
+ * ein Aufruf hat genau eine Wirkung).
+ */
+export function parseBasePriceRequest(body: unknown): BasePriceRequest {
+  if (!isBasePriceBody(body)) throw new ValidationError('Request-Body muss ein JSON-Objekt mit basePrice sein');
+  const b = body as Record<string, unknown>;
+  for (const key of Object.keys(b)) {
+    if (!BASE_PRICE_KEYS.includes(key)) {
+      throw new ValidationError(
+        `basePrice wird allein gesetzt (erlaubt: ${BASE_PRICE_KEYS.join(', ')}), nicht zusammen mit "${key}". `
+        + 'Tagespreise und Mindestnächte in einem eigenen Aufruf mit from/to setzen',
+      );
     }
-    const c = b.caller.trim();
-    if (c.length > 100) throw new ValidationError('caller muss ein String mit höchstens 100 Zeichen sein');
-    if (c) req.caller = c;
   }
+  const req: BasePriceRequest = { basePrice: parseAmount(b.basePrice, 'basePrice'), dryRun: parseDryRun(b.dryRun) };
+  const caller = parseCaller(b.caller);
+  if (caller) req.caller = caller;
   return req;
 }
 

@@ -1158,6 +1158,27 @@ export class GuestyClient {
   }
 
   /**
+   * Grundpreis eines Inserats setzen (#1305): Guesty Open API „Update listing Financials"
+   * PUT /financials/listing/{id}, Body `{ basePrice }` (Doku propertiesFinancialsUpdate:
+   * Zahl, „The default rate per night. This will apply to the weekend if no weekend price
+   * is defined"; „Non-updated fields are not required in the body"). Lesen über
+   * `getListingFinancials` → `basePrice` (oberste Ebene, Zahl). `PUT /listings/{id}` kennt
+   * kein `prices` im Request. Kalenderpreise je Tag haben Vorrang vor dem Grundpreis
+   * (Doku „Property Financials"); der Kalender wird hier nicht angefasst.
+   */
+  async updateListingBasePrice(listingId: string, basePrice: number): Promise<any> {
+    if (!Number.isFinite(basePrice) || basePrice <= 0) {
+      throw new Error(`updateListingBasePrice: basePrice muss > 0 sein (${basePrice})`);
+    }
+    const res = await this.request<any>(`/financials/listing/${listingId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ basePrice }),
+    });
+    logger.info({ listingId, basePrice }, 'Updated Guesty listing base price');
+    return res;
+  }
+
+  /**
    * Update an existing guest (Kundenstamm-Nachpflege, z. B. Rechnungsanschrift).
    * `company` (#715): Firmenzeile für Firmenrechnungen — der Dokument-Service
    * nimmt guest.company direkt als Empfänger-Firmenzeile, damit der Gastname

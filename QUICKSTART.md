@@ -90,7 +90,7 @@ BOOKING_RECIPIENT_EMAIL=booking@farmhouse-prasser.de
 **Property:**
 - Name: Design-Farmhouse in der Natur
 - Capacity: 15 guests
-- Base Price: €1,500/night
+- Base Price: €1,600/night
 - Cleaning Fee: €350
 - Extra Guest Fee: €100/guest (after 5 guests)
 

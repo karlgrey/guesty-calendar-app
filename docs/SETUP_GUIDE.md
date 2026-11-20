@@ -437,7 +437,7 @@ For issues or questions:
 - Name: Design-Farmhouse in der Natur
 - ID: `686d1e927ae7af00234115ad`
 - Capacity: 15 guests
-- Base Price: €1,500/night
+- Base Price: €1,600/night
 
 **Live Data:**
 - 366 days of availability synced

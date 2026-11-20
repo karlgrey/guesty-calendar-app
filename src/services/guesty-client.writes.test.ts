@@ -160,3 +160,20 @@ describe('GuestyClient.setListingCalendarPricing (#1299)', () => {
     expect(spy).not.toHaveBeenCalled();
   });
 });
+
+describe('GuestyClient.updateListingBasePrice (#1305)', () => {
+  it('PUTtet nur basePrice an /financials/listing/{id}', async () => {
+    const { client, spy } = clientWithMockedRequest({ basePrice: 1600 });
+    expect(await client.updateListingBasePrice('listing-1', 1600)).toEqual({ basePrice: 1600 });
+    const [endpoint, options] = spy.mock.calls[0];
+    expect(endpoint).toBe('/financials/listing/listing-1');
+    expect(options.method).toBe('PUT');
+    expect(JSON.parse(options.body)).toEqual({ basePrice: 1600 });
+  });
+
+  it.each([0, -1, NaN])('basePrice %s wirft ohne Request', async (p) => {
+    const { client, spy } = clientWithMockedRequest({});
+    await expect(client.updateListingBasePrice('listing-1', p)).rejects.toThrow();
+    expect(spy).not.toHaveBeenCalled();
+  });
+});
