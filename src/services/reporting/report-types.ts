@@ -5,8 +5,8 @@
 export const REPORT_TYPES = ['weekly-summary', 'portfolio-weekly', 'portfolio-monthly', 'calendar-weekly'] as const;
 export type ReportType = (typeof REPORT_TYPES)[number];
 
-/** Report-Typen, die je Objekt abonniert werden (property_slug gesetzt). */
-export const PER_PROPERTY_REPORT_TYPES: readonly ReportType[] = ['weekly-summary'];
+/** Report-Typen, die je Objekt abonniert werden (property_slug gesetzt). calendar-weekly seit #1284. */
+export const PER_PROPERTY_REPORT_TYPES: readonly ReportType[] = ['weekly-summary', 'calendar-weekly'];
 
 export const REPORT_TYPE_LABELS: Record<ReportType, string> = {
   'weekly-summary': 'Weekly Summary',
