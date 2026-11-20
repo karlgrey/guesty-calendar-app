@@ -1,127 +1,100 @@
 /**
- * Kalender-Report "Nächste Gäste" (report-type calendar-weekly, #1223).
+ * Kalender-Report "Nächste Gäste" je Objekt (report-type calendar-weekly, #1223/#1284).
  *
- * Eine Mail für alle Objekte im Reporting: Fenster heute (Berlin) bis heute+14 Tage inklusive,
- * je Objekt chronologisch Aufenthalte (aktive Status) und geblockte Zeiträume.
- * Keine Preise, Kennzahlen oder Kontaktdaten.
+ * Eine Mail PRO Objekt an dessen Abonnenten: die nächsten 5 kommenden Buchungen (wie im
+ * Weekly Summary), ohne Preise und Kontaktdaten. `weeklyReport.enabled` spielt hier keine Rolle.
  */
-import { addDays, format, getISOWeek } from 'date-fns';
+import { getISOWeek } from 'date-fns';
 import { getAllProperties, getListingId, type PropertyConfig } from '../config/properties.js';
-import { getAvailability } from '../repositories/availability-repository.js';
-import { ACTIVE_RESERVATION_STATUSES, getReservationsInRange } from '../repositories/reservation-repository.js';
+import { getReservationsByPeriod } from '../repositories/reservation-repository.js';
 import { getActiveRecipientEmails } from '../repositories/report-recipient-repository.js';
-import { buildBlockSpans } from '../services/google-calendar-blocks.js';
 import { sendEmail } from '../services/email-service.js';
 import {
   calendarEmailSubject,
   channelLabel,
   firstNameOf,
   generateCalendarEmail,
-  type CalendarEntry,
   type CalendarReportModel,
 } from '../services/calendar-email-templates.js';
-import { dayInTimezone, filterPropertiesInReporting } from '../services/reporting/reporting-scope.js';
+import { dayInTimezone, isPropertyInReporting } from '../services/reporting/reporting-scope.js';
 import logger from '../utils/logger.js';
 
-/** Vorschau-Fenster: heute + 14 Tage (inklusive). */
-export const CALENDAR_WINDOW_DAYS = 14;
+/** Anzahl Buchungen in der Tabelle (wie "Next 5 Upcoming Bookings" im Weekly Summary). */
+export const CALENDAR_BOOKINGS_LIMIT = 5;
 
-const day = (iso: string) => iso.slice(0, 10);
+export interface CalendarSendResult {
+  success: boolean;
+  sent: boolean;
+  propertySlug: string;
+  recipientCount?: number;
+  error?: string;
+}
 
-/** Baut das Modell. Gesamte DB-I/O über die importierten Repos. */
-export function buildCalendarReportModel(properties: PropertyConfig[], now: Date): CalendarReportModel {
-  const windowStart = dayInTimezone(now);
-  const startDate = new Date(`${windowStart}T00:00:00`);
-  const windowEnd = format(addDays(startDate, CALENDAR_WINDOW_DAYS), 'yyyy-MM-dd');
-  const endExclusive = format(addDays(startDate, CALENDAR_WINDOW_DAYS + 1), 'yyyy-MM-dd');
-  const active = ACTIVE_RESERVATION_STATUSES as readonly string[];
-
-  const result: CalendarReportModel['properties'] = [];
-  for (const property of properties) {
-    try {
-      const listingId = getListingId(property);
-
-      // getReservationsInRange liefert Überlappungen inkl. aller Status -> aktive filtern
-      const stays = getReservationsInRange(listingId, windowStart, windowEnd)
-        .filter((r) => active.includes(r.status) && day(r.check_in) <= windowEnd && day(r.check_out) >= windowStart);
-
-      const entries: Array<CalendarEntry & { sortKey: string; order: number }> = stays.map((r) => ({
-        kind: 'stay' as const,
-        checkIn: day(r.check_in),
-        checkOut: day(r.check_out),
-        firstName: firstNameOf(r.guest_name),
-        guests: r.guests_count ?? null,
-        channel: channelLabel(r.source, r.platform),
-        sortKey: day(r.check_in),
-        order: 0,
-      }));
-
-      // Nächte eines gelisteten Aufenthalts zählen nie als "geblockt": Guesty-Holds (Status
-      // reserved) kommen lokal als status='blocked' an und stünden sonst doppelt im Report.
-      const isStayNight = (d: string) => stays.some((r) => day(r.check_in) <= d && d < day(r.check_out));
-      const blocked = getAvailability(listingId, windowStart, windowEnd)
-        .map((a) => ({
-          date: day(a.date),
-          status: a.status as string,
-          block_type: (a.block_type ?? null) as string | null,
-        }))
-        .filter((a) => !isStayNight(a.date));
-      // Spans nach block_type getrennt -> für den Report zusammenhängende Zeiträume wieder verschmelzen
-      const merged: Array<{ from: string; to: string }> = [];
-      for (const span of buildBlockSpans(blocked).sort((a, b) => a.startDate.localeCompare(b.startDate))) {
-        const from = span.startDate < windowStart ? windowStart : span.startDate;
-        const exclusive = span.endExclusive > endExclusive ? endExclusive : span.endExclusive;
-        if (exclusive <= from) continue;
-        const to = format(addDays(new Date(`${exclusive}T00:00:00`), -1), 'yyyy-MM-dd');
-        const last = merged[merged.length - 1];
-        if (last && format(addDays(new Date(`${last.to}T00:00:00`), 1), 'yyyy-MM-dd') === from) last.to = to;
-        else merged.push({ from, to });
-      }
-      for (const b of merged) entries.push({ kind: 'block', from: b.from, to: b.to, sortKey: b.from, order: 1 });
-
-      entries.sort((a, b) => a.sortKey.localeCompare(b.sortKey) || a.order - b.order);
-      result.push({
-        slug: property.slug,
-        name: property.name,
-        entries: entries.map(({ sortKey: _s, order: _o, ...e }) => e as CalendarEntry),
-      });
-    } catch (error) {
-      logger.error({ error, propertySlug: property.slug }, 'Calendar report: failed to gather property data, skipping');
-    }
-  }
-
+/** Baut das Modell eines Objekts. DB-I/O über das Reservation-Repo. */
+export function buildCalendarReportModel(property: PropertyConfig, now: Date): CalendarReportModel {
+  const upcoming = getReservationsByPeriod(getListingId(property), 365, 'future').slice(0, CALENDAR_BOOKINGS_LIMIT);
   return {
-    generatedAt: now.toISOString(),
-    windowStart,
-    windowEnd,
-    weekNumber: getISOWeek(startDate),
-    properties: result,
+    propertySlug: property.slug,
+    propertyName: property.name,
+    weekNumber: getISOWeek(new Date(`${dayInTimezone(now)}T00:00:00`)),
+    bookings: upcoming.map((r) => ({
+      firstName: firstNameOf(r.guest_name),
+      channel: channelLabel(r.source, r.platform),
+      checkIn: r.check_in,
+      checkOut: r.check_out,
+      nights: r.nights_count ?? 0,
+      guests: r.guests_count ?? 0,
+      status: r.status,
+    })),
   };
 }
 
-/** Versendet den Kalender-Report an die DB-Empfänger (calendar-weekly). */
-export async function sendCalendarWeeklyEmail(
+/** Versendet den Kalender-Report eines Objekts an dessen DB-Empfänger (calendar-weekly). */
+export async function sendCalendarWeeklyEmailForProperty(
+  property: PropertyConfig,
   now: Date = new Date()
-): Promise<{ success: boolean; sent: boolean; error?: string }> {
-  // Empfänger bei jedem Versand frisch aus der DB
-  const recipients = getActiveRecipientEmails('calendar-weekly');
-  if (!recipients.length) {
-    logger.warn('Calendar weekly report: no recipients configured');
-    return { success: true, sent: false, error: 'No recipients' };
+): Promise<CalendarSendResult> {
+  const propertySlug = property.slug;
+
+  if (!isPropertyInReporting(property, now)) {
+    logger.info(
+      { propertySlug, reportingUntil: property.reportingUntil },
+      `Kalender-Report: ${property.name} aus dem Reporting genommen (reportingUntil ${property.reportingUntil})`
+    );
+    return { success: true, sent: false, propertySlug, error: 'Not in reporting' };
   }
 
   try {
-    const properties = filterPropertiesInReporting(getAllProperties(), now);
-    const model = buildCalendarReportModel(properties, now);
+    // Empfänger bei jedem Versand frisch aus der DB
+    const recipients = getActiveRecipientEmails('calendar-weekly', propertySlug);
+    if (!recipients.length) {
+      logger.info({ propertySlug }, `Kalender-Report: kein aktiver Empfänger für ${property.name}, keine Mail`);
+      return { success: true, sent: false, propertySlug, error: 'No recipients' };
+    }
+
+    const model = buildCalendarReportModel(property, now);
     const { html, text } = generateCalendarEmail(model);
     const sent = await sendEmail({ to: recipients, subject: calendarEmailSubject(model), html, text });
     if (sent) {
-      logger.info({ recipients: recipients.length, properties: model.properties.length }, '✅ Calendar weekly report email sent');
-      return { success: true, sent: true };
+      logger.info(
+        { propertySlug, recipientCount: recipients.length, recipients, bookings: model.bookings.length },
+        `✅ Kalender-Report gesendet für ${property.name}`
+      );
+      return { success: true, sent: true, propertySlug, recipientCount: recipients.length };
     }
-    return { success: false, sent: false, error: 'Email sending failed' };
+    logger.error({ propertySlug, recipientCount: recipients.length }, `❌ Kalender-Report: Versand fehlgeschlagen für ${property.name}`);
+    return { success: false, sent: false, propertySlug, recipientCount: recipients.length, error: 'Email sending failed' };
   } catch (error) {
-    logger.error({ error }, '❌ Calendar weekly report email job failed');
-    return { success: false, sent: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    logger.error({ error, propertySlug }, `❌ Kalender-Report fehlgeschlagen für ${property.name}`);
+    return { success: false, sent: false, propertySlug, error: error instanceof Error ? error.message : 'Unknown error' };
   }
+}
+
+/** Alle Objekte nacheinander (Testskript); liefert die Ergebnisse je Objekt. */
+export async function sendCalendarWeeklyEmails(now: Date = new Date()): Promise<CalendarSendResult[]> {
+  const results: CalendarSendResult[] = [];
+  for (const property of getAllProperties()) {
+    results.push(await sendCalendarWeeklyEmailForProperty(property, now));
+  }
+  return results;
 }

@@ -1,23 +1,16 @@
 /**
- * #1223: Kalender-Report "Nächste Gäste". sendEmail ist IMMER gemockt (kein echter Versand).
+ * #1284: Kalender-Report "Nächste Gäste" je Objekt. sendEmail ist IMMER gemockt (kein echter Versand).
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../utils/logger.js', () => ({
-  default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
-}));
+const loggerMock = vi.hoisted(() => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }));
+vi.mock('../utils/logger.js', () => ({ default: loggerMock }));
 
 type Res = Record<string, unknown>;
 let reservations: Res[] = [];
-let availability: Array<{ date: string; status: string; block_type: string | null }> = [];
+const getReservationsByPeriodMock = vi.fn((_id: string, _days: number, _mode: string) => reservations);
 vi.mock('../repositories/reservation-repository.js', () => ({
-  ACTIVE_RESERVATION_STATUSES: ['confirmed', 'reserved'],
-  // echte Überlappungslogik des Repos nachgebildet
-  getReservationsInRange: (_id: string, start: string, end: string) =>
-    reservations.filter((r) => String(r.check_in).slice(0, 10) <= end && String(r.check_out).slice(0, 10) >= start),
-}));
-vi.mock('../repositories/availability-repository.js', () => ({
-  getAvailability: (_id: string, start: string, end: string) => availability.filter((a) => a.date >= start && a.date <= end),
+  getReservationsByPeriod: (...a: [string, number, string]) => getReservationsByPeriodMock(...a),
 }));
 const getActiveRecipientEmailsMock = vi.fn<(type: string, slug?: string) => string[]>();
 vi.mock('../repositories/report-recipient-repository.js', () => ({
@@ -37,151 +30,167 @@ vi.mock('../config/properties.js', async (importOriginal) => {
   return { ...mod, getAllProperties: () => allProps };
 });
 
-import { buildCalendarReportModel, sendCalendarWeeklyEmail } from './calendar-email.js';
-import { generateCalendarEmail } from '../services/calendar-email-templates.js';
+import { buildCalendarReportModel, sendCalendarWeeklyEmails, sendCalendarWeeklyEmailForProperty, CALENDAR_BOOKINGS_LIMIT } from './calendar-email.js';
+import { generateCalendarEmail, channelLabel, firstNameOf } from '../services/calendar-email-templates.js';
+import { WEEKLY_SUMMARY_STYLES } from '../services/email-templates.js';
 
-// Montag 23.11.2026 06:00 Berlin
+// Montag 23.11.2026 06:00 Berlin, KW 48
 const NOW = new Date('2026-11-23T05:00:00Z');
 const stay = (id: string, ci: string, co: string, extra: Res = {}): Res => ({
-  reservation_id: id, check_in: ci, check_out: co, status: 'confirmed',
+  reservation_id: id, check_in: ci, check_out: co, status: 'confirmed', nights_count: 2,
   guest_name: 'Anna Schmidt', guests_count: 3, source: 'airbnb2', platform: null,
-  host_payout: 1234.56, total_price: 1234.56, currency: 'EUR',
+  host_payout: 1234.56, total_price: 4321, currency: 'EUR', confirmation_code: 'HMXYZ98765',
   guest_email: 'anna.schmidt@example.com', guest_phone: '+491701234567', ...extra,
 });
+const sentMails = () => sendEmailMock.mock.calls.map((c) => c[0] as { to: string[]; subject: string; html: string; text: string });
 
 beforeEach(() => {
   vi.clearAllMocks();
-  reservations = [];
-  availability = [];
-  allProps = [prop('farmhouse', 'Farmhouse'), prop('firenze-loft', 'Florenz', { reportingUntil: '2026-11-23' })];
-  getActiveRecipientEmailsMock.mockReturnValue(['a@x.de']);
+  reservations = [stay('r1', '2026-11-25', '2026-11-27')];
+  allProps = [prop('farmhouse', 'Farmhouse'), prop('rh40', 'RH40')];
+  getActiveRecipientEmailsMock.mockImplementation((_t, slug) => (slug === 'farmhouse' ? ['f@x.de'] : ['r@x.de']));
 });
 
-describe('Fenster heute .. heute+14', () => {
-  it('check_in heute+14 drin, heute+15 nicht; laufender Aufenthalt (check_out heute) drin; check_out gestern nicht', () => {
-    reservations = [
-      stay('in14', '2026-12-07', '2026-12-09'),
-      stay('in15', '2026-12-08', '2026-12-10'),
-      stay('running', '2026-11-20', '2026-11-23'),
-      stay('gone', '2026-11-18', '2026-11-22'),
-    ];
-    const m = buildCalendarReportModel([allProps[0]] as never, NOW);
-    expect(m.windowStart).toBe('2026-11-23');
-    expect(m.windowEnd).toBe('2026-12-07');
-    const checkIns = m.properties[0].entries.map((e: any) => e.checkIn);
-    expect(checkIns).toEqual(['2026-11-20', '2026-12-07']);
+describe('je Objekt eine Mail', () => {
+  it('jedes Objekt geht an die eigenen Abonnenten, Betreff mit Objektname und KW 48', async () => {
+    const results = await sendCalendarWeeklyEmails(NOW);
+    expect(results.map((r) => [r.propertySlug, r.sent])).toEqual([['farmhouse', true], ['rh40', true]]);
+    expect(getActiveRecipientEmailsMock).toHaveBeenCalledWith('calendar-weekly', 'farmhouse');
+    expect(getActiveRecipientEmailsMock).toHaveBeenCalledWith('calendar-weekly', 'rh40');
+    const mails = sentMails();
+    expect(mails).toHaveLength(2);
+    expect(mails[0].to).toEqual(['f@x.de']);
+    expect(mails[0].subject).toBe('📅 Nächste Gäste · Farmhouse · KW 48');
+    expect(mails[1].to).toEqual(['r@x.de']);
+    expect(mails[1].subject).toContain('RH40');
+    expect(mails[1].subject).toContain('KW 48');
+    expect(loggerMock.info).toHaveBeenCalledWith(
+      expect.objectContaining({ propertySlug: 'farmhouse', recipientCount: 1, bookings: 1 }),
+      expect.stringContaining('Kalender-Report gesendet'),
+    );
   });
 
-  it('stornierte Reservierung nicht drin', () => {
-    reservations = [stay('c', '2026-11-25', '2026-11-27', { status: 'canceled' }), stay('ok', '2026-11-26', '2026-11-28')];
-    const m = buildCalendarReportModel([allProps[0]] as never, NOW);
-    expect(m.properties[0].entries).toHaveLength(1);
+  it('Buchungen kommen wie im Weekly Summary (365 Tage, future)', async () => {
+    await sendCalendarWeeklyEmailForProperty(allProps[0] as never, NOW);
+    expect(getReservationsByPeriodMock).toHaveBeenCalledWith('id-farmhouse', 365, 'future');
   });
 
-  it('Block-Zeile wird zusammengefasst, beschnitten und chronologisch einsortiert', () => {
-    reservations = [stay('r', '2026-11-30', '2026-12-02')];
-    availability = [
-      { date: '2026-11-25', status: 'blocked', block_type: 'owner' },
-      { date: '2026-11-26', status: 'blocked', block_type: 'manual' },
-      { date: '2026-11-27', status: 'booked', block_type: null },
-    ];
-    const m = buildCalendarReportModel([allProps[0]] as never, NOW);
-    expect(m.properties[0].entries).toEqual([
-      { kind: 'block', from: '2026-11-25', to: '2026-11-26' },
-      expect.objectContaining({ kind: 'stay', checkIn: '2026-11-30' }),
-    ]);
-    const { html, text } = generateCalendarEmail(m);
-    expect(html).toContain('Mi 25.11. – Do 26.11. · geblockt');
-    expect(text).toContain('geblockt');
+  it('Objekt ohne Abo wird übersprungen, die anderen bekommen ihre Mail', async () => {
+    getActiveRecipientEmailsMock.mockImplementation((_t, slug) => (slug === 'farmhouse' ? [] : ['r@x.de']));
+    const results = await sendCalendarWeeklyEmails(NOW);
+    expect(results[0]).toMatchObject({ propertySlug: 'farmhouse', success: true, sent: false, error: 'No recipients' });
+    expect(results[1]).toMatchObject({ propertySlug: 'rh40', sent: true });
+    expect(sentMails()).toHaveLength(1);
+    expect(sentMails()[0].to).toEqual(['r@x.de']);
+    expect(loggerMock.info).toHaveBeenCalledWith(
+      expect.objectContaining({ propertySlug: 'farmhouse' }),
+      expect.stringContaining('kein aktiver Empfänger'),
+    );
   });
 
-  it('Hold (reserved, Nächte lokal blocked) steht nur als Aufenthalt da, nicht zusätzlich als geblockt', () => {
-    reservations = [stay('hold', '2026-11-25', '2026-11-27', { status: 'reserved' })];
-    availability = [
-      { date: '2026-11-25', status: 'blocked', block_type: null },
-      { date: '2026-11-26', status: 'blocked', block_type: null },
-      { date: '2026-11-27', status: 'blocked', block_type: null }, // Abreisetag: echter Block danach bleibt
-    ];
-    const m = buildCalendarReportModel([allProps[0]] as never, NOW);
-    expect(m.properties[0].entries).toEqual([
-      expect.objectContaining({ kind: 'stay', checkIn: '2026-11-25', checkOut: '2026-11-27' }),
-      { kind: 'block', from: '2026-11-27', to: '2026-11-27' },
-    ]);
+  it('Florenz ist ab 24.11. nicht mehr dabei', async () => {
+    allProps = [prop('firenze-loft', 'Florenz', { reportingUntil: '2026-11-23' })];
+    getActiveRecipientEmailsMock.mockReturnValue(['fl@x.de']);
+    expect((await sendCalendarWeeklyEmails(NOW))[0].sent).toBe(true);
+    expect(sentMails()).toHaveLength(1);
+    for (const d of ['2026-11-24T05:00:00Z', '2026-11-30T05:00:00Z']) {
+      const [r] = await sendCalendarWeeklyEmails(new Date(d));
+      expect(r).toMatchObject({ success: true, sent: false, error: 'Not in reporting' });
+    }
+    expect(sentMails()).toHaveLength(1);
+    expect(loggerMock.info).toHaveBeenCalledWith(
+      expect.objectContaining({ propertySlug: 'firenze-loft' }),
+      expect.stringContaining('aus dem Reporting'),
+    );
+  });
+
+  it('sendEmail false -> success:false, Fehler geloggt', async () => {
+    sendEmailMock.mockResolvedValueOnce(false);
+    const r = await sendCalendarWeeklyEmailForProperty(allProps[0] as never, NOW);
+    expect(r).toMatchObject({ success: false, sent: false });
+    expect(loggerMock.error).toHaveBeenCalledWith(expect.objectContaining({ propertySlug: 'farmhouse' }), expect.any(String));
+  });
+
+  it('Exception im Versand -> success:false statt Wurf', async () => {
+    sendEmailMock.mockRejectedValueOnce(new Error('smtp down'));
+    const r = await sendCalendarWeeklyEmailForProperty(allProps[0] as never, NOW);
+    expect(r).toMatchObject({ success: false, sent: false, error: 'smtp down' });
   });
 });
 
-describe('Rendering', () => {
-  it('Vorname, Personenzahl, Kanal; leeres Objekt zeigt Leer-Text', () => {
-    reservations = [stay('r', '2026-11-25', '2026-11-27'), stay('r2', '2026-11-26', '2026-11-28', { guest_name: null, guests_count: null, source: null })];
-    const { html, text } = generateCalendarEmail(buildCalendarReportModel([allProps[0]] as never, NOW));
-    expect(html).toContain('Anna');
-    expect(html).toContain('3 P');
-    expect(html).toContain('Airbnb');
-    expect(html).toContain('Gast');
-    expect(html).toContain('– P');
-    expect(text).toContain('Mi 25.11. → Fr 27.11. · Anna · 3 P · Airbnb');
-
-    const empty = generateCalendarEmail({ ...buildCalendarReportModel([allProps[0]] as never, NOW), properties: [{ slug: 'x', name: 'Leer <b>', entries: [] }] });
-    expect(empty.html).toContain('keine Gäste in den nächsten 14 Tagen');
-    expect(empty.html).toContain('Leer &lt;b&gt;');
-    expect(empty.text).toContain('keine Gäste in den nächsten 14 Tagen');
-  });
-
-  it('Kanal-Mapping', async () => {
-    const { channelLabel } = await import('../services/calendar-email-templates.js');
-    expect(channelLabel('airbnb')).toBe('Airbnb');
-    expect(channelLabel('airbnb2')).toBe('Airbnb');
-    expect(channelLabel('booking.com')).toBe('Booking.com');
-    expect(channelLabel('Booking')).toBe('Booking.com');
-    expect(channelLabel('website')).toBe('Direkt');
-    expect(channelLabel('manual')).toBe('Direkt');
-    expect(channelLabel('vrbo')).toBe('vrbo');
-    expect(channelLabel(null, null)).toBe('–');
-  });
-
-  it('keine Beträge und keine Kontaktdaten in HTML und Text', async () => {
-    reservations = [stay('r', '2026-11-25', '2026-11-27')];
-    await sendCalendarWeeklyEmail(NOW);
-    const mail = sendEmailMock.mock.calls[0][0] as { html: string; text: string };
+describe('Inhalt', () => {
+  it('kein Preis, keine Kontaktdaten, kein Code, nur der Vorname', async () => {
+    await sendCalendarWeeklyEmailForProperty(allProps[0] as never, NOW);
+    const mail = sentMails()[0];
     for (const out of [mail.html, mail.text]) {
-      expect(out).not.toContain('€');
-      expect(out).not.toContain('EUR');
-      expect(out).not.toContain('1234');
-      expect(out).not.toContain('Schmidt');
-      expect(out).not.toContain('example.com');
-      expect(out).not.toContain('@');
-      expect(out).not.toContain('+4917');
+      for (const bad of ['1234', '1.234', '4321', '4.321', '€', 'EUR', 'Price', 'Schmidt', 'example.com', '@', '+4917', 'HMXYZ98765']) {
+        expect(out).not.toContain(bad);
+      }
+      expect(out).toContain('Anna');
     }
   });
-});
 
-describe('sendCalendarWeeklyEmail', () => {
-  it('Empfänger calendar-weekly, Betreff mit KW und Zeitraum', async () => {
-    const r = await sendCalendarWeeklyEmail(NOW);
-    expect(r).toEqual({ success: true, sent: true });
-    expect(getActiveRecipientEmailsMock).toHaveBeenCalledWith('calendar-weekly');
-    const mail = sendEmailMock.mock.calls[0][0] as any;
-    expect(mail.to).toEqual(['a@x.de']);
-    expect(mail.subject).toBe('Nächste Gäste · KW 48 · 23.11.–07.12.2026');
+  it('höchstens fünf Buchungen, Reihenfolge wie geliefert', () => {
+    reservations = Array.from({ length: 7 }, (_, i) => stay(`r${i}`, `2026-12-0${i + 1}`, `2026-12-0${i + 2}`, { guest_name: `Gast${i}` }));
+    expect(CALENDAR_BOOKINGS_LIMIT).toBe(5);
+    const m = buildCalendarReportModel(allProps[0] as never, NOW);
+    expect(m.bookings.map((b) => b.firstName)).toEqual(['Gast0', 'Gast1', 'Gast2', 'Gast3', 'Gast4']);
+    const { html, text } = generateCalendarEmail(m);
+    expect(html.match(/<span class="status-badge/g)).toHaveLength(5);
+    expect(text.split('\n').filter((l) => l.startsWith('- '))).toHaveLength(5);
+    expect(html.indexOf('Gast0')).toBeLessThan(html.indexOf('Gast4'));
   });
 
-  it('keine Empfänger: kein Versand', async () => {
-    getActiveRecipientEmailsMock.mockReturnValue([]);
-    expect(await sendCalendarWeeklyEmail(NOW)).toEqual({ success: true, sent: false, error: 'No recipients' });
-    expect(sendEmailMock).not.toHaveBeenCalled();
+  it('Modell: KW, Name, Zeilenfelder mit Defaults', () => {
+    reservations = [stay('r', '2026-11-25', '2026-11-27', { nights_count: null, guests_count: null, source: null, guest_name: null })];
+    const m = buildCalendarReportModel(allProps[0] as never, NOW);
+    expect(m).toMatchObject({ propertySlug: 'farmhouse', propertyName: 'Farmhouse', weekNumber: 48 });
+    expect(m.bookings[0]).toEqual({ firstName: 'Gast', channel: '–', checkIn: '2026-11-25', checkOut: '2026-11-27', nights: 0, guests: 0, status: 'confirmed' });
   });
 
-  it('Florenz: am 23.11. (Berlin) drin, am 24.11. und 30.11. nicht', async () => {
-    await sendCalendarWeeklyEmail(NOW);
-    expect((sendEmailMock.mock.calls[0][0] as any).html).toContain('Florenz');
-    await sendCalendarWeeklyEmail(new Date('2026-11-24T05:00:00Z'));
-    expect((sendEmailMock.mock.calls[1][0] as any).html).not.toContain('Florenz');
-    await sendCalendarWeeklyEmail(new Date('2026-11-30T05:00:00Z'));
-    expect((sendEmailMock.mock.calls[2][0] as any).html).not.toContain('Florenz');
+  it('ohne kommende Buchung: Leertext in HTML und Text', () => {
+    reservations = [];
+    const { html, text } = generateCalendarEmail(buildCalendarReportModel(allProps[0] as never, NOW));
+    expect(html).toContain('<div class="no-data">No upcoming bookings</div>');
+    expect(text).toContain('No upcoming bookings');
   });
 
-  it('Versandfehler -> sent:false', async () => {
-    sendEmailMock.mockResolvedValueOnce(false);
-    expect((await sendCalendarWeeklyEmail(NOW)).sent).toBe(false);
+  it('Layout wie Weekly Summary: Style-Block, Footer, Spalten ohne Price', () => {
+    const { html, text } = generateCalendarEmail(buildCalendarReportModel(allProps[0] as never, NOW));
+    expect(html).toContain(WEEKLY_SUMMARY_STYLES);
+    expect(html).toContain('<html lang="de">');
+    expect(html).toContain('<h1>📅 Nächste Gäste</h1>');
+    expect(html).toContain('<strong>Farmhouse</strong> · KW 48');
+    expect(html).toContain('This is an automated weekly summary generated by Guesty Calendar App');
+    expect(html).toContain('📅 Next 5 Upcoming Bookings');
+    for (const col of ['Guest', 'Check-in', 'Check-out', 'Nights', 'Guests', 'Status']) expect(html).toContain(`<th>${col}</th>`);
+    expect(html).not.toContain('<th>Price</th>');
+    expect(html).toContain('<small style="color: #7f8c8d;">Airbnb</small>');
+    expect(html).toContain('status-badge status-confirmed');
+    expect(text.startsWith('Nächste Gäste - Farmhouse - KW 48\n' + '='.repeat(60))).toBe(true);
+    expect(text).toContain('NEXT 5 UPCOMING BOOKINGS');
+    expect(text).toContain('- Anna (Airbnb) | ');
+    expect(text).toContain('| 2 nights | 3 guests | confirmed');
+    expect(text.endsWith('---\nThis is an automated weekly summary.')).toBe(true);
+  });
+
+  it('escaped datenstämmige Strings', () => {
+    reservations = [stay('r', '2026-11-25', '2026-11-27', { guest_name: '<b>Eve</b> X', source: 'a<i>' })];
+    allProps = [prop('farmhouse', 'Farm <house>')];
+    const { html } = generateCalendarEmail(buildCalendarReportModel(allProps[0] as never, NOW));
+    expect(html).toContain('&lt;b&gt;Eve&lt;/b&gt;');
+    expect(html).toContain('a&lt;i&gt;');
+    expect(html).toContain('Farm &lt;house&gt;');
+    expect(html).not.toContain('<b>Eve');
+  });
+
+  it('Kanal-Mapping und Vorname', () => {
+    expect(channelLabel('airbnb2')).toBe('Airbnb');
+    expect(channelLabel('Booking')).toBe('Booking.com');
+    expect(channelLabel('website')).toBe('Direkt');
+    expect(channelLabel('vrbo')).toBe('vrbo');
+    expect(channelLabel(null, null)).toBe('–');
+    expect(firstNameOf('  Anna Maria Schmidt')).toBe('Anna');
+    expect(firstNameOf('')).toBe('Gast');
   });
 });

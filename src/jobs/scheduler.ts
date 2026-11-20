@@ -5,13 +5,13 @@
  */
 
 import { toZonedTime } from 'date-fns-tz';
-import { getHours } from 'date-fns';
+import { getHours, getISOWeek, getISOWeekYear } from 'date-fns';
 import { runETLJob } from './etl-job.js';
 import { startMessageLoop, stopMessageLoop } from './message-loop.js';
 import { startGuestyTelemetryFlush, stopGuestyTelemetryFlush, flushGuestyRequestTelemetry } from '../services/guesty-request-telemetry.js';
 import { sendWeeklySummaryEmailForProperty, shouldSendWeeklyEmailForProperty } from './weekly-email.js';
 import { sendBiReportEmail, shouldSendBiReport, sendPortfolioMonthlyEmail } from './bi-email.js';
-import { sendCalendarWeeklyEmail } from './calendar-email.js';
+import { sendCalendarWeeklyEmailForProperty } from './calendar-email.js';
 import { syncAnalytics, shouldSyncAnalytics } from './sync-analytics.js';
 import { syncGoogleCalendarForProperty } from './sync-google-calendar.js';
 import { checkAirbnbMailStaleness } from './airbnb-mail/check-staleness.js';
@@ -32,7 +32,7 @@ const LLM_HEALTH_CHECK_STATE_KEY = 'llm_health_check_last_run_day';
 const DAILY_FORCE_SYNC_STATE_KEY = 'dailyForceSyncLastRunDay';
 // Report-Jobs (#1223): Marker NUR nach erfolgreichem Versand setzen.
 const PORTFOLIO_MONTHLY_STATE_KEY = 'portfolio_monthly_last_sent_month'; // YYYY-MM (Versandmonat, Berlin)
-const CALENDAR_WEEKLY_STATE_KEY = 'calendar_weekly_last_sent_day'; // YYYY-MM-DD (Berlin)
+const CALENDAR_WEEKLY_STATE_KEY_PREFIX = 'calendar_weekly_last_sent_week:'; // + Objekt-Slug; Wert YYYY-Www (ISO-Woche, Berlin)
 
 // Zeitplan der neuen Reports (Konstanten im Code, nicht in properties.json); alles Europe/Berlin.
 const PORTFOLIO_MONTHLY_DAY_OF_MONTH = 1;
@@ -79,7 +79,7 @@ interface SchedulerState {
   portfolioMonthlyIntervalId: NodeJS.Timeout | null;
   portfolioMonthlyLastSentMonth: string | null;
   calendarWeeklyIntervalId: NodeJS.Timeout | null;
-  calendarWeeklyLastSentDay: string | null;
+  calendarWeeklyLastSentWeek: Map<string, string>; // Slug -> ISO-Woche (RAM-Cache; Quelle der Wahrheit: scheduler_state)
 }
 
 const state: SchedulerState = {
@@ -114,7 +114,7 @@ const state: SchedulerState = {
   portfolioMonthlyIntervalId: null,
   portfolioMonthlyLastSentMonth: null,
   calendarWeeklyIntervalId: null,
-  calendarWeeklyLastSentDay: null,
+  calendarWeeklyLastSentWeek: new Map(),
 };
 
 /**
@@ -129,7 +129,7 @@ export function resetSchedulerStateForTests(): void {
   state.lastDailyForceSync = null;
   state.dailyForceSyncLastRunDay = null;
   state.portfolioMonthlyLastSentMonth = null;
-  state.calendarWeeklyLastSentDay = null;
+  state.calendarWeeklyLastSentWeek.clear();
 }
 
 /**
@@ -446,32 +446,46 @@ export async function checkAndSendPortfolioMonthly() {
   }
 }
 
-/**
- * Kalender-Report "Nächste Gäste" (#1223): lädt den persistierten Tagesmarker.
- */
-export function loadCalendarWeeklyState(): void {
-  state.calendarWeeklyLastSentDay = getSchedulerState(CALENDAR_WEEKLY_STATE_KEY);
+/** ISO-Woche des Berlin-Kalendertags als `YYYY-Www` (ISO-Wochenjahr, Woche zweistellig). */
+export function calendarWeekKey(now: Date): string {
+  const d = new Date(`${dayInTimezone(now)}T00:00:00`);
+  return `${getISOWeekYear(d)}-W${String(getISOWeek(d)).padStart(2, '0')}`;
 }
 
-/** Montags 06:xx Europe/Berlin, einmal pro Tag (persistierter Marker). */
+/** Zuletzt versorgte Woche eines Objekts: RAM-Cache, sonst persistierter Marker (Restart-sicher). */
+function getCalendarWeeklyLastSentWeek(slug: string): string | null {
+  return state.calendarWeeklyLastSentWeek.get(slug) ?? getSchedulerState(CALENDAR_WEEKLY_STATE_KEY_PREFIX + slug);
+}
+
+/** Montags 06:xx Europe/Berlin (reines Zeitfenster; der Doppelversand-Schutz läuft je Objekt). */
 export function shouldSendCalendarWeekly(): boolean {
-  const now = new Date();
-  const zoned = toZonedTime(now, REPORTING_TIMEZONE);
-  if (zoned.getDay() !== CALENDAR_WEEKLY_WEEKDAY || getHours(zoned) !== CALENDAR_WEEKLY_HOUR) return false;
-  return state.calendarWeeklyLastSentDay !== dayInTimezone(now);
+  const zoned = toZonedTime(new Date(), REPORTING_TIMEZONE);
+  return zoned.getDay() === CALENDAR_WEEKLY_WEEKDAY && getHours(zoned) === CALENDAR_WEEKLY_HOUR;
 }
 
-/** Versendet den Kalender-Report; Marker erst nach erfolgreichem Versand (sent:true). Non-fatal. */
+/**
+ * Kalender-Report "Nächste Gäste" je Objekt (#1284): höchstens eine Mail pro Objekt und ISO-Woche.
+ * Marker (persistiert) erst nach erfolgreichem Versand (sent:true); ein Fehler bricht andere Objekte nicht ab.
+ */
 export async function checkAndSendCalendarWeekly() {
   try {
     if (!shouldSendCalendarWeekly()) return;
 
-    logger.info('📅 Calendar weekly report triggered');
-    const result = await sendCalendarWeeklyEmail();
-    if (result.sent) {
-      const today = dayInTimezone(new Date());
-      state.calendarWeeklyLastSentDay = today;
-      setSchedulerState(CALENDAR_WEEKLY_STATE_KEY, today);
+    const week = calendarWeekKey(new Date());
+    for (const property of getAllProperties()) {
+      try {
+        if (getCalendarWeeklyLastSentWeek(property.slug) === week) {
+          logger.debug({ propertySlug: property.slug, week }, 'Kalender-Report: für diese Woche bereits gesendet, übersprungen');
+          continue;
+        }
+        const result = await sendCalendarWeeklyEmailForProperty(property);
+        if (result.sent) {
+          state.calendarWeeklyLastSentWeek.set(property.slug, week);
+          setSchedulerState(CALENDAR_WEEKLY_STATE_KEY_PREFIX + property.slug, week);
+        }
+      } catch (error) {
+        logger.error({ error, propertySlug: property.slug }, '❌ Error in calendar weekly report for property');
+      }
     }
   } catch (error) {
     logger.error({ error }, '❌ Error in calendar weekly report');
@@ -792,7 +806,6 @@ export function startScheduler() {
 
   // Kalender-Report "Nächste Gäste" (montags 06:xx Europe/Berlin, #1223)
   logger.info('📅 Starting calendar weekly report scheduler (Mondays, 06:00 Europe/Berlin)');
-  loadCalendarWeeklyState();
   checkAndSendCalendarWeekly();
   state.calendarWeeklyIntervalId = setInterval(checkAndSendCalendarWeekly, hourlyInterval);
 }
