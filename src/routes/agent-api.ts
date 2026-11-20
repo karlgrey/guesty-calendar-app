@@ -51,9 +51,12 @@ import { berlinCalendarDay } from '../services/auto-send/berlin-day.js';
 import { getListingTextsForProperty } from '../services/listing-texts-service.js';
 import { syncListing } from '../jobs/sync-listing.js';
 import { cancelAirbnbMailReservation } from '../services/airbnb-mail-cancellation.js';
+import agentPricingRoutes from './agent-pricing.js';
 
 const router = express.Router();
 router.use(requireAgentKey);
+// #1299 Preise und Mindestnächte je Datumsbereich (GET/PUT /pricing/:slug)
+router.use(agentPricingRoutes);
 
 function handleError(res: express.Response, err: unknown) {
   if (err instanceof AppError) {

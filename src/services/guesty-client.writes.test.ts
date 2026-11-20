@@ -132,3 +132,31 @@ describe('GuestyClient writes', () => {
     expect(spy.mock.calls[0]).toEqual(['/financials/listing/listing-1']);
   });
 });
+
+describe('GuestyClient.setListingCalendarPricing (#1299)', () => {
+  it('PUTtet Preis und Mindestnächte ohne status an den Kalender-Pfad', async () => {
+    const { client, spy } = clientWithMockedRequest({ ok: 1 });
+    const res = await client.setListingCalendarPricing('listing-1', {
+      startDate: '2026-12-01', endDate: '2026-12-10', price: 180, minNights: 3,
+    });
+    expect(res).toEqual({ ok: 1 });
+    const [endpoint, options] = spy.mock.calls[0];
+    expect(endpoint).toBe('/availability-pricing/api/calendar/listings/listing-1');
+    expect(options.method).toBe('PUT');
+    const body = JSON.parse(options.body);
+    expect(body).toEqual({ startDate: '2026-12-01', endDate: '2026-12-10', price: 180, minNights: 3 });
+    expect(body).not.toHaveProperty('status');
+  });
+
+  it('sendet nur gesetzte Felder', async () => {
+    const { client, spy } = clientWithMockedRequest({});
+    await client.setListingCalendarPricing('listing-1', { startDate: '2026-12-01', endDate: '2026-12-10', minNights: 2 });
+    expect(JSON.parse(spy.mock.calls[0][1].body)).toEqual({ startDate: '2026-12-01', endDate: '2026-12-10', minNights: 2 });
+  });
+
+  it('wirft ohne price und minNights, ohne Request', async () => {
+    const { client, spy } = clientWithMockedRequest({});
+    await expect(client.setListingCalendarPricing('listing-1', { startDate: '2026-12-01', endDate: '2026-12-10' })).rejects.toThrow();
+    expect(spy).not.toHaveBeenCalled();
+  });
+});
