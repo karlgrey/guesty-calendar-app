@@ -88,8 +88,12 @@ export function bootstrapReportRecipients(
     for (const name of ['holger', 'ulf', 'angela']) {
       const hit = find(name);
       if (hit) {
-        setSubscription(hit.id, 'calendar-weekly', '', true);
-        seeds.push(`calendar-weekly: ${hit.email}`);
+        // je Objekt (#1284): genau dort, wo die Adresse ein aktives weekly-summary-Abo hat
+        const slugs = (listRecipients().find((r) => r.id === hit.id)?.subscriptions ?? [])
+          .filter((s) => s.reportType === 'weekly-summary' && s.active)
+          .map((s) => s.propertySlug);
+        for (const slug of slugs) setSubscription(hit.id, 'calendar-weekly', slug, true);
+        seeds.push(`calendar-weekly: ${hit.email} (${slugs.join(', ')})`);
       }
     }
 

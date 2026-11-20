@@ -40,10 +40,15 @@ vi.mock('./bi-email.js', () => ({
   shouldSendBiReport: vi.fn(() => false),
   sendPortfolioMonthlyEmail: (...args: unknown[]) => sendPortfolioMonthlyEmailMock(...args),
 }));
-const sendCalendarWeeklyEmailMock = vi.fn();
+const sendCalendarWeeklyEmailForPropertyMock = vi.fn();
 vi.mock('./calendar-email.js', () => ({
-  sendCalendarWeeklyEmail: (...args: unknown[]) => sendCalendarWeeklyEmailMock(...args),
+  sendCalendarWeeklyEmailForProperty: (...args: unknown[]) => sendCalendarWeeklyEmailForPropertyMock(...args),
 }));
+let mockedProperties: Array<{ slug: string; name: string }> = [];
+vi.mock('../config/properties.js', async (importOriginal) => {
+  const mod: any = await importOriginal();
+  return { ...mod, getAllProperties: () => mockedProperties };
+});
 vi.mock('./sync-analytics.js', () => ({
   syncAnalytics: vi.fn(),
   shouldSyncAnalytics: vi.fn(() => false),
@@ -83,8 +88,8 @@ import {
   loadPortfolioMonthlyState,
   shouldSendPortfolioMonthly,
   checkAndSendPortfolioMonthly,
-  loadCalendarWeeklyState,
   shouldSendCalendarWeekly,
+  calendarWeekKey,
   checkAndSendCalendarWeekly,
   resetSchedulerStateForTests,
 } from './scheduler.js';
@@ -98,7 +103,10 @@ beforeEach(() => {
   getSchedulerStateMock.mockReset().mockReturnValue(null);
   setSchedulerStateMock.mockReset();
   sendPortfolioMonthlyEmailMock.mockReset().mockResolvedValue({ success: true, sent: true });
-  sendCalendarWeeklyEmailMock.mockReset().mockResolvedValue({ success: true, sent: true });
+  mockedProperties = [{ slug: 'farmhouse', name: 'Farmhouse' }, { slug: 'rh40', name: 'RH40' }];
+  sendCalendarWeeklyEmailForPropertyMock
+    .mockReset()
+    .mockImplementation(async (p: { slug: string }) => ({ success: true, sent: true, propertySlug: p.slug }));
 });
 
 describe('shouldRunDailyConsistencyCheck (Zeitzone Europe/Berlin, #603)', () => {
@@ -385,12 +393,21 @@ describe('Portfolio monatlich (1. des Monats 06:xx Europe/Berlin, #1223)', () =>
   });
 });
 
-describe('Kalender-Report (montags 06:xx Europe/Berlin, #1223)', () => {
-  const KEY = 'calendar_weekly_last_sent_day';
+describe('Kalender-Report je Objekt (montags 06:xx Europe/Berlin, #1223/#1284)', () => {
+  const key = (slug: string) => `calendar_weekly_last_sent_week:${slug}`;
+  const MO_48 = '2026-11-23T05:30:00.000Z'; // Mo 06:30 Berlin (CET), KW 48
+  const calledSlugs = () => sendCalendarWeeklyEmailForPropertyMock.mock.calls.map((c) => (c[0] as { slug: string }).slug);
+
+  it('ISO-Wochenschlüssel zweistellig, mit ISO-Wochenjahr', () => {
+    expect(calendarWeekKey(new Date(MO_48))).toBe('2026-W48');
+    expect(calendarWeekKey(new Date('2026-01-05T05:30:00.000Z'))).toBe('2026-W02');
+    expect(calendarWeekKey(new Date('2026-12-28T05:30:00.000Z'))).toBe('2026-W53');
+    expect(calendarWeekKey(new Date('2027-01-01T05:30:00.000Z'))).toBe('2026-W53'); // ISO-Wochenjahr != Kalenderjahr
+  });
 
   it('sendet montags 06:xx Berlin, nicht dienstags, nicht um 07:xx', () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-11-23T05:30:00.000Z')); // Mo 06:30 Berlin (CET)
+    vi.setSystemTime(new Date(MO_48));
     expect(shouldSendCalendarWeekly()).toBe(true);
     vi.setSystemTime(new Date('2026-11-23T06:30:00.000Z')); // 07:30
     expect(shouldSendCalendarWeekly()).toBe(false);
@@ -399,44 +416,65 @@ describe('Kalender-Report (montags 06:xx Europe/Berlin, #1223)', () => {
     vi.useRealTimers();
   });
 
-  it('sendet und persistiert den Tagesmarker; zweiter Tick sendet nicht mehr', async () => {
+  it('außerhalb des Fensters wird nichts gesendet', async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-11-23T05:30:00.000Z'));
+    vi.setSystemTime(new Date('2026-11-24T05:30:00.000Z'));
     await checkAndSendCalendarWeekly();
-    expect(sendCalendarWeeklyEmailMock).toHaveBeenCalledTimes(1);
-    expect(setSchedulerStateMock).toHaveBeenCalledWith(KEY, '2026-11-23');
-    await checkAndSendCalendarWeekly();
-    expect(sendCalendarWeeklyEmailMock).toHaveBeenCalledTimes(1);
+    expect(sendCalendarWeeklyEmailForPropertyMock).not.toHaveBeenCalled();
     vi.useRealTimers();
   });
 
-  it('Neustart-Simulation: Marker aus der DB verhindert zweiten Versand am selben Tag', async () => {
+  it('zwei Objekte: zwei Aufrufe, zwei Wochenmarker; zweiter Tick sendet nicht mehr', async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-11-23T05:30:00.000Z'));
-    getSchedulerStateMock.mockImplementation((k: string) => (k === KEY ? '2026-11-23' : null));
+    vi.setSystemTime(new Date(MO_48));
+    await checkAndSendCalendarWeekly();
+    expect(calledSlugs()).toEqual(['farmhouse', 'rh40']);
+    expect(setSchedulerStateMock).toHaveBeenCalledWith(key('farmhouse'), '2026-W48');
+    expect(setSchedulerStateMock).toHaveBeenCalledWith(key('rh40'), '2026-W48');
+    await checkAndSendCalendarWeekly();
+    expect(sendCalendarWeeklyEmailForPropertyMock).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
+  });
+
+  it('Neustart-Simulation: Marker aus der DB überspringt nur das bereits versorgte Objekt', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(MO_48));
+    getSchedulerStateMock.mockImplementation((k: string) => (k === key('farmhouse') ? '2026-W48' : null));
     resetSchedulerStateForTests();
-    loadCalendarWeeklyState();
     await checkAndSendCalendarWeekly();
-    expect(sendCalendarWeeklyEmailMock).not.toHaveBeenCalled();
+    expect(calledSlugs()).toEqual(['rh40']);
     vi.useRealTimers();
   });
 
-  it('nächster Montag sendet wieder', () => {
+  it('nächster Montag sendet wieder', async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-11-30T05:30:00.000Z'));
-    getSchedulerStateMock.mockImplementation((k: string) => (k === KEY ? '2026-11-23' : null));
+    getSchedulerStateMock.mockImplementation((k: string) => (k.startsWith('calendar_weekly_last_sent_week:') ? '2026-W48' : null));
     resetSchedulerStateForTests();
-    loadCalendarWeeklyState();
-    expect(shouldSendCalendarWeekly()).toBe(true);
+    await checkAndSendCalendarWeekly();
+    expect(calledSlugs()).toEqual(['farmhouse', 'rh40']);
+    expect(setSchedulerStateMock).toHaveBeenCalledWith(key('farmhouse'), '2026-W49');
     vi.useRealTimers();
   });
 
   it('kein Marker bei sent:false', async () => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date('2026-11-23T05:30:00.000Z'));
-    sendCalendarWeeklyEmailMock.mockResolvedValueOnce({ success: true, sent: false, error: 'No recipients' });
+    vi.setSystemTime(new Date(MO_48));
+    sendCalendarWeeklyEmailForPropertyMock.mockResolvedValue({ success: true, sent: false, propertySlug: 'x', error: 'No recipients' });
     await checkAndSendCalendarWeekly();
+    expect(sendCalendarWeeklyEmailForPropertyMock).toHaveBeenCalledTimes(2);
     expect(setSchedulerStateMock).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('Exception bei einem Objekt: das andere wird trotzdem gesendet und markiert', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(MO_48));
+    sendCalendarWeeklyEmailForPropertyMock.mockImplementationOnce(async () => { throw new Error('boom'); });
+    await checkAndSendCalendarWeekly();
+    expect(calledSlugs()).toEqual(['farmhouse', 'rh40']);
+    expect(setSchedulerStateMock).toHaveBeenCalledTimes(1);
+    expect(setSchedulerStateMock).toHaveBeenCalledWith(key('rh40'), '2026-W48');
     vi.useRealTimers();
   });
 });

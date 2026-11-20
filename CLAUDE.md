@@ -173,14 +173,20 @@ Konfiguration als **Top-Level-Block** `biReport` in `data/properties.json` (Gesc
 - **Portfolio monatlich** (`sendPortfolioMonthlyEmail`, report-type `portfolio-monthly`): Berichtszeitraum = abgeschlossener Vormonat,
   gleicher Aufbau (`buildBiReportModel(..., { period })`, Text-Overrides über `model.labels`). Versand am 1. des Monats 06:xx Berlin,
   Doppelversand-Schutz `scheduler_state` `portfolio_monthly_last_sent_month`.
-- **Kalender-Report „Nächste Gäste“** (`src/jobs/calendar-email.ts`, report-type `calendar-weekly`): montags 06:xx Berlin, Marker
-  `calendar_weekly_last_sent_day`; heute..+14 Tage je Objekt, nur Vorname/Personen/Kanal + geblockte Zeiträume, keine Preise/Kontaktdaten.
-- Manueller Test: `npx tsx src/scripts/test-report-emails.ts monthly|calendar`.
+- **Kalender-Report „Nächste Gäste“ je Objekt** (#1284; `src/jobs/calendar-email.ts`, report-type `calendar-weekly`, je Objekt
+  abonniert wie `weekly-summary`): montags 06:xx Berlin eine Mail je Objekt an dessen Abonnenten (`sendCalendarWeeklyEmailForProperty`),
+  Betreff `📅 Nächste Gäste · <Objekt> · KW <n>`. Layout und Styles des Weekly Summary (`WEEKLY_SUMMARY_STYLES` aus
+  `email-templates.ts`), einziger Abschnitt = dessen Tabelle „Next 5 Upcoming Bookings“ ohne Preisspalte (Vorname + Kanal, An-/Abreise,
+  Nächte, Personen, Status); keine Kennzahlen, Umsätze, Kontaktdaten, geblockten Tage. Kein aktiver Abonnent → keine Mail, Info-Log.
+  Doppelversand-Schutz je Objekt und ISO-Woche: `scheduler_state` `calendar_weekly_last_sent_week:<slug>` = `YYYY-Www`.
+- Manueller Test: `npx tsx src/scripts/test-report-emails.ts monthly|calendar` (`calendar` = alle Objekte mit Abonnenten).
 - **Empfänger-Pflege (#1223, Migration 041):** Tabellen `report_recipients` + `report_subscriptions`
   (report_type × property_slug, `''` = objektübergreifend, `active`). Admin-Seite `/admin/reporting` (Matrix, Häkchen speichern
-  sofort, Empfänger hinzufügen/entfernen). Einmaliger Import beim ersten Start: `src/services/reporting/report-recipients-bootstrap.ts`
+  sofort, Empfänger hinzufügen/entfernen; je-Objekt-Typen als Spalte je Objekt). Einmaliger Import beim ersten Start: `src/services/reporting/report-recipients-bootstrap.ts`
   (Marker `scheduler_state` `report_recipients_bootstrap_v1`) übernimmt `weeklyReport.recipients`/`biReport.recipients` und seedet
-  per Local-Part: christian → nur `portfolio-monthly` (aus weekly-summary/portfolio-weekly raus), holger/ulf/angela → `calendar-weekly`.
+  per Local-Part: christian → nur `portfolio-monthly` (aus weekly-summary/portfolio-weekly raus), holger/ulf/angela → `calendar-weekly`
+  für ihre weekly-summary-Objekte. Migration 045 (#1284) hat die alten objektübergreifenden `calendar-weekly`-Abos ebenso in Abos je
+  Objekt umgewandelt (genau die Objekte mit aktivem weekly-summary derselben Adresse) und die `''`-Zeilen gelöscht.
   Konsistenz-Alert und LLM-Alarm bleiben bei `.env` (nicht im Dashboard).
 
 ### Google Analytics 4

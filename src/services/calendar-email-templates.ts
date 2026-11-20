@@ -1,55 +1,33 @@
 /**
- * Kalender-Report "Nächste Gäste" (report-type calendar-weekly, #1223).
- * Email-safe HTML (Tabellen + Inline-Styles) plus Text-Version.
+ * Kalender-Report "Nächste Gäste" je Objekt (report-type calendar-weekly, #1223/#1284).
+ * Sieht aus wie der Weekly Summary (gleicher Style-Block, gleiche Tabelle), zeigt aber nur
+ * die Buchungstabelle "Next 5 Upcoming Bookings".
  *
- * Bewusst OHNE Preise, Umsätze, Kennzahlen und Kontaktdaten: nur Vorname, Personenzahl, Kanal.
+ * Bewusst OHNE Preise, Kennzahlen, Kontaktdaten und Bestätigungscodes: nur Vorname, Kanal,
+ * Zeitraum, Nächte, Personenzahl, Status.
  */
-import { format } from 'date-fns';
-import { de } from 'date-fns/locale';
+import { WEEKLY_SUMMARY_STYLES, formatDate } from './email-templates.js';
 
-export interface CalendarStayEntry {
-  kind: 'stay';
-  checkIn: string;   // YYYY-MM-DD
-  checkOut: string;  // YYYY-MM-DD
+export interface CalendarBookingRow {
   firstName: string; // erstes Wort von guest_name, sonst "Gast"
-  guests: number | null;
   channel: string;   // lesbar, oder "–"
-}
-
-export interface CalendarBlockEntry {
-  kind: 'block';
-  from: string; // YYYY-MM-DD, erster geblockter Tag (aufs Fenster beschnitten)
-  to: string;   // YYYY-MM-DD, letzter geblockter Tag (aufs Fenster beschnitten, inklusive)
-}
-
-export type CalendarEntry = CalendarStayEntry | CalendarBlockEntry;
-
-export interface CalendarReportProperty {
-  slug: string;
-  name: string;
-  entries: CalendarEntry[]; // chronologisch
+  checkIn: string;
+  checkOut: string;
+  nights: number;
+  guests: number;
+  status: string;
 }
 
 export interface CalendarReportModel {
-  generatedAt: string;
-  windowStart: string; // YYYY-MM-DD (heute, Berlin)
-  windowEnd: string;   // YYYY-MM-DD (heute + 14, inklusive)
-  weekNumber: number;  // ISO-Kalenderwoche von windowStart
-  properties: CalendarReportProperty[];
+  propertySlug: string;
+  propertyName: string;
+  weekNumber: number; // ISO-Kalenderwoche des Versandtags (Berlin)
+  bookings: CalendarBookingRow[];
 }
-
-export const EMPTY_TEXT = 'keine Gäste in den nächsten 14 Tagen';
 
 /** Escape data-derived strings for HTML. */
 function h(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-}
-
-const parse = (iso: string) => new Date(`${iso.slice(0, 10)}T00:00:00`);
-
-/** "Mo 23.11." */
-export function shortDay(iso: string): string {
-  return format(parse(iso), 'EEEEEE dd.MM.', { locale: de });
 }
 
 /** Lesbarer Kanal; unbekannte Werte bleiben roh, fehlend = "–". */
@@ -79,77 +57,80 @@ export function firstNameOf(guestName: string | null | undefined): string {
 }
 
 export function calendarEmailSubject(model: CalendarReportModel): string {
-  const from = format(parse(model.windowStart), 'dd.MM.');
-  const to = format(parse(model.windowEnd), 'dd.MM.yyyy');
-  return `Nächste Gäste · KW ${model.weekNumber} · ${from}–${to}`;
-}
-
-function guestsCell(n: number | null): string {
-  return n && n > 0 ? String(n) : '–';
-}
-
-function renderProperty(p: CalendarReportProperty): string {
-  const td = 'padding:5px 10px;font:12px sans-serif;border-bottom:1px solid #eee';
-  const rows = p.entries
-    .map((e) => {
-      if (e.kind === 'block') {
-        return `<tr><td colspan="5" style="${td};color:#888;font-style:italic">${shortDay(e.from)} – ${shortDay(e.to)} · geblockt</td></tr>`;
-      }
-      return `<tr>
-        <td style="${td};font-weight:600;white-space:nowrap">${shortDay(e.checkIn)}</td>
-        <td style="${td};white-space:nowrap">${shortDay(e.checkOut)}</td>
-        <td style="${td}">${h(e.firstName)}</td>
-        <td style="${td};text-align:right">${guestsCell(e.guests)} P</td>
-        <td style="${td}">${h(e.channel)}</td>
-      </tr>`;
-    })
-    .join('');
-  const body = p.entries.length
-    ? `<table style="border-collapse:collapse;width:100%">
-        <tr>
-          <th style="font:600 11px sans-serif;color:#888;padding:4px 10px;border-bottom:2px solid #ddd;text-align:left">Anreise</th>
-          <th style="font:600 11px sans-serif;color:#888;padding:4px 10px;border-bottom:2px solid #ddd;text-align:left">Abreise</th>
-          <th style="font:600 11px sans-serif;color:#888;padding:4px 10px;border-bottom:2px solid #ddd;text-align:left">Gast</th>
-          <th style="font:600 11px sans-serif;color:#888;padding:4px 10px;border-bottom:2px solid #ddd;text-align:right">Personen</th>
-          <th style="font:600 11px sans-serif;color:#888;padding:4px 10px;border-bottom:2px solid #ddd;text-align:left">Kanal</th>
-        </tr>${rows}</table>`
-    : `<p style="font:13px sans-serif;color:#888;margin:0">${EMPTY_TEXT}</p>`;
-  return `<div style="padding:0 18px 16px">
-      <h3 style="font:700 13px sans-serif;margin:0 0 8px">${h(p.name)}</h3>
-      ${body}
-    </div>`;
+  return `📅 Nächste Gäste · ${model.propertyName} · KW ${model.weekNumber}`;
 }
 
 export function generateCalendarEmail(model: CalendarReportModel): { html: string; text: string } {
-  const range = `${format(parse(model.windowStart), 'dd.MM.')}–${format(parse(model.windowEnd), 'dd.MM.yyyy')}`;
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head>
-    <body style="margin:0;background:#fff">
-    <div style="max-width:680px;margin:0 auto;border:1px solid #e2e4df;border-radius:10px;overflow:hidden">
-      <div style="background:#2f3a33;color:#fff;padding:16px 18px;margin-bottom:16px">
-        <div style="font:700 16px sans-serif">Nächste Gäste · KW ${model.weekNumber}</div>
-        <div style="font:11px sans-serif;opacity:.7;margin-top:2px">${range} · ${model.properties.length} Objekte</div>
-      </div>
-      ${model.properties.map(renderProperty).join('')}
-      <div style="background:#f7f8f6;padding:10px 18px;font:10px sans-serif;color:#999;text-align:center">
-        Remote Republic · automatischer Kalender-Report
-      </div>
-    </div>
-    </body></html>`;
+  const { propertyName, weekNumber, bookings } = model;
 
-  const lines: string[] = [`Nächste Gäste · KW ${model.weekNumber} · ${range}`];
-  for (const p of model.properties) {
-    lines.push('', p.name);
-    if (!p.entries.length) {
-      lines.push(`  ${EMPTY_TEXT}`);
-      continue;
-    }
-    for (const e of p.entries) {
-      lines.push(
-        e.kind === 'block'
-          ? `  ${shortDay(e.from)} – ${shortDay(e.to)} · geblockt`
-          : `  ${shortDay(e.checkIn)} → ${shortDay(e.checkOut)} · ${e.firstName} · ${guestsCell(e.guests)} P · ${e.channel}`
-      );
-    }
-  }
-  return { html, text: lines.join('\n') };
+  const html = `
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nächste Gäste</title>
+  <style>${WEEKLY_SUMMARY_STYLES}</style>
+</head>
+<body>
+  <div class="container">
+    <h1>📅 Nächste Gäste</h1>
+    <p><strong>${h(propertyName)}</strong> · KW ${weekNumber}</p>
+
+    <h2 style="margin-top: 40px; border-bottom: 2px solid #3498db; padding-bottom: 8px;">📅 Next 5 Upcoming Bookings</h2>
+    ${bookings.length > 0 ? `
+    <table>
+      <thead>
+        <tr>
+          <th>Guest</th>
+          <th>Check-in</th>
+          <th>Check-out</th>
+          <th>Nights</th>
+          <th>Guests</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${bookings.map(b => `
+        <tr>
+          <td><strong>${h(b.firstName)}</strong><br/><small style="color: #7f8c8d;">${h(b.channel)}</small></td>
+          <td>${formatDate(b.checkIn)}</td>
+          <td>${formatDate(b.checkOut)}</td>
+          <td>${b.nights}</td>
+          <td>${b.guests}</td>
+          <td><span class="status-badge status-${h(b.status)}">${h(b.status)}</span></td>
+        </tr>
+        `).join('')}
+      </tbody>
+    </table>
+    ` : `
+    <div class="no-data">No upcoming bookings</div>
+    `}
+
+    <div class="footer">
+      <p>This is an automated weekly summary generated by Guesty Calendar App</p>
+    </div>
+  </div>
+</body>
+</html>
+  `;
+
+  const text = `
+Nächste Gäste - ${propertyName} - KW ${weekNumber}
+${'='.repeat(60)}
+
+NEXT 5 UPCOMING BOOKINGS
+${'='.repeat(60)}
+
+${bookings.length > 0
+  ? bookings.map(b =>
+    `- ${b.firstName} (${b.channel}) | ${formatDate(b.checkIn)} → ${formatDate(b.checkOut)} | ${b.nights} nights | ${b.guests} guests | ${b.status}`
+  ).join('\n')
+  : 'No upcoming bookings'}
+
+---
+This is an automated weekly summary.
+  `.trim();
+
+  return { html, text };
 }

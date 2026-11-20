@@ -143,7 +143,7 @@ function formatCurrency(amount: number, currency: string): string {
 /**
  * Format date
  */
-function formatDate(dateStr: string): string {
+export function formatDate(dateStr: string): string {
   const date = new Date(dateStr);
   return new Intl.DateTimeFormat('de-DE', {
     year: 'numeric',
@@ -228,19 +228,9 @@ function generateTrendChartUrl(trendData: TrendData): string {
 }
 
 /**
- * Generate weekly summary email HTML
+ * CSS des Weekly Summary (auch vom Kalender-Report genutzt, damit beide gleich aussehen).
  */
-export function generateWeeklySummaryEmail(data: WeeklySummaryData): { html: string; text: string } {
-  const { propertyTitle, currency, allTimeStats, currentYearStats, bookingComparison, occupancyRates, conversionRate, websiteAnalytics, upcomingBookings, estimateInfo } = data;
-
-  const html = `
-<!DOCTYPE html>
-<html lang="de">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Weekly Property Summary</title>
-  <style>
+export const WEEKLY_SUMMARY_STYLES = `
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
       line-height: 1.6;
@@ -346,7 +336,22 @@ export function generateWeeklySummaryEmail(data: WeeklySummaryData): { html: str
       color: #7f8c8d;
       text-align: center;
     }
-  </style>
+  `;
+
+/**
+ * Generate weekly summary email HTML
+ */
+export function generateWeeklySummaryEmail(data: WeeklySummaryData): { html: string; text: string } {
+  const { propertyTitle, currency, allTimeStats, currentYearStats, bookingComparison, occupancyRates, conversionRate, websiteAnalytics, upcomingBookings, estimateInfo } = data;
+
+  const html = `
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Weekly Property Summary</title>
+  <style>${WEEKLY_SUMMARY_STYLES}</style>
 </head>
 <body>
   <div class="container">

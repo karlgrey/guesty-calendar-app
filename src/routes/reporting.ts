@@ -7,7 +7,9 @@ import { getAllProperties } from '../config/properties.js';
 import {
   addRecipient, getRecipientById, listRecipients, removeRecipient, setSubscription,
 } from '../repositories/report-recipient-repository.js';
-import { REPORT_TYPE_LABELS, isPerPropertyReportType, isReportType, type ReportType } from '../services/reporting/report-types.js';
+import {
+  PER_PROPERTY_REPORT_TYPES, REPORT_TYPES, REPORT_TYPE_LABELS, isPerPropertyReportType, isReportType, type ReportType,
+} from '../services/reporting/report-types.js';
 import { renderAdminPage } from './admin-layout.js';
 
 const router = express.Router();
@@ -23,7 +25,7 @@ function formatDate(iso: string): string {
   return `${d}.${m}.${y}`;
 }
 
-const CROSS_PROPERTY_TYPES: ReportType[] = ['portfolio-weekly', 'portfolio-monthly', 'calendar-weekly'];
+const CROSS_PROPERTY_TYPES: ReportType[] = REPORT_TYPES.filter((t) => !isPerPropertyReportType(t));
 
 const emailSchema = z.string().trim().email();
 
@@ -38,11 +40,11 @@ router.get('/', (req, res) => {
   const added = queryString(req.query.added);
 
   const columns: Array<{ type: ReportType; slug: string; label: string }> = [
-    ...properties.map((p) => ({
-      type: 'weekly-summary' as ReportType,
+    ...PER_PROPERTY_REPORT_TYPES.flatMap((t) => properties.map((p) => ({
+      type: t,
       slug: p.slug,
-      label: `${REPORT_TYPE_LABELS['weekly-summary']} · ${p.name}${p.reportingUntil ? ` (bis ${formatDate(p.reportingUntil)})` : ''}`,
-    })),
+      label: `${REPORT_TYPE_LABELS[t]} · ${p.name}${p.reportingUntil ? ` (bis ${formatDate(p.reportingUntil)})` : ''}`,
+    }))),
     ...CROSS_PROPERTY_TYPES.map((t) => ({ type: t, slug: '', label: REPORT_TYPE_LABELS[t] })),
   ];
 
