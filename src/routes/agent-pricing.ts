@@ -156,12 +156,11 @@ router.put('/pricing/:slug', async (req, res) => {
         caller,
       }, 'Agent pricing change');
     }
-    const calendarSync = outcome.written.length > 0
-      ? triggerPropertyCalendarRefresh(property, target.listingId)
-      : 'nicht nötig';
-
     if (outcome.error !== undefined) {
       const e = outcome.error;
+      const calendarSync = outcome.written.length > 0
+        ? triggerPropertyCalendarRefresh(property, target.listingId)
+        : 'nicht nötig';
       logger.warn({ slug: property.slug, err: e, written: outcome.written.length, caller }, 'Agent pricing write failed (partial)');
       res.status(502).json({
         ...base,
@@ -169,7 +168,8 @@ router.put('/pricing/:slug', async (req, res) => {
         error: e instanceof Error ? e.message : String(e),
         ...(e instanceof AppError && e.details !== undefined ? { details: e.details } : {}),
         written: outcome.written,
-        note: 'Teilweise geschrieben: nur die Läufe in written sind beim Anbieter angekommen — GET /pricing prüfen',
+        note: 'Abgebrochen: die Läufe in written hat der Anbieter angenommen; der fehlgeschlagene Aufruf kann trotzdem teilweise gewirkt haben. '
+          + 'Vor einem neuen Aufruf GET /pricing prüfen, einen Aufruf mit factor nie ungeprüft wiederholen (er rechnet auf den dann aktuellen Preis)',
         calendarSync,
       });
       return;
@@ -189,6 +189,9 @@ router.put('/pricing/:slug', async (req, res) => {
       }
       if (verifyError === undefined && notApplied.length === 0) break;
     }
+    // Refresh erst NACH dem Nachlesen: Hostex verarbeitet asynchron, ein sofortiger Sync
+    // spiegelte sonst noch den alten Preis in den Cache (dann bis zum nächsten Stunden-ETL).
+    const calendarSync = triggerPropertyCalendarRefresh(property, target.listingId);
 
     res.json({
       ...base,

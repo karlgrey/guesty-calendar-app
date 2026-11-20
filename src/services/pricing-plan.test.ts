@@ -161,6 +161,15 @@ describe('planPricingChanges', () => {
   });
 });
 
+describe('planPricingChanges: factor ergibt 0 (Prüfer #1299)', () => {
+  it('Preis 4 mal 0.1 rundet auf 0 → skipped statt Preis 0', () => {
+    const plan = planPricingChanges(mkDays('2027-05-01', '2027-05-02', 4), req({ from: '2027-05-01', to: '2027-05-02', factor: 0.1 }), TODAY);
+    expect(plan.changes).toEqual([]);
+    expect(plan.skipped.map((s) => s.date)).toEqual(['2027-05-01', '2027-05-02']);
+    expect(plan.skipped[0].reason).toMatch(/keinen Preis über 0/);
+  });
+});
+
 describe('groupWriteRuns', () => {
   it('Lücke → neuer Lauf', () => {
     const runs = groupWriteRuns([

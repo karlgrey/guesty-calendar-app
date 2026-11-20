@@ -6,16 +6,23 @@ vi.mock('./guesty-client.js', () => ({
 }));
 const getListingCalendarsMock = vi.fn();
 const getReservationsMock = vi.fn();
+const updatePricesMock = vi.fn();
+const updateRestrictionsMock = vi.fn();
 vi.mock('./hostex-client.js', () => ({
   getHostexClient: () => ({
     getProperties: vi.fn(),
     getListingCalendars: (...a: unknown[]) => getListingCalendarsMock(...a),
     getReservations: (...a: unknown[]) => getReservationsMock(...a),
+    updateListingPrices: (...a: unknown[]) => updatePricesMock(...a),
+    updateListingRestrictions: (...a: unknown[]) => updateRestrictionsMock(...a),
   }),
 }));
 
-import { planWriteRuns, readPricingDays, findNotApplied, type PricingTarget } from './pricing-service.js';
-import type { PricingChange } from './pricing-plan.js';
+import {
+  planWriteRuns, readPricingDays, findNotApplied, writePricingChanges,
+  type PricingTarget, type ProviderPricingDay,
+} from './pricing-service.js';
+import { addDays, type PricingChange } from './pricing-plan.js';
 import { getPropertyBySlug } from '../config/properties.js';
 
 const CH_ID = '1406340600305404294';
@@ -33,6 +40,7 @@ const changes: PricingChange[] = [
 beforeEach(() => {
   getCalendarMock.mockReset(); getListingCalendarsMock.mockReset(); getReservationsMock.mockReset();
   getReservationsMock.mockResolvedValue([]);
+  updatePricesMock.mockReset(); updateRestrictionsMock.mockReset();
 });
 
 describe('planWriteRuns', () => {
@@ -88,5 +96,54 @@ describe('findNotApplied', () => {
       { date: '2027-05-04', price: { old: 139, new: 160 } },
     ];
     expect(findNotApplied(ch, after)).toEqual(['2027-05-02', '2027-05-03', '2027-05-04']);
+  });
+});
+
+describe('writePricingChanges Hostex: Stapel und Teilfehler (Prüfer #1299)', () => {
+  // 150 einzelne Tage mit je einem Tag Lücke → 150 Läufe → Stapel 100 + 50
+  const dates = Array.from({ length: 150 }, (_, i) => addDays('2027-01-01', 2 * i));
+  const days: ProviderPricingDay[] = dates.map((date) => ({
+    date, price: 129, minNights: 2, occupied: false, closedOnArrival: false, closedOnDeparture: false,
+  }));
+
+  it('Preis: zweiter Stapel scheitert → written nennt genau die 100 Läufe des ersten', async () => {
+    updatePricesMock.mockResolvedValueOnce({ ok: true }).mockRejectedValueOnce(new Error('Hostex 500'));
+    const ch: PricingChange[] = dates.map((date) => ({ date, price: { old: 129, new: 140 } }));
+    const out = await writePricingChanges(hostexTarget(), ch, days);
+    expect(out.error).toBeInstanceOf(Error);
+    expect(updatePricesMock).toHaveBeenCalledTimes(2);
+    expect(updatePricesMock.mock.calls[0][0].prices).toHaveLength(100);
+    expect(updatePricesMock.mock.calls[1][0].prices).toHaveLength(50);
+    expect(out.written).toHaveLength(100);
+    expect(out.written[0]).toEqual({ from: '2027-01-01', to: '2027-01-01', nights: 1, price: 140 });
+    expect(out.written[99].from).toBe(dates[99]);
+    expect(updateRestrictionsMock).not.toHaveBeenCalled();
+  });
+
+  it('Mindestnächte: zweiter Stapel scheitert → Preise und die ersten 100 Mindestnächte-Läufe in written', async () => {
+    updatePricesMock.mockResolvedValue({ ok: true });
+    updateRestrictionsMock.mockResolvedValueOnce({ ok: true }).mockRejectedValueOnce(new Error('Hostex 500'));
+    const ch: PricingChange[] = dates.map((date) => ({ date, price: { old: 129, new: 140 }, minNights: { old: 2, new: 3 } }));
+    const out = await writePricingChanges(hostexTarget(), ch, days);
+    expect(out.error).toBeInstanceOf(Error);
+    expect(out.written.filter((w) => w.price !== undefined)).toHaveLength(150);
+    const min = out.written.filter((w) => w.minNights !== undefined);
+    expect(min).toHaveLength(100);
+    expect(min[99]).toEqual({ from: dates[99], to: dates[99], nights: 1, minNights: 3 });
+  });
+
+  it('ohne Fehler: alle Läufe in written, Sperren je Tag mitgesendet', async () => {
+    updateRestrictionsMock.mockResolvedValue({ ok: true });
+    const two = days.slice(0, 2).map((d, i) => ({ ...d, date: addDays('2027-05-02', i), closedOnArrival: i === 0 }));
+    const ch: PricingChange[] = two.map((d) => ({ date: d.date, minNights: { old: 2, new: 3 } }));
+    const out = await writePricingChanges(hostexTarget(), ch, two);
+    expect(out.error).toBeUndefined();
+    expect(updateRestrictionsMock.mock.calls[0][0].restrictions).toEqual([
+      { startDate: '2027-05-02', endDate: '2027-05-02', minStayOnArrival: 3, closedOnArrival: true, closedOnDeparture: false },
+      { startDate: '2027-05-03', endDate: '2027-05-03', minStayOnArrival: 3, closedOnArrival: false, closedOnDeparture: false },
+    ]);
+    // Antwort verdichtet auf den Zielwert: ein Lauf über beide Tage
+    expect(out.written).toEqual([{ from: '2027-05-02', to: '2027-05-03', nights: 2, minNights: 3 }]);
+    expect(updatePricesMock).not.toHaveBeenCalled();
   });
 });

@@ -325,4 +325,52 @@ describe('PUT /pricing/:slug Hostex', () => {
     expect(r.body.applied).toBe(true);
     expect(r.body.notApplied).toBeUndefined();
   });
+
+  it('dryRun: belegter Tag in skipped, kein Schreibaufruf, kein Refresh, kein Änderungslog (Prüfer)', async () => {
+    getListingCalendarsMock.mockResolvedValue(hostexCal(dates('2027-05-03', '2027-05-06').map((d) => hDay(d, 129, 2))));
+    getReservationsMock.mockResolvedValue([
+      { reservation_code: 'HX1', status: 'accepted', check_in_date: '2027-05-04', check_out_date: '2027-05-05' },
+    ]);
+    const r = await req('PUT', '/pricing/bootshaus-alte-oder', { from: '2027-05-03', to: '2027-05-06', factor: 1.1, dryRun: true });
+    expect(r.status).toBe(200);
+    expect(r.body.changes.map((c: any) => [c.date, c.price])).toEqual([
+      ['2027-05-03', { old: 129, new: 142 }], ['2027-05-05', { old: 129, new: 142 }], ['2027-05-06', { old: 129, new: 142 }]]);
+    expect(r.body.skipped).toEqual([{ date: '2027-05-04', reason: expect.stringMatching(/Reservierung HX1/) }]);
+    expect(r.body.runs).toEqual([
+      { from: '2027-05-03', to: '2027-05-03', nights: 1, price: 142 },
+      { from: '2027-05-05', to: '2027-05-06', nights: 2, price: 142 },
+    ]);
+    expect(updatePricesMock).not.toHaveBeenCalled();
+    expect(updateRestrictionsMock).not.toHaveBeenCalled();
+    expect(triggerRefreshMock).not.toHaveBeenCalled();
+    expect(loggerInfoMock.mock.calls.some((c) => c[1] === 'Agent pricing change')).toBe(false);
+  });
+
+  it('Vollzug: belegter Tag wird nicht geschrieben, Refresh erst nach dem Nachlesen (Prüfer)', async () => {
+    const order: string[] = [];
+    const before = dates('2027-05-03', '2027-05-05').map((d) => hDay(d, 129, 2));
+    const after = [hDay('2027-05-03', 140, 2), hDay('2027-05-04', 129, 2), hDay('2027-05-05', 140, 2)];
+    getListingCalendarsMock
+      .mockImplementationOnce(async () => { order.push('read'); return hostexCal(before); })
+      .mockImplementationOnce(async () => { order.push('read'); return hostexCal(after); });
+    getReservationsMock.mockResolvedValue([
+      { reservation_code: 'HX1', status: 'wait_accept', check_in_date: '2027-05-04', check_out_date: '2027-05-05' },
+    ]);
+    updatePricesMock.mockImplementation(async () => { order.push('write'); });
+    triggerRefreshMock.mockImplementation(() => { order.push('refresh'); return 'angestoßen'; });
+    const r = await req('PUT', '/pricing/bootshaus-alte-oder', { from: '2027-05-03', to: '2027-05-05', price: 140 });
+    expect(r.status).toBe(200);
+    expect(updatePricesMock).toHaveBeenCalledWith({
+      channelType: 'airbnb', listingId: CH_ID,
+      prices: [
+        { startDate: '2027-05-03', endDate: '2027-05-03', price: 140 },
+        { startDate: '2027-05-05', endDate: '2027-05-05', price: 140 },
+      ],
+    });
+    expect(updateRestrictionsMock).not.toHaveBeenCalled();
+    expect(r.body.skipped.map((s: any) => s.date)).toEqual(['2027-05-04']);
+    expect(r.body.notApplied).toBeUndefined();
+    expect(r.body.calendarSync).toBe('angestoßen');
+    expect(order).toEqual(['read', 'write', 'read', 'refresh']);
+  });
 });

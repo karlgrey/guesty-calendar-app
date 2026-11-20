@@ -137,6 +137,15 @@ export function planWriteRuns(target: PricingTarget, changes: PricingChange[]): 
   ];
 }
 
+/** Läufe je Hostex-Schreibaufruf (deckt sich mit der Stapelgröße im Client). */
+const HOSTEX_WRITE_BATCH = 100;
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
 export interface WriteOutcome {
   written: WrittenRun[];
   /** gesetzt, wenn ein Schreibaufruf scheiterte; `written` enthält dann die schon erfolgten Läufe */
@@ -167,15 +176,18 @@ export async function writePricingChanges(
     const client = getHostexClient();
     const channel = target.channel!;
     const priceRuns = groupWriteRuns(changes.filter((c) => c.price).map((c) => ({ date: c.date, payload: { price: c.price!.new } })));
-    if (priceRuns.length > 0) {
+    // Je Stapel ein Aufruf und danach sofort verbucht: scheitert ein späterer Stapel, nennt
+    // `written` genau die schon angenommenen Läufe (sonst fehlten sie in Antwort, Log und Refresh).
+    for (const part of chunk(priceRuns, HOSTEX_WRITE_BATCH)) {
       await client.updateListingPrices({
         channelType: channel.channelType, listingId: channel.listingId,
-        prices: priceRuns.map((r) => ({ startDate: r.from, endDate: r.to, price: r.payload.price })),
+        prices: part.map((r) => ({ startDate: r.from, endDate: r.to, price: r.payload.price })),
       });
-      written.push(...priceRuns.map((r) => ({ from: r.from, to: r.to, nights: r.nights, price: r.payload.price })));
+      written.push(...part.map((r) => ({ from: r.from, to: r.to, nights: r.nights, price: r.payload.price })));
     }
     const byDate = new Map(days.map((d) => [d.date, d]));
-    const minRuns = groupWriteRuns(changes.filter((c) => c.minNights).map((c) => {
+    const minChanges = changes.filter((c) => c.minNights);
+    const minRuns = groupWriteRuns(minChanges.map((c) => {
       const d = byDate.get(c.date);
       return {
         date: c.date,
@@ -186,18 +198,22 @@ export async function writePricingChanges(
         },
       };
     }));
-    if (minRuns.length > 0) {
+    for (const part of chunk(minRuns, HOSTEX_WRITE_BATCH)) {
       await client.updateListingRestrictions({
         channelType: channel.channelType, listingId: channel.listingId,
-        restrictions: minRuns.map((r) => ({
+        restrictions: part.map((r) => ({
           startDate: r.from, endDate: r.to,
           minStayOnArrival: r.payload.minNights,
           closedOnArrival: r.payload.closedOnArrival,
           closedOnDeparture: r.payload.closedOnDeparture,
         })),
       });
-      // für die Antwort wieder auf Zielwert-Läufe verdichten (cta/ctd sind nur Erhaltung)
-      written.push(...groupWriteRuns(changes.filter((c) => c.minNights).map((c) => ({ date: c.date, payload: { minNights: c.minNights!.new } })))
+      // für die Antwort wieder auf Zielwert-Läufe verdichten (cta/ctd sind nur Erhaltung);
+      // die Läufe sind sortiert und überschneidungsfrei, der Stapel deckt also genau dieses Datumsfenster.
+      const first = part[0].from;
+      const last = part[part.length - 1].to;
+      written.push(...groupWriteRuns(minChanges.filter((c) => c.date >= first && c.date <= last)
+        .map((c) => ({ date: c.date, payload: { minNights: c.minNights!.new } })))
         .map((r) => ({ from: r.from, to: r.to, nights: r.nights, minNights: r.payload.minNights })));
     }
     return { written };

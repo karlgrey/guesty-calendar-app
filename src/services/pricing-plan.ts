@@ -194,6 +194,11 @@ export function planPricingChanges(days: PricingDay[], req: PricingRequest, toda
     let newPrice: number | undefined;
     if (req.price !== undefined) newPrice = req.price;
     else if (req.factor !== undefined) newPrice = applyFactor(day.price as number, req.factor);
+    // factor rundet auf ganze Euro: ein Ergebnis von 0 darf nie als Preis rausgehen (Kriterium „Preis > 0“).
+    if (newPrice !== undefined && newPrice <= 0) {
+      plan.skipped.push({ date, reason: `factor ergibt keinen Preis über 0 (alt ${day.price})` });
+      continue;
+    }
     const newMin = req.minNights;
 
     const priceSame = newPrice === undefined || day.price === newPrice;
