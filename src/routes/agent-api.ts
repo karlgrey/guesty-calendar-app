@@ -45,8 +45,8 @@ import {
 import { triggerPropertyCalendarRefresh } from '../services/property-calendar-refresh.js';
 import { setLocalDayBlocked } from '../repositories/availability-repository.js';
 import { getSuggestionsByStatus } from '../repositories/feedback-repository.js';
-import { revokeVaultSuggestion } from '../services/vault-suggestion-service.js';
-import type { SuggestionStatus } from '../types/feedback.js';
+import { revokeVaultSuggestion, createVaultSuggestion } from '../services/vault-suggestion-service.js';
+import { FEEDBACK_ORIGIN, type SuggestionStatus } from '../types/feedback.js';
 import { berlinCalendarDay } from '../services/auto-send/berlin-day.js';
 import { getListingTextsForProperty } from '../services/listing-texts-service.js';
 import { syncListing } from '../jobs/sync-listing.js';
@@ -1028,8 +1028,19 @@ router.get('/vault-suggestions', (req, res) => {
       revoked_at: s.revoked_at ?? null,
       revoke_commit: s.revoke_commit ?? null,
       created_at: s.created_at ?? null,
+      origin: s.origin ?? FEEDBACK_ORIGIN,
     }));
     res.json({ suggestions });
+  } catch (err) { handleError(res, err); }
+});
+
+// #1295 Anlegen (Diff-Auswertung): Pflicht target_heading, addition_text, rationale + genau eines von
+// property (Slug) oder scope "alle"; optional origin (Default diff-auswertung). Status pending, 201 mit id.
+router.post('/vault-suggestions', (req, res) => {
+  try {
+    const result = createVaultSuggestion(req.body);
+    if (!result.ok) { res.status(result.status).json({ error: result.error }); return; }
+    res.status(201).json(result.suggestion);
   } catch (err) { handleError(res, err); }
 });
 

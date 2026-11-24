@@ -5,6 +5,7 @@ import {
 } from '../repositories/feedback-repository.js';
 import { approveVaultSuggestion, revokeVaultSuggestion } from '../services/vault-suggestion-service.js';
 import { renderAdminPage } from './admin-layout.js';
+import { FEEDBACK_ORIGIN } from '../types/feedback.js';
 import type { SuggestionStatus, VaultSuggestion } from '../types/feedback.js';
 
 const router = express.Router();
@@ -43,6 +44,11 @@ function renderActions(s: VaultSuggestion): string {
   return '';
 }
 
+function renderOrigin(s: VaultSuggestion): string {
+  if (!s.origin || s.origin === FEEDBACK_ORIGIN) return '';
+  return ` <span class="badge">Herkunft: ${esc(s.origin)}</span>`;
+}
+
 function renderMeta(s: VaultSuggestion): string {
   if (s.status === 'approved') {
     return `<p class="subtitle">Freigegeben ${esc(s.applied_at)} · Commit <code>${esc(shortSha(s.applied_commit))}</code></p>`;
@@ -64,7 +70,7 @@ router.get('/', (req, res) => {
     : `<a href="/admin/suggestions?status=${t.status}">${esc(t.label)}</a>`).join(' · ');
   const items = list.map((s) => `
     <div class="section">
-      <p class="subtitle" style="margin:0 0 8px"><span class="badge">${esc(s.target_file)}</span> → <span class="badge">${esc(s.target_heading)}</span></p>
+      <p class="subtitle" style="margin:0 0 8px"><span class="badge">${esc(s.target_file)}</span> → <span class="badge">${esc(s.target_heading)}</span>${renderOrigin(s)}</p>
       <div class="draft-preview">${esc(s.addition_text)}</div>
       <p class="subtitle">${esc(s.rationale)}</p>
       ${renderMeta(s)}
@@ -75,7 +81,7 @@ router.get('/', (req, res) => {
   const countLabel = status === 'pending' ? `${list.length} offen` : String(list.length);
   const body = `<a class="back-link" href="/admin/messages">&larr; Nachrichten</a>
     <h1>Vault-Vorschläge <span class="count-pill">${esc(countLabel)}</span></h1>
-    <p class="subtitle">Vorschläge aus deinem Feedback. Freigeben schreibt die Ergänzung in den Vault und committet; Zurückziehen entfernt sie wieder.</p>
+    <p class="subtitle">Vorschläge aus deinem Feedback und aus der Diff-Auswertung. Freigeben schreibt die Ergänzung in den Vault und committet; Zurückziehen entfernt sie wieder.</p>
     <p class="subtitle">${tabs}</p>
     ${pushNotice}
     ${items || '<p class="empty">Keine Vorschläge in diesem Status.</p>'}`;
