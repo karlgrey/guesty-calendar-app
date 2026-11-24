@@ -18,8 +18,10 @@ vi.mock('../repositories/feedback-repository.js', () => ({
   getSuggestionsByStatus: (...a: unknown[]) => getSuggestionsByStatusMock(...a),
 }));
 const revokeMock = vi.fn();
+const createMock = vi.fn();
 vi.mock('../services/vault-suggestion-service.js', () => ({
   revokeVaultSuggestion: (...a: unknown[]) => revokeMock(...a),
+  createVaultSuggestion: (...a: unknown[]) => createMock(...a),
 }));
 
 import agentApiRoutes from './agent-api.js';
@@ -39,7 +41,7 @@ const KEY = { 'X-Agent-Key': 'test-agent-key-0123456789abcdef0123456789', 'Conte
 const row = {
   id: 's1', feedback_id: 'f1', target_file: 'prozesse/X.md', target_heading: '## A', addition_text: '- x',
   rationale: 'r', status: 'approved', applied_commit: 'abc', applied_at: '2026-11-01 10:00:00',
-  revoked_at: null, revoke_commit: null, created_at: '2026-10-31 09:00:00',
+  revoked_at: null, revoke_commit: null, created_at: '2026-10-31 09:00:00', origin: 'feedback',
 };
 
 describe('agent-api #969 vault-suggestions', () => {
@@ -84,5 +86,38 @@ describe('agent-api #969 vault-suggestions', () => {
       expect(r.status).toBe(status);
       expect(await r.json()).toEqual({ error: `e${status}` });
     }
+  });
+});
+
+describe('agent-api #1295 POST /vault-suggestions', () => {
+  const body = { target_heading: '## Anti-Pattern', addition_text: '- x', rationale: 'r', scope: 'alle' };
+  const post = (b: unknown, headers: Record<string, string> = KEY) =>
+    fetch(`${base}/api/agent/vault-suggestions`, { method: 'POST', headers, body: JSON.stringify(b) });
+
+  it('401 ohne Key', async () => {
+    expect((await post(body, { 'Content-Type': 'application/json' })).status).toBe(401);
+    expect(createMock).not.toHaveBeenCalled();
+  });
+
+  it('201 mit id; Body geht unverändert an den Service', async () => {
+    const suggestion = { id: 'n1', status: 'pending', target_file: 'prozesse/Gästekommunikation Grundsätze.md', target_heading: '## Anti-Pattern', origin: 'diff-auswertung' };
+    createMock.mockReturnValue({ ok: true, suggestion });
+    const r = await post(body);
+    expect(r.status).toBe(201);
+    expect(createMock).toHaveBeenCalledWith(body);
+    expect(await r.json()).toEqual(suggestion);
+  });
+
+  it('400 aus dem Service als { error }', async () => {
+    createMock.mockReturnValue({ ok: false, status: 400, error: 'Unbekanntes Objekt: zzz' });
+    const r = await post({ ...body, scope: undefined, property: 'zzz' });
+    expect(r.status).toBe(400);
+    expect(await r.json()).toEqual({ error: 'Unbekanntes Objekt: zzz' });
+  });
+
+  it('kollidiert nicht mit /vault-suggestions/:id/revoke', async () => {
+    revokeMock.mockReturnValue({ ok: false, status: 404, error: 'nf' });
+    await fetch(`${base}/api/agent/vault-suggestions/n1/revoke`, { method: 'POST', headers: KEY });
+    expect(createMock).not.toHaveBeenCalled();
   });
 });

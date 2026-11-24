@@ -7,6 +7,11 @@ import type { VaultSuggestion } from '../types/feedback.js';
 
 const SAFE_TARGET = /^prozesse\/[\p{L}\p{N} ._-]+\.md$/u;
 
+/** Guard für target_file: nur `prozesse/<Name>.md`, kein `..` (gilt beim Anlegen, Schreiben und Zurückziehen). */
+export function isSafeTargetFile(targetFile: string): boolean {
+  return SAFE_TARGET.test(targetFile) && !targetFile.includes('..');
+}
+
 export interface VaultWriterDeps {
   vaultPath: string | undefined;
   readFile: (p: string) => string;
@@ -81,7 +86,7 @@ export function applySuggestion(
   s: VaultSuggestion,
   deps: VaultWriterDeps = defaultDeps(),
 ): { committed: boolean; commit: string | null; error?: string } {
-  if (!SAFE_TARGET.test(s.target_file) || s.target_file.includes('..')) {
+  if (!isSafeTargetFile(s.target_file)) {
     return { committed: false, commit: null, error: 'unsafe target_file' };
   }
   if (!deps.vaultPath) return { committed: false, commit: null, error: 'VAULT_PATH not set' };
@@ -123,7 +128,7 @@ export function revokeSuggestion(
   s: VaultSuggestion,
   deps: VaultWriterDeps = defaultDeps(),
 ): { committed: boolean; commit: string | null; removed: boolean; error?: string } {
-  if (!SAFE_TARGET.test(s.target_file) || s.target_file.includes('..')) {
+  if (!isSafeTargetFile(s.target_file)) {
     return { committed: false, commit: null, removed: false, error: 'unsafe target_file' };
   }
   if (!deps.vaultPath) return { committed: false, commit: null, removed: false, error: 'VAULT_PATH not set' };

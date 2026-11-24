@@ -11,9 +11,13 @@ export interface DraftFeedback {
 }
 export type NewFeedback = Pick<DraftFeedback, 'id' | 'thread_id' | 'draft_id' | 'category' | 'note'>;
 
+/** Herkunft des Feedback-Loops im Admin-UI (DB-Default der Spalte `origin`, Migration 046). */
+export const FEEDBACK_ORIGIN = 'feedback';
+
 export interface VaultSuggestion {
   id: string;
-  feedback_id: string;
+  /** NULL bei Vorschlägen ohne Entwurfs-Feedback (Agent-API, #1295, Migration 046). */
+  feedback_id: string | null;
   target_file: string;
   target_heading: string;
   addition_text: string;
@@ -24,5 +28,10 @@ export interface VaultSuggestion {
   applied_at: string | null;
   revoked_at?: string | null;
   revoke_commit?: string | null;
+  /** Herkunft (Migration 046): 'feedback' oder z. B. 'diff-auswertung'. Fehlt nur in Alt-Testschemata → wie 'feedback' behandeln. */
+  origin?: string;
 }
-export type NewSuggestion = Pick<VaultSuggestion, 'id' | 'feedback_id' | 'target_file' | 'target_heading' | 'addition_text' | 'rationale'>;
+/** Feedback-Loop: immer mit feedback_id, origin bleibt der DB-Default 'feedback'. */
+export type NewSuggestion = Pick<VaultSuggestion, 'id' | 'target_file' | 'target_heading' | 'addition_text' | 'rationale'> & { feedback_id: string };
+/** Agent-API (#1295): ohne feedback_id, mit Herkunft. */
+export type NewOriginSuggestion = Pick<VaultSuggestion, 'id' | 'target_file' | 'target_heading' | 'addition_text' | 'rationale'> & { origin: string };

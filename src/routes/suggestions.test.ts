@@ -62,6 +62,27 @@ describe('GET /admin/suggestions', () => {
     expect(html).toContain('9999999');
     expect(html).not.toContain('/revoke"');
   });
+
+  it('Herkunft: diff-auswertung wird angezeigt, Freigeben/Verwerfen bleiben', async () => {
+    getByStatus.mockReturnValue([s({ status: 'pending', origin: 'diff-auswertung', feedback_id: null })]);
+    const html = await (await fetch(`${base}/admin/suggestions`)).text();
+    expect(html).toContain('Herkunft: diff-auswertung');
+    expect(html).toContain('/admin/suggestions/s1/approve');
+    expect(html).toContain('/admin/suggestions/s1/discard');
+  });
+
+  it('origin feedback oder fehlend: keine Herkunfts-Kennzeichnung', async () => {
+    getByStatus.mockReturnValue([s({ status: 'pending', origin: 'feedback' })]);
+    expect(await (await fetch(`${base}/admin/suggestions`)).text()).not.toContain('Herkunft:');
+    getByStatus.mockReturnValue([s({ status: 'pending' })]);
+    expect(await (await fetch(`${base}/admin/suggestions`)).text()).not.toContain('Herkunft:');
+  });
+
+  it('origin wird escaped', async () => {
+    getByStatus.mockReturnValue([s({ status: 'pending', origin: '<x>' })]);
+    const html = await (await fetch(`${base}/admin/suggestions`)).text();
+    expect(html).toContain('Herkunft: &lt;x&gt;');
+  });
 });
 
 describe('POST /admin/suggestions/:id/revoke', () => {

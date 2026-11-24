@@ -1,6 +1,6 @@
 // src/repositories/feedback-repository.ts
 import { getDatabase } from '../db/index.js';
-import type { NewFeedback, VaultSuggestion, NewSuggestion, SuggestionStatus } from '../types/feedback.js';
+import type { NewFeedback, VaultSuggestion, NewSuggestion, NewOriginSuggestion, SuggestionStatus } from '../types/feedback.js';
 
 export function createFeedback(f: NewFeedback): void {
   const db = getDatabase();
@@ -15,6 +15,15 @@ export function createSuggestion(s: NewSuggestion): void {
   db.prepare(
     `INSERT INTO vault_suggestions (id, feedback_id, target_file, target_heading, addition_text, rationale)
      VALUES (@id, @feedback_id, @target_file, @target_heading, @addition_text, @rationale)`,
+  ).run(s);
+}
+
+/** Vorschlag ohne Entwurfs-Feedback (Agent-API, #1295): feedback_id NULL, Status pending, mit Herkunft. */
+export function createOriginSuggestion(s: NewOriginSuggestion): void {
+  const db = getDatabase();
+  db.prepare(
+    `INSERT INTO vault_suggestions (id, feedback_id, target_file, target_heading, addition_text, rationale, origin)
+     VALUES (@id, NULL, @target_file, @target_heading, @addition_text, @rationale, @origin)`,
   ).run(s);
 }
 
