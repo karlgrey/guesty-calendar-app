@@ -18,6 +18,7 @@ import {
   type GuestyListingThreadRow,
 } from '../repositories/message-repository.js';
 import logger from '../utils/logger.js';
+import { isAutomaticHostMessage, AUTO_HOST_MESSAGE_PATTERNS } from '../utils/auto-message.js';
 import type { PropertyConfig } from '../config/properties.js';
 import type {
   MessageChannel,
@@ -305,6 +306,39 @@ interface PostFetchTarget {
   guestName: string | null;
 }
 
+/**
+ * Baut aus einem Guesty-Post die NewMessage. #1298: host-Posts, die auf eine bekannte
+ * Auto-Vorlage passen, werden als 'system' gespeichert (kein Guesty-Muster belegt, Liste dient der Symmetrie).
+ */
+export function mapGuestyPost(
+  post: any,
+  threadId: string,
+  guestName: string | null,
+  now: string,
+  autoPatterns: readonly RegExp[] = AUTO_HOST_MESSAGE_PATTERNS,
+): NewMessage {
+  const automatic = post.sentBy === 'host' && isAutomaticHostMessage(post.body, autoPatterns);
+  return {
+    id: `guesty:${post._id}`,
+    thread_id: threadId,
+    direction: automatic ? 'system' : mapDirection(post.sentBy),
+    sent_at: post.createdAt ?? now,
+    from_name: post.sentBy === 'host' ? 'host' : guestName,
+    from_address: null,
+    to_address: null,
+    subject: null,
+    body: post.body ?? '',
+    body_html: null,
+    source: 'guesty',
+    raw_meta: JSON.stringify({
+      type: post.module?.type,
+      externalId: post.module?.externalId,
+      isFromMigration: post.isFromMigration,
+      ...(automatic ? { automatic: true } : {}),
+    }),
+  };
+}
+
 /** Gemeinsamer Schreibpfad: Thread-Upsert mit aus den Posts berechneten Zeiten/Zähler + Nachrichten-Upsert. */
 function persistThreadWithPosts(target: PostFetchTarget, posts: any[], now: string): number {
   const sortedTimes = posts
@@ -320,25 +354,7 @@ function persistThreadWithPosts(target: PostFetchTarget, posts: any[], now: stri
     last_synced_at: now,
   });
   for (const post of posts) {
-    const msg: NewMessage = {
-      id: `guesty:${post._id}`,
-      thread_id: target.thread.id,
-      direction: mapDirection(post.sentBy),
-      sent_at: post.createdAt ?? now,
-      from_name: post.sentBy === 'host' ? 'host' : target.guestName,
-      from_address: null,
-      to_address: null,
-      subject: null,
-      body: post.body ?? '',
-      body_html: null,
-      source: 'guesty',
-      raw_meta: JSON.stringify({
-        type: post.module?.type,
-        externalId: post.module?.externalId,
-        isFromMigration: post.isFromMigration,
-      }),
-    };
-    upsertMessage(msg);
+    upsertMessage(mapGuestyPost(post, target.thread.id, target.guestName, now));
   }
   return posts.length;
 }

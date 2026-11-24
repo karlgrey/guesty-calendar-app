@@ -196,6 +196,9 @@ export interface ThreadWithLastMessage extends MessageThread {
   // Auto-Send-Entscheidung des neuesten Drafts dieses Threads (Auto-Send-Gate) —
   // null, wenn (noch) kein Draft existiert.
   auto_decision: 'auto' | 'wait' | null;
+  // created_at (SQLite-UTC) des ÄLTESTEN Drafts mit status 'pending' — null, wenn
+  // keiner offen ist (Wartezeit der Freigabe-Queue).
+  pending_draft_since: string | null;
 }
 
 /**
@@ -213,7 +216,10 @@ export function getThreadsUpdatedSince(sinceIso: string, limit: number): ThreadW
           WHERE m.thread_id = t.id AND m.direction != 'system'
           ORDER BY m.sent_at DESC, m.created_at DESC LIMIT 1) AS last_message_direction,
          (SELECT d.auto_decision FROM message_drafts d WHERE d.thread_id = t.id
-          ORDER BY d.created_at DESC LIMIT 1) AS auto_decision
+          ORDER BY d.created_at DESC LIMIT 1) AS auto_decision,
+         (SELECT d.created_at FROM message_drafts d
+          WHERE d.thread_id = t.id AND d.status = 'pending'
+          ORDER BY datetime(d.created_at) ASC LIMIT 1) AS pending_draft_since
        FROM message_threads t
        WHERE datetime(t.last_message_at) >= datetime(?)
        ORDER BY t.last_message_at DESC
@@ -264,9 +270,15 @@ export function getCategoryCounts(
 
 /**
  * Threads of one provider/listing that warrant an auto-generated draft: latest
- * message is from the guest (inbound), no pending draft yet, AND the last
- * message is recent — `sinceModifier` is a SQLite datetime modifier like
- * '-72 hours' so we skip stale threads where drafting a reply makes no sense.
+ * non-system message is from the guest (inbound), no pending draft yet, AND
+ * that guest message is recent — `sinceModifier` is a SQLite datetime modifier
+ * like '-72 hours' so we skip stale threads where drafting a reply makes no sense.
+ *
+ * #1298: Recency window and the ai_no_reply_at/discarded_at markers are measured
+ * against the newest NON-system message (= the last guest message here), not
+ * against t.last_message_at. Automatic host messages (direction 'system') raise
+ * last_message_at and would otherwise reopen a thread that was marked "no reply
+ * needed" or discarded by hand, or pull a stale guest question back into the window.
  */
 export function getThreadsNeedingDraft(
   source: 'hostex' | 'guesty',
@@ -277,23 +289,33 @@ export function getThreadsNeedingDraft(
   const db = getDatabase();
   return db
     .prepare(
-      `SELECT t.* FROM message_threads t
-       WHERE t.source = ? AND t.listing_id = ?
-         AND datetime(t.last_message_at) > datetime('now', ?)
+      `SELECT x.* FROM (
+         SELECT t.*,
+           (SELECT m.sent_at FROM messages m
+            WHERE m.thread_id = t.id AND m.direction != 'system'
+            ORDER BY m.sent_at DESC, m.created_at DESC LIMIT 1) AS last_human_at
+         FROM message_threads t
+         WHERE t.source = ? AND t.listing_id = ?
+       ) x
+       WHERE datetime(x.last_human_at) > datetime('now', ?)
          AND (
            SELECT m.direction FROM messages m
-           WHERE m.thread_id = t.id AND m.direction != 'system'
+           WHERE m.thread_id = x.id AND m.direction != 'system'
            ORDER BY m.sent_at DESC, m.created_at DESC LIMIT 1
          ) = 'inbound'
          AND NOT EXISTS (
-           SELECT 1 FROM message_drafts d WHERE d.thread_id = t.id AND d.status = 'pending'
+           SELECT 1 FROM message_drafts d WHERE d.thread_id = x.id AND d.status = 'pending'
          )
-         AND (t.ai_no_reply_at IS NULL OR datetime(t.ai_no_reply_at) < datetime(t.last_message_at))
-         AND (t.discarded_at IS NULL OR datetime(t.discarded_at) < datetime(t.last_message_at))
-       ORDER BY t.last_message_at DESC
+         AND (x.ai_no_reply_at IS NULL OR datetime(x.ai_no_reply_at) < datetime(x.last_human_at))
+         AND (x.discarded_at IS NULL OR datetime(x.discarded_at) < datetime(x.last_human_at))
+       ORDER BY x.last_message_at DESC
        LIMIT ?`,
     )
-    .all(source, listingId, sinceModifier, limit) as MessageThread[];
+    .all(source, listingId, sinceModifier, limit)
+    .map((row) => {
+      const { last_human_at: _omit, ...thread } = row as MessageThread & { last_human_at: string | null };
+      return thread as MessageThread;
+    });
 }
 
 /**

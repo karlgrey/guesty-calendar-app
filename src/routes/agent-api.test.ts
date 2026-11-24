@@ -80,11 +80,13 @@ vi.mock('../repositories/message-repository.js', () => ({
       id: 'hostex:a', listing_id: 'L1', source: 'hostex', channel: 'airbnb',
       guest_name: 'Anna', guest_email: 'anna@example.com',
       last_message_at: '2026-08-05T10:00:00.000Z', last_message_direction: 'inbound',
+      pending_draft_since: '2026-08-05 10:05:00',
     },
     {
       id: 'guesty:b', listing_id: 'L2', source: 'guesty', channel: 'airbnb',
       guest_name: 'Ben', guest_email: 'ben@example.com',
       last_message_at: '2026-08-04T09:00:00.000Z', last_message_direction: 'outbound',
+      pending_draft_since: null,
     },
   ]),
   getThreadById: vi.fn((id: string) =>
@@ -539,10 +541,10 @@ describe('agent-api', () => {
       property: { slug: 'farmhouse', name: 'Farmhouse Prasser', code: 'FH', shortCode: 'FH' },
       guestName: 'Anna', needsReply: true,
       lastMessageAt: '2026-08-05T10:00:00.000Z', lastMessageDirection: 'inbound',
-      autoDecision: null,
+      autoDecision: null, pendingDraftSince: '2026-08-05T10:05:00.000Z',
     });
     expect(body.threads[1]).toMatchObject({
-      threadId: 'guesty:b', needsReply: false, lastMessageDirection: 'outbound',
+      threadId: 'guesty:b', needsReply: false, lastMessageDirection: 'outbound', pendingDraftSince: null,
       property: { slug: 'uferstrasse', name: 'Uferstraße 19', code: 'U19' },
     });
   });

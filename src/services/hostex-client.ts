@@ -87,6 +87,8 @@ export interface HostexMessageRaw {
   content: string;
   created_at: string;
   attachment?: HostexMessageAttachment | null;
+  sender_name?: string | null;
+  sources?: unknown[] | null;
 }
 
 /** A reservation/inquiry activity on a conversation; carries the property attribution. */

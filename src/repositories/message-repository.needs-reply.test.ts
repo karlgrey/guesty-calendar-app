@@ -60,4 +60,18 @@ describe('getThreadsNeedingReply', () => {
     const ids = getThreadsNeedingReply('-60 days').map((t) => t.id);
     expect(ids).toEqual(['guesty:c', 'hostex:a', 'guesty:old']);
   });
+  it('automatic system message after a guest question does not mask it (#1298)', () => {
+    const meta = JSON.stringify({ sender_role: 'host', automatic: true });
+    db.prepare(`INSERT INTO message_threads
+      (id,listing_id,source,channel,first_message_at,last_message_at,last_synced_at)
+      VALUES ('hostex:auto','L','hostex','airbnb',?,?,'now')`).run(datetime('-3 hours'), datetime('-1 hour'));
+    const m = db.prepare(`INSERT INTO messages (id,thread_id,direction,sent_at,from_name,body,source,raw_meta)
+      VALUES (?,?,?,?,?,?,?,?)`);
+    m.run('ma1', 'hostex:auto', 'inbound', datetime('-3 hours'), 'Anna', 'Frage', 'hostex', null);
+    m.run('ma2', 'hostex:auto', 'system', datetime('-1 hour'), 'host', 'Hallo Anna, dein Aufenthalt findet bald statt.', 'hostex', meta);
+    expect(getThreadsNeedingReply().map((t) => t.id)).toContain('hostex:auto');
+
+    m.run('ma3', 'hostex:auto', 'outbound', datetime('-10 minutes'), 'host', 'Antwort', 'hostex', null);
+    expect(getThreadsNeedingReply().map((t) => t.id)).not.toContain('hostex:auto');
+  });
 });

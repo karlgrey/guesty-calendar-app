@@ -311,6 +311,11 @@ function propertySummary(
 const DEFAULT_THREADS_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const DEFAULT_THREADS_LIMIT = 50;
 
+// SQLite speichert Timestamps als "YYYY-MM-DD HH:MM:SS" (UTC, ohne Zone) —
+// der labs-Watcher vergleicht Strings lexikographisch, deshalb hier immer
+// auf ISO-UTC normalisieren.
+const sqliteToIso = (s: string) => new Date(s.includes('T') ? s : `${s.replace(' ', 'T')}Z`).toISOString();
+
 // Gäste-Messaging-Threads (read-only) — damit die Claude-Hauptsession (Standup)
 // Airbnb-Konversationen inkl. Bot-Antworten lesen kann, ohne DB-Zugriff.
 router.get('/threads', (req, res) => {
@@ -337,6 +342,7 @@ router.get('/threads', (req, res) => {
         lastMessageAt: t.last_message_at,
         lastMessageDirection: t.last_message_direction,
         autoDecision: t.auto_decision ?? null,
+        pendingDraftSince: t.pending_draft_since ? sqliteToIso(t.pending_draft_since) : null,
       })),
     });
   } catch (err) { handleError(res, err); }
@@ -492,11 +498,6 @@ export function guestExcerpt(text: string | null): string {
   const firstLine = (text ?? '').split(/\r?\n/)[0]?.replace(/\s+/g, ' ').trim() ?? '';
   return firstLine.length > 160 ? `${firstLine.slice(0, 157)}…` : firstLine;
 }
-
-// SQLite speichert Timestamps als "YYYY-MM-DD HH:MM:SS" (UTC, ohne Zone) —
-// der labs-Watcher vergleicht Strings lexikographisch, deshalb hier immer
-// auf ISO-UTC normalisieren.
-const sqliteToIso = (s: string) => new Date(s.includes('T') ? s : `${s.replace(' ', 'T')}Z`).toISOString();
 
 // Wartende Entwürfe (Auto-Send-Gate: 'wait'-Entscheidung oder Send-Fehler) —
 // für den labs-Watcher/Push an Micha. Siehe Abschnitt 7.2 im Design-Doc.

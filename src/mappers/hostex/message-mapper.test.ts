@@ -200,3 +200,42 @@ describe('pending_alteration in raw_meta (#976)', () => {
     expect(JSON.parse(thread!.raw_meta!).pending_alteration).toBeNull();
   });
 });
+
+// #1298: automatische Host-Nachrichten (Vorlagen) werden als 'system' gespeichert.
+describe('automatische Host-Nachrichten (#1298)', () => {
+  const autoText =
+    'Hallo Anna, dein Aufenthalt findet bald statt. Du kannst am 20. Nov. 2026 ab 15:00 jederzeit einchecken.\n\nHier ist die Adresse: Musterstraße 1, 12345 Musterstadt.';
+  const detailWith = (messages: HostexConversationDetail['messages']): HostexConversationDetail => ({
+    id: 'c-auto', channel_type: 'airbnb', guest: { name: 'Anna', email: '' }, messages,
+  });
+  const map = (messages: HostexConversationDetail['messages']) =>
+    mapHostexConversation(detailWith(messages), 'listing-9', '2026-07-01T00:00:00Z').messages;
+
+  it('host + Auto-Text → system, raw_meta.automatic, sender_role host', () => {
+    const [m] = map([{ id: 'a1', sender_role: 'host', display_type: 'Text', content: autoText, created_at: '2026-06-30T10:00:00Z' }]);
+    expect(m.direction).toBe('system');
+    expect(m.from_name).toBe('host');
+    const meta = JSON.parse(m.raw_meta!);
+    expect(meta.automatic).toBe(true);
+    expect(meta.sender_role).toBe('host');
+  });
+
+  it('normale host-Nachricht bleibt outbound ohne automatic', () => {
+    const [m] = map([{ id: 'a2', sender_role: 'host', display_type: 'Text', content: 'Hey Anna, früher einchecken ab 14:00 Uhr ist in der Regel kein Problem.', created_at: '2026-06-30T10:00:00Z' }]);
+    expect(m.direction).toBe('outbound');
+    expect(JSON.parse(m.raw_meta!)).not.toHaveProperty('automatic');
+  });
+
+  it('guest-Nachricht mit Auto-Text bleibt inbound', () => {
+    const [m] = map([{ id: 'a3', sender_role: 'guest', display_type: 'Text', content: autoText, created_at: '2026-06-30T10:00:00Z' }]);
+    expect(m.direction).toBe('inbound');
+    expect(JSON.parse(m.raw_meta!)).not.toHaveProperty('automatic');
+  });
+
+  it('sender_name und sources werden aus der Rohnachricht übernommen', () => {
+    const [m] = map([{ id: 'a4', sender_role: 'host', display_type: 'Text', content: 'Hallo', created_at: '2026-06-30T10:00:00Z', sender_name: 'host@example.com', sources: ['x'] }]);
+    const meta = JSON.parse(m.raw_meta!);
+    expect(meta.sender_name).toBe('host@example.com');
+    expect(meta.sources).toEqual(['x']);
+  });
+});

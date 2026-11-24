@@ -325,6 +325,17 @@ erweitert auf Guesty-Properties (Farmhouse, U19) — Spec:
 - **Guesty-Eigenheit:** an neue Anfragen hängt Guesty einen System-Post („New guest
   inquiry") ZEITLICH NACH der Gastnachricht — die „letzte Nachricht = inbound"-Queries
   ignorieren daher `direction='system'`.
+- **Automatische Host-Nachrichten (#1298, Fall Check-in-Info Schilderwerkstatt):** Host-Nachrichten, die
+  einer bekannten Auto-Vorlage entsprechen (`src/utils/auto-message.ts`, `AUTO_HOST_MESSAGE_PATTERNS`,
+  Regex-Liste, `isAutomaticHostMessage`), speichern Hostex-Mapper und Guesty-Sync (`mapGuestyPost`) mit
+  `direction='system'` und `raw_meta.automatic=true` (Hostex behält `sender_role: 'host'`). Sie zählen
+  damit nicht als Host-Antwort: `needsReply`, `/admin/messages`, Draft-Auswahl und Anfrage-Task-Schluss
+  sehen die offene Gastfrage weiter. `getThreadsNeedingDraft` misst 72-h-Fenster und die Marker
+  `ai_no_reply_at`/`discarded_at` an der jüngsten Nicht-System-Nachricht (nicht an `last_message_at`),
+  damit eine Auto-Nachricht einen erledigten Thread nicht neu öffnet. Stand: eine Vorlage (Hostex
+  Check-in-Info, deutsch); weitere Vorlagen = je ein Listeneintrag mit Test. Hostex-`raw_meta` trägt
+  zusätzlich `sender_name`/`sources` der Rohnachricht (nur Ablage für eine spätere feldbasierte
+  Erkennung). Altdaten korrigiert der tägliche Deep-Sync (`upsertMessage` überschreibt `direction`).
 - Fetcht alle Conversations via Hostex-API (`limit=100`, account-weit)
 - Attributiert Buchungen über `property_title === property.name` (Schnell-Pfad), Anfragen (leerer `property_title`) über `activities[].property.id` im Detail
 - Optionaler per-Run-`detailCache` (Map) verhindert Mehrfachfetches derselben Detail-Response
@@ -597,7 +608,8 @@ Copy-Paste kann ein sicherer Entwurf automatisch rausgehen. Spec:
 - **Agent-API** (`src/routes/agent-api.ts`): `GET /api/agent/drafts/awaiting?since=&limit=`
   (offene `wait`-Entwürfe fürs WhatsApp-Push/Briefing), `GET
   /api/agent/auto-send/stats?days=` (Auto-Send-Auswertung); `/threads` liefert zusätzlich
-  `autoDecision` und `property.shortCode`.
+  `autoDecision`, `property.shortCode` und `pendingDraftSince` (ISO-UTC des ältesten
+  pending-Entwurfs im Thread oder `null`, #1298; ändert `needsReply` nicht).
 - **Testfixtures:** `npm run test:judge` (`src/scripts/test-judge-fixtures.ts`, Live-Lauf
   gegen `JUDGE_MODEL`, 53 Fälle in `src/test-fixtures/judge/cases.json`) — **Pflicht vor
   jeder Prompt-Änderung** an `judge-prompt.ts` (Stand #1243, 19.11.2026: 53/53). Fixtures
