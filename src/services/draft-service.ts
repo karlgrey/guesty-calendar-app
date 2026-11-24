@@ -28,13 +28,24 @@ export const NO_REPLY_RULE =
   'auch bei reinem Dank oder reiner Bestätigung (dann kurze Höflichkeitsantwort) und auch, wenn die ' +
   'Nachricht mit Dank beginnt und danach eine Frage oder ein Anliegen folgt.';
 
-/** #1312: Form der Höflichkeitsantwort auf reinen Dank / reine Bestätigung (nur Prompt). */
+/**
+ * #1312: Form der Höflichkeitsantwort auf reinen Dank / reine Bestätigung (nur Prompt).
+ * Nachbesserung (Live-Lauf 24.11.2026, Fall Mira 2 von 7 rot): das Modell hängte „Meldet euch gern
+ * jederzeit wieder.“ als dritten Satz an. Ursachen im Prompt: die Voice (Gästekommunikation
+ * Grundsätze) empfiehlt genau diese Floskel statt Wiedersehens-Floskeln, und die LÄNGE-Regel erlaubt
+ * für Dank 2–3 Sätze. Deshalb harte Obergrenze, ausdrückliches Verbot des Anhängsels und Vorrang vor
+ * Voice UND LÄNGE-Regel.
+ */
 export const COURTESY_REPLY_RULE =
   'Höflichkeitsantwort: Ist die letzte Gastnachricht ein reiner Dank oder eine reine Bestätigung ' +
   '(ohne Frage oder Anliegen) und greift keiner der zwei no_reply-Fälle, antworte mit einer kurzen ' +
-  'Höflichkeit in Michas Ton: ein bis zwei Sätze, KEINE neuen Fakten oder Hinweise, KEINE Rückfrage ' +
-  '(auch keine Frage am Ende). Diese Regel geht dem Voice-Text vor, auch wenn dort steht, dass reiner ' +
-  'Dank keine Antwort braucht.';
+  'Höflichkeit in Michas Ton: ein bis zwei Sätze, das heißt HÖCHSTENS zwei Sätze (ohne Anrede und Gruß) ' +
+  'als harte Obergrenze, kein dritter Satz. Satz 1 reagiert auf den Dank, Satz 2 (optional) ist ein ' +
+  'guter Wunsch, danach folgt nur noch der Gruß. KEINE neuen Fakten oder Hinweise, KEINE Rückfrage ' +
+  '(auch keine Frage am Ende). KEIN angehängter Einladungs- oder Abschlusssatz wie „Meldet euch gern ' +
+  'jederzeit wieder“, auch wenn der Voice-Text diese Floskel für Dank-Antworten empfiehlt; ein guter ' +
+  'Wunsch gehört in einen der zwei Sätze. Diese Regel geht dem Voice-Text und der LÄNGE-Regel vor, auch ' +
+  'wenn dort steht, dass reiner Dank keine Antwort braucht oder 2–3 Sätze haben darf.';
 
 export const SUBMIT_REPLY_TOOL: ClaudeToolDefinition = {
   name: 'submit_reply',
@@ -430,6 +441,9 @@ export const LENGTH_RULE_BLOCK = [
   '### LÄNGE DER ANTWORT — harte Regel, gilt vor Voice und Objektwissen ###',
   'Routine-Antworten (Frage beantwortet, Bestätigung, Dank, kleine Zusage) haben HÖCHSTENS 2–3 kurze Sätze, ' +
     'ca. 300 Zeichen (ohne Anrede und Gruß). Was man am Handy nicht ohne Scrollen liest, ist zu lang.',
+  // #1312 Nachbesserung: ohne diese Zeile widersprach „2–3 Sätze … Dank“ der Höflichkeitsregel (1–2).
+  '- Antwort auf reinen Dank oder reine Bestätigung des Gastes: HÖCHSTENS zwei Sätze, ohne angehängten ' +
+    'Einladungs- oder Abschlusssatz (siehe Höflichkeitsantwort unten).',
   '- Beantworte NUR, was der Gast gefragt oder angesprochen hat. Mehrere Fragen: je Frage höchstens ein Satz.',
   '- Wiederhole KEINE Fakten, die der Gast schon kennt: Buchungsdaten (Zeitraum, Nächte, Personenzahl) und ' +
     'Inhalte der Inseratsbeschreibung (Betten, Bad, Ausstattung, Platz für X Gäste).',

@@ -355,6 +355,9 @@ erweitert auf Guesty-Properties (Farmhouse, U19) — Spec:
   keine Rückfrage; `COURTESY_REPLY_RULE`), der durch dasselbe Auto-Send-Gate läuft. `no_reply_needed=true` (→ `ai_no_reply_at`)
   nur noch bei (1) nur Emoji/Reaktion oder (2) erneutem Dank auf unsere eigene Höflichkeit (kein Ping-Pong). Die Regel steht
   einmal als `NO_REPLY_RULE` in `draft-service.ts` und wird von Tool-Beschreibung UND Prompt-Zeile benutzt.
+  Die zwei Sätze sind harte Obergrenze (ohne Anrede/Gruß), ein angehängtes „Meldet euch gern jederzeit wieder“ ist
+  ausdrücklich verboten: die Voice empfiehlt genau diese Floskel und die LÄNGE-Regel erlaubt sonst 2–3 Sätze für Dank,
+  deshalb steht der Vorrang vor beiden in der Regel und ein Verweis in `LENGTH_RULE_BLOCK`.
   Fixtures: `test:drafts -- --case 1312`.
 - **LLM-Aufrufe — harte Regel (#758, 06.10.2026):** jeder Anthropic-Aufruf läuft über
   `callClaudeTool` (`src/services/anthropic-client.ts`, nie umgehen). Modell-Weiche dort:
