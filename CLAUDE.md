@@ -340,6 +340,11 @@ erweitert auf Guesty-Properties (Farmhouse, U19) — Spec:
 - Cap: maximal `DRAFT_GEN_CAP = 10` Entwürfe pro Property pro Run
 - Modell: `claude-sonnet-5-5` (`SONNET_MODEL` in `anthropic-client.ts`), Schema `submit_reply` per Structured Outputs; leere Antwort = kein Entwurf nötig
 - Speichert in `message_drafts` (`generated_by='llm'`, `model='claude-sonnet-5-5'`)
+- **Höflichkeiten (#1312):** auf reinen Dank / reine Bestätigung entsteht ein kurzer Entwurf (1–2 Sätze, keine neuen Fakten,
+  keine Rückfrage; `COURTESY_REPLY_RULE`), der durch dasselbe Auto-Send-Gate läuft. `no_reply_needed=true` (→ `ai_no_reply_at`)
+  nur noch bei (1) nur Emoji/Reaktion oder (2) erneutem Dank auf unsere eigene Höflichkeit (kein Ping-Pong). Die Regel steht
+  einmal als `NO_REPLY_RULE` in `draft-service.ts` und wird von Tool-Beschreibung UND Prompt-Zeile benutzt.
+  Fixtures: `test:drafts -- --case 1312`.
 - **LLM-Aufrufe — harte Regel (#758, 06.10.2026):** jeder Anthropic-Aufruf läuft über
   `callClaudeTool` (`src/services/anthropic-client.ts`, nie umgehen). Modell-Weiche dort:
   Sonnet 5.5 → `thinking: { type: 'between_tools' }` (Sonnet 5.5 lehnt `disabled` mit 400 ab;

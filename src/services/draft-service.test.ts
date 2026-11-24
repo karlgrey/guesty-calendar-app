@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { generateDraftForThread, buildSystemPrompt, hostAlreadySentClosing, PRICE_DISCOUNT_ANCHOR } from './draft-service.js';
+import { generateDraftForThread, buildSystemPrompt, hostAlreadySentClosing, PRICE_DISCOUNT_ANCHOR, SUBMIT_REPLY_TOOL, NO_REPLY_RULE, COURTESY_REPLY_RULE } from './draft-service.js';
 import type { MessageThread, Message } from '../types/messages.js';
 
 function thread(): MessageThread {
@@ -37,11 +37,11 @@ describe('generateDraftForThread', () => {
     expect(arg.userMessage).not.toContain('Darleen');
   });
 
-  it('states the explicit no-reply criterion in the system prompt (#385)', async () => {
+  it('states the explicit no-reply criterion in the system prompt (#385, seit #1312 NO_REPLY_RULE)', async () => {
     const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'x' });
     await generateDraftForThread({ thread: thread(), messages, voice: 'v', facts: 'f' }, { call });
     const prompt = call.mock.calls[0][0].systemPrompt;
-    expect(prompt).toContain('WEDER eine Frage NOCH ein');
+    expect(prompt).toContain(NO_REPLY_RULE);
     expect(prompt).toContain('KEIN');
     expect(prompt).toContain('Im Zweifel antworten');
   });
@@ -710,5 +710,66 @@ describe('buildSystemPrompt — Preisregel im Code verzweigt (#1243, Prüfer-Run
     };
     expect(await run([['inbound', 'Könntest du uns beim Betrag entgegenkommen?'], ['system', 'New guest reservation request HMX']])).toContain('kündige KEINE Bestätigung an');
     expect(await run([['inbound', 'Gibt es Rabatt?'], ['outbound', 'Leider nein.'], ['inbound', 'Ok, gibt es einen See?']])).not.toContain('kündige KEINE Bestätigung an');
+  });
+});
+
+// #1312 (Micha 21.11.2026): auch auf Höflichkeiten (Dank, Bestätigung) entsteht ein kurzer Entwurf.
+// no_reply_needed=true nur noch bei (1) nur Emoji/Reaktion oder (2) Dank auf unsere eigene
+// Höflichkeit (kein Ping-Pong). Prompt-Zeile und Tool-Beschreibung teilen sich denselben Text.
+describe('#1312 Höflichkeitsantworten', () => {
+  const NOW_1312 = new Date('2026-11-24T09:00:00Z');
+  const prompt = () =>
+    buildSystemPrompt('v', 'f', null, { channel: 'airbnb', reservation_status: 'confirmed' }, 'de', false, false, NOW_1312);
+  const toolDescription = () =>
+    (SUBMIT_REPLY_TOOL.input_schema.properties as Record<string, { description: string }>).no_reply_needed.description;
+
+  it('Tool-Beschreibung und Prompt-Zeile tragen dieselbe no_reply-Regel', () => {
+    expect(toolDescription()).toContain(NO_REPLY_RULE);
+    expect(prompt()).toContain(NO_REPLY_RULE);
+  });
+
+  it('no_reply-Regel nennt genau die zwei Fälle: nur Emoji/Reaktion und Dank auf unsere eigene Höflichkeit', () => {
+    expect(NO_REPLY_RULE).toMatch(/Emoji/);
+    expect(NO_REPLY_RULE).toMatch(/Reaktion/);
+    expect(NO_REPLY_RULE).toMatch(/Höflichkeit/);
+    expect(NO_REPLY_RULE).toMatch(/Ping-Pong/);
+    // reiner Dank/reine Bestätigung ist KEIN no_reply-Fall mehr
+    expect(NO_REPLY_RULE).toMatch(/no_reply_needed=false[^.]*reinem Dank oder reiner Bestätigung/);
+  });
+
+  it('alte Regel (reine Dankes-/Bestätigungsnachricht → keine Antwort) ist weg', () => {
+    expect(prompt()).not.toContain('also eine reine Dankes-/Bestätigungsnachricht oder ein bloßes Emoji');
+    expect(toolDescription()).not.toContain('(reines Danke/Bestätigung/Emoji)');
+  });
+
+  it('Prompt verlangt eine kurze Höflichkeitsantwort: ein bis zwei Sätze, keine neuen Fakten, keine Rückfrage', () => {
+    const p = prompt();
+    expect(p).toContain(COURTESY_REPLY_RULE);
+    expect(COURTESY_REPLY_RULE).toMatch(/ein bis zwei Sätze/);
+    expect(COURTESY_REPLY_RULE).toMatch(/KEINE neuen Fakten/);
+    expect(COURTESY_REPLY_RULE).toMatch(/KEINE Rückfrage/);
+  });
+
+  it('Höflichkeitsregel geht einer abweichenden Voice-Regel vor (Vault: „Reiner Dank braucht keine Antwort“)', () => {
+    expect(COURTESY_REPLY_RULE).toMatch(/Voice/);
+    // Regeln stehen nach dem Voice-Block, damit sie im Prompt zuletzt gelesen werden
+    const p = buildSystemPrompt('VOICE-MARKER', 'f', null, { channel: 'airbnb', reservation_status: 'confirmed' }, 'de', false, false, NOW_1312);
+    expect(p.indexOf(COURTESY_REPLY_RULE)).toBeGreaterThan(p.indexOf('VOICE-MARKER'));
+    expect(p.indexOf(NO_REPLY_RULE)).toBeGreaterThan(p.indexOf('VOICE-MARKER'));
+  });
+
+  it('Dank mit anschließender Frage bleibt ein Antwortfall (#385 unverändert)', () => {
+    const p = prompt();
+    expect(p).toContain('Beginnt eine Nachricht mit Dank');
+    expect(p).toContain('antworte auf die Frage/das Anliegen');
+  });
+
+  it('reiner Dank: Modell-Antwort wird als Text-Entwurf durchgereicht (kein Sonderpfad)', async () => {
+    const call = vi.fn().mockResolvedValue({ no_reply_needed: false, reply: 'Sehr gern, Mira! Schön, dass es euch gefallen hat.' });
+    const thanks: Message[] = [
+      { id: 'm1', thread_id: 'hostex:c1', direction: 'inbound', sent_at: '2026-11-24T08:00Z', from_name: 'Mira', from_address: null, to_address: null, subject: null, body: 'Vielen Dank, hat alles super geklappt!', body_html: null, source: 'hostex', raw_meta: null },
+    ];
+    const out = await generateDraftForThread({ thread: thread(), messages: thanks, voice: 'v', facts: 'f', now: NOW_1312 }, { call });
+    expect(out).toEqual({ kind: 'text', body: 'Sehr gern, Mira! Schön, dass es euch gefallen hat.' });
   });
 });

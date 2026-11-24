@@ -87,8 +87,8 @@
     "now": "2026-10-26T09:00:00Z"
   },
   {
-    "name": "Mira — reiner Dank ohne Frage (Negativtest)",
-    "description": "Reiner Dank nach dem Aufenthalt ohne Frage — es darf kein Entwurf entstehen.",
+    "name": "Mira — reiner Dank, kurze Höflichkeit (#1312)",
+    "description": "Reiner Dank nach dem Aufenthalt ohne Frage — seit #1312 entsteht ein kurzer Entwurf: ein bis zwei Sätze in Michas Ton, keine neuen Fakten, keine Rückfrage (früher Negativtest no_reply).",
     "propertySlug": "alte-schilderwerkstatt",
     "thread": {
       "channel": "airbnb",
@@ -100,11 +100,15 @@
     "messages": [
       {
         "direction": "inbound",
-        "body": "Vielen Dank für den schönen Aufenthalt, es war alles wunderbar! Liebe Grüße Mira"
+        "body": "Vielen Dank, hat alles super geklappt!"
       }
     ],
     "expect": {
-      "noReply": true
+      "maxSentences": 2,
+      "maxChars": 200,
+      "mustNotContain": [
+        "?"
+      ]
     },
     "now": "2026-10-13T09:00:00Z"
   },
@@ -455,5 +459,65 @@
       ]
     },
     "now": "2026-11-19T10:00:00Z"
+  },
+  {
+    "name": "Ben — nur Emoji (#1312)",
+    "description": "Gast reagiert auf unsere Check-in-Info nur mit Emoji — weiterhin kein Entwurf (no_reply).",
+    "propertySlug": "alte-schilderwerkstatt",
+    "thread": {
+      "channel": "airbnb",
+      "reservation_status": "confirmed",
+      "guest_name": "Ben"
+    },
+    "bookingContext": "Bestätigte Buchung (Status: confirmed): Zeitraum 27.11.2026–29.11.2026, 2 Nächte, 2 Personen, Konfirmationscode HMTEST1312A.",
+    "alteration": null,
+    "messages": [
+      {
+        "direction": "inbound",
+        "body": "Hallo Micha, ab wann können wir am Freitag einchecken?"
+      },
+      {
+        "direction": "outbound",
+        "body": "Hey Ben, Check-in ist ab 15 Uhr möglich. Liebe Grüße, Micha"
+      },
+      {
+        "direction": "inbound",
+        "body": "👍🙏"
+      }
+    ],
+    "expect": {
+      "noReply": true
+    },
+    "now": "2026-11-24T09:00:00Z"
+  },
+  {
+    "name": "Mira — Dank nach unserer Höflichkeit (#1312)",
+    "description": "Gast bedankt sich, wir haben schon mit einer reinen Höflichkeit geantwortet, Gast bedankt sich erneut — kein Höflichkeits-Ping-Pong, kein Entwurf (no_reply).",
+    "propertySlug": "alte-schilderwerkstatt",
+    "thread": {
+      "channel": "airbnb",
+      "reservation_status": "confirmed",
+      "guest_name": "Mira"
+    },
+    "bookingContext": "Bestätigte Buchung (Status: confirmed): Zeitraum 10.10.2026–12.10.2026, 2 Nächte, 2 Personen, Konfirmationscode HMTEST976B.",
+    "alteration": null,
+    "messages": [
+      {
+        "direction": "inbound",
+        "body": "Vielen Dank, hat alles super geklappt!"
+      },
+      {
+        "direction": "outbound",
+        "body": "Sehr gern, Mira! Schön, dass alles geklappt hat. Liebe Grüße, Micha"
+      },
+      {
+        "direction": "inbound",
+        "body": "Danke dir auch, Micha!"
+      }
+    ],
+    "expect": {
+      "noReply": true
+    },
+    "now": "2026-10-13T09:00:00Z"
   }
 ]
