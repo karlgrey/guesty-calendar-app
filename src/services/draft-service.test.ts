@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { generateDraftForThread, buildSystemPrompt, hostAlreadySentClosing, PRICE_DISCOUNT_ANCHOR, SUBMIT_REPLY_TOOL, NO_REPLY_RULE, COURTESY_REPLY_RULE } from './draft-service.js';
+import { generateDraftForThread, buildSystemPrompt, hostAlreadySentClosing, PRICE_DISCOUNT_ANCHOR, SUBMIT_REPLY_TOOL, NO_REPLY_RULE, COURTESY_REPLY_RULE, LENGTH_RULE_BLOCK } from './draft-service.js';
 import type { MessageThread, Message } from '../types/messages.js';
 
 function thread(): MessageThread {
@@ -756,6 +756,41 @@ describe('#1312 Höflichkeitsantworten', () => {
     const p = buildSystemPrompt('VOICE-MARKER', 'f', null, { channel: 'airbnb', reservation_status: 'confirmed' }, 'de', false, false, NOW_1312);
     expect(p.indexOf(COURTESY_REPLY_RULE)).toBeGreaterThan(p.indexOf('VOICE-MARKER'));
     expect(p.indexOf(NO_REPLY_RULE)).toBeGreaterThan(p.indexOf('VOICE-MARKER'));
+  });
+
+  // Nachbesserung (Live-Lauf 24.11.2026, Fall Mira 2/7 rot): Modell hängte „Meldet euch gern
+  // jederzeit wieder.“ als dritten Satz an — die Voice empfiehlt genau diese Floskel, und die
+  // LÄNGE-Regel erlaubte für Dank 2–3 Sätze. Beides muss die Höflichkeitsregel ausdrücklich schlagen.
+  it('Höflichkeitsantwort hat eine harte Obergrenze von zwei Sätzen (ohne Anrede und Gruß)', () => {
+    expect(COURTESY_REPLY_RULE).toMatch(/HÖCHSTENS zwei Sätze/);
+    expect(COURTESY_REPLY_RULE).toMatch(/ohne Anrede und Gruß/);
+    expect(COURTESY_REPLY_RULE).toMatch(/kein dritter Satz/i);
+  });
+
+  it('Höflichkeitsantwort verbietet einen angehängten Einladungs- oder Abschlusssatz, auch gegen die Voice', () => {
+    expect(COURTESY_REPLY_RULE).toMatch(/KEIN angehängter Einladungs- oder Abschlusssatz/);
+    expect(COURTESY_REPLY_RULE).toContain('Meldet euch gern jederzeit wieder');
+    expect(COURTESY_REPLY_RULE).toMatch(/Voice-Text[^.]*empfiehlt/);
+  });
+
+  it('Höflichkeitsregel geht auch der LÄNGE-Regel vor (dort 2–3 Sätze für Dank)', () => {
+    expect(COURTESY_REPLY_RULE).toMatch(/LÄNGE-Regel/);
+    // die LÄNGE-Regel selbst verweist für reinen Dank auf die kürzere Grenze, damit kein Widerspruch im Prompt steht
+    expect(LENGTH_RULE_BLOCK).toMatch(/reinen Dank oder reine Bestätigung[^\n]*HÖCHSTENS zwei Sätze/);
+    expect(prompt()).toContain(LENGTH_RULE_BLOCK);
+  });
+
+  // Prüfer-Korrektur: die LÄNGE-Regel steht in jedem Prompt und VOR dem Buchungsanfrage-Block. Ein
+  // Verbot von „Einladungs-/Abschlusssatz“ dort würde Punkt 4 des Blocks (Einladung zur
+  // Buchungsanfrage, Ankündigung der Bestätigung) widersprechen, ohne dass dessen Vorrang greift.
+  it('LÄNGE-Regel nennt für reinen Dank nur die Satzzahl, kein Einladungs-/Abschluss-Verbot (Buchungsanfrage Punkt 4 bleibt)', () => {
+    expect(LENGTH_RULE_BLOCK).not.toMatch(/Einladung|Abschlusssatz/);
+    const booking = buildSystemPrompt(
+      'v', 'f', null, { channel: 'airbnb', reservation_status: 'inquiry' }, 'de', false, true, NOW_1312, 'inquiry',
+    );
+    expect(booking.indexOf(LENGTH_RULE_BLOCK)).toBeGreaterThanOrEqual(0);
+    expect(booking.indexOf(LENGTH_RULE_BLOCK)).toBeLessThan(booking.indexOf('### BUCHUNGSANFRAGE'));
+    expect(booking).toContain('lade den Gast ein, die Buchungsanfrage zu stellen');
   });
 
   it('Dank mit anschließender Frage bleibt ein Antwortfall (#385 unverändert)', () => {
