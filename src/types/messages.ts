@@ -55,8 +55,10 @@ export interface MessageThread {
   manually_categorized: number;            // 0 | 1
   manual_note: string | null;
   linked_thread_id: string | null;         // cross-link to another thread (e.g. Gmail ↔ Meetreet)
-  ai_no_reply_at: string | null;            // LLM decided "no reply needed" at this time (valid while newer than last_message_at)
-  discarded_at: string | null;              // human discarded the draft at this time (valid while newer than last_message_at) — #497
+  // Beide Marker: der Draft-Job (getThreadsNeedingDraft) misst sie seit #1298 an der jüngsten
+  // Nicht-System-Nachricht, die Thread-Ansicht (routes/messages.ts, aiSaysNoReply) weiter an last_message_at.
+  ai_no_reply_at: string | null;            // LLM decided "no reply needed" at this time (valid until a newer guest message arrives)
+  discarded_at: string | null;              // human discarded the draft at this time (valid until a newer guest message arrives) — #497
   // #702 Punkt 2: Micha gibt einen wegen fehlgeschlagenem/hängendem Versand gesperrten Thread
   // manuell frei (Admin-UI-Button) — threadHasFailedSend zählt danach nur noch Drafts, die NACH
   // diesem Zeitpunkt angelegt wurden (draft-repository.ts). Optional (nicht Teil der bestehenden

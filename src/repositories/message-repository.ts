@@ -354,9 +354,11 @@ export function getThreadsByListingAndGuestName(listingId: string, guestName: st
 }
 
 /**
- * Remember that the LLM decided this thread needs no reply right now. The
- * marker is only meaningful while newer than last_message_at — a new guest
- * message implicitly invalidates it (see getThreadsNeedingDraft + UI).
+ * Remember that the LLM decided this thread needs no reply right now. A new
+ * guest message implicitly invalidates the marker. Since #1298 the draft job
+ * (getThreadsNeedingDraft) compares it with the newest NON-system message, so
+ * automatic host messages and system posts no longer invalidate it; the thread
+ * view (routes/messages.ts, aiSaysNoReply) still compares with last_message_at.
  */
 export function markThreadAiNoReply(threadId: string, at: string = new Date().toISOString()): void {
   const db = getDatabase();
@@ -367,9 +369,9 @@ export function markThreadAiNoReply(threadId: string, at: string = new Date().to
  * Remember that a human manually discarded this thread's draft (SmartTasks
  * #497) — most often because the reply was time-sensitive and the window
  * passed (e.g. "gute Heimreise"), so a fresh auto-draft would be pointless.
- * Same convention as markThreadAiNoReply: the marker is only meaningful while
- * newer than last_message_at — a new guest message implicitly invalidates it
- * (see getThreadsNeedingDraft). Explicit re-drafting via the "Neu generieren"
+ * Same convention as markThreadAiNoReply: a new guest message implicitly
+ * invalidates the marker (see getThreadsNeedingDraft; since #1298 measured
+ * against the newest non-system message). Explicit re-drafting via the "Neu generieren"
  * button bypasses getThreadsNeedingDraft entirely, so it is unaffected.
  */
 export function markThreadDiscarded(threadId: string, at: string = new Date().toISOString()): void {
