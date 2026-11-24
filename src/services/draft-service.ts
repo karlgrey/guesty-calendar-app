@@ -12,6 +12,30 @@ import logger from '../utils/logger.js';
 /** #758: zentrale Sonnet-Konstante (claude-sonnet-5-5) aus anthropic-client. */
 export const DRAFT_MODEL = SONNET_MODEL;
 
+/**
+ * #1312 (Micha 21.11.2026: „auch auf Höflichkeiten Antworten generieren“): einzige Quelle der
+ * no_reply-Regel — Tool-Beschreibung (SUBMIT_REPLY_TOOL) und Prompt-Zeile (buildSystemPrompt)
+ * enthalten genau diesen Text, damit sie nie auseinanderlaufen. Früher war reiner Dank / reine
+ * Bestätigung ein no_reply-Fall; jetzt entsteht dafür ein kurzer Entwurf (COURTESY_REPLY_RULE),
+ * der durch dasselbe Auto-Send-Gate läuft wie jeder andere Entwurf.
+ */
+export const NO_REPLY_RULE =
+  'no_reply_needed=true NUR in genau zwei Fällen: (1) die letzte Gastnachricht besteht nur aus Emoji ' +
+  'oder einer Reaktion (z. B. 👍, ❤️, „hat auf deine Nachricht reagiert“), ohne eigenen Text; (2) unsere ' +
+  'letzte Host-Nachricht im Verlauf war selbst schon eine reine Höflichkeit (Dank, gute Wünsche, kurze ' +
+  'Bestätigung ohne neue Information) und der Gast bedankt sich darauf nur erneut, ohne Frage, Anliegen ' +
+  'oder neue Information (kein Höflichkeits-Ping-Pong). In allen anderen Fällen no_reply_needed=false — ' +
+  'auch bei reinem Dank oder reiner Bestätigung (dann kurze Höflichkeitsantwort) und auch, wenn die ' +
+  'Nachricht mit Dank beginnt und danach eine Frage oder ein Anliegen folgt.';
+
+/** #1312: Form der Höflichkeitsantwort auf reinen Dank / reine Bestätigung (nur Prompt). */
+export const COURTESY_REPLY_RULE =
+  'Höflichkeitsantwort: Ist die letzte Gastnachricht ein reiner Dank oder eine reine Bestätigung ' +
+  '(ohne Frage oder Anliegen) und greift keiner der zwei no_reply-Fälle, antworte mit einer kurzen ' +
+  'Höflichkeit in Michas Ton: ein bis zwei Sätze, KEINE neuen Fakten oder Hinweise, KEINE Rückfrage ' +
+  '(auch keine Frage am Ende). Diese Regel geht dem Voice-Text vor, auch wenn dort steht, dass reiner ' +
+  'Dank keine Antwort braucht.';
+
 export const SUBMIT_REPLY_TOOL: ClaudeToolDefinition = {
   name: 'submit_reply',
   description: 'Gib die fertige Antwort an den Gast zurück — oder melde explizit, dass keine Antwort nötig ist.',
@@ -20,9 +44,7 @@ export const SUBMIT_REPLY_TOOL: ClaudeToolDefinition = {
     properties: {
       no_reply_needed: {
         type: 'boolean',
-        description:
-          'true NUR, wenn die Nachricht weder eine Frage noch ein Anliegen/eine Bitte enthält ' +
-          '(reines Danke/Bestätigung/Emoji). Sonst immer false — auch wenn die Nachricht mit Dank beginnt.',
+        description: NO_REPLY_RULE,
       },
       reply: {
         type: 'string',
@@ -30,7 +52,8 @@ export const SUBMIT_REPLY_TOOL: ClaudeToolDefinition = {
       },
       reason: {
         type: 'string',
-        description: 'Kurze Begründung, nur wenn no_reply_needed=true (z. B. "reine Dankesnachricht ohne Frage").',
+        description:
+          'Kurze Begründung, nur wenn no_reply_needed=true (z. B. "nur Emoji" oder "erneuter Dank auf unsere Höflichkeit").',
       },
     },
     required: ['no_reply_needed'],
@@ -578,8 +601,9 @@ export function buildSystemPrompt(
       'gute Zeit", „eine schöne Woche"). AUSNAHME: Zeitangaben, die die Buchung selbst betreffen ' +
       '(Check-in-Zeit, Anreise-/Abreisetag laut HEUTE-Block/Buchungskontext), bleiben konkret. Nenne ' +
       'einen Wochentag nur, wenn er zum HEUTE-Fakt oder zu Anreise/Abreise passt.',
-    'Keine Antwort nötig (no_reply_needed=true) NUR, wenn die Nachricht WEDER eine Frage NOCH ein ' +
-      'Anliegen/eine Bitte enthält — also eine reine Dankes-/Bestätigungsnachricht oder ein bloßes Emoji.',
+    // #1312: gleiche Regel wie die Tool-Beschreibung (NO_REPLY_RULE), plus Form der Höflichkeitsantwort.
+    `Keine Antwort nötig: ${NO_REPLY_RULE}`,
+    COURTESY_REPLY_RULE,
     'Beginnt eine Nachricht mit Dank, enthält aber danach eine Frage oder ein Anliegen, ist das KEIN ' +
       'Grund für no_reply_needed=true — antworte auf die Frage/das Anliegen. Im Zweifel antworten ' +
       '(no_reply_needed=false).',
