@@ -442,8 +442,13 @@ export const LENGTH_RULE_BLOCK = [
   'Routine-Antworten (Frage beantwortet, Bestätigung, Dank, kleine Zusage) haben HÖCHSTENS 2–3 kurze Sätze, ' +
     'ca. 300 Zeichen (ohne Anrede und Gruß). Was man am Handy nicht ohne Scrollen liest, ist zu lang.',
   // #1312 Nachbesserung: ohne diese Zeile widersprach „2–3 Sätze … Dank“ der Höflichkeitsregel (1–2).
-  '- Antwort auf reinen Dank oder reine Bestätigung des Gastes: HÖCHSTENS zwei Sätze, ohne angehängten ' +
-    'Einladungs- oder Abschlusssatz (siehe Höflichkeitsantwort unten).',
+  // Prüfer-Korrektur: hier nur die Satzzahl. Dieser Block steht in JEDEM Prompt und VOR dem
+  // Buchungsanfrage-Block (dessen Vorrang gilt nur für „Regeln unten“) — das Verbot eines
+  // „Einladungs- oder Abschlusssatzes“ kollidierte dort wörtlich mit Punkt 4 (Einladung zur
+  // Buchungsanfrage bzw. Ankündigung der Bestätigung). Das Anhängsel-Verbot steht nur in
+  // COURTESY_REPLY_RULE (unten, mit Beispiel).
+  '- Antwort auf reinen Dank oder reine Bestätigung des Gastes: HÖCHSTENS zwei Sätze, kein dritter Satz ' +
+    '(siehe Höflichkeitsantwort unten).',
   '- Beantworte NUR, was der Gast gefragt oder angesprochen hat. Mehrere Fragen: je Frage höchstens ein Satz.',
   '- Wiederhole KEINE Fakten, die der Gast schon kennt: Buchungsdaten (Zeitraum, Nächte, Personenzahl) und ' +
     'Inhalte der Inseratsbeschreibung (Betten, Bad, Ausstattung, Platz für X Gäste).',

@@ -357,7 +357,8 @@ erweitert auf Guesty-Properties (Farmhouse, U19) — Spec:
   einmal als `NO_REPLY_RULE` in `draft-service.ts` und wird von Tool-Beschreibung UND Prompt-Zeile benutzt.
   Die zwei Sätze sind harte Obergrenze (ohne Anrede/Gruß), ein angehängtes „Meldet euch gern jederzeit wieder“ ist
   ausdrücklich verboten: die Voice empfiehlt genau diese Floskel und die LÄNGE-Regel erlaubt sonst 2–3 Sätze für Dank,
-  deshalb steht der Vorrang vor beiden in der Regel und ein Verweis in `LENGTH_RULE_BLOCK`.
+  deshalb steht der Vorrang vor beiden in der Regel und ein Verweis in `LENGTH_RULE_BLOCK` (dort NUR die Satzzahl: der
+  Block steht in jedem Prompt vor dem Buchungsanfrage-Block, ein Einladungs-/Abschluss-Verbot dort widerspräche dessen Punkt 4).
   Fixtures: `test:drafts -- --case 1312`.
 - **LLM-Aufrufe — harte Regel (#758, 06.10.2026):** jeder Anthropic-Aufruf läuft über
   `callClaudeTool` (`src/services/anthropic-client.ts`, nie umgehen). Modell-Weiche dort:

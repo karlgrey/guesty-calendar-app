@@ -780,6 +780,19 @@ describe('#1312 Höflichkeitsantworten', () => {
     expect(prompt()).toContain(LENGTH_RULE_BLOCK);
   });
 
+  // Prüfer-Korrektur: die LÄNGE-Regel steht in jedem Prompt und VOR dem Buchungsanfrage-Block. Ein
+  // Verbot von „Einladungs-/Abschlusssatz“ dort würde Punkt 4 des Blocks (Einladung zur
+  // Buchungsanfrage, Ankündigung der Bestätigung) widersprechen, ohne dass dessen Vorrang greift.
+  it('LÄNGE-Regel nennt für reinen Dank nur die Satzzahl, kein Einladungs-/Abschluss-Verbot (Buchungsanfrage Punkt 4 bleibt)', () => {
+    expect(LENGTH_RULE_BLOCK).not.toMatch(/Einladung|Abschlusssatz/);
+    const booking = buildSystemPrompt(
+      'v', 'f', null, { channel: 'airbnb', reservation_status: 'inquiry' }, 'de', false, true, NOW_1312, 'inquiry',
+    );
+    expect(booking.indexOf(LENGTH_RULE_BLOCK)).toBeGreaterThanOrEqual(0);
+    expect(booking.indexOf(LENGTH_RULE_BLOCK)).toBeLessThan(booking.indexOf('### BUCHUNGSANFRAGE'));
+    expect(booking).toContain('lade den Gast ein, die Buchungsanfrage zu stellen');
+  });
+
   it('Dank mit anschließender Frage bleibt ein Antwortfall (#385 unverändert)', () => {
     const p = prompt();
     expect(p).toContain('Beginnt eine Nachricht mit Dank');
