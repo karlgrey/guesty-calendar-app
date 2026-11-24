@@ -99,4 +99,23 @@ describe('getThreadsUpdatedSince', () => {
     expect(a.auto_decision).toBe('wait');
     expect(b.auto_decision).toBeNull();
   });
+  it('pending_draft_since is the created_at of the OLDEST pending draft, ignoring sent/discarded', () => {
+    const ins = db.prepare(`INSERT INTO message_drafts (id, thread_id, provider, body, status, created_at)
+      VALUES (?,?,?,?,?,?)`);
+    const oldest = datetime('-5 hours');
+    ins.run('d2', 'guesty:b', 'guesty', 'x', 'pending', datetime('-2 hours'));
+    ins.run('d3', 'guesty:b', 'guesty', 'x', 'pending', oldest);
+    ins.run('d4', 'guesty:b', 'guesty', 'x', 'sent', datetime('-10 hours'));
+    ins.run('d5', 'guesty:b', 'guesty', 'x', 'discarded', datetime('-20 hours'));
+    const rows = getThreadsUpdatedSince(datetime('-7 days'), 50);
+    expect(rows.find((r) => r.id === 'guesty:b')!.pending_draft_since).toBe(oldest);
+  });
+
+  it('pending_draft_since is null without a pending draft', () => {
+    db.prepare(`INSERT INTO message_drafts (id, thread_id, provider, body, status, created_at)
+      VALUES ('d6','guesty:b','guesty','x','sent',?)`).run(datetime('-3 hours'));
+    const rows = getThreadsUpdatedSince(datetime('-7 days'), 50);
+    expect(rows.find((r) => r.id === 'guesty:b')!.pending_draft_since).toBeNull();
+    expect(rows.find((r) => r.id === 'hostex:a')!.pending_draft_since).not.toBeNull();
+  });
 });

@@ -93,6 +93,7 @@ describe('getThreadsNeedingDraft', () => {
     expect(getThreadsNeedingDraft('guesty', 'GL1', 10, '-72 hours')).toEqual([]);
     // A newer guest message invalidates the marker (last_message_at moves past it).
     db.prepare(`UPDATE message_threads SET last_message_at = datetime('now','+1 minute') WHERE id='guesty:g1'`).run();
+    db.prepare(`INSERT INTO messages (id,thread_id,direction,sent_at,body,source) VALUES ('mnew','guesty:g1','inbound',datetime('now','+1 minute'),'again','guesty')`).run();
     expect(getThreadsNeedingDraft('guesty', 'GL1', 10, '-72 hours').map((r) => r.id)).toEqual(['guesty:g1']);
   });
 
@@ -102,6 +103,53 @@ describe('getThreadsNeedingDraft', () => {
     // A newer guest message invalidates the marker (last_message_at moves past it) —
     // same convention as ai_no_reply_at, so a fresh guest reply DOES get a fresh draft.
     db.prepare(`UPDATE message_threads SET last_message_at = datetime('now','+1 minute') WHERE id='guesty:g1'`).run();
+    db.prepare(`INSERT INTO messages (id,thread_id,direction,sent_at,body,source) VALUES ('mnew','guesty:g1','inbound',datetime('now','+1 minute'),'again','guesty')`).run();
     expect(getThreadsNeedingDraft('guesty', 'GL1', 10, '-72 hours').map((r) => r.id)).toEqual(['guesty:g1']);
+  });
+  describe('automatic system messages (#1298)', () => {
+    const autoMeta = JSON.stringify({ sender_role: 'host', automatic: true });
+    const addAuto = (id: string, threadId: string, modifier: string) => {
+      db.prepare(
+        `INSERT INTO messages (id,thread_id,direction,sent_at,from_name,body,source,raw_meta)
+         VALUES (?,?,'system',datetime('now', ?),'host','Hallo Anna, dein Aufenthalt findet bald statt.','hostex',?)`,
+      ).run(id, threadId, modifier, autoMeta);
+      db.prepare(`UPDATE message_threads SET last_message_at = datetime('now', ?) WHERE id = ?`).run(modifier, threadId);
+    };
+
+    it('thread with open guest question stays eligible after an automatic message', () => {
+      db.prepare(
+        `INSERT INTO message_threads (id,listing_id,source,channel,first_message_at,last_message_at,last_synced_at)
+         VALUES ('hostex:auto','L3','hostex','airbnb',datetime('now','-1 day'),datetime('now','-2 hours'),datetime('now'))`,
+      ).run();
+      db.prepare(
+        `INSERT INTO messages (id,thread_id,direction,sent_at,body,source) VALUES ('ma1','hostex:auto','inbound',datetime('now','-2 hours'),'q','hostex')`,
+      ).run();
+      addAuto('ma2', 'hostex:auto', '-1 hour');
+      expect(getThreadsNeedingDraft('hostex', 'L3', 10, '-72 hours').map((r) => r.id)).toEqual(['hostex:auto']);
+    });
+
+    it('ai-no-reply marker survives a later automatic message', () => {
+      markThreadAiNoReply('guesty:g1');
+      addAuto('ma3', 'guesty:g1', '+1 minute');
+      expect(getThreadsNeedingDraft('guesty', 'GL1', 10, '-72 hours')).toEqual([]);
+    });
+
+    it('discarded marker survives a later automatic message', () => {
+      markThreadDiscarded('guesty:g1');
+      addAuto('ma4', 'guesty:g1', '+1 minute');
+      expect(getThreadsNeedingDraft('guesty', 'GL1', 10, '-72 hours')).toEqual([]);
+    });
+
+    it('stale guest message is not revived by a fresh automatic message', () => {
+      db.prepare(
+        `INSERT INTO message_threads (id,listing_id,source,channel,first_message_at,last_message_at,last_synced_at)
+         VALUES ('hostex:stale','L4','hostex','airbnb',datetime('now','-5 days'),datetime('now','-4 days'),datetime('now'))`,
+      ).run();
+      db.prepare(
+        `INSERT INTO messages (id,thread_id,direction,sent_at,body,source) VALUES ('ms1','hostex:stale','inbound',datetime('now','-4 days'),'q','hostex')`,
+      ).run();
+      addAuto('ms2', 'hostex:stale', '-1 hour');
+      expect(getThreadsNeedingDraft('hostex', 'L4', 10, '-72 hours')).toEqual([]);
+    });
   });
 });

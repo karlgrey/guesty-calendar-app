@@ -1,6 +1,7 @@
 // src/mappers/hostex/message-mapper.ts
 import type { HostexConversationDetail } from '../../services/hostex-client.js';
 import { detectPendingHostexAlteration } from './alteration-card.js';
+import { isAutomaticHostMessage } from '../../utils/auto-message.js';
 import type { NewMessageThread, NewMessage, MessageChannel } from '../../types/messages.js';
 
 export function mapHostexDirection(senderRole: string): 'inbound' | 'outbound' | 'system' {
@@ -108,20 +109,30 @@ export function mapHostexConversation(
     last_synced_at: now,
   };
 
-  const messages: NewMessage[] = posts.map((p) => ({
-    id: `hostex:${p.id}`,
-    thread_id: threadId,
-    direction: mapHostexDirection(p.sender_role),
-    sent_at: p.created_at ?? now,
-    from_name: p.sender_role === 'host' ? 'host' : guestName,
-    from_address: null,
-    to_address: null,
-    subject: null,
-    body: p.content ?? '',
-    body_html: null,
-    source: 'hostex',
-    raw_meta: JSON.stringify({ sender_role: p.sender_role }),
-  }));
+  const messages: NewMessage[] = posts.map((p) => {
+    // #1298: automatisch versandte Host-Vorlagen als 'system' speichern (zählen nicht als Antwort).
+    const automatic = p.sender_role === 'host' && isAutomaticHostMessage(p.content);
+    return {
+      id: `hostex:${p.id}`,
+      thread_id: threadId,
+      direction: automatic ? 'system' : mapHostexDirection(p.sender_role),
+      sent_at: p.created_at ?? now,
+      from_name: p.sender_role === 'host' ? 'host' : guestName,
+      from_address: null,
+      to_address: null,
+      subject: null,
+      body: p.content ?? '',
+      body_html: null,
+      source: 'hostex',
+      // sender_name/sources: Rohfelder für spätere feldbasierte Erkennung (#1298), kein Verhalten hängt daran.
+      raw_meta: JSON.stringify({
+        sender_role: p.sender_role,
+        sender_name: p.sender_name,
+        sources: p.sources,
+        ...(automatic ? { automatic: true } : {}),
+      }),
+    };
+  });
 
   return { thread, messages };
 }
