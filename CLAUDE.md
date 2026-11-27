@@ -899,7 +899,8 @@ Copy-Paste kann ein sicherer Entwurf automatisch rausgehen. Spec:
 - **Ursprungstext bei Edit (#1062, Migration 039):** `message_drafts.original_body` hält den
   Entwurfstext vor Michas ERSTEM Edit (`saveEditedDraftBody` im Send-Pfad
   `POST /drafts/:draftId/send`, `COALESCE` → nur einmal gesetzt; Formular-Text wird vor Vergleich
-  und Versand CRLF→LF normalisiert, sonst zählt jeder mehrzeilige Entwurf als geändert). `updateDraftBody` bleibt für
+  und Versand CRLF→LF normalisiert, sonst zählt jeder mehrzeilige Entwurf als geändert; seit #1384 fallen dabei auch
+  Leerzeichen und Tabs am Ende jeder Zeile weg, Einrückung bleibt). `updateDraftBody` bleibt für
   maschinelle Fassungen (Sprach-Neuversuch in `generate-drafts.ts`) und setzt `original_body`
   NICHT. `GET /api/agent/auto-send/decisions` liefert bei `outcome=changed` dann
   `draftText`=original_body, `sentText`=body und `diff` (kompakter unified Zeilen-Diff,
