@@ -151,4 +151,48 @@ describe('POST /admin/messages/drafts/:draftId/send — original_body (#1062)', 
     expect(setSentBodyChanged).toHaveBeenCalledWith('d1', true);
     expect(sendClaimedDraft).toHaveBeenCalledWith('d1', expect.anything(), 'Hallo Anna,\nCheck-in ab 16 Uhr.\nMicha', 'micha');
   });
+
+  // #1384: Fall vom 24.11. — Zeile 3 endete im gesendeten Text auf „Check-in-Guide. " (Leerzeichen),
+  // im Entwurf ohne. Leerzeichen/Tabs am Zeilenende sind keine inhaltliche Änderung.
+  it('nur Leerzeichen am Ende einer mittleren Zeile → unchanged, kein original_body, Versand ohne Leerzeichen', async () => {
+    getDraftById.mockReturnValue(draft({ body: 'Hallo Anna,\nDanke!\nHier der Check-in-Guide.\nMicha', generated_by: 'llm' }));
+    await send('Hallo Anna,\r\nDanke!\r\nHier der Check-in-Guide. \r\nMicha');
+    expect(saveEditedDraftBody).not.toHaveBeenCalled();
+    expect(updateDraftBody).not.toHaveBeenCalled();
+    expect(setSentBodyChanged).toHaveBeenCalledWith('d1', false);
+    expect(sendClaimedDraft).toHaveBeenCalledWith('d1', expect.anything(), 'Hallo Anna,\nDanke!\nHier der Check-in-Guide.\nMicha', 'micha');
+  });
+
+  it('Tabs und mehrere Leerzeichen am Zeilenende, auch im Entwurf → unchanged', async () => {
+    getDraftById.mockReturnValue(draft({ body: 'Hallo Anna,  \nCheck-in ab 15 Uhr.\nMicha', generated_by: 'llm' }));
+    await send('Hallo Anna,\t\nCheck-in ab 15 Uhr. \t \nMicha');
+    expect(saveEditedDraftBody).not.toHaveBeenCalled();
+    expect(setSentBodyChanged).toHaveBeenCalledWith('d1', false);
+    expect(sendClaimedDraft).toHaveBeenCalledWith('d1', expect.anything(), 'Hallo Anna,\nCheck-in ab 15 Uhr.\nMicha', 'micha');
+  });
+
+  it('echte Textänderung neben Leerzeichen am Zeilenende → changed, gespeichert und gesendet ohne Leerzeichen', async () => {
+    getDraftById.mockReturnValue(draft({ body: 'Hallo Anna,\nCheck-in ab 15 Uhr.\nMicha', generated_by: 'llm' }));
+    await send('Hallo Anna, \r\nCheck-in ab 16 Uhr.\r\nMicha');
+    expect(saveEditedDraftBody).toHaveBeenCalledWith('d1', 'Hallo Anna,\nCheck-in ab 16 Uhr.\nMicha');
+    expect(setSentBodyChanged).toHaveBeenCalledWith('d1', true);
+    expect(sendClaimedDraft).toHaveBeenCalledWith('d1', expect.anything(), 'Hallo Anna,\nCheck-in ab 16 Uhr.\nMicha', 'micha');
+  });
+
+  it('Einrückung am Zeilenanfang bleibt erhalten → changed', async () => {
+    getDraftById.mockReturnValue(draft({ body: 'Hallo Anna,\n- Punkt\nMicha', generated_by: 'llm' }));
+    await send('Hallo Anna,\n  - Punkt\nMicha');
+    expect(saveEditedDraftBody).toHaveBeenCalledWith('d1', 'Hallo Anna,\n  - Punkt\nMicha');
+    expect(setSentBodyChanged).toHaveBeenCalledWith('d1', true);
+  });
+
+  // Prüfer #1384: Zeilenenden nur mit CR (kein LF) und Leerzeichen/Tab an der letzten Zeile —
+  // die Reihenfolge „erst CR→LF, dann Zeilenende bereinigen" muss halten.
+  it('CR-only-Zeilenenden und Leerzeichen an der letzten Zeile → unchanged, Versand mit LF', async () => {
+    getDraftById.mockReturnValue(draft({ body: 'Hallo Anna,\nCheck-in ab 15 Uhr.\nMicha', generated_by: 'llm' }));
+    await send('Hallo Anna, \rCheck-in ab 15 Uhr.\t\rMicha \t');
+    expect(saveEditedDraftBody).not.toHaveBeenCalled();
+    expect(setSentBodyChanged).toHaveBeenCalledWith('d1', false);
+    expect(sendClaimedDraft).toHaveBeenCalledWith('d1', expect.anything(), 'Hallo Anna,\nCheck-in ab 15 Uhr.\nMicha', 'micha');
+  });
 });

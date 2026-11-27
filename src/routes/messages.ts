@@ -620,7 +620,9 @@ router.post('/drafts/:draftId/send', express.urlencoded({ extended: true }), asy
     // Browser-Textareas liefern Zeilenumbrüche als CRLF, der LLM-Entwurf steht mit LF in der DB —
     // ohne Normalisierung zählte jeder mehrzeilige Entwurf als „geändert" (#1062-Review: 54/54
     // Schattenfälle changed, 0 unchanged, alle mit \r). Vergleich und Versand daher auf LF.
-    const normalize = (s: string) => s.replace(/\r\n?/g, '\n').trim();
+    // #1384: zusätzlich Leerzeichen/Tabs am Ende jeder Zeile entfernen — ein angehängtes
+    // Leerzeichen („Check-in-Guide. ") ist keine inhaltliche Änderung. Einrückung bleibt.
+    const normalize = (s: string) => s.replace(/\r\n?/g, '\n').replace(/[ \t]+$/gm, '').trim();
     const edited = typeof req.body?.body === 'string' ? normalize(req.body.body) : '';
     const changed = edited !== '' && edited !== normalize(draft.body);
     // #1062: saveEditedDraftBody sichert beim ersten Edit den Entwurfstext als original_body.
