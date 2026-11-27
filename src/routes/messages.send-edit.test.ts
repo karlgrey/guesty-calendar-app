@@ -185,4 +185,14 @@ describe('POST /admin/messages/drafts/:draftId/send — original_body (#1062)', 
     expect(saveEditedDraftBody).toHaveBeenCalledWith('d1', 'Hallo Anna,\n  - Punkt\nMicha');
     expect(setSentBodyChanged).toHaveBeenCalledWith('d1', true);
   });
+
+  // Prüfer #1384: Zeilenenden nur mit CR (kein LF) und Leerzeichen/Tab an der letzten Zeile —
+  // die Reihenfolge „erst CR→LF, dann Zeilenende bereinigen" muss halten.
+  it('CR-only-Zeilenenden und Leerzeichen an der letzten Zeile → unchanged, Versand mit LF', async () => {
+    getDraftById.mockReturnValue(draft({ body: 'Hallo Anna,\nCheck-in ab 15 Uhr.\nMicha', generated_by: 'llm' }));
+    await send('Hallo Anna, \rCheck-in ab 15 Uhr.\t\rMicha \t');
+    expect(saveEditedDraftBody).not.toHaveBeenCalled();
+    expect(setSentBodyChanged).toHaveBeenCalledWith('d1', false);
+    expect(sendClaimedDraft).toHaveBeenCalledWith('d1', expect.anything(), 'Hallo Anna,\nCheck-in ab 15 Uhr.\nMicha', 'micha');
+  });
 });
