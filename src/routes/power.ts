@@ -6,6 +6,7 @@
 import express from 'express';
 import { buildPowerReport, type PowerReport } from '../services/power-report-service.js';
 import type { PowerRow } from '../services/power-consumption.js';
+import { deDateTime, deviationLabel, num, num1, statusLabel, zonedParts } from '../services/power-format.js';
 import { renderAdminPage } from './admin-layout.js';
 import { NotFoundError } from '../utils/errors.js';
 
@@ -16,23 +17,6 @@ const DEFAULT_PROPERTY = 'farmhouse';
 
 function esc(s: string | number | null | undefined): string {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
-}
-
-const num = (n: number): string => n.toLocaleString('de-DE', { maximumFractionDigits: 1 });
-const num1 = (n: number): string => n.toLocaleString('de-DE', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-
-/** UTC-ISO → Teile (TT, MM, JJJJ, HH, MM) in der Objekt-Zeitzone. */
-function zonedParts(iso: string, timezone: string): { d: string; m: string; y: string; hh: string; mm: string } {
-  const parts = new Intl.DateTimeFormat('de-DE', {
-    timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-  }).formatToParts(new Date(iso));
-  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
-  return { d: get('day'), m: get('month'), y: get('year'), hh: get('hour'), mm: get('minute') };
-}
-
-function deDateTime(iso: string, timezone: string): string {
-  const p = zonedParts(iso, timezone);
-  return `${p.d}.${p.m}.${p.y} ${p.hh}:${p.mm}`;
 }
 
 /** YYYY-MM-DD → [TT, MM, JJJJ] */
@@ -55,22 +39,6 @@ function periodLabel(row: PowerRow, timezone: string): string {
     if (row.status === 'running') return `seit ${from[0]}.${from[1]}.${from[2]}`;
   }
   return `${from[0]}.${from[1]}.–${to[0]}.${to[1]}.${to[2]}`;
-}
-
-function statusLabel(row: PowerRow): string {
-  const parts: string[] = [];
-  if (row.status === 'running') parts.push('läuft (bis letzter Stand)');
-  else if (row.status === 'incomplete') {
-    parts.push(row.incompleteReason === 'reset' ? 'unvollständig (Zählerstand gesunken)' : 'unvollständig (Messlücke)');
-  }
-  if (row.flagged) parts.push('auffällig');
-  return parts.join(' · ');
-}
-
-function deviationLabel(pct: number | null): string {
-  if (pct === null || pct === undefined) return '';
-  const r = Math.round(pct);
-  return `${r > 0 ? '+' : r < 0 ? '−' : ''}${Math.abs(r).toLocaleString('de-DE')} %`;
 }
 
 function renderRow(row: PowerRow, timezone: string): string {
