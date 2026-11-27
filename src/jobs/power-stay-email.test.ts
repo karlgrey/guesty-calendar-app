@@ -221,6 +221,37 @@ describe('runPowerStayMails', () => {
     expect(mailRows().map((m) => m.reservation_id)).toEqual(['neu']);
   });
 
+  it('Häkchen erst später gesetzt: je Buchung eine eigene Mail (keine Sammelmail), Altbuchung nie, Fehlschlag betrifft nur die eine', async () => {
+    insertRes('alt', '2026-11-16', '2026-11-18'); // Check-out vor dem Stichtag
+    insertRes('r1', '2026-11-20', '2026-11-22');
+    insertRes('r2', '2026-11-22', '2026-11-24');
+    readings('2026-11-15T00:00:00.000Z', '2026-11-24T12:00:00.000Z');
+    const now = new Date('2026-11-24T13:00:00.000Z');
+
+    expect(await runPowerStayMails(now)).toMatchObject({ sent: 0, failed: 0 }); // noch kein Empfänger
+    expect(mailRows()).toEqual([]);
+
+    recipient();
+    sendEmailMock.mockResolvedValueOnce(false); // erste Mail (r1) schlägt fehl
+    expect(await runPowerStayMails(now)).toMatchObject({ due: 2, sent: 1, failed: 1 });
+    expect(sendEmailMock).toHaveBeenCalledTimes(2);
+    const [m1, m2] = sendEmailMock.mock.calls.map((c) => c[0]);
+    expect(m1.subject).toContain('Gast r1');
+    expect(m1.text).not.toContain('Gast r2');
+    expect(m2.subject).toContain('Gast r2');
+    expect(m2.text).not.toContain('Gast r1');
+    expect(mailRows().map((m) => m.reservation_id)).toEqual(['r2']);
+
+    expect(await runPowerStayMails(now)).toMatchObject({ due: 1, sent: 1, failed: 0 });
+    expect(sendEmailMock).toHaveBeenCalledTimes(3);
+    expect(sendEmailMock.mock.calls[2][0].subject).toContain('Gast r1');
+    expect(mailRows().map((m) => m.reservation_id).sort()).toEqual(['r1', 'r2']);
+    expect(sendEmailMock.mock.calls.some((c) => `${c[0].subject}${c[0].text}`.includes('Gast alt'))).toBe(false);
+
+    expect(await runPowerStayMails(now)).toMatchObject({ due: 0, sent: 0, failed: 0 });
+    expect(sendEmailMock).toHaveBeenCalledTimes(3);
+  });
+
   it('Objekt nicht im Reporting: übersprungen', async () => {
     reportingUntilOverride = '2026-01-01';
     insertRes('r1', '2026-11-20', '2026-11-22');
