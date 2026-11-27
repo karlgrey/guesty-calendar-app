@@ -44,6 +44,10 @@ const sendCalendarWeeklyEmailForPropertyMock = vi.fn();
 vi.mock('./calendar-email.js', () => ({
   sendCalendarWeeklyEmailForProperty: (...args: unknown[]) => sendCalendarWeeklyEmailForPropertyMock(...args),
 }));
+const runPowerStayMailsMock = vi.fn();
+vi.mock('./power-stay-email.js', () => ({
+  runPowerStayMails: (...args: unknown[]) => runPowerStayMailsMock(...args),
+}));
 let mockedProperties: Array<{ slug: string; name: string }> = [];
 vi.mock('../config/properties.js', async (importOriginal) => {
   const mod: any = await importOriginal();
@@ -91,6 +95,7 @@ import {
   shouldSendCalendarWeekly,
   calendarWeekKey,
   checkAndSendCalendarWeekly,
+  checkAndSendPowerStayMails,
   resetSchedulerStateForTests,
 } from './scheduler.js';
 
@@ -476,5 +481,15 @@ describe('Kalender-Report je Objekt (montags 06:xx Europe/Berlin, #1223/#1284)',
     expect(setSchedulerStateMock).toHaveBeenCalledTimes(1);
     expect(setSchedulerStateMock).toHaveBeenCalledWith(key('rh40'), '2026-W48');
     vi.useRealTimers();
+  });
+});
+
+describe('checkAndSendPowerStayMails (#1376)', () => {
+  it('ruft runPowerStayMails auf und schluckt Fehler', async () => {
+    runPowerStayMailsMock.mockReset().mockResolvedValue({ sent: 0, failed: 0, due: 0 });
+    await checkAndSendPowerStayMails();
+    expect(runPowerStayMailsMock).toHaveBeenCalledTimes(1);
+    runPowerStayMailsMock.mockRejectedValueOnce(new Error('boom'));
+    await expect(checkAndSendPowerStayMails()).resolves.toBeUndefined();
   });
 });

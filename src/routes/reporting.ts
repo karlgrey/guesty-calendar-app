@@ -8,7 +8,7 @@ import {
   addRecipient, getRecipientById, listRecipients, removeRecipient, setSubscription,
 } from '../repositories/report-recipient-repository.js';
 import {
-  PER_PROPERTY_REPORT_TYPES, REPORT_TYPES, REPORT_TYPE_LABELS, isPerPropertyReportType, isReportType, type ReportType,
+  PER_PROPERTY_REPORT_TYPES, REPORT_TYPES, REPORT_TYPE_LABELS, isPerPropertyReportType, isReportType, reportTypeAppliesTo, type ReportType,
 } from '../services/reporting/report-types.js';
 import { renderAdminPage } from './admin-layout.js';
 
@@ -40,7 +40,7 @@ router.get('/', (req, res) => {
   const added = queryString(req.query.added);
 
   const columns: Array<{ type: ReportType; slug: string; label: string }> = [
-    ...PER_PROPERTY_REPORT_TYPES.flatMap((t) => properties.map((p) => ({
+    ...PER_PROPERTY_REPORT_TYPES.flatMap((t) => properties.filter((p) => reportTypeAppliesTo(t, p.slug)).map((p) => ({
       type: t,
       slug: p.slug,
       label: `${REPORT_TYPE_LABELS[t]} · ${p.name}${p.reportingUntil ? ` (bis ${formatDate(p.reportingUntil)})` : ''}`,
@@ -131,6 +131,9 @@ router.post('/subscriptions', express.json(), (req, res) => {
   if (isPerPropertyReportType(reportType)) {
     if (typeof propertySlug !== 'string' || !getAllProperties().some((p) => p.slug === propertySlug)) {
       return res.status(400).json({ error: 'Unbekanntes Objekt' });
+    }
+    if (!reportTypeAppliesTo(reportType, propertySlug)) {
+      return res.status(400).json({ error: 'Report-Typ gilt für dieses Objekt nicht' });
     }
     slug = propertySlug;
   }

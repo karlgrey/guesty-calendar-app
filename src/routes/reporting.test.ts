@@ -30,7 +30,9 @@ afterAll(() => server.close());
 beforeEach(() => {
   db = new Database(':memory:');
   db.pragma('foreign_keys = ON');
+  db.exec(mig('026_add_scheduler_state.sql'));
   db.exec(mig('041_add_report_recipients.sql'));
+  db.exec(mig('047_power_stay_mail.sql'));
   setDatabase(db);
 });
 afterEach(() => { resetDatabase(); db.close(); });
@@ -46,6 +48,18 @@ const postForm = (path: string, data: Record<string, string>) =>
   });
 
 describe('GET /admin/reporting', () => {
+  it('Spalte „Strom je Gast“ erscheint nur für das Farmhouse', async () => {
+    const m = addRecipient('m@example.com');
+    setSubscription(m.id, 'power-stay', 'farmhouse', true);
+    const html = await (await fetch(`${base}/admin/reporting`)).text();
+    expect((html.match(/Strom je Gast/g) ?? []).length).toBe(2); // Spaltenkopf + aria-label der Zelle
+    expect(html).toContain('Strom je Gast · Farmhouse Prasser');
+    expect(html).not.toContain('Strom je Gast · Uferstraße 19');
+    expect(html).not.toContain('Strom je Gast · Florenz Loft');
+    expect(html).toMatch(/data-recipient="1" data-type="power-stay" data-slug="farmhouse" checked/);
+    expect(html).not.toMatch(/data-type="power-stay" data-slug="u19"/);
+  });
+
   it('zeigt Empfänger, Spalten und Häkchen-Zustand', async () => {
     const m = addRecipient('m@example.com');
     addRecipient('c@example.com');
@@ -118,6 +132,15 @@ describe('POST /admin/reporting/subscriptions', () => {
     expect((await postJson({ recipientId: m.id, reportType: 'weekly-summary', propertySlug: '', active: true })).status).toBe(400);
     expect((await postJson({ recipientId: m.id, reportType: 'portfolio-weekly', propertySlug: '', active: 'ja' })).status).toBe(400);
     expect((await postJson({ recipientId: 'x', reportType: 'portfolio-weekly', propertySlug: '', active: true })).status).toBe(400);
+  });
+
+  it('power-stay: Häkchen für farmhouse ok, für andere Objekte 400', async () => {
+    const m = addRecipient('m@example.com');
+    const r = await postJson({ recipientId: m.id, reportType: 'power-stay', propertySlug: 'farmhouse', active: true });
+    expect(r.status).toBe(200);
+    expect(getActiveRecipientEmails('power-stay', 'farmhouse')).toEqual(['m@example.com']);
+    expect((await postJson({ recipientId: m.id, reportType: 'power-stay', propertySlug: 'u19', active: true })).status).toBe(400);
+    expect(getActiveRecipientEmails('power-stay', 'u19')).toEqual([]);
   });
 
   it('calendar-weekly wird je Objekt gespeichert; ohne oder mit unbekanntem Slug 400', async () => {
