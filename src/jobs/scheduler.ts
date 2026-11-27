@@ -12,6 +12,7 @@ import { startGuestyTelemetryFlush, stopGuestyTelemetryFlush, flushGuestyRequest
 import { sendWeeklySummaryEmailForProperty, shouldSendWeeklyEmailForProperty } from './weekly-email.js';
 import { sendBiReportEmail, shouldSendBiReport, sendPortfolioMonthlyEmail } from './bi-email.js';
 import { sendCalendarWeeklyEmailForProperty } from './calendar-email.js';
+import { runPowerStayMails } from './power-stay-email.js';
 import { syncAnalytics, shouldSyncAnalytics } from './sync-analytics.js';
 import { syncGoogleCalendarForProperty } from './sync-google-calendar.js';
 import { checkAirbnbMailStaleness } from './airbnb-mail/check-staleness.js';
@@ -79,6 +80,7 @@ interface SchedulerState {
   portfolioMonthlyIntervalId: NodeJS.Timeout | null;
   portfolioMonthlyLastSentMonth: string | null;
   calendarWeeklyIntervalId: NodeJS.Timeout | null;
+  powerStayMailIntervalId: NodeJS.Timeout | null; // Strom-Mail je Gast (#1376), stündlich
   calendarWeeklyLastSentWeek: Map<string, string>; // Slug -> ISO-Woche (RAM-Cache; Quelle der Wahrheit: scheduler_state)
 }
 
@@ -114,6 +116,7 @@ const state: SchedulerState = {
   portfolioMonthlyIntervalId: null,
   portfolioMonthlyLastSentMonth: null,
   calendarWeeklyIntervalId: null,
+  powerStayMailIntervalId: null,
   calendarWeeklyLastSentWeek: new Map(),
 };
 
@@ -492,6 +495,15 @@ export async function checkAndSendCalendarWeekly() {
   }
 }
 
+/** Strom-Mail je Gast (#1376): runPowerStayMails wirft nie; der Wrapper ist nur der zweite Boden. */
+export async function checkAndSendPowerStayMails() {
+  try {
+    await runPowerStayMails();
+  } catch (error) {
+    logger.error({ error }, '❌ Error in power stay mail run');
+  }
+}
+
 /** Anzahl aktiver DB-Empfänger fürs Startup-Log (non-fatal). */
 function recipientCountSafe(...args: Parameters<typeof getActiveRecipientEmails>): number | null {
   try {
@@ -808,6 +820,11 @@ export function startScheduler() {
   logger.info('📅 Starting calendar weekly report scheduler (Mondays, 06:00 Europe/Berlin)');
   checkAndSendCalendarWeekly();
   state.calendarWeeklyIntervalId = setInterval(checkAndSendCalendarWeekly, hourlyInterval);
+
+  // Strom-Mail je Gast nach dem Check-out (stündlich, #1376)
+  logger.info('⚡ Starting power stay mail scheduler (hourly)');
+  checkAndSendPowerStayMails();
+  state.powerStayMailIntervalId = setInterval(checkAndSendPowerStayMails, hourlyInterval);
 }
 
 /**
@@ -872,6 +889,11 @@ export function stopScheduler() {
   if (state.calendarWeeklyIntervalId) {
     clearInterval(state.calendarWeeklyIntervalId);
     state.calendarWeeklyIntervalId = null;
+  }
+
+  if (state.powerStayMailIntervalId) {
+    clearInterval(state.powerStayMailIntervalId);
+    state.powerStayMailIntervalId = null;
   }
 
   stopMessageLoop();
